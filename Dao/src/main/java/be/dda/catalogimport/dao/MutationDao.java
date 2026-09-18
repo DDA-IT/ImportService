@@ -249,6 +249,20 @@ public class MutationDao {
         });
     }
 
+    /**
+     * Zet de nog geplande inhoudelijke mutaties van een batch op {@code SKIPPED} met de opgegeven reden
+     * (accept-baseline: de bronstaat is aanvaard zonder publicatie). De {@code IMPORT_MARKER} blijft
+     * {@code RECORDED}: die legt vast dat de screening plaatsvond en is geen uitvoerbare mutatie.
+     * Mutaties in een andere status blijven ongemoeid, zodat herhalen niets verandert.
+     *
+     * @return het aantal overgezette mutaties
+     */
+    public int skipPlannedContentMutations(long batchId, String statusReason) {
+        return jdbc.update("update import_mutation set status = 'SKIPPED', status_reason = ? "
+                + "where batch_id = ? and action_type <> 'IMPORT_MARKER' and status = 'PLANNED'",
+                statusReason, batchId);
+    }
+
     /** Het aantal inhoudelijke mutaties van deze batch; de marker telt bewust niet mee. */
     public long countContentMutations(long batchId) {
         Long count = jdbc.queryForObject("select count(*) from import_mutation "

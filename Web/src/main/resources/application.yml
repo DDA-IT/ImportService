@@ -30,6 +30,10 @@ catalogimport:
     max-recorded-row-issues: 1000
     # Maximale lengte van een datalijn in tekens; langere regels worden verworpen, niet afgekapt.
     max-line-length: 100000
+    # Bij het opstarten: een batch die op SCREENING bleef staan wordt FAILED (SCREENING_INTERRUPTED); een batch
+    # op MUTATING blijft hervatbaar via POST /api/catalog-import/batches/{id}/continue. Veronderstelt precies
+    # één applicatie-instantie (geen lease/heartbeat tot Fase 5).
+    recovery-on-startup: true
 server:
   error:
     include-message: never

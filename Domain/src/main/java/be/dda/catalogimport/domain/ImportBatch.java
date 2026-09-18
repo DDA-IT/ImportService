@@ -125,6 +125,19 @@ public class ImportBatch {
     @Column(name = "blocked_reason", length = 500)
     private String blockedReason;
 
+    /**
+     * Audit van {@code accept-baseline} (changeset 003): wie, wanneer en met welke reden deze batch als
+     * nulmeting van de bronstaat is aanvaard. Alleen gevuld bij {@link ImportBatchStatus#BASELINE_ACCEPTED}.
+     */
+    @Column(name = "baseline_accepted_by", length = 100)
+    private String baselineAcceptedBy;
+
+    @Column(name = "baseline_accepted_at")
+    private Instant baselineAcceptedAt;
+
+    @Column(name = "baseline_accept_reason", length = 500)
+    private String baselineAcceptReason;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -312,6 +325,25 @@ public class ImportBatch {
 
     public void setBlockedReason(String blockedReason) {
         this.blockedReason = blockedReason;
+    }
+
+    public String getBaselineAcceptedBy() {
+        return baselineAcceptedBy;
+    }
+
+    public Instant getBaselineAcceptedAt() {
+        return baselineAcceptedAt;
+    }
+
+    public String getBaselineAcceptReason() {
+        return baselineAcceptReason;
+    }
+
+    /** Legt de drie auditgegevens van een baseline-acceptatie samen vast; nooit los te zetten. */
+    public void recordBaselineAcceptance(String acceptedBy, Instant acceptedAt, String reason) {
+        this.baselineAcceptedBy = acceptedBy;
+        this.baselineAcceptedAt = acceptedAt;
+        this.baselineAcceptReason = reason;
     }
 
     public Instant getCreatedAt() {

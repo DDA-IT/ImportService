@@ -67,8 +67,8 @@ drie fingerprints; `base_price` numeric(24,6); `base_price_currency`; `state_ori
 Een ONGEWIJZIGDE regel raakt de bronstaat nooit aan. Eerste levering = LEFT JOIN op lege
 tabel → alles NEW (geen speciaal codepad). Hashcollisie (zelfde hash, andere componenten)
 → batch BLOCKED `IDENTITY_HASH_COLLISION`.
-De screening zelf schrijft NOOIT in `catalog_source_state` (zie open vraag baseline in
-decisions.md).
+De screening zelf schrijft NOOIT in `catalog_source_state`; enkel de geauditeerde actie
+`accept-baseline` doet dat (beslist, zie decisions.md en §17).
 
 ## 4. `import_mutation` (= de centrale PSIMPORT001-lijst; vermeld dit in de javadoc)
 
@@ -299,3 +299,24 @@ na Fase 3.
   `blockedCode=SCREENING_FAILED` (de levering bestaat en is gearchiveerd; 500 zou heruploaden uitnodigen).
 - Delta als `update ... case` met `exists`/`not exists` (portabel H2/PostgreSQL); issue-cap cumulatief.
 - Config: `catalogimport.screening.mutation-chunk-size` (default 5000).
+
+## 17. Aanvullingen uit stap 2e (geïmplementeerd, hoofdsessie akkoord)
+
+- `accept-baseline` enkel vanuit SCREENED (anders 409 `BATCH_NOT_ACCEPTABLE`; onbekend 404
+  `BATCH_NOT_FOUND`); `acceptedBy`/`reason` verplicht, `system` (elke schrijfwijze) geweigerd; te
+  lange waarden geweigerd, nooit afgekapt. NEW ⇒ insert-select, CHANGED ⇒ gebatchte update,
+  UNCHANGED ⇒ niet aangeraakt (ook `updated_at` niet); `identity_profile_kind` uit de revisie.
+  Mutaties ⇒ SKIPPED (`BASELINE_ACCEPTED_WITHOUT_PUBLICATION`), batch ⇒ BASELINE_ACCEPTED.
+- Changeset `003-import-batch-baseline-audit.sql`: additieve kolommen `baseline_accepted_by`,
+  `baseline_accepted_at`, `baseline_accept_reason` op `import_batch` (audit persistent).
+- Extra guard `SOURCE_STATE_CHANGED_SINCE_SCREENING` (409): twee SCREENED-batches van dezelfde
+  koppeling kunnen naast elkaar bestaan; het aanvaarden van de oudere mag de nieuwere bronstaat
+  niet stilzwijgend overschrijven. Eigen onderbroken poging telt niet als stale.
+- Recovery op opstart (`catalogimport.screening.recovery-on-startup`, default true): SCREENING ⇒
+  FAILED `SCREENING_INTERRUPTED` (staging/issues weg, TaskRun FAILED); MUTATING blijft hervatbaar via
+  `POST /batches/{id}/continue` (enkel vanuit MUTATING, anders 409 `BATCH_NOT_RESUMABLE`).
+  Veronderstelt één applicatie-instantie.
+- Leesendpoints: `/batches/{id}`, `/batches/{id}/mutations`, `/batches/{id}/issues`; paginering
+  0-gebaseerd, default 50, max 200; mutatielijst zonder hashkolommen.
+- Bekend restrisico: twee gelijktijdige accepts van dezelfde batch kunnen voor de verliezer een
+  500 (unieke bronstaatconstraint) geven; de actie is herhaalbaar.

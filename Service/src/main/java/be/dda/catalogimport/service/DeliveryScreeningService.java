@@ -84,7 +84,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * insert slaat bestaande idempotentiesleutels over en {@code uk_import_mutation_idempotency} is de
  * harde garantie. Dat is bewust géén {@code FAILED}: het werk dat al gedaan is (mogelijk honderden
  * chunks) mag niet weggegooid worden, en design par. 9 merkt {@code MUTATING} expliciet als
- * hervatbaar aan. De HTTP-ingang en de opstartrecovery volgen in bouwstap 2e.
+ * hervatbaar aan. De HTTP-ingang ({@code POST /batches/{id}/continue}) en de opstartrecovery
+ * ({@link ScreeningRecoveryService}) zijn bouwstap 2e.
  */
 @Service
 public class DeliveryScreeningService {
