@@ -64,6 +64,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
  * service, DAO's, het bestandsarchief en H2. De microbatchgrootte staat op 2 en de issue-cap op 5,
  * zodat meerdere microbatch-commits en de cap met kleine bestanden aantoonbaar zijn.
  * <p>
+ * Sinds bouwstap 2d loopt {@code screen} door tot de eindstatus; deze tests kijken naar het
+ * stagingdeel daarvan. De delta, de mutatielijst en de marker worden in
+ * {@code DeliveryScreeningFlowTest} gecontroleerd.
+ * <p>
  * Elke test bouwt een eigen taak met unieke codes: de H2-database is gedeeld en een open
  * {@code TaskRun} blokkeert een tweede upload op dezelfde taak.
  */
@@ -126,7 +130,7 @@ class DeliveryStagingTest {
 
         ScreeningOutcome outcome = screening.screen(screened.batchId());
 
-        assertThat(outcome.status()).isEqualTo(ImportBatchStatus.MUTATING);
+        assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
         assertThat(outcome.rawRecordCount()).isEqualTo(3L);
         assertThat(outcome.validRecordCount()).isEqualTo(3L);
         assertThat(outcome.rejectedRecordCount()).isZero();
@@ -146,7 +150,8 @@ class DeliveryStagingTest {
             assertThat(row.discountCode()).isNull();
             assertThat(row.discountState()).isEqualTo("NOT_USED");
             assertThat(row.basePriceCurrency()).isNull();
-            assertThat(row.classification()).isNull(); // delta volgt in bouwstap 2d
+            // Lege bronstaat: de delta uit bouwstap 2d ziet elke regel als nieuw.
+            assertThat(row.classification()).isEqualTo("NEW");
         });
 
         byte[] expectedIdentityHash = ImportValueRules.sha256Utf8(
@@ -158,14 +163,13 @@ class DeliveryStagingTest {
         ImportBatch batch = batches.findById(screened.batchId()).orElseThrow();
         assertThat(batch.getStagedRowCount()).isEqualTo(3);
         assertThat(batch.getStartedAt()).isNotNull();
-        assertThat(batch.getFinishedAt()).isNull();
+        assertThat(batch.getFinishedAt()).isNotNull();
         assertThat(batch.getBlockedCode()).isNull();
         assertThat(deliveries.findById(screened.deliveryId()).orElseThrow().getActualRecordCount())
                 .isEqualTo(3L);
         assertThat(rowIssues.countByBatchId(screened.batchId())).isZero();
-        // Bouwstap 2c sluit een geslaagde screening bewust niet af: 2d doet delta, marker en status.
         assertThat(runs.findById(screened.taskRunId()).orElseThrow().getStatus())
-                .isEqualTo(TaskRunStatus.RUNNING);
+                .isEqualTo(TaskRunStatus.COMPLETED);
     }
 
     @Test
@@ -203,10 +207,11 @@ class DeliveryStagingTest {
         Screened screened = upload("TWICE", THREE_VALID_ROWS);
         screening.screen(screened.batchId());
 
+        // De marker van de eerste screening is het bewijs dat deze levering onder deze revisie klaar is.
         assertThatThrownBy(() -> screening.screen(screened.batchId()))
                 .isInstanceOf(ConflictException.class)
                 .extracting(failure -> ((ConflictException) failure).getCode())
-                .isEqualTo("BATCH_NOT_SCREENABLE");
+                .isEqualTo(DeliveryScreeningService.CODE_ALREADY_SCREENED);
 
         assertThat(stagedRows(screened.batchId())).hasSize(3);
     }
@@ -232,7 +237,7 @@ class DeliveryStagingTest {
 
         ScreeningOutcome outcome = screening.screen(screened.batchId());
 
-        assertThat(outcome.status()).isEqualTo(ImportBatchStatus.MUTATING);
+        assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
         assertThat(outcome.rawRecordCount()).isEqualTo(4L);
         assertThat(outcome.validRecordCount()).isEqualTo(2L);
         assertThat(outcome.rejectedRecordCount()).isEqualTo(2L);
@@ -297,6 +302,26 @@ class DeliveryStagingTest {
         assertThat(outcome.rawRecordCount()).isNull(); // onvolledig gelezen: nooit stil een 0
         assertThat(runs.findById(screened.taskRunId()).orElseThrow().getStatus())
                 .isEqualTo(TaskRunStatus.COMPLETED);
+    }
+
+    @Test
+    void recordsAtMostTheIssueCapForDuplicateIdentitiesButStillCountsThemAll() {
+        StringBuilder csv = new StringBuilder(HEADER);
+        for (int i = 1; i <= 8; i++) {
+            csv.append("ACME;G1;R1;1,5").append(i).append(";Boormachine\n");
+        }
+        Screened screened = upload("DUPCAP", csv.toString().getBytes(StandardCharsets.UTF_8));
+
+        ScreeningOutcome outcome = screening.screen(screened.batchId());
+
+        assertThat(outcome.status()).isEqualTo(ImportBatchStatus.BLOCKED);
+        assertThat(outcome.blockedCode())
+                .isEqualTo(DeliveryScreeningService.CODE_DUPLICATE_IDENTITY_IN_DELIVERY);
+        // Alle betrokken regels worden geteld, ook al worden er maar vijf problemen bewaard.
+        assertThat(outcome.duplicateIdentityCount()).isEqualTo(8L);
+        assertThat(outcome.blockedReason()).contains("8 lines");
+        assertThat(rowIssues.countByBatchId(screened.batchId())).isEqualTo(5);
+        assertThat(outcome.contentMutationCount()).isZero();
     }
 
     // --- Contract- en structuurfouten: blokkeren de levering ------------------------------------

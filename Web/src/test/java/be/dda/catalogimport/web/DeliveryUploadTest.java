@@ -30,6 +30,7 @@ import be.dda.catalogimport.domain.SourceOrganisationType;
 import be.dda.catalogimport.domain.TaskRun;
 import be.dda.catalogimport.domain.TaskRunStatus;
 import be.dda.catalogimport.domain.TaskTriggerType;
+import be.dda.catalogimport.service.DeliveryScreeningService;
 import com.jayway.jsonpath.JsonPath;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -42,10 +43,13 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -55,15 +59,20 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder;
 
 /**
- * Fase 2b: upload van een manuele levering (archief + registratie), retry, conflicten en
- * validatie via de echte controller/service/H2-database. Elke test maakt een eigen taak (unieke
- * codes, gedeelde H2) omdat een open {@code TaskRun} een volgende upload op dezelfde taak
- * blokkeert (beoogde tussenstand tot de screening de run afsluit).
+ * Fase 2b/2d: upload van een manuele levering (archief + registratie + synchrone screening), retry,
+ * conflicten en validatie via de echte controller/service/H2-database. Elke test maakt een eigen
+ * taak met unieke codes omdat de H2-database gedeeld is.
+ * <p>
+ * Sinds bouwstap 2d screent de POST synchroon (design par. 10): een geslaagde upload antwoordt met
+ * batchstatus {@code SCREENED} en sluit haar {@code TaskRun} af, zodat een volgende upload op
+ * dezelfde taak weer toegelaten is. De concurrency-constraint wordt daarom expliciet aangetoond met
+ * een screening die kunstmatig wordt opgehouden.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -82,6 +91,9 @@ class DeliveryUploadTest {
 
     @Autowired
     private MockMvc mockMvc;
+    /** Enkel gebruikt om de screening kunstmatig op te houden in de gelijktijdigheidstest. */
+    @MockitoSpyBean
+    private DeliveryScreeningService screening;
     @Autowired
     private SourceOrganisationRepository sourceOrganisations;
     @Autowired
@@ -115,7 +127,11 @@ class DeliveryUploadTest {
 
         String body = upload(f.task(), "REF-1", "tester@example.test", "../evil.csv", CSV)
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("RECEIVED"))
+                // De screening loopt synchroon mee in de POST (design par. 10).
+                .andExpect(jsonPath("$.status").value("SCREENED"))
+                .andExpect(jsonPath("$.newCount").value(2))
+                .andExpect(jsonPath("$.contentMutationCount").value(2))
+                .andExpect(jsonPath("$.blockedCode").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
         long deliveryId = ((Number) JsonPath.read(body, "$.deliveryId")).longValue();
         long batchId = ((Number) JsonPath.read(body, "$.batchId")).longValue();
@@ -126,7 +142,7 @@ class DeliveryUploadTest {
         assertThat(delivery.getActualFileCount()).isEqualTo(1);
         assertThat(delivery.getExpectedRecordCount()).isNull();
         assertThat(delivery.getExpectedByteSize()).isNull();
-        assertThat(delivery.getActualRecordCount()).isNull();
+        assertThat(delivery.getActualRecordCount()).isEqualTo(2L);
         assertThat(delivery.getActualByteSize()).isEqualTo(CSV.length);
         assertThat(delivery.isCompletenessProven()).isFalse();
         assertThat(delivery.getManifestReference()).isNull();
@@ -142,7 +158,7 @@ class DeliveryUploadTest {
         });
 
         ImportBatch batch = batches.findById(batchId).orElseThrow();
-        assertThat(batch.getStatus()).isEqualTo(ImportBatchStatus.RECEIVED);
+        assertThat(batch.getStatus()).isEqualTo(ImportBatchStatus.SCREENED);
         assertThat(batch.getAttemptNo()).isEqualTo(1);
         assertThat(batch.getCreatedBy()).isEqualTo("tester@example.test");
         assertThat(jdbc.queryForObject("select delivery_id from import_batch where id = ?", Long.class, batchId))
@@ -152,9 +168,10 @@ class DeliveryUploadTest {
         assertThat(jdbc.queryForObject("select import_link_id from import_batch where id = ?", Long.class, batchId))
                 .isEqualTo(f.link().getId());
 
-        // Bekende tussenstand: de run blijft RUNNING (screening sluit hem later af).
-        TaskRun run = runs.findByTaskIdAndConcurrencyTokenIsNotNull(f.task().getId()).orElseThrow();
-        assertThat(run.getStatus()).isEqualTo(TaskRunStatus.RUNNING);
+        // De screening sluit de run af en geeft de concurrency-token vrij.
+        TaskRun run = runs.findByTaskIdOrderByStartedAtDesc(f.task().getId()).get(0);
+        assertThat(run.getStatus()).isEqualTo(TaskRunStatus.COMPLETED);
+        assertThat(run.getConcurrencyToken()).isNull();
         assertThat(run.getTriggeredBy()).isEqualTo("tester@example.test");
         assertThat(jdbc.queryForObject("select task_run_id from delivery where id = ?", Long.class, deliveryId))
                 .isEqualTo(run.getId());
@@ -180,7 +197,8 @@ class DeliveryUploadTest {
                 .orElseThrow();
         assertThat(delivery.getExpectedRecordCount()).isEqualTo(2L);
         assertThat(delivery.getExpectedByteSize()).isEqualTo((long) CSV.length);
-        assertThat(delivery.getActualRecordCount()).isNull();
+        assertThat(delivery.getActualRecordCount()).isEqualTo(2L);
+        // Tellen en vergelijken bewijst de volledigheid niet: fase 2 kent geen volledigheidscontract.
         assertThat(delivery.isCompletenessProven()).isFalse();
     }
 
@@ -202,8 +220,11 @@ class DeliveryUploadTest {
                 .andExpect(jsonPath("$.files[0].fileName").value("levering.csv"))
                 .andExpect(jsonPath("$.files[0].contentHash").value(sha256Hex(CSV)))
                 .andExpect(jsonPath("$.files[0].archiveReference").doesNotExist())
-                .andExpect(jsonPath("$.batch.status").value("RECEIVED"))
-                .andExpect(jsonPath("$.batch.attemptNo").value(1));
+                .andExpect(jsonPath("$.batch.status").value("SCREENED"))
+                .andExpect(jsonPath("$.batch.attemptNo").value(1))
+                .andExpect(jsonPath("$.batch.newCount").value(2))
+                .andExpect(jsonPath("$.batch.unchangedCount").value(0))
+                .andExpect(jsonPath("$.batch.contentMutationCount").value(2));
     }
 
     @Test
@@ -257,29 +278,72 @@ class DeliveryUploadTest {
     }
 
     @Test
-    void aSecondUploadWithAnotherReferenceWhileTheRunIsOpenIsRejectedWithTaskRunInProgress() throws Exception {
-        Fixture f = fixture("BUSY");
+    void aSecondUploadWithAnotherReferenceIsAcceptedOnceTheFirstScreeningClosedItsRun() throws Exception {
+        Fixture f = fixture("NEXT");
         upload(f.task(), "REF-1", "tester@example.test", "levering.csv", CSV).andExpect(status().isCreated());
-        long archivedBefore = archivedFileCount();
 
+        // De eerste screening is afgerond, dus de taak is opnieuw beschikbaar: een tweede levering
+        // met een eigen referentie is een nieuwe verwerking met een eigen run en batch.
         upload(f.task(), "REF-2", "tester@example.test", "levering2.csv", CSV)
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("TASK_RUN_IN_PROGRESS"));
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("SCREENED"));
 
+        assertThat(deliveries.findByTaskIdOrderByReceivedAtDesc(f.task().getId())).hasSize(2);
+        assertThat(runs.findByTaskIdOrderByStartedAtDesc(f.task().getId())).hasSize(2);
+        assertThat(runs.findByTaskIdAndConcurrencyTokenIsNotNull(f.task().getId())).isEmpty();
+    }
+
+    @Test
+    void aSecondUploadWhileTheFirstIsStillScreeningIsRejectedWithTaskRunInProgress() throws Exception {
+        Fixture f = fixture("BUSY");
+        CountDownLatch screeningMayFinish = new CountDownLatch(1);
+        CountDownLatch screeningStarted = new CountDownLatch(1);
+        Mockito.doAnswer(invocation -> {
+            screeningStarted.countDown();
+            screeningMayFinish.await(10, TimeUnit.SECONDS);
+            return invocation.callRealMethod();
+        }).when(screening).screen(ArgumentMatchers.anyLong());
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Integer> first = pool.submit(() -> mockMvc
+                    .perform(request(f.task().getId(), "REF-1", "tester@example.test", "levering.csv", CSV))
+                    .andReturn().getResponse().getStatus());
+            assertThat(screeningStarted.await(10, TimeUnit.SECONDS)).isTrue();
+            long archivedBefore = archivedFileCount();
+
+            // De run van de eerste levering is nog open: de tweede upload archiveert niets en botst.
+            upload(f.task(), "REF-2", "tester@example.test", "levering2.csv", CSV)
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("TASK_RUN_IN_PROGRESS"));
+            assertThat(archivedFileCount()).isEqualTo(archivedBefore);
+
+            screeningMayFinish.countDown();
+            assertThat(first.get()).isEqualTo(201);
+        } finally {
+            screeningMayFinish.countDown();
+            pool.shutdownNow();
+        }
         assertThat(deliveries.findByTaskIdOrderByReceivedAtDesc(f.task().getId())).hasSize(1);
         assertThat(runs.findByTaskIdOrderByStartedAtDesc(f.task().getId())).hasSize(1);
-        assertThat(archivedFileCount()).isEqualTo(archivedBefore);
     }
 
     @Test
     void twoSimultaneousUploadsOnTheSameTaskLeaveExactlyOneDeliveryRunAndArchiveObject() throws Exception {
         Fixture f = fixture("RACE");
         CountDownLatch start = new CountDownLatch(1);
+        // Houd de winnende screening vast tot de andere poging haar antwoord heeft: alleen de
+        // verliezer kan als eerste antwoorden, dus botst die gegarandeerd op een nog open run in
+        // plaats van op toeval in de planning.
+        CountDownLatch otherAnswered = new CountDownLatch(1);
+        Mockito.doAnswer(invocation -> {
+            otherAnswered.await(10, TimeUnit.SECONDS);
+            return invocation.callRealMethod();
+        }).when(screening).screen(ArgumentMatchers.anyLong());
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
             List<Callable<Integer>> calls = List.of(
-                    () -> raceUpload(f.task(), "REF-A", start),
-                    () -> raceUpload(f.task(), "REF-B", start));
+                    () -> raceUpload(f.task(), "REF-A", start, otherAnswered),
+                    () -> raceUpload(f.task(), "REF-B", start, otherAnswered));
             List<Future<Integer>> futures = calls.stream().map(pool::submit).toList();
             start.countDown();
             List<Integer> statuses = List.of(futures.get(0).get(), futures.get(1).get());
@@ -387,16 +451,21 @@ class DeliveryUploadTest {
 
     // --- Helpers -------------------------------------------------------------------------------
 
-    private int raceUpload(CatalogImportTask task, String reference, CountDownLatch start) throws Exception {
+    private int raceUpload(CatalogImportTask task, String reference, CountDownLatch start,
+                           CountDownLatch answered) throws Exception {
         start.await();
-        MockHttpServletResponse response = mockMvc
-                .perform(request(task.getId(), reference, "tester@example.test", "race.csv", CSV))
-                .andReturn().getResponse();
-        if (response.getStatus() == 409) {
-            // Ofwel de voorcontrole, ofwel de vertaalde uk_task_run_concurrency-fout.
-            assertThat(response.getContentAsString()).contains("TASK_RUN_IN_PROGRESS");
+        try {
+            MockHttpServletResponse response = mockMvc
+                    .perform(request(task.getId(), reference, "tester@example.test", "race.csv", CSV))
+                    .andReturn().getResponse();
+            if (response.getStatus() == 409) {
+                // Ofwel de voorcontrole, ofwel de vertaalde uk_task_run_concurrency-fout.
+                assertThat(response.getContentAsString()).contains("TASK_RUN_IN_PROGRESS");
+            }
+            return response.getStatus();
+        } finally {
+            answered.countDown();
         }
-        return response.getStatus();
     }
 
     private ResultActions upload(CatalogImportTask task, String reference, String uploadedBy, String fileName,

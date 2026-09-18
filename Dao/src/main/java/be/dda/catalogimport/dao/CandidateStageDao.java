@@ -8,7 +8,10 @@ import java.sql.Types;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.OptionalLong;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -128,6 +131,94 @@ public class CandidateStageDao {
         Long count = jdbc.queryForObject("select count(*) from import_candidate_stage where batch_id = ?",
                 Long.class, batchId);
         return count == null ? 0L : count;
+    }
+
+    // --- Duplicaat- en collisiedetectie (design par. 2 en par. 3) ------------------------------
+
+    /**
+     * Eén gestagede regel die haar aanbiedingsidentiteit met een andere regel uit dezelfde levering
+     * deelt, samen met het regelnummer van de <i>eerste</i> voorkomst van die identiteit.
+     */
+    public record DuplicateRow(long rowNumber, long firstRowNumber) {
+    }
+
+    /**
+     * Het aantal gestagede regels dat betrokken is bij een dubbele identiteit — dus inclusief de
+     * eerste voorkomst, want "laatste wint" bestaat niet: álle betrokken regels zijn verdacht.
+     * <p>
+     * Deze teller is bewust het aantal <b>regels</b> en niet het aantal identiteiten, zodat
+     * {@code valid_record_count} blijft opgaan als
+     * {@code new + changed + unchanged + duplicate_identity_count}.
+     */
+    public long countDuplicateRows(long batchId) {
+        Long count = jdbc.queryForObject(
+                "select coalesce(sum(occurrences), 0) from ("
+                        + "select count(*) as occurrences from import_candidate_stage where batch_id = ? "
+                        + "group by identity_hash having count(*) > 1) duplicates",
+                Long.class, batchId);
+        return count == null ? 0L : count;
+    }
+
+    /**
+     * De betrokken regels bij een dubbele identiteit, oplopend op regelnummer en begrensd tot
+     * {@code limit} (de issue-cap): bij een miljoen dubbele regels mogen er geen miljoen
+     * {@code import_row_issue}-rijen ontstaan. De batch blokkeert hoe dan ook.
+     */
+    public List<DuplicateRow> findDuplicateRows(long batchId, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+        return jdbc.query("select stage.row_number, duplicates.first_row_number "
+                        + "from import_candidate_stage stage "
+                        + "join (select identity_hash, min(row_number) as first_row_number "
+                        + "      from import_candidate_stage where batch_id = ? "
+                        + "      group by identity_hash having count(*) > 1) duplicates "
+                        + "  on duplicates.identity_hash = stage.identity_hash "
+                        + "where stage.batch_id = ? order by stage.row_number limit ?",
+                (resultSet, index) -> new DuplicateRow(resultSet.getLong(1), resultSet.getLong(2)),
+                batchId, batchId, limit);
+    }
+
+    /** Markeert elke betrokken regel; nooit "laatste wint", nooit stil één van de twee kiezen. */
+    public int classifyDuplicates(long batchId) {
+        return jdbc.update("update import_candidate_stage set classification = 'DUPLICATE_IN_DELIVERY' "
+                + "where batch_id = ? and identity_hash in ("
+                + "select identity_hash from import_candidate_stage where batch_id = ? "
+                + "group by identity_hash having count(*) > 1)", batchId, batchId);
+    }
+
+    /**
+     * Zoekt binnen één batch een {@code identity_hash} die door regels met <b>verschillende</b>
+     * sleutelcomponenten gedeeld wordt: een echte hashcollisie, geen dubbele levering. Zonder deze
+     * controle zouden twee verschillende aanbiedingen als één identiteit behandeld worden en zou de
+     * delta stilzwijgend de verkeerde prijs bijwerken.
+     *
+     * @return het laagste regelnummer van de eerste collisie, of leeg
+     */
+    public OptionalLong findIdentityHashCollisionRow(long batchId) {
+        List<Long> rows = jdbc.queryForList("select min(row_number) from import_candidate_stage "
+                + "where batch_id = ? group by identity_hash having "
+                + "min(identity_supplier) <> max(identity_supplier) "
+                + "or min(identity_supplier_group) <> max(identity_supplier_group) "
+                + "or min(identity_supplier_reference) <> max(identity_supplier_reference) "
+                + "or min(identity_discount_state) <> max(identity_discount_state) "
+                + "or min(coalesce(identity_discount_code, '')) <> max(coalesce(identity_discount_code, '')) "
+                + "order by 1 limit 1", Long.class, batchId);
+        return rows.isEmpty() ? OptionalLong.empty() : OptionalLong.of(rows.get(0));
+    }
+
+    /**
+     * Aantal gestagede regels per {@code classification}; regels zonder classificatie tellen niet
+     * mee (de delta heeft ze nog niet gezien).
+     */
+    public Map<String, Long> countByClassification(long batchId) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        jdbc.query("select classification, count(*) from import_candidate_stage "
+                + "where batch_id = ? and classification is not null group by classification",
+                resultSet -> {
+                    counts.put(resultSet.getString(1), resultSet.getLong(2));
+                }, batchId);
+        return counts;
     }
 
     private static void bind(PreparedStatement statement, StageRow row) throws SQLException {

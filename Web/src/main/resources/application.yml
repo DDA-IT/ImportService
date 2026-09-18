@@ -23,6 +23,9 @@ catalogimport:
   screening:
     # Aantal rijen per microbatch-transactie tijdens het stagen (design par. 2 en par. 9 stap C).
     stage-batch-size: 2000
+    # Aantal gestagede regels per chunk-transactie tijdens de delta en de mutatiegeneratie
+    # (design par. 9 stap E). Elke chunk legt ook het hervatpunt vast.
+    mutation-chunk-size: 5000
     # Boven dit aantal verworpen regels wordt de levering geblokkeerd in plaats van verder gelezen.
     max-recorded-row-issues: 1000
     # Maximale lengte van een datalijn in tekens; langere regels worden verworpen, niet afgekapt.

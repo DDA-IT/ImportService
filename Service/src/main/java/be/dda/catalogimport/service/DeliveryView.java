@@ -51,8 +51,7 @@ public record DeliveryView(
                         .map(file -> new FileView(file.getSequenceNumber(), file.getFileName(),
                                 file.getContentHash(), file.getHashAlgorithm(), file.getByteSize()))
                         .toList(),
-                batch == null ? null
-                        : new BatchView(batch.getId(), batch.getStatus().name(), batch.getAttemptNo()));
+                batch == null ? null : BatchView.of(batch));
     }
 
     /** Eén gearchiveerd bronbestand van de levering. */
@@ -60,7 +59,24 @@ public record DeliveryView(
                            long byteSize) {
     }
 
-    /** Status van de (laatste) screeningbatch van de levering; {@code null} in de view als er geen is. */
-    public record BatchView(long batchId, String status, int attemptNo) {
+    /**
+     * Status en uitkomst van de (laatste) screeningbatch; {@code null} in de view als er geen is.
+     * <p>
+     * De tellers zijn additief toegevoegd in bouwstap 2d: {@code null} betekent onbekend (de
+     * screening is er niet aan toegekomen) en nooit stil {@code 0}. {@code contentMutationCount}
+     * telt de aanbiedingsmutaties zonder de {@code IMPORT_MARKER}.
+     */
+    public record BatchView(long batchId, String status, int attemptNo, Long rawRecordCount,
+                            Long validRecordCount, Long rejectedRecordCount, Long duplicateIdentityCount,
+                            Long newCount, Long changedCount, Long unchangedCount,
+                            Long contentMutationCount, String blockedCode, String blockedReason) {
+
+        static BatchView of(ImportBatch batch) {
+            return new BatchView(batch.getId(), batch.getStatus().name(), batch.getAttemptNo(),
+                    batch.getRawRecordCount(), batch.getValidRecordCount(), batch.getRejectedRecordCount(),
+                    batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
+                    batch.getUnchangedCount(), batch.getContentMutationCount(), batch.getBlockedCode(),
+                    batch.getBlockedReason());
+        }
     }
 }

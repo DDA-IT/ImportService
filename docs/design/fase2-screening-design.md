@@ -283,3 +283,19 @@ na Fase 3.
 - `base_price_currency` blijft in Fase 2 altijd null (geen muntveld in de bronconfiguratie).
 - Uploadlimiet configureerbaar via `CATALOG_MAX_UPLOAD_SIZE` (default 1GB); `-parameters` staat aan
   in de root-pom.
+
+## 16. Aanvullingen uit stap 2d (geïmplementeerd, hoofdsessie akkoord)
+
+- Volgorde: hashcollisie vóór duplicaatdetectie (een kapotte identiteit is geen dubbele levering).
+  Beide blokkeren de levering: 0 inhoudelijke mutaties, 1 marker `outcome=BLOCKED`.
+- Elke bij een duplicaat betrokken rij (ook de eerste) krijgt een issue; `duplicate_identity_count` =
+  aantal betrokken rijen. Reconciliatie: `valid_record_count = new + changed + unchanged + duplicate_identity_count`.
+- Elke BLOCKED-batch (ook de 2c-gevallen) schrijft precies één marker in dezelfde transactie als de
+  BLOCKED-transitie; FAILED schrijft geen marker en geen mutaties.
+- Technische fout tijdens mutatiegeneratie ⇒ batch blijft `MUTATING` (hervatbaar via
+  `continueMutating`), niet FAILED; enkel de stagingfase levert FAILED. Een steken gebleven MUTATING-batch
+  houdt `open_marker` en de TaskRun-concurrency-token vast tot 2e (endpoint + opstartrecovery) er is.
+- Upload-POST screent synchroon; bij FAILED antwoordt hij 201 met batchstatus FAILED en
+  `blockedCode=SCREENING_FAILED` (de levering bestaat en is gearchiveerd; 500 zou heruploaden uitnodigen).
+- Delta als `update ... case` met `exists`/`not exists` (portabel H2/PostgreSQL); issue-cap cumulatief.
+- Config: `catalogimport.screening.mutation-chunk-size` (default 5000).

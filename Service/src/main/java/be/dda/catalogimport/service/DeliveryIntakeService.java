@@ -40,10 +40,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * (3) of blijkt de upload een retry, dan wordt het zojuist geschreven archiefobject opgeruimd. Het
  * orkestreren gebeurt met {@link TransactionTemplate}; deze klasse is zelf niet {@code @Transactional}.
  * <p>
- * <b>Bekende tussenstand (stap 2b).</b> Er is nog geen screening: de batch blijft op {@code RECEIVED}
- * en de {@code TaskRun} op {@code RUNNING} staan (screening en afsluiting volgen in stap 2c/2d). Een
- * open {@code TaskRun} blokkeert een volgende upload op dezelfde taak via de concurrency-constraint;
- * dat is het beoogde gedrag. {@code actual_record_count} blijft {@code null} tot er geteld is.
+ * <b>Grens van deze service.</b> De intake registreert en archiveert alleen; de batch komt op
+ * {@code RECEIVED} te staan en de {@code TaskRun} op {@code RUNNING}. De aanroeper (de upload-POST)
+ * start daarna de screening, die de batch naar haar eindstatus brengt en de {@code TaskRun} afsluit.
+ * Zolang die run open is, blokkeert de concurrency-constraint een volgende upload op dezelfde taak;
+ * dat is het beoogde gedrag. {@code actual_record_count} blijft {@code null} tot de screening geteld
+ * heeft.
  */
 @Service
 public class DeliveryIntakeService {

@@ -100,6 +100,17 @@ public class RowIssueDao {
         return count == null ? 0L : count;
     }
 
+    /**
+     * Aantal reeds bewaarde problemen met deze ernst. De duplicaatdetectie draait ná het stagen en
+     * moet weten hoeveel van de issue-cap al opgebruikt is; waarschuwingen tellen daarbij niet mee.
+     */
+    public long countBySeverity(long batchId, RowIssueSeverity severity) {
+        Long count = jdbc.queryForObject(
+                "select count(*) from import_row_issue where batch_id = ? and severity = ?",
+                Long.class, batchId, severity.name());
+        return count == null ? 0L : count;
+    }
+
     /** Aantallen per {@code issue_code}, gesorteerd op code; gebruikt in de blokkeerreden. */
     public Map<String, Long> countByIssueCode(long batchId) {
         List<Map.Entry<String, Long>> rows = jdbc.query(
