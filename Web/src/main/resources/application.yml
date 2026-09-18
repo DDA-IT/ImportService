@@ -11,6 +11,8 @@ spring:
     open-in-view: false
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
+  # catalogimport.archive.root (bronarchief van leveringen) is verplicht en heeft bewust geen default:
+  # zet het per omgeving (application-local.yml voor lokaal gebruik).
 server:
   error:
     include-message: never
