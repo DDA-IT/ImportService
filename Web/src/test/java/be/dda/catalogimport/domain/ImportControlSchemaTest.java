@@ -292,6 +292,8 @@ class ImportControlSchemaTest {
         revision.setIdentitySupplierGroupField("LEV_GROEP");
         revision.setIdentitySupplierReferenceField("LEV_REFERENTIE");
         revision.setIdentityDiscountCodeField(discountCodeField);
+        // Fase 2: het scheidingsteken is verplicht en heeft na migratie geen databasedefault meer.
+        revision.setStructureDelimiter(";");
         return revisions.saveAndFlush(revision);
     }
 

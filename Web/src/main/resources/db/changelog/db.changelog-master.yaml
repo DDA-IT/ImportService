@@ -1,3 +1,14 @@
 databaseChangeLog:
+  # Type van binaire hashkolommen (SHA-256, 32 bytes); zie 002-import-screening-core.sql.
+  - property:
+      name: hash.type
+      value: bytea
+      dbms: postgresql
+  - property:
+      name: hash.type
+      value: varbinary(32)
+      dbms: h2
   - include:
       file: db/changelog/001-import-control-core.sql
+  - include:
+      file: db/changelog/002-import-screening-core.sql

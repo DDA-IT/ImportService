@@ -134,6 +134,55 @@ public class ImportDefinitionRevision {
     @Column(name = "identity_discount_code_field", length = 200)
     private String identityDiscountCodeField;
 
+    // --- Bronconfiguratie (Fase 2, design par. 7) ----------------------------------------------
+    // De bestaande identity_*_field-kolommen dragen de headernaam of, bij structure_field_reference_kind
+    // COLUMN_INDEX, de 1-gebaseerde kolomindex. Een aparte import_field_mapping-tabel volgt in Fase 3.
+
+    /** Bestandsformaat; voorlopig enkel {@code CSV} (databasecheck). */
+    @Column(name = "structure_format", nullable = false, length = 20)
+    private String structureFormat = "CSV";
+
+    @Column(name = "structure_charset", nullable = false, length = 40)
+    private String structureCharset = "UTF-8";
+
+    /** Verplicht en zonder databasedefault: de applicatie zet het scheidingsteken expliciet. */
+    @Column(name = "structure_delimiter", nullable = false, length = 1)
+    private String structureDelimiter;
+
+    /** Quote-teken, of {@code null} wanneer het bestand geen quoting kent. */
+    @Column(name = "structure_quote_char", length = 1)
+    private String structureQuoteChar = "\"";
+
+    @Column(name = "structure_has_header", nullable = false)
+    private boolean structureHasHeader = true;
+
+    /** Fysiek (1-gebaseerd) regelnummer van de header; regels ervoor zijn prefix. */
+    @Column(name = "structure_header_line_number", nullable = false)
+    private int structureHeaderLineNumber = 1;
+
+    /** {@code HEADER_NAME} of {@code COLUMN_INDEX}; zonder header verplicht {@code COLUMN_INDEX}. */
+    @Column(name = "structure_field_reference_kind", nullable = false, length = 20)
+    private String structureFieldReferenceKind = "HEADER_NAME";
+
+    /** Verwacht aantal kolommen, of {@code null} wanneer niet gedeclareerd. */
+    @Column(name = "structure_expected_column_count")
+    private Integer structureExpectedColumnCount;
+
+    /** {@code FULL_SNAPSHOT}, {@code DELTA} of {@code UNDECLARED}. */
+    @Column(name = "access_delivery_set_kind", nullable = false, length = 30)
+    private String accessDeliverySetKind = "UNDECLARED";
+
+    /** Bronveld (of kolomindex) van de basisprijs. */
+    @Column(name = "record_base_price_field", length = 200)
+    private String recordBasePriceField;
+
+    /** Bronveld (of kolomindex) van de omschrijving; optioneel. */
+    @Column(name = "record_description_field", length = 200)
+    private String recordDescriptionField;
+
+    @Column(name = "record_canonicalisation_version", nullable = false)
+    private int recordCanonicalisationVersion = 1;
+
     // --- Herkomst en audit --------------------------------------------------------------------
 
     /** Revisie waaruit deze revisie gekopieerd is (§14.14 "Gebaseerd op"). */
@@ -318,6 +367,102 @@ public class ImportDefinitionRevision {
 
     public void setIdentityDiscountCodeField(String identityDiscountCodeField) {
         this.identityDiscountCodeField = identityDiscountCodeField;
+    }
+
+    public String getStructureFormat() {
+        return structureFormat;
+    }
+
+    public void setStructureFormat(String structureFormat) {
+        this.structureFormat = structureFormat;
+    }
+
+    public String getStructureCharset() {
+        return structureCharset;
+    }
+
+    public void setStructureCharset(String structureCharset) {
+        this.structureCharset = structureCharset;
+    }
+
+    public String getStructureDelimiter() {
+        return structureDelimiter;
+    }
+
+    public void setStructureDelimiter(String structureDelimiter) {
+        this.structureDelimiter = structureDelimiter;
+    }
+
+    public String getStructureQuoteChar() {
+        return structureQuoteChar;
+    }
+
+    public void setStructureQuoteChar(String structureQuoteChar) {
+        this.structureQuoteChar = structureQuoteChar;
+    }
+
+    public boolean isStructureHasHeader() {
+        return structureHasHeader;
+    }
+
+    public void setStructureHasHeader(boolean structureHasHeader) {
+        this.structureHasHeader = structureHasHeader;
+    }
+
+    public int getStructureHeaderLineNumber() {
+        return structureHeaderLineNumber;
+    }
+
+    public void setStructureHeaderLineNumber(int structureHeaderLineNumber) {
+        this.structureHeaderLineNumber = structureHeaderLineNumber;
+    }
+
+    public String getStructureFieldReferenceKind() {
+        return structureFieldReferenceKind;
+    }
+
+    public void setStructureFieldReferenceKind(String structureFieldReferenceKind) {
+        this.structureFieldReferenceKind = structureFieldReferenceKind;
+    }
+
+    public Integer getStructureExpectedColumnCount() {
+        return structureExpectedColumnCount;
+    }
+
+    public void setStructureExpectedColumnCount(Integer structureExpectedColumnCount) {
+        this.structureExpectedColumnCount = structureExpectedColumnCount;
+    }
+
+    public String getAccessDeliverySetKind() {
+        return accessDeliverySetKind;
+    }
+
+    public void setAccessDeliverySetKind(String accessDeliverySetKind) {
+        this.accessDeliverySetKind = accessDeliverySetKind;
+    }
+
+    public String getRecordBasePriceField() {
+        return recordBasePriceField;
+    }
+
+    public void setRecordBasePriceField(String recordBasePriceField) {
+        this.recordBasePriceField = recordBasePriceField;
+    }
+
+    public String getRecordDescriptionField() {
+        return recordDescriptionField;
+    }
+
+    public void setRecordDescriptionField(String recordDescriptionField) {
+        this.recordDescriptionField = recordDescriptionField;
+    }
+
+    public int getRecordCanonicalisationVersion() {
+        return recordCanonicalisationVersion;
+    }
+
+    public void setRecordCanonicalisationVersion(int recordCanonicalisationVersion) {
+        this.recordCanonicalisationVersion = recordCanonicalisationVersion;
     }
 
     public ImportDefinitionRevision getBasedOnRevision() {

@@ -124,3 +124,37 @@ moet expliciet toetsen of sjabloon-afgeleide bookmarks er later bij kunnen zonde
 dan al bestaande leveranciersdefinities te breken.
 
 **Bron:** mens / `business-analyse-leveranciersbibliotheken.md` §14.15, §14.16
+
+---
+
+## 2026-09-18 — Fase 2: ontwerp kleinste verticale slice
+
+**Vraag:** Hoe wordt de manuele-CSV-slice (upload → archief → streaming parse → staging →
+identiteit → delta → mutatielijst + IMPORT_MARKER) ontworpen?
+
+**Beslissing:** Het ontwerp in `docs/design/fase2-screening-design.md` is bindend
+(tabellen `import_batch`, `import_candidate_stage`, `import_row_issue`,
+`catalog_source_state`, `import_mutation`; changeset 002 additief naast ongewijzigde 001;
+JDBC-bulk voor staging/bronstaat; idempotency_key per Delivery+revisie+identiteit;
+archivering op bestandssysteem; screening schrijft nooit in de bronstaat; bouwstappen
+2a–2e sequentieel).
+
+**Bron:** denker-zwaar / `business-analyse-leveranciersbibliotheken.md` §14.23, §14.24,
+§14.26, §15.2, §15.10, §16.1, §16.5–16.7
+
+---
+
+## 2026-09-18 — Fase 2: baseline-acceptatie (`accept-baseline`)
+
+**Vraag:** De bronstaat (`catalog_source_state`) mag volgens §14.24.6 pas na publicatie
+bijgewerkt worden, maar Fase 2 kent geen publicatie. Hoe bewijzen we in Fase 2 dat een
+identieke herlevering 0 mutaties oplevert?
+
+**Beslissing:** Via een aparte, geauditeerde actie `POST /batches/{id}/accept-baseline`
+(verplichte reden, acceptedBy niet leeg en niet `system`, enkel vanuit status SCREENED).
+De screening zelf schrijft nooit in de bronstaat. Weggeschreven bronstaatrijen krijgen
+`state_origin = BASELINE_ACCEPTED`; de mutaties van die batch krijgen status `SKIPPED` met
+reden `BASELINE_ACCEPTED_WITHOUT_PUBLICATION`. In Fase 5 wordt dit aangevuld/vervangen door
+de echte publicatieroute (`state_origin = PUBLISHED`).
+
+**Bron:** mens / `docs/design/fase2-screening-design.md` §3, §10, §11
