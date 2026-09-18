@@ -265,3 +265,21 @@ Web/src/test.
 beschrijven de vervangen proefversie en gelden als achterhaald; `-acceptance.md` is niet
 bruikbaar als Definition of Done in Fase 7 (enkel het testcommando blijft geldig). Herschrijven
 na Fase 3.
+
+## 15. Aanvullingen uit stap 2c (geïmplementeerd, hoofdsessie akkoord)
+
+- Een bronwaarde met het canonieke scheidingsteken `U+001F` of de niet-gemapt-marker `U+0000`
+  wordt verworpen (`CANONICAL_CONTROL_CHARACTER`), anders kunnen twee aanbiedingen dezelfde
+  `identity_hash` krijgen.
+- Waarden die niet in de doelkolommen passen (identiteit > 200, omschrijving > 1000, prijs buiten
+  numeric(24,6)) worden per rij verworpen (`VALUE_TOO_LONG`, `PRICE_OUT_OF_RANGE`), nooit afgekapt.
+- Wijkt het aantal gelezen bytes af van `delivery_file.byte_size`, dan is het archiefobject
+  beschadigd: technische fout, batch FAILED.
+- Elke volledig lege regel wordt overgeslagen en geteld (niet enkel de staartregel); een regel met
+  alleen spaties blijft een (foute) datalijn.
+- TaskRun-status bij een BLOCKED batch is `COMPLETED` (de uitvoering verliep normaal; het oordeel
+  staat op `import_batch`); technische fout ⇒ `FAILED`. Een BLOCKED batch behoudt staging en issues;
+  enkel FAILED ruimt ze op.
+- `base_price_currency` blijft in Fase 2 altijd null (geen muntveld in de bronconfiguratie).
+- Uploadlimiet configureerbaar via `CATALOG_MAX_UPLOAD_SIZE` (default 1GB); `-parameters` staat aan
+  in de root-pom.

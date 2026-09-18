@@ -11,8 +11,22 @@ spring:
     open-in-view: false
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
-  # catalogimport.archive.root (bronarchief van leveringen) is verplicht en heeft bewust geen default:
-  # zet het per omgeving (application-local.yml voor lokaal gebruik).
+  servlet:
+    multipart:
+      # Een catalogus van een miljoen regels is honderden MB's groot; Spring's standaard van 1 MB
+      # zou zo'n upload weigeren nog voor de service iets ziet. Per omgeving te verlagen.
+      max-file-size: ${CATALOG_MAX_UPLOAD_SIZE:1GB}
+      max-request-size: ${CATALOG_MAX_UPLOAD_SIZE:1GB}
+# catalogimport.archive.root (bronarchief van leveringen) is verplicht en heeft bewust geen default:
+# zet het per omgeving (application-local.yml voor lokaal gebruik).
+catalogimport:
+  screening:
+    # Aantal rijen per microbatch-transactie tijdens het stagen (design par. 2 en par. 9 stap C).
+    stage-batch-size: 2000
+    # Boven dit aantal verworpen regels wordt de levering geblokkeerd in plaats van verder gelezen.
+    max-recorded-row-issues: 1000
+    # Maximale lengte van een datalijn in tekens; langere regels worden verworpen, niet afgekapt.
+    max-line-length: 100000
 server:
   error:
     include-message: never
