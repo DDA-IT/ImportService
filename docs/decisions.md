@@ -102,3 +102,25 @@ Publicatie blijft atomair per consistente record-, set-, verwijder- of
 afhankelijkheidsscope binnen die bundel.
 
 **Bron:** mens (expliciet bevestigd na challenge) / `business-analyse-leveranciersbibliotheken.md` §14.26 (harde kernregel)
+
+---
+
+## 2026-09-18 — Fase 1: bronkoppeling ImportDefinition/ImportLink + sjablonen/bookmarks
+
+**Vraag:** `ImportDefinition` is in Fase 1 gekoppeld aan één `SourceOrganisation`
+(natuurlijke sleutel bron+code); `ImportLink` draagt de concrete leverancier en
+bibliotheekscope, zodat één bron (bv. de VROOAM-aankoopvereniging) via aparte
+`ImportLink`-rijen voor meerdere leveranciers kan dienen. Klopt deze interpretatie van
+"bron" uit §14.15?
+
+**Beslissing:** Ja, bevestigd — met een expliciete nevenvoorwaarde: het sjabloon- en
+bookmarkmechanisme uit §14.16 (een versieerbare blauwdruk met benoemde, getypeerde
+invulvelden, bv. `BESTANDS_PREFIX`, waarmee per leverancier een eigen
+`ImportDefinition` uit een gedeeld VROOAM-sjabloon wordt afgeleid) is **geen optionele
+latere uitbreiding maar een vereiste mogelijkheid** die zonder schemamigratie moet
+kunnen worden toegevoegd. Fase 1/2 bouwen sjablonen en bookmarks nog niet, maar elke
+volgende fase die de `ImportDefinition`/`ImportDefinitionRevision`-structuur aanraakt
+moet expliciet toetsen of sjabloon-afgeleide bookmarks er later bij kunnen zonder de
+dan al bestaande leveranciersdefinities te breken.
+
+**Bron:** mens / `business-analyse-leveranciersbibliotheken.md` §14.15, §14.16
