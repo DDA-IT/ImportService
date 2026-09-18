@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: catalog-import
+  datasource:
+    url: ${CATALOG_DB_URL:jdbc:postgresql://localhost:5432/catalog_import}
+    username: ${CATALOG_DB_USERNAME:catalog_import}
+    password: ${CATALOG_DB_PASSWORD:catalog_import}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+server:
+  error:
+    include-message: never
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
