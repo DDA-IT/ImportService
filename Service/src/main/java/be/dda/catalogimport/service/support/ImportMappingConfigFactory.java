@@ -12,6 +12,7 @@ import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
 import be.dda.catalogimport.domain.ImportFieldMapping;
 import be.dda.catalogimport.domain.ImportRecordFilter;
+import be.dda.catalogimport.domain.PriceControlModel;
 import be.dda.catalogimport.domain.RevisionOwnedField;
 import be.dda.catalogimport.service.support.ImportMappingConfig.FieldMapping;
 import be.dda.catalogimport.service.support.ImportMappingConfig.RecordFilter;
@@ -91,6 +92,14 @@ public class ImportMappingConfigFactory {
     public static final String CODE_FILTER_INVALID = "CONFIG_FILTER_INVALID";
     public static final String CODE_CANONICALISATION_VERSION_REQUIRED =
             "CONFIG_CANONICALISATION_VERSION_REQUIRED";
+    /**
+     * Het prijscontrolemodel van de revisie wordt door deze build niet uitgevoerd (bouwstap 3e).
+     * {@code BOXPLOT} is in het schema gedeclareerd maar bewust niet geïmplementeerd (ontwerp fase 3,
+     * par. 0): stil terugvallen op de afwijkingscontrole zou de beheerder laten denken dat er een
+     * boxplot-analyse op zijn prijzen draait.
+     */
+    public static final String CODE_PRICE_CONTROL_MODEL_UNSUPPORTED =
+            "CONFIG_PRICE_CONTROL_MODEL_UNSUPPORTED";
 
     /**
      * De canonicalisatieversie die de prijscomponenten en de kritieke referenties in de
@@ -150,6 +159,7 @@ public class ImportMappingConfigFactory {
         List<ImportFieldMapping> active = mappingRows.stream()
                 .filter(ImportFieldMapping::isActive)
                 .toList();
+        verifyPriceControlModel(revision);
         List<FieldMapping> fields = readFields(revision, structure, active);
         List<RecordFilter> recordFilters = readFilters(structure, filterRows);
         verifyIdentityClasses(revision, fields);
@@ -348,6 +358,25 @@ public class ImportMappingConfigFactory {
                             + "transformation");
         }
         return FieldTransform.of(row.getTransformKind(), settings, code, valueFormat.decimal());
+    }
+
+    /**
+     * R-PRI-10: deze build voert uitsluitend prijscontrolemodel 1 uit (de afwijkingscontrole tegen
+     * de vorige waarde en de gemiddelden van de laatste 50 en 200 goedgekeurde dagwaarden).
+     * {@code BOXPLOT} bestaat in het schema zodat het model later zonder migratie kan aansluiten,
+     * maar een revisie die het declareert wordt <b>geweigerd</b> vóór er één byte gelezen is. De
+     * levering stilzwijgend met een ander model beoordelen zou betekenen dat de beheerder denkt dat
+     * er een spreidingsanalyse draait terwijl er een percentagegrens getoetst wordt.
+     */
+    private static void verifyPriceControlModel(ImportDefinitionRevision revision) {
+        PriceControlModel model = revision.getPriceControlModel();
+        if (model == PriceControlModel.DEVIATION) {
+            return;
+        }
+        throw blocked(CODE_PRICE_CONTROL_MODEL_UNSUPPORTED, null, String.valueOf(model),
+                "This revision declares price control model " + model + ", which this build does not "
+                        + "perform; only " + PriceControlModel.DEVIATION + " (the deviation check "
+                        + "against the previous value and the two moving averages) is implemented");
     }
 
     /** R-STR-06: de revisiekolommen blijven autoritair; een tweede bron voor dezelfde waarde is fout. */

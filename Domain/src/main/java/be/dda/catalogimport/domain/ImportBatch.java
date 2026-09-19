@@ -95,6 +95,14 @@ public class ImportBatch {
     @Column(name = "mutation_progress_row_number", nullable = false)
     private long mutationProgressRowNumber;
 
+    /**
+     * Hervatpunt van de prijscontrolepass (ontwerp fase 3, par. 3.1 stap E3). Een eigen kolom naast
+     * {@link #mutationProgressRowNumber}: de prijsafwijkingscontrole is een afzonderlijk hervatbare
+     * pass, zodat een onderbroken verwerking geen tweede reeks prijsissues oplevert.
+     */
+    @Column(name = "price_progress_row_number", nullable = false)
+    private long priceProgressRowNumber;
+
     @Column(name = "raw_record_count")
     private Long rawRecordCount;
 
@@ -272,6 +280,14 @@ public class ImportBatch {
 
     public void setMutationProgressRowNumber(long mutationProgressRowNumber) {
         this.mutationProgressRowNumber = mutationProgressRowNumber;
+    }
+
+    public long getPriceProgressRowNumber() {
+        return priceProgressRowNumber;
+    }
+
+    public void setPriceProgressRowNumber(long priceProgressRowNumber) {
+        this.priceProgressRowNumber = priceProgressRowNumber;
     }
 
     public Long getRawRecordCount() {

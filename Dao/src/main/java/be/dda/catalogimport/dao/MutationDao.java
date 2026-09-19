@@ -71,8 +71,13 @@ public class MutationDao {
     /** Het basisprijsdeel van {@code domain_mask}; met een componentcode erachter: {@code PRICE:AKP}. */
     public static final String PRICE_MASK = "PRICE";
 
-    /** {@code import_mutation.domain_mask} is varchar(100). */
-    public static final int MAX_DOMAIN_MASK_LENGTH = 100;
+    /**
+     * {@code import_mutation.domain_mask} is varchar(200) sinds changeset 004-13b (bouwstap 3e). Met
+     * de zeven geseede prijscomponenten was het langst mogelijke masker 94 tekens en paste het nog
+     * net in de oorspronkelijke varchar(100); de kolom is verbreed zodat een achtste component of een
+     * langere componentcode niet halverwege een levering op een databasefout strandt.
+     */
+    public static final int MAX_DOMAIN_MASK_LENGTH = 200;
 
     /** Vorm van een prijscomponentcode; zie {@link #verifyComponentCode(String)}. */
     private static final Pattern COMPONENT_CODE = Pattern.compile("[A-Z0-9_]{1,20}");
@@ -171,7 +176,8 @@ public class MutationDao {
         // NEW heeft geen "voor"-toestand en dus geen masker; een CHANGED zonder verschil in deze drie
         // domeinen (vandaag enkel mogelijk via het referentiedeel, bouwstap 3f) krijgt null in plaats
         // van een lege tekst die op "niets gewijzigd" zou lijken.
-        return "case when stage.classification = 'NEW' then cast(null as varchar(100)) "
+        return "case when stage.classification = 'NEW' then cast(null as varchar("
+                + MAX_DOMAIN_MASK_LENGTH + ")) "
                 + "else nullif(substr(" + parts + ", 2), '') end";
     }
 
@@ -200,11 +206,12 @@ public class MutationDao {
     }
 
     /**
-     * Het masker moet in {@code import_mutation.domain_mask} passen. Met de zeven geseede
-     * prijscomponenten is het langst mogelijke masker 94 tekens; een definitie met méér of met langere
-     * componentcodes zou erbuiten vallen. Dat wordt hier <b>vooraf</b> vastgesteld met een duidelijke
-     * melding, in plaats van halverwege een levering op een databasefout te stranden — en het masker
-     * wordt nooit afgekapt, want dan zou een gewijzigde component onzichtbaar worden.
+     * Het masker moet in {@code import_mutation.domain_mask} passen
+     * ({@value #MAX_DOMAIN_MASK_LENGTH} tekens sinds changeset 004-13b). Met de zeven geseede
+     * prijscomponenten is het langst mogelijke masker 94 tekens; een definitie met veel méér of met
+     * langere componentcodes zou er alsnog buiten vallen. Dat wordt hier <b>vooraf</b> vastgesteld met
+     * een duidelijke melding, in plaats van halverwege een levering op een databasefout te stranden —
+     * en het masker wordt nooit afgekapt, want dan zou een gewijzigde component onzichtbaar worden.
      */
     private static void verifyMaskFits(List<String> componentCodes) {
         int length = ARTICLE_MASK.length() + 1 + PRICE_MASK.length();

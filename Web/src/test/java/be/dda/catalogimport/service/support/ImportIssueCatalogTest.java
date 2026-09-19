@@ -64,6 +64,8 @@ class ImportIssueCatalogTest {
             MappingSettings.class,
             // Bouwstap 3d: de prijsregels stellen zes eigen codes vast (R-PRI-02..R-PRI-08).
             PriceRules.class,
+            // Bouwstap 3e: de afwijkingscontrole tegen de prijshistoriek (R-PRI-10..R-PRI-12).
+            PriceDeviationEvaluator.class,
             DeliveryScreeningService.class,
             ScreeningRecoveryService.class);
 
@@ -195,6 +197,32 @@ class ImportIssueCatalogTest {
         // Fase 3 zet enkel DETECTED (R-ISS-04); de rest van de levenscyclus komt later.
         assertThat(row.handlingStatus()).isEqualTo(IssueHandlingStatus.DETECTED);
         assertThat(row.expectedValue()).isEqualTo("1");
+    }
+
+    /**
+     * Bouwstap 3e: de ernst blijft van de catalogus, met één uitdrukkelijk toegelaten uitzondering.
+     * Een revisie mag een prijsafwijking op {@code ERROR} zetten (R-PRI-10, {@code
+     * price_deviation_severity}); elke andere ernst — en elke andere code — wordt geweigerd in plaats
+     * van overgenomen.
+     */
+    @Test
+    void takesTheSeverityFromTheRevisionOnlyWhereTheCatalogueAllowsIt() {
+        Instant now = Instant.now();
+        String code = PriceDeviationEvaluator.CODE_PRICE_DEVIATION_EXCEEDED;
+
+        assertThat(ImportIssueCatalog.classify(code).severity()).isEqualTo(RowIssueSeverity.WARNING);
+        assertThat(ImportIssueCatalog.issue(1L, 2L, 3L, code, "Basisprijs", "10", null, "boom",
+                RowIssueSeverity.ERROR, now).severity()).isEqualTo(RowIssueSeverity.ERROR);
+        // null betekent "neem de catalogus", niet "verzin iets".
+        assertThat(ImportIssueCatalog.issue(1L, 2L, 3L, code, "Basisprijs", "10", null, "boom",
+                null, now).severity()).isEqualTo(RowIssueSeverity.WARNING);
+        // Een afwijking is nooit op zichzelf een blokkade van de hele levering.
+        assertThatThrownBy(() -> ImportIssueCatalog.issue(1L, 2L, 3L, code, null, null, null, "boom",
+                RowIssueSeverity.BLOCKING, now)).isInstanceOf(IllegalStateException.class);
+        // En een code zonder configureerbare ernst laat helemaal niets kiezen.
+        assertThatThrownBy(() -> ImportIssueCatalog.issue(1L, 2L, 3L,
+                ImportValueRules.CODE_PRICE_UNREADABLE, null, null, null, "boom",
+                RowIssueSeverity.WARNING, now)).isInstanceOf(IllegalStateException.class);
     }
 
     @Test

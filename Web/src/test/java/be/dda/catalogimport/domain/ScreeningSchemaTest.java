@@ -14,11 +14,13 @@ import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.dao.ImportMutationRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
 import be.dda.catalogimport.dao.ImportRowIssueRepository;
+import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import java.math.BigDecimal;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -840,6 +842,93 @@ class ScreeningSchemaTest {
         revision.setBasePriceZeroAllowed(true);
         revisions.saveAndFlush(revision);
         assertThat(revisions.findById(revision.getId()).orElseThrow().isBasePriceZeroAllowed()).isTrue();
+    }
+
+    // --- Fase 3e, changeset 004-7/004-11c/004-13b: prijshistoriek en voortgang ------------------
+
+    /**
+     * R-PRI-13 op databaseniveau: hoogstens één goedgekeurde waarde per koppeling, identiteit,
+     * component en kalenderdag. Zonder deze unieke sleutel zou een tweede aanvaarding op dezelfde dag
+     * een tweede dagwaarde opleveren en het gemiddelde van de afwijkingscontrole vertekenen.
+     */
+    @Test
+    void enforcesOneApprovedPriceObservationPerDayPerIdentityAndComponent() {
+        Scenario s = scenario("PRICEOBS");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+        byte[] identity = sha256("PRICEOBS-identity");
+        insertSourceState(s.link().getId(), s.delivery().getId(), batch.getId(), identity);
+        Long stateId = jdbc.queryForObject("select id from catalog_source_state where import_link_id = ?",
+                Long.class, s.link().getId());
+        LocalDate day = LocalDate.of(2026, 9, 18);
+
+        assertThatCode(() -> insertObservation(s.link().getId(), identity, "BASE_PRICE", day,
+                new BigDecimal("100.000000"), null, stateId, batch.getId())).doesNotThrowAnyException();
+        // Dezelfde dag, dezelfde component: geweigerd - de eerste waarde blijft staan (A16).
+        assertThatThrownBy(() -> insertObservation(s.link().getId(), identity, "BASE_PRICE", day,
+                new BigDecimal("150.000000"), null, stateId, batch.getId()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // Een andere component of een andere dag is wél een eigen waarde.
+        assertThatCode(() -> insertObservation(s.link().getId(), identity, "AKP", day,
+                new BigDecimal("80.000000"), new BigDecimal("80.000000000000"), stateId, batch.getId()))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> insertObservation(s.link().getId(), identity, "BASE_PRICE", day.plusDays(1),
+                new BigDecimal("150.000000"), null, stateId, batch.getId())).doesNotThrowAnyException();
+
+        Map<String, Object> stored = jdbc.queryForMap("select amount, percentage, observation_date "
+                + "from catalog_price_observation where import_link_id = ? and component_code = 'AKP'",
+                s.link().getId());
+        assertThat(((BigDecimal) stored.get("amount")).scale()).isEqualTo(6);
+        assertThat(((BigDecimal) stored.get("percentage")).scale()).isEqualTo(12);
+        // De leesindex van de afwijkingscontrole bestaat: de laatste N dagwaarden per identiteit.
+        assertThat(jdbc.queryForObject("select count(*) from information_schema.indexes "
+                        + "where upper(index_name) = 'IDX_CATALOG_PRICE_OBSERVATION_WINDOW'", Long.class))
+                .isPositive();
+    }
+
+    /** Het hervatpunt van de prijscontrolepass begint op 0 - een beginwaarde, geen onbekende. */
+    @Test
+    void startsThePriceControlProgressAtZeroAndKeepsWhatIsWrittenToIt() {
+        Scenario s = scenario("BPRICEPR");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+
+        assertThat(batches.findById(batch.getId()).orElseThrow().getPriceProgressRowNumber()).isZero();
+
+        batch.setPriceProgressRowNumber(4200L);
+        batches.saveAndFlush(batch);
+        assertThat(jdbc.queryForObject("select price_progress_row_number from import_batch where id = ?",
+                Long.class, batch.getId())).isEqualTo(4200L);
+    }
+
+    /**
+     * Changeset 004-13b: {@code domain_mask} is verbreed naar varchar(200). Met meer prijscomponenten
+     * groeit het masker; afkappen zou verbergen wélke component wijzigde, dus moet de kolom mee.
+     */
+    @Test
+    void acceptsAWideDomainMaskAfterWideningTheColumn() {
+        Scenario s = scenario("MASKW");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+        // 150 tekens in de vorm van een echt masker; de lengte is wat hier bewezen wordt.
+        String mask = ("ARTICLE,PRICE" + ",PRICE:COMPONENT".repeat(10)).substring(0, 150);
+        assertThat(mask).hasSize(150).startsWith("ARTICLE,PRICE,PRICE:COMPONENT");
+
+        ImportMutation mutation = createMutation(batch, "MASKW-key");
+        mutation.setDomainMask(mask);
+        mutations.saveAndFlush(mutation);
+
+        assertThat(jdbc.queryForObject("select domain_mask from import_mutation where id = ?",
+                String.class, mutation.getId())).isEqualTo(mask);
+        assertThat(MutationDao.MAX_DOMAIN_MASK_LENGTH).isEqualTo(200);
+    }
+
+    private void insertObservation(Long importLinkId, byte[] identityHash, String componentCode,
+                                   LocalDate observationDate, BigDecimal amount, BigDecimal percentage,
+                                   Long sourceStateId, Long batchId) {
+        jdbc.update("insert into catalog_price_observation (import_link_id, identity_hash, "
+                        + "component_code, observation_date, amount, percentage, currency, "
+                        + "source_state_id, batch_id, accepted_by, created_at) "
+                        + "values (?, ?, ?, ?, ?, ?, null, ?, ?, 'tester@example.test', ?)",
+                importLinkId, identityHash, componentCode, observationDate, amount, percentage,
+                sourceStateId, batchId, OffsetDateTime.now());
     }
 
     private void insertCandidatePrice(Long batchId, long rowNumber, String componentCode,

@@ -536,3 +536,29 @@ Te laten beslissen door een Denker (of de mens) vóór 3h.
 - RISICO: `import_mutation.domain_mask` is varchar(100); met de 7 geseede componenten is het langst mogelijke
   masker 94 tekens. `MutationDao.verifyMaskFits` faalt vooraf duidelijk (nooit afkappen). Kolom verbreden
   (aparte additieve changeset) in 3e/3h of vóór meer componenten worden geseed.
+
+## 13. Aanvullingen uit stap 3e (geïmplementeerd, hoofdsessie akkoord)
+
+- Changesets: 004-7 `catalog_price_observation`, 004-11c (`import_batch.price_progress_row_number`), 004-13b
+  (`import_mutation.domain_mask` varchar(100) → varchar(200), standaard-SQL `alter column ... set data type`).
+- Observaties worden uitsluitend bij `accept-baseline` geschreven, per aanvaarde NEW/CHANGED-rij en per component
+  (ook `BASE_PRICE`, ook voor revisies zonder componenten), met `observation_date` = UTC-kalenderdag via een
+  injecteerbare `Clock`; de eerste waarde van de dag blijft. UNCHANGED levert niets.
+- Pass E3 (prijscontrole) draait na D en vóór de mutatiegeneratie, eigen voortgangskolom en property
+  `catalogimport.screening.price-control-chunk-size` (5000). Afwijking wordt op BEDRAGEN berekend (niet op
+  percentages) tegen 3 referenties; exact op de grens is niet overschreden. De controle wijzigt niets
+  (mutatie blijft PLANNED, `rejected_record_count` onveranderd).
+- `PRICE_DEVIATION_EXCEEDED` mag per revisie ERROR worden (`configurableSeverities`); `validation_result`
+  reageert nog niet op ERROR (zie open punten). `PRICE_REFERENCE_NOT_AVAILABLE`: één samenvattend INFO-issue
+  per levering. BOXPLOT blokkeert vóór het lezen (`CONFIG_PRICE_CONTROL_MODEL_UNSUPPORTED`).
+- Bekend: de cap-melding van de prijspass kan na crash+continue een tweede deelmelding geven (uniforme telling
+  komt met 3g). `import_row_issue.message` is varchar(500): de grens staat vooraan in de tekst.
+
+### Open punten vóór 3h (moeten beslist zijn voordat 3h start)
+1. `validation_result` en ERROR-issues (zie §9): nu geeft een levering met alleen ERROR-issues (bv. ERROR-ernst
+   van de prijsafwijking, of verworpen records) `VALID`.
+2. Betekenis van "laatste 50/200 dagwaarden": nu = laatste N VASTGELEGDE goedgekeurde wijzigingen, niet N
+   kalenderdagen met doorgetrokken waarde. Een prijs die een jaar gelijk blijft levert één observatie op.
+   Business moet bevestigen of dat de bedoeling is, of dat ongewijzigde dagen ook moeten meetellen.
+3. Ruisrisico: één basisprijswijziging kan N+1 afwijkingsmeldingen geven (basis + elke component); mitigatie is
+   het bulkprijsincident (3g). Groeipad/retentie van `catalog_price_observation` is nog niet belegd.

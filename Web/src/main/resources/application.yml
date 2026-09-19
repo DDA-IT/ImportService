@@ -26,6 +26,10 @@ catalogimport:
     # Aantal gestagede regels per chunk-transactie tijdens de delta en de mutatiegeneratie
     # (design par. 9 stap E). Elke chunk legt ook het hervatpunt vast.
     mutation-chunk-size: 5000
+    # Aantal gestagede regels per chunk-transactie tijdens de prijsafwijkingscontrole (ontwerp fase 3,
+    # par. 3.1 stap E3). Eigen grens naast mutation-chunk-size: die pass leest per chunk ook de
+    # prijshistoriek en heeft haar eigen hervatpunt (price_progress_row_number).
+    price-control-chunk-size: 5000
     # Aantal bewaarde voorbeeldrijen per foutcode (ontwerp fase 3, R-ISS-03). Boven dit aantal worden er
     # geen extra voorbeelden bewaard, maar blijven de volledige aantallen per code behouden in één
     # ROW_ISSUE_RECORDING_CAPPED-melding. De levering blokkeert hier NIET door: dit is een logginggrens,

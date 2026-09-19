@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * De foutcodecatalogus: per stabiele foutcode de ernst, het domein, het controleniveau, de
@@ -69,14 +70,33 @@ public final class ImportIssueCatalog {
     /**
      * De classificatie van één foutcode.
      *
-     * @param defaultImpactScope de reikwijdte die geldt tenzij de vaststellende regel het beter weet
-     * @param acceptable         of deze fout aanvaard mág worden zonder de data te corrigeren; in
-     *                           fase 3 staat dat overal op {@code false}: er wordt nooit iets
-     *                           stilzwijgend doorgelaten
+     * @param defaultImpactScope     de reikwijdte die geldt tenzij de vaststellende regel het beter
+     *                               weet
+     * @param acceptable             of deze fout aanvaard mág worden zonder de data te corrigeren; in
+     *                               fase 3 staat dat overal op {@code false}: er wordt nooit iets
+     *                               stilzwijgend doorgelaten
+     * @param configurableSeverities de ernstwaarden die een <b>importdefinitie</b> voor deze code mag
+     *                               kiezen in plaats van {@link #severity()}. Normaal leeg: de ernst
+     *                               hoort bij de code en niet bij de configuratie. Eén uitzondering is
+     *                               in de businessanalyse uitdrukkelijk voorzien — de prijsafwijking
+     *                               is standaard een waarschuwing en mag per revisie op {@code ERROR}
+     *                               gezet worden (R-PRI-10). De verzameling houdt die uitzondering
+     *                               eng: een andere ernst wordt geweigerd in plaats van
+     *                               overgenomen.
      */
     public record IssueClassification(String code, RowIssueSeverity severity, IssueDomain domain,
                                       ControlLevel controlLevel, ImpactScope defaultImpactScope,
-                                      boolean acceptable) {
+                                      boolean acceptable, Set<RowIssueSeverity> configurableSeverities) {
+
+        public IssueClassification {
+            configurableSeverities = configurableSeverities == null
+                    ? Set.of() : Set.copyOf(configurableSeverities);
+        }
+
+        /** Mag een importdefinitie deze ernst voor deze code kiezen? */
+        public boolean allowsSeverity(RowIssueSeverity candidate) {
+            return candidate == severity || configurableSeverities.contains(candidate);
+        }
     }
 
     private static final Map<String, IssueClassification> BY_CODE = buildCatalogue();
@@ -129,9 +149,38 @@ public final class ImportIssueCatalog {
     public static IssueRow issue(long batchId, Long deliveryFileId, Long rowNumber, String issueCode,
                                  String fieldName, String sourceValue, String expectedValue,
                                  String message, Instant createdAt) {
+        return issue(batchId, deliveryFileId, rowNumber, issueCode, fieldName, sourceValue,
+                expectedValue, message, null, createdAt);
+    }
+
+    /**
+     * Dezelfde schrijfroute, maar met de ernst die de <b>importdefinitie</b> voor deze code gekozen
+     * heeft. Alleen een ernst die de catalogus uitdrukkelijk toelaat
+     * ({@link IssueClassification#configurableSeverities()}) wordt overgenomen; alles anders is een
+     * programmeerfout en wordt geweigerd. Zo blijft de catalogus de bron van waarheid, ook wanneer
+     * één regel per revisie zwaarder gewogen mag worden (R-PRI-10: {@code price_deviation_severity}).
+     *
+     * @param configuredSeverity de ernst uit de revisie, of {@code null} om die van de catalogus te
+     *                           gebruiken
+     * @throws IllegalStateException bij een onbekende code of een niet-toegelaten ernst
+     */
+    public static IssueRow issue(long batchId, Long deliveryFileId, Long rowNumber, String issueCode,
+                                 String fieldName, String sourceValue, String expectedValue,
+                                 String message, RowIssueSeverity configuredSeverity,
+                                 Instant createdAt) {
         IssueClassification classification = classify(issueCode);
+        RowIssueSeverity severity = classification.severity();
+        if (configuredSeverity != null) {
+            if (!classification.allowsSeverity(configuredSeverity)) {
+                throw new IllegalStateException("Issue code '" + issueCode + "' is classified as "
+                        + severity + " and may not be recorded as " + configuredSeverity
+                        + "; only " + classification.configurableSeverities()
+                        + " can be configured per import definition");
+            }
+            severity = configuredSeverity;
+        }
         return new IssueRow(batchId, deliveryFileId, rowNumber, issueCode, fieldName,
-                classification.severity(), classification.domain(), classification.controlLevel(),
+                severity, classification.domain(), classification.controlLevel(),
                 classification.defaultImpactScope(), IssueHandlingStatus.DETECTED, sourceValue,
                 expectedValue, message, createdAt);
     }
@@ -168,7 +217,11 @@ public final class ImportIssueCatalog {
                 ImportMappingConfigFactory.CODE_PRICE_COMPONENT_DUPLICATE,
                 ImportMappingConfigFactory.CODE_TRANSFORM_INVALID,
                 ImportMappingConfigFactory.CODE_FILTER_INVALID,
-                ImportMappingConfigFactory.CODE_CANONICALISATION_VERSION_REQUIRED}) {
+                ImportMappingConfigFactory.CODE_CANONICALISATION_VERSION_REQUIRED,
+                // Bouwstap 3e: een prijscontrolemodel dat deze build niet kent (BOXPLOT). Stil
+                // terugvallen op de afwijkingscontrole zou een beheerder laten denken dat er een
+                // boxplot-analyse draait.
+                ImportMappingConfigFactory.CODE_PRICE_CONTROL_MODEL_UNSUPPORTED}) {
             put(catalogue, code, RowIssueSeverity.BLOCKING, IssueDomain.AUTHORISATION_CONFIG,
                     ControlLevel.STRUCTURE, ImpactScope.DELIVERY);
         }
@@ -275,16 +328,38 @@ public final class ImportIssueCatalog {
                     ImpactScope.RECORD);
         }
 
+        // Bouwstap 3e, R-PRI-10: een prijs die meer dan de ingestelde grens afwijkt van haar
+        // referenties is standaard een WAARSCHUWING - het record blijft geldig en de prijs wordt
+        // nergens aangepast (R-PRI-12). Een revisie mag de melding verzwaren naar ERROR
+        // (price_deviation_severity); ook dán wordt het record niet verworpen, het weegt enkel
+        // zwaarder in de beoordeling. Zwaardere ernsten zijn niet configureerbaar: een afwijking is
+        // een signaal, nooit op zichzelf een blokkade van de hele levering.
+        put(catalogue, PriceDeviationEvaluator.CODE_PRICE_DEVIATION_EXCEEDED, RowIssueSeverity.WARNING,
+                IssueDomain.PRICE, ControlLevel.RECORD, ImpactScope.RECORD,
+                Set.of(RowIssueSeverity.ERROR));
+        // R-PRI-11: één samenvattende melding per levering over de referenties die ontbraken, nooit
+        // één per record. Informatief: er is niets mis met de levering, er is enkel (nog) niets om
+        // mee te vergelijken.
+        put(catalogue, PriceDeviationEvaluator.CODE_PRICE_REFERENCE_NOT_AVAILABLE, RowIssueSeverity.INFO,
+                IssueDomain.PRICE, ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+
         return Collections.unmodifiableMap(catalogue);
     }
 
     private static void put(Map<String, IssueClassification> catalogue, String code,
                             RowIssueSeverity severity, IssueDomain domain, ControlLevel controlLevel,
                             ImpactScope defaultImpactScope) {
+        put(catalogue, code, severity, domain, controlLevel, defaultImpactScope, Set.of());
+    }
+
+    private static void put(Map<String, IssueClassification> catalogue, String code,
+                            RowIssueSeverity severity, IssueDomain domain, ControlLevel controlLevel,
+                            ImpactScope defaultImpactScope,
+                            Set<RowIssueSeverity> configurableSeverities) {
         // Fase 3 kent geen enkele aanvaardbare fout: aanvaarden is een expliciete handeling met
         // een behandelstatus, geen eigenschap van de foutcode.
-        IssueClassification classification =
-                new IssueClassification(code, severity, domain, controlLevel, defaultImpactScope, false);
+        IssueClassification classification = new IssueClassification(code, severity, domain,
+                controlLevel, defaultImpactScope, false, configurableSeverities);
         if (catalogue.putIfAbsent(code, classification) != null) {
             throw new IllegalStateException("Issue code '" + code + "' is declared twice in ImportIssueCatalog");
         }

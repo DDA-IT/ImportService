@@ -9,6 +9,9 @@ import be.dda.catalogimport.dao.DeliveryFileRepository;
 import be.dda.catalogimport.dao.ImportBatchRepository;
 import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.dao.MutationDao.MutationContext;
+import be.dda.catalogimport.dao.PriceDeviationDao;
+import be.dda.catalogimport.dao.PriceDeviationDao.DeviationRow;
+import be.dda.catalogimport.dao.PriceDeviationDao.MissingReferenceCounts;
 import be.dda.catalogimport.dao.RowIssueDao;
 import be.dda.catalogimport.dao.RowIssueDao.IssueRow;
 import be.dda.catalogimport.dao.TaskRunRepository;
@@ -30,6 +33,9 @@ import be.dda.catalogimport.service.support.CsvRecordStreamer.ReadSummary;
 import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import be.dda.catalogimport.service.support.ImportMappingConfig;
 import be.dda.catalogimport.service.support.ImportMappingConfigFactory;
+import be.dda.catalogimport.service.support.PriceDeviationEvaluator;
+import be.dda.catalogimport.service.support.PriceDeviationEvaluator.Reference;
+import be.dda.catalogimport.service.support.PriceDeviationEvaluator.ReferenceKind;
 import be.dda.catalogimport.service.support.PriceRules;
 import be.dda.catalogimport.service.support.RecordFilterEvaluator;
 import be.dda.catalogimport.service.support.ScreeningBlockedException;
@@ -39,6 +45,7 @@ import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -87,6 +94,13 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       geconfigureerde filters staan beide tellers op 0 en blijft het gedrag exact dat van fase 2.</li>
  *   <li>Een dubbele aanbiedingsidentiteit binnen één levering is nooit "laatste wint": élke
  *       betrokken regel krijgt een probleem en de levering blokkeert.</li>
+ *   <li><b>Een gewijzigde prijs wordt met drie referenties vergeleken</b> (fase 3, R-PRI-10..R-PRI-12):
+ *       de laatste aanvaarde waarde en de gemiddelden van de laatste 50 en 200 goedgekeurde
+ *       dagwaarden uit {@code catalog_price_observation}. Een overschrijding van de ingestelde grens
+ *       (default 15%) levert een melding op en <b>wijzigt nooit een bedrag, een percentage of een
+ *       mutatie</b>; de mutatie blijft {@code PLANNED}. Deze controle is een eigen, afzonderlijk
+ *       hervatbare pass met een eigen voortgangskolom, tussen de identiteitscontrole en de
+ *       mutatiegeneratie.</li>
  *   <li>De screening schrijft <b>nooit</b> in {@code catalog_source_state}. Een ongewijzigde regel
  *       raakt de bronstaat niet aan en levert geen mutatie op. Het bijwerken van de bronstaat is een
  *       aparte, geauditeerde actie (beslissingslog 18/09, accept-baseline).</li>
@@ -164,12 +178,27 @@ public class DeliveryScreeningService {
                                    String blockedCode, String blockedReason) {
     }
 
+    /**
+     * Het prijsbeleid van de revisie, één keer per batch gelezen (R-PRI-10). Het model zelf staat er
+     * niet in: een revisie met een ander model dan {@code DEVIATION} wordt al bij het laden van de
+     * configuratie geweigerd ({@code CONFIG_PRICE_CONTROL_MODEL_UNSUPPORTED}), dus alles wat hier
+     * aankomt hoort bij model 1.
+     *
+     * @param deviationPercent de gezamenlijke grens per revisie; default 15
+     * @param severity         de ernst van een overschrijding; default {@code WARNING}, per revisie
+     *                         {@code ERROR}
+     */
+    private record PriceControl(BigDecimal deviationPercent, RowIssueSeverity severity,
+                                int shortWindow, int longWindow) {
+    }
+
     /** Alles wat buiten een transactie nodig is; bewust geen JPA-entiteiten (open-in-view staat uit). */
     private record Context(long batchId, long deliveryId, long deliveryFileId, long importLinkId,
                            long definitionRevisionId, Long taskRunId, String archiveReference,
                            long fileByteSize, String fileSha256, Long expectedRecordCount,
                            Long expectedByteSize, SourceStructureConfig config,
-                           ImportMappingConfig mappingConfig, ScreeningBlockedException configFailure) {
+                           ImportMappingConfig mappingConfig, PriceControl priceControl,
+                           ScreeningBlockedException configFailure) {
 
         private MutationContext mutationContext() {
             return new MutationContext(batchId, deliveryId, importLinkId, definitionRevisionId, taskRunId,
@@ -235,6 +264,7 @@ public class DeliveryScreeningService {
     private final TaskRunRepository runs;
     private final CandidateStageDao stage;
     private final CandidatePriceDao candidatePrices;
+    private final PriceDeviationDao deviations;
     private final RowIssueDao rowIssues;
     private final MutationDao mutations;
     private final TransactionTemplate transaction;
@@ -246,7 +276,8 @@ public class DeliveryScreeningService {
                                     ImportMappingConfigFactory mappingConfigFactory,
                                     ImportBatchRepository batches, DeliveryFileRepository deliveryFiles,
                                     TaskRunRepository runs, CandidateStageDao stage,
-                                    CandidatePriceDao candidatePrices, RowIssueDao rowIssues,
+                                    CandidatePriceDao candidatePrices, PriceDeviationDao deviations,
+                                    RowIssueDao rowIssues,
                                     MutationDao mutations, PlatformTransactionManager transactionManager,
                                     @Value("${catalogimport.screening.stage-batch-size:2000}") int stageBatchSize,
                                     @Value("${catalogimport.screening.max-sample-rows-per-code:"
@@ -261,6 +292,7 @@ public class DeliveryScreeningService {
         this.runs = runs;
         this.stage = stage;
         this.candidatePrices = candidatePrices;
+        this.deviations = deviations;
         this.rowIssues = rowIssues;
         this.mutations = mutations;
         this.transaction = new TransactionTemplate(transactionManager);
@@ -351,11 +383,22 @@ public class DeliveryScreeningService {
             configFailure = failure;
         }
 
+        // Het prijsbeleid komt van dezelfde (lazy) revisie en wordt hier, binnen de transactie, exact
+        // één keer per batch gelezen - nooit per regel en nooit per chunk (R-PRI-10).
+        PriceControl priceControl = priceControl(batch);
+
         batch.setStatus(ImportBatchStatus.SCREENING);
         batch.setStartedAt(Instant.now());
         batches.saveAndFlush(batch);
 
-        return context(batch, delivery, file, config, mappingConfig, configFailure);
+        return context(batch, delivery, file, config, mappingConfig, priceControl, configFailure);
+    }
+
+    private static PriceControl priceControl(ImportBatch batch) {
+        return new PriceControl(batch.getDefinitionRevision().getPriceDeviationPercent(),
+                batch.getDefinitionRevision().getPriceDeviationSeverity(),
+                batch.getDefinitionRevision().getPriceAvgShortWindow(),
+                batch.getDefinitionRevision().getPriceAvgLongWindow());
     }
 
     private Context resume(long batchId) {
@@ -366,8 +409,9 @@ public class DeliveryScreeningService {
                     + batch.getStatus() + "; only a batch in MUTATING can be resumed");
         }
         Delivery delivery = batch.getDelivery();
-        // De bronconfiguratie is hier niet meer nodig: het bestand is al gelezen en gestaged.
-        return context(batch, delivery, singleFile(delivery), null, null, null);
+        // De bronconfiguratie is hier niet meer nodig: het bestand is al gelezen en gestaged. Het
+        // prijsbeleid wél: de prijscontrolepass draait ná het stagen en kan dus hervat worden.
+        return context(batch, delivery, singleFile(delivery), null, null, priceControl(batch), null);
     }
 
     private DeliveryFile singleFile(Delivery delivery) {
@@ -382,12 +426,13 @@ public class DeliveryScreeningService {
 
     private static Context context(ImportBatch batch, Delivery delivery, DeliveryFile file,
                                    SourceStructureConfig config, ImportMappingConfig mappingConfig,
+                                   PriceControl priceControl,
                                    ScreeningBlockedException configFailure) {
         return new Context(batch.getId(), delivery.getId(), file.getId(), batch.getImportLink().getId(),
                 batch.getDefinitionRevision().getId(),
                 batch.getTaskRun() == null ? null : batch.getTaskRun().getId(), file.getArchiveReference(),
                 file.getByteSize(), file.getContentHash(), delivery.getExpectedRecordCount(),
-                delivery.getExpectedByteSize(), config, mappingConfig, configFailure);
+                delivery.getExpectedByteSize(), config, mappingConfig, priceControl, configFailure);
     }
 
     // --- Stap 2: volledigheidscontroles ------------------------------------------------------
@@ -657,8 +702,157 @@ public class DeliveryScreeningService {
         if (blockage != null) {
             return transaction.execute(status -> block(context, blockage, null));
         }
+        controlPrices(context);
         generateMutations(context);
         return transaction.execute(status -> complete(context));
+    }
+
+    // --- Stap E3: prijsafwijkingscontrole (ontwerp fase 3 par. 3.1, R-PRI-10..R-PRI-12) --------
+
+    /**
+     * Vergelijkt elke gewijzigde prijs met haar drie referenties en meldt een overschrijding. Een
+     * afzonderlijke pass met een eigen hervatpunt ({@code import_batch.price_progress_row_number}),
+     * die na de duplicaat-/collisiecontrole en vóór de mutatiegeneratie draait.
+     * <p>
+     * <b>Deze pass wijzigt niets aan de data</b> (R-PRI-12): geen prijs, geen percentage, geen
+     * classificatie, geen mutatie-inhoud en geen mutatiestatus. Ze schrijft uitsluitend meldingen.
+     * Een overschrijding verwerpt het record dus ook niet — ook niet wanneer de revisie de ernst op
+     * {@code ERROR} zet: {@code rejected_record_count} blijft ongemoeid, want die teller telt
+     * verworpen records en niet zware waarschuwingen.
+     * <p>
+     * <b>Niets te doen zonder bronstaat.</b> Bestaat er voor deze koppeling nog geen enkele aanvaarde
+     * aanbieding, dan is er geen vorige waarde en geen historiek: de pass stopt meteen en kost geen
+     * enkele extra query. Een eerste levering gedraagt zich dus exact als vóór bouwstap 3e.
+     */
+    private void controlPrices(Context context) {
+        PriceControl control = context.priceControl();
+        if (control == null || deviations.countSourceStateRows(context.importLinkId()) == 0) {
+            return;
+        }
+        // Eén query per batch voor de logische veldnamen; nooit een join per regel (par. 15.12).
+        Map<String, String> fieldNames = deviations.fieldNameByComponent();
+        PricePassProgress pass = new PricePassProgress(rowIssues.countByBatchIdAndIssueCode(
+                context.batchId(), PriceDeviationEvaluator.CODE_PRICE_DEVIATION_EXCEEDED));
+        long from = transaction.execute(status ->
+                batches.findById(context.batchId()).orElseThrow().getPriceProgressRowNumber());
+        Long boundary;
+        while ((boundary = deviations.nextChunkBoundary(context.batchId(), from)) != null) {
+            long chunkFrom = from;
+            long chunkTo = boundary;
+            // Meldingen en hervatpunt in dezelfde transactie: na een crash wordt geen enkele chunk
+            // een tweede keer beoordeeld en ontstaan er dus geen dubbele prijsissues.
+            transaction.executeWithoutResult(status -> {
+                evaluateChunk(context, control, fieldNames, pass, chunkFrom, chunkTo);
+                ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
+                batch.setPriceProgressRowNumber(chunkTo);
+                batches.saveAndFlush(batch);
+            });
+            from = chunkTo;
+        }
+        transaction.executeWithoutResult(status -> {
+            recordMissingReferenceSummary(context, control);
+            recordPriceSampleCapNotice(context, pass);
+        });
+    }
+
+    private void evaluateChunk(Context context, PriceControl control, Map<String, String> fieldNames,
+                               PricePassProgress pass, long fromExclusive, long toInclusive) {
+        List<DeviationRow> candidates = deviations.findCandidates(context.batchId(),
+                context.importLinkId(), control.shortWindow(), control.longWindow(), fromExclusive,
+                toInclusive);
+        if (candidates.isEmpty()) {
+            return;
+        }
+        Instant now = Instant.now();
+        List<IssueRow> issues = new ArrayList<>();
+        for (DeviationRow candidate : candidates) {
+            PriceDeviationEvaluator.Result result = PriceDeviationEvaluator.evaluate(
+                    candidate.componentCode(),
+                    fieldNames.getOrDefault(candidate.componentCode(), candidate.componentCode()),
+                    candidate.newAmount(),
+                    Reference.previous(candidate.previousAmount()),
+                    new Reference(ReferenceKind.AVG50, candidate.averageShort(), control.shortWindow()),
+                    new Reference(ReferenceKind.AVG200, candidate.averageLong(), control.longWindow()),
+                    control.deviationPercent());
+            if (!result.exceeded()) {
+                continue;
+            }
+            pass.exceeded++;
+            // Dezelfde voorbeeldcap als elke andere foutcode (R-ISS-03): boven de cap worden er geen
+            // voorbeelden meer bewaard, maar het aantal blijft geteld.
+            if (pass.recorded >= maxSampleRowsPerCode) {
+                pass.capped = true;
+                continue;
+            }
+            pass.recorded++;
+            issues.add(ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(),
+                    candidate.rowNumber(), PriceDeviationEvaluator.CODE_PRICE_DEVIATION_EXCEEDED,
+                    result.fieldName(), result.newAmount().toPlainString(), result.expectedValue(),
+                    result.message(), control.severity(), now));
+        }
+        rowIssues.insertBatch(issues);
+    }
+
+    /**
+     * R-PRI-11: één samenvattende INFO-melding per levering over de referenties die ontbraken, nooit
+     * één per record — bij een eerste historiekopbouw zou dat miljoenen identieke rijen opleveren.
+     * De aantallen worden over de <b>volledige</b> batch uit de database geteld, zodat ze ook na een
+     * hervatte pass kloppen; bestaat de melding al, dan wordt er geen tweede geschreven.
+     */
+    private void recordMissingReferenceSummary(Context context, PriceControl control) {
+        if (rowIssues.countByBatchIdAndIssueCode(context.batchId(),
+                PriceDeviationEvaluator.CODE_PRICE_REFERENCE_NOT_AVAILABLE) > 0) {
+            return;
+        }
+        MissingReferenceCounts counts = deviations.countMissingReferences(context.batchId(),
+                context.importLinkId(), control.shortWindow(), control.longWindow());
+        if (counts.total() == 0) {
+            return;
+        }
+        rowIssues.insertBatch(List.of(ImportIssueCatalog.issue(context.batchId(),
+                context.deliveryFileId(), null,
+                PriceDeviationEvaluator.CODE_PRICE_REFERENCE_NOT_AVAILABLE, null, null, null,
+                "priceReferences: '" + counts.total() + "' of " + (counts.evaluated() * 3)
+                        + " price comparisons had no usable reference ("
+                        + ReferenceKind.PREVIOUS.notAvailableStatus() + "=" + counts.previousMissing()
+                        + ", " + ReferenceKind.AVG50.notAvailableStatus() + "="
+                        + counts.shortAverageMissing()
+                        + ", " + ReferenceKind.AVG200.notAvailableStatus() + "="
+                        + counts.longAverageMissing()
+                        + "); no deviation was computed for those and no price or percentage was changed",
+                Instant.now())));
+    }
+
+    /**
+     * Dezelfde informatieve melding als bij het stagen, maar voor de prijscontrolepass: hoeveel
+     * overschrijdingen er in deze doorloop vastgesteld zijn, ook al zijn er niet zoveel voorbeeldrijen
+     * bewaard. Het aantal is dat van <b>deze</b> doorloop; na een hervatting telt een tweede melding
+     * enkel het hervatte deel. Het definitieve, gegroepeerde totaal per foutcode komt in bouwstap 3g
+     * ({@code import_issue_group}).
+     */
+    private void recordPriceSampleCapNotice(Context context, PricePassProgress pass) {
+        if (!pass.capped) {
+            return;
+        }
+        rowIssues.insertBatch(List.of(ImportIssueCatalog.issue(context.batchId(),
+                context.deliveryFileId(), null, CODE_ROW_ISSUE_RECORDING_CAPPED, null, null, null,
+                "priceDeviationSamples: '" + maxSampleRowsPerCode + "' is the maximum number of example "
+                        + "rows kept per issue code; occurrences counted in this price control run: "
+                        + PriceDeviationEvaluator.CODE_PRICE_DEVIATION_EXCEEDED + "=" + pass.exceeded,
+                Instant.now())));
+    }
+
+    /** Lopende stand van één prijscontrolepass; enkel binnen {@link #controlPrices(Context)}. */
+    private static final class PricePassProgress {
+        /** Aantal reeds bewaarde voorbeeldrijen met deze foutcode, inclusief een eerdere doorloop. */
+        private long recorded;
+        /** Aantal vastgestelde overschrijdingen in deze doorloop, ook boven de voorbeeldcap. */
+        private long exceeded;
+        private boolean capped;
+
+        private PricePassProgress(long alreadyRecorded) {
+            this.recorded = alreadyRecorded;
+        }
     }
 
     /**

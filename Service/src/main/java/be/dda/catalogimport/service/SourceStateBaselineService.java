@@ -3,12 +3,16 @@ package be.dda.catalogimport.service;
 import be.dda.catalogimport.dao.CandidatePriceDao;
 import be.dda.catalogimport.dao.ImportBatchRepository;
 import be.dda.catalogimport.dao.MutationDao;
+import be.dda.catalogimport.dao.PriceObservationDao;
+import be.dda.catalogimport.dao.PriceObservationDao.ObservationContext;
 import be.dda.catalogimport.dao.SourceStateDao;
 import be.dda.catalogimport.dao.SourceStateDao.AcceptanceContext;
 import be.dda.catalogimport.domain.ImportBatch;
 import be.dda.catalogimport.domain.ImportBatchStatus;
 import be.dda.catalogimport.domain.SourceStateOrigin;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -36,6 +40,21 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       (fase 3, R-PRI-09): nieuwe rijen erbij, gewijzigde rijen vervangen, ongewijzigde rijen
  *       onaangeroerd. Dat is de "voor"-waarde waartegen de volgende levering een percentagewijziging
  *       bij een ongewijzigde basisprijs kan vaststellen.</li>
+ *   <li>Diezelfde aanvaarde waarden gaan als <b>goedgekeurde dagwaarde</b> naar
+ *       {@code catalog_price_observation} (fase 3, R-PRI-13): één rij per identiteit + component per
+ *       kalenderdag, append-only. Dat is de historiek waartegen de afwijkingscontrole van een volgende
+ *       levering haar gemiddelden berekent (R-PRI-10). Twee aanvaardingen op dezelfde dag laten de
+ *       <b>eerste</b> waarde staan (aanname A16); een {@code UNCHANGED}-regel levert géén observatie
+ *       op, en de kandidaatprijs van een nog niet aanvaarde screening komt er nooit in.
+ *       <p>
+ *       <b>Gevolg voor de gemiddelden, bewust zo:</b> de vensters van 50 en 200 lopen over de laatste
+ *       N <i>vastgelegde</i> goedgekeurde dagwaarden, niet over N kalenderdagen. Een prijs die een
+ *       jaar lang niet wijzigt levert één observatie op, geen 365; het gemiddelde is dus het
+ *       gemiddelde van de laatste N <i>wijzigingen</i> die aanvaard zijn.</li>
+ *   <li>De kalenderdag van een observatie wordt bepaald in UTC
+ *       ({@code PriceObservationDao.OBSERVATION_ZONE}) op basis van een injecteerbare {@link Clock},
+ *       niet op de tijdzone van de server: anders zou "hoogstens één waarde per dag" per omgeving
+ *       iets anders betekenen.</li>
  *   <li>De inhoudelijke mutaties van de batch worden {@code SKIPPED} met reden
  *       {@link #SKIPPED_REASON}; de {@code IMPORT_MARKER} blijft {@code RECORDED}. De batch gaat naar
  *       {@code BASELINE_ACCEPTED} (terminaal).</li>
@@ -90,18 +109,23 @@ public class SourceStateBaselineService {
 
     private final SourceStateDao sourceState;
     private final CandidatePriceDao candidatePrices;
+    private final PriceObservationDao observations;
     private final MutationDao mutations;
     private final ImportBatchRepository batches;
     private final TransactionTemplate transaction;
+    private final Clock clock;
 
     public SourceStateBaselineService(SourceStateDao sourceState, CandidatePriceDao candidatePrices,
-                                      MutationDao mutations, ImportBatchRepository batches,
-                                      PlatformTransactionManager transactionManager) {
+                                      PriceObservationDao observations, MutationDao mutations,
+                                      ImportBatchRepository batches,
+                                      PlatformTransactionManager transactionManager, Clock clock) {
         this.sourceState = sourceState;
         this.candidatePrices = candidatePrices;
+        this.observations = observations;
         this.mutations = mutations;
         this.batches = batches;
         this.transaction = new TransactionTemplate(transactionManager);
+        this.clock = clock;
     }
 
     /**
@@ -116,13 +140,18 @@ public class SourceStateBaselineService {
         String user = requireAcceptedBy(acceptedBy);
         String motivation = requireText(reason, "reason", MAX_REASON_LENGTH);
 
-        Instant acceptedAt = Instant.now();
+        Instant acceptedAt = clock.instant();
+        // Eén keer per aanvaarding bepaald en niet per chunk: een verwerking die over middernacht
+        // heen loopt, mag haar observaties nooit over twee kalenderdagen verspreiden (R-PRI-13).
+        LocalDate observationDate = LocalDate.ofInstant(acceptedAt, PriceObservationDao.OBSERVATION_ZONE);
         Prepared prepared = transaction.execute(status -> prepare(batchId));
 
         // Chunkgewijs: elke chunk is één transactie en volledig idempotent (design par. 9 stap E).
         AcceptanceContext context = new AcceptanceContext(prepared.importLinkId(), prepared.batchId(),
                 prepared.deliveryId(), prepared.identityProfileKind(), SourceStateOrigin.BASELINE_ACCEPTED.name(),
                 user, acceptedAt, acceptedAt);
+        ObservationContext observationContext = new ObservationContext(prepared.importLinkId(),
+                prepared.batchId(), observationDate, user, acceptedAt);
         // Draagt deze levering prijscomponenten? Zo niet, blijven catalog_source_state_price-rijen
         // volledig ongemoeid. Een revisie die haar componentmappings verloren heeft, wist zo nooit
         // stilzwijgend eerder aanvaarde verhoudingen: dat vraagt een bewuste herbaselining.
@@ -139,6 +168,13 @@ public class SourceStateBaselineService {
                     // Ná de bronstaatrijen zelf: de prijscomponenten hangen eraan met een foreign key.
                     sourceState.insertNewPricesFromStage(context, chunkFrom, chunkTo);
                     sourceState.replaceChangedPricesFromStage(context, chunkFrom, chunkTo);
+                }
+                // De goedgekeurde dagwaarden (R-PRI-13): append-only, in dezelfde transactie als de
+                // bronstaatrij waarnaar ze verwijzen. UNCHANGED levert bewust geen observatie op - de
+                // historiek bevat vastgelegde goedgekeurde waarden, geen doorgetrokken kalenderdagen.
+                observations.insertBasePriceObservations(observationContext, chunkFrom, chunkTo);
+                if (withPriceComponents) {
+                    observations.insertComponentObservations(observationContext, chunkFrom, chunkTo);
                 }
             });
             from = chunkTo;
