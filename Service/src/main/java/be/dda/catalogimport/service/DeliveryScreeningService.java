@@ -2,6 +2,8 @@ package be.dda.catalogimport.service;
 
 import be.dda.catalogimport.dao.CandidatePriceDao;
 import be.dda.catalogimport.dao.CandidatePriceDao.PriceRow;
+import be.dda.catalogimport.dao.CandidateReferenceDao;
+import be.dda.catalogimport.dao.CandidateReferenceDao.ReferenceRow;
 import be.dda.catalogimport.dao.CandidateStageDao;
 import be.dda.catalogimport.dao.CandidateStageDao.DuplicateRow;
 import be.dda.catalogimport.dao.CandidateStageDao.StageRow;
@@ -12,6 +14,11 @@ import be.dda.catalogimport.dao.MutationDao.MutationContext;
 import be.dda.catalogimport.dao.PriceDeviationDao;
 import be.dda.catalogimport.dao.PriceDeviationDao.DeviationRow;
 import be.dda.catalogimport.dao.PriceDeviationDao.MissingReferenceCounts;
+import be.dda.catalogimport.dao.ReferenceControlDao;
+import be.dda.catalogimport.dao.ReferenceControlDao.DuplicateReferenceRow;
+import be.dda.catalogimport.dao.ReferenceControlDao.IncidentMutation;
+import be.dda.catalogimport.dao.ReferenceControlDao.MatchUpdate;
+import be.dda.catalogimport.dao.ReferenceControlDao.ReferenceCandidate;
 import be.dda.catalogimport.dao.RowIssueDao;
 import be.dda.catalogimport.dao.RowIssueDao.IssueRow;
 import be.dda.catalogimport.dao.TaskRunRepository;
@@ -38,6 +45,9 @@ import be.dda.catalogimport.service.support.PriceDeviationEvaluator.Reference;
 import be.dda.catalogimport.service.support.PriceDeviationEvaluator.ReferenceKind;
 import be.dda.catalogimport.service.support.PriceRules;
 import be.dda.catalogimport.service.support.RecordFilterEvaluator;
+import be.dda.catalogimport.service.support.ReferenceControlEvaluator;
+import be.dda.catalogimport.service.support.ReferenceControlEvaluator.RecordOutcome;
+import be.dda.catalogimport.service.support.ReferenceControlEvaluator.ReferenceOutcome;
 import be.dda.catalogimport.service.support.ScreeningBlockedException;
 import be.dda.catalogimport.service.support.SourceStructureConfig;
 import be.dda.catalogimport.service.support.SourceStructureConfigFactory;
@@ -101,6 +111,20 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       mutatie</b>; de mutatie blijft {@code PLANNED}. Deze controle is een eigen, afzonderlijk
  *       hervatbare pass met een eigen voortgangskolom, tussen de identiteitscontrole en de
  *       mutatiegeneratie.</li>
+ *   <li><b>Een kritieke koppelreferentie wordt nooit stil gewijzigd</b> (fase 3f, R-REF-02..R-REF-09).
+ *       Een EAN, PIM-ID, CAB-ID of {@code E_MARK+ARTICLE_REFERENCE} die verschilt van de actieve
+ *       waarde, die leeg geleverd wordt terwijl er een actieve waarde is, die bij een andere
+ *       aanbieding actief staat, of die naar meer dan één bestaande aanbieding wijst, wordt
+ *       <b>nooit</b> een gewone {@code UPDATE}. Het record wordt vastgehouden (classificatie
+ *       {@code IDENTITY_INCIDENT}), zijn inhoudelijke mutatie krijgt status {@code BLOCKED} en er komt
+ *       een aparte {@code IDENTITY_REFERENCE_INCIDENT}-mutatie die op goedkeuring wacht. Dezelfde
+ *       referentiewaarde bij twee aanbiedingen binnen één levering houdt <b>beide</b> regels vast —
+ *       nooit "laatste wint".</li>
+ *   <li><b>Tussenstand van bouwstap 3f.</b> Een levering met kritieke referentie-incidenten eindigt op
+ *       {@code SCREENED} met {@code validation_result = BLOCKING}: de rest van de catalogus is
+ *       bruikbaar, de betrokken aanbiedingen zijn vastgehouden. De drempel {@code max_critical_records}
+ *       (default 0), die zo'n levering op eindstatus {@code BLOCKED} zet, hoort bij bouwstap 3h
+ *       (ontwerp fase 3, par. 3.6); tot dan wordt die drempel niet geraden.</li>
  *   <li>De screening schrijft <b>nooit</b> in {@code catalog_source_state}. Een ongewijzigde regel
  *       raakt de bronstaat niet aan en levert geen mutatie op. Het bijwerken van de bronstaat is een
  *       aparte, geauditeerde actie (beslissingslog 18/09, accept-baseline).</li>
@@ -148,6 +172,14 @@ public class DeliveryScreeningService {
      */
     public static final String CODE_ROW_ISSUE_RECORDING_CAPPED =
             ImportIssueCatalog.ROW_ISSUE_RECORDING_CAPPED;
+    /** Een kritieke koppelreferentie is gewijzigd, verwijderd, hergebruikt of dubbelzinnig geworden. */
+    public static final String CODE_IDENTITY_REFERENCE_INCIDENT =
+            ImportIssueCatalog.IDENTITY_REFERENCE_INCIDENT;
+    /** Dezelfde referentiewaarde staat in deze levering bij twee verschillende aanbiedingen. */
+    public static final String CODE_DUPLICATE_REFERENCE_IN_DELIVERY =
+            ImportIssueCatalog.DUPLICATE_REFERENCE_IN_DELIVERY;
+    /** Matchingstap 2: deze nieuwe aanbieding hoort bij hetzelfde artikel als een bestaande. */
+    public static final String CODE_REFERENCE_LINK_PROPOSED = ImportIssueCatalog.REFERENCE_LINK_PROPOSED;
     /** Deze levering is onder deze revisie al gescreend; een tweede screening is een conflict. */
     public static final String CODE_ALREADY_SCREENED = "DELIVERY_ALREADY_SCREENED_WITH_THIS_REVISION";
     /** Alleen een batch in {@code MUTATING} kan hervat worden. */
@@ -174,8 +206,8 @@ public class DeliveryScreeningService {
                                    Long rawRecordCount, Long validRecordCount, Long rejectedRecordCount,
                                    Long filteredOutCount, Long errorBeforeFilterCount,
                                    long stagedRowCount, Long duplicateIdentityCount, Long newCount,
-                                   Long changedCount, Long unchangedCount, Long contentMutationCount,
-                                   String blockedCode, String blockedReason) {
+                                   Long changedCount, Long unchangedCount, Long identityIncidentCount,
+                                   Long contentMutationCount, String blockedCode, String blockedReason) {
     }
 
     /**
@@ -194,7 +226,8 @@ public class DeliveryScreeningService {
 
     /** Alles wat buiten een transactie nodig is; bewust geen JPA-entiteiten (open-in-view staat uit). */
     private record Context(long batchId, long deliveryId, long deliveryFileId, long importLinkId,
-                           long definitionRevisionId, Long taskRunId, String archiveReference,
+                           String libraryCode, long definitionRevisionId, Long taskRunId,
+                           String archiveReference,
                            long fileByteSize, String fileSha256, Long expectedRecordCount,
                            Long expectedByteSize, SourceStructureConfig config,
                            ImportMappingConfig mappingConfig, PriceControl priceControl,
@@ -238,6 +271,8 @@ public class DeliveryScreeningService {
         private final List<StageRow> pendingRows = new ArrayList<>();
         /** De prijscomponenten van dezelfde microbatch; ze worden in dezelfde transactie vastgelegd. */
         private final List<PriceRow> pendingPrices = new ArrayList<>();
+        /** De kritieke koppelreferenties van dezelfde microbatch, in dezelfde transactie. */
+        private final List<ReferenceRow> pendingReferences = new ArrayList<>();
         private final List<IssueRow> pendingIssues = new ArrayList<>();
         /** Volledige aantallen per foutcode — ook boven de voorbeeldcap (R-ISS-03). */
         private final Map<String, Long> issueCounts = new TreeMap<>();
@@ -264,7 +299,9 @@ public class DeliveryScreeningService {
     private final TaskRunRepository runs;
     private final CandidateStageDao stage;
     private final CandidatePriceDao candidatePrices;
+    private final CandidateReferenceDao candidateReferences;
     private final PriceDeviationDao deviations;
+    private final ReferenceControlDao referenceControl;
     private final RowIssueDao rowIssues;
     private final MutationDao mutations;
     private final TransactionTemplate transaction;
@@ -276,7 +313,9 @@ public class DeliveryScreeningService {
                                     ImportMappingConfigFactory mappingConfigFactory,
                                     ImportBatchRepository batches, DeliveryFileRepository deliveryFiles,
                                     TaskRunRepository runs, CandidateStageDao stage,
-                                    CandidatePriceDao candidatePrices, PriceDeviationDao deviations,
+                                    CandidatePriceDao candidatePrices,
+                                    CandidateReferenceDao candidateReferences,
+                                    PriceDeviationDao deviations, ReferenceControlDao referenceControl,
                                     RowIssueDao rowIssues,
                                     MutationDao mutations, PlatformTransactionManager transactionManager,
                                     @Value("${catalogimport.screening.stage-batch-size:2000}") int stageBatchSize,
@@ -292,7 +331,9 @@ public class DeliveryScreeningService {
         this.runs = runs;
         this.stage = stage;
         this.candidatePrices = candidatePrices;
+        this.candidateReferences = candidateReferences;
         this.deviations = deviations;
+        this.referenceControl = referenceControl;
         this.rowIssues = rowIssues;
         this.mutations = mutations;
         this.transaction = new TransactionTemplate(transactionManager);
@@ -428,8 +469,11 @@ public class DeliveryScreeningService {
                                    SourceStructureConfig config, ImportMappingConfig mappingConfig,
                                    PriceControl priceControl,
                                    ScreeningBlockedException configFailure) {
+        // De bibliotheekcode is scope, geen sleutelonderdeel (beslissingslog 18/09), maar wél de scope
+        // waarbinnen een kritieke koppelreferentie uniek moet zijn (par. 14.23.3). Ze wordt hier, binnen
+        // de openende transactie, exact één keer per batch van de (lazy) koppeling gelezen.
         return new Context(batch.getId(), delivery.getId(), file.getId(), batch.getImportLink().getId(),
-                batch.getDefinitionRevision().getId(),
+                batch.getImportLink().getLibraryCode(), batch.getDefinitionRevision().getId(),
                 batch.getTaskRun() == null ? null : batch.getTaskRun().getId(), file.getArchiveReference(),
                 file.getByteSize(), file.getContentHash(), delivery.getExpectedRecordCount(),
                 delivery.getExpectedByteSize(), config, mappingConfig, priceControl, configFailure);
@@ -531,6 +575,7 @@ public class DeliveryScreeningService {
             if (result instanceof NormalisedCandidate candidate) {
                 progress.pendingRows.add(stageRow(context, candidate));
                 progress.pendingPrices.addAll(priceRows(context, candidate));
+                progress.pendingReferences.addAll(referenceRows(context, candidate));
                 progress.validCount++;
                 // Informatieve vaststellingen (een toegepaste standaardwaarde) horen bij een geldige
                 // regel: ze verwerpen niets, maar ze mogen ook niet onzichtbaar blijven.
@@ -585,6 +630,26 @@ public class DeliveryScreeningService {
             rows.add(new PriceRow(context.batchId(), candidate.rowNumber(), component.componentCode(),
                     component.sourceAmount(), component.percentage(), component.currency(),
                     component.status().name()));
+        }
+        return rows;
+    }
+
+    /**
+     * De kritieke koppelreferenties van één kandidaat (R-REF-01/R-REF-03). Leeg wanneer de revisie er
+     * geen mapt: er wordt dan geen enkele {@code import_candidate_reference}-rij geschreven, de
+     * referentiecontrole heeft niets te doen en het gedrag blijft exact dat van bouwstap 3d.
+     * <p>
+     * Per <b>gemapte</b> referentie komt er een rij, ook wanneer de bron ze leeg levert: "gemapt maar
+     * leeg" is een uitspraak van de leverancier, "niet gemapt" is er geen.
+     */
+    private static List<ReferenceRow> referenceRows(Context context, NormalisedCandidate candidate) {
+        if (candidate.references().isEmpty()) {
+            return List.of();
+        }
+        List<ReferenceRow> rows = new ArrayList<>(candidate.references().size());
+        for (CandidateNormaliser.ReferenceValue reference : candidate.references()) {
+            rows.add(new ReferenceRow(context.batchId(), candidate.rowNumber(),
+                    reference.referenceType(), reference.valueRaw(), reference.valueNormalised()));
         }
         return rows;
     }
@@ -655,12 +720,15 @@ public class DeliveryScreeningService {
         }
         List<StageRow> rows = List.copyOf(progress.pendingRows);
         List<PriceRow> prices = List.copyOf(progress.pendingPrices);
+        List<ReferenceRow> references = List.copyOf(progress.pendingReferences);
         List<IssueRow> issues = List.copyOf(progress.pendingIssues);
         transaction.executeWithoutResult(status -> {
             stage.insertBatch(rows);
-            // Ná de stagingrijen: import_candidate_price heeft een foreign key naar de kandidaat, en
-            // een prijscomponent zonder haar regel mag niet kunnen bestaan.
+            // Ná de stagingrijen: import_candidate_price en import_candidate_reference hebben een
+            // foreign key naar de kandidaat, en een prijscomponent of referentie zonder haar regel mag
+            // niet kunnen bestaan.
             candidatePrices.insertBatch(prices);
+            candidateReferences.insertBatch(references);
             rowIssues.insertBatch(issues);
             ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
             batch.setStagedRowCount(batch.getStagedRowCount() + rows.size());
@@ -669,6 +737,7 @@ public class DeliveryScreeningService {
         progress.stagedCount += rows.size();
         progress.pendingRows.clear();
         progress.pendingPrices.clear();
+        progress.pendingReferences.clear();
         progress.pendingIssues.clear();
     }
 
@@ -697,14 +766,282 @@ public class DeliveryScreeningService {
 
     // --- Stap 4: identiteitscontrole, delta en mutatiegeneratie -------------------------------
 
+    /**
+     * De passes ná het stagen, in de volgorde van ontwerp par. 3.1: D (duplicaat/collisie) → D1
+     * (dubbele kritieke referentie binnen de levering) → E1 (classificatie) → E2 (referentiecontrole)
+     * → E3 (prijscontrole) → E5 (mutatiegeneratie) → F (afronden).
+     * <p>
+     * <b>Waarom classificatie en mutatie-insert gesplitst zijn</b> (ontwerp par. 3.1, "important
+     * technical constraint"): de referentiecontrole bepaalt of een regel wordt vastgehouden en dus of
+     * haar mutatie {@code PLANNED} of {@code BLOCKED} wordt. Die vaststelling moet volledig zijn
+     * vóórdat er één mutatie geschreven wordt; in fase 2 zaten beide nog in dezelfde chunktransactie.
+     * Elke pass heeft daarom een eigen voortgangskolom, is afzonderlijk hervatbaar en idempotent.
+     * <p>
+     * Voor een revisie <b>zonder</b> referentiemappings is het externe gedrag exact dat van fase 2/3e:
+     * D1 en E2 stellen in één telling vast dat er niets te doen is en slaan zichzelf over.
+     */
     private ScreeningOutcome mutate(Context context) {
         Blockage blockage = detectIdentityProblems(context);
         if (blockage != null) {
             return transaction.execute(status -> block(context, blockage, null));
         }
+        detectDuplicateReferences(context);
+        classifyCandidates(context);
+        controlReferences(context);
         controlPrices(context);
         generateMutations(context);
         return transaction.execute(status -> complete(context));
+    }
+
+    // --- Stap D1: dezelfde kritieke referentie bij twee aanbiedingen in één levering -----------
+
+    /**
+     * Dezelfde genormaliseerde referentiewaarde van hetzelfde type bij twee of meer <b>verschillende</b>
+     * aanbiedingsidentiteiten binnen één levering (R-REF-07). Dat is nooit op te lossen met "laatste
+     * wint": élke betrokken regel wordt vastgehouden en krijgt haar eigen kritieke melding.
+     * <p>
+     * In tegenstelling tot een dubbele <i>aanbiedingsidentiteit</i> blokkeert dit de volledige levering
+     * niet: de rest van de catalogus is bruikbaar en enkel de betrokken aanbiedingen zijn onbetrouwbaar.
+     * De levering eindigt wel op {@code validation_result = BLOCKING}, want een kritieke vaststelling
+     * weegt door ongeacht volume.
+     * <p>
+     * <b>Eén keer.</b> Bestaan er al meldingen met deze code voor deze batch, dan is deze stap al
+     * uitgevoerd — classificatie en meldingen zijn in dezelfde transactie vastgelegd — en wordt er bij
+     * een hervatting niets verdubbeld.
+     */
+    private void detectDuplicateReferences(Context context) {
+        if (!candidateReferences.hasReferences(context.batchId())
+                || rowIssues.countByBatchIdAndIssueCode(context.batchId(),
+                        CODE_DUPLICATE_REFERENCE_IN_DELIVERY) > 0) {
+            return;
+        }
+        long duplicates = referenceControl.countDuplicateReferenceRows(context.batchId());
+        if (duplicates == 0) {
+            return;
+        }
+        Map<String, String> fieldNames = referenceControl.fieldNameByReferenceType();
+        transaction.executeWithoutResult(status -> {
+            referenceControl.classifyDuplicateReferences(context.batchId(),
+                    MutationDao.IDENTITY_INCIDENT_CLASSIFICATION);
+            int budget = (int) Math.min(maxSampleRowsPerCode, duplicates);
+            List<DuplicateReferenceRow> rows =
+                    referenceControl.findDuplicateReferenceRows(context.batchId(), budget);
+            Instant now = Instant.now();
+            List<IssueRow> issues = new ArrayList<>(rows.size());
+            for (DuplicateReferenceRow row : rows) {
+                String fieldName = fieldNames.getOrDefault(row.referenceType(), row.referenceType());
+                issues.add(ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(),
+                        row.rowNumber(), CODE_DUPLICATE_REFERENCE_IN_DELIVERY, fieldName,
+                        row.valueNormalised(), row.referenceType(),
+                        fieldName + ": '" + row.valueNormalised() + "' identifies more than one offer "
+                                + "in this delivery; every line involved is held because a repeated "
+                                + "critical reference is never resolved by keeping the last line", now));
+            }
+            rowIssues.insertBatch(issues);
+            if (duplicates > budget) {
+                rowIssues.insertBatch(List.of(ImportIssueCatalog.issue(context.batchId(),
+                        context.deliveryFileId(), null, CODE_ROW_ISSUE_RECORDING_CAPPED, null, null, null,
+                        "duplicateReferenceSamples: '" + maxSampleRowsPerCode + "' is the maximum number "
+                                + "of example rows kept per issue code; occurrences: "
+                                + CODE_DUPLICATE_REFERENCE_IN_DELIVERY + "=" + duplicates, now)));
+            }
+        });
+    }
+
+    // --- Stap E1: classificatie tegen de bronstaat --------------------------------------------
+
+    /**
+     * Zet de classificatie van elke gestagede regel ten opzichte van de bronstaat ({@code NEW},
+     * {@code CHANGED} of {@code UNCHANGED}), per chunk, met een eigen hervatpunt
+     * ({@code import_batch.classify_progress_row_number}).
+     * <p>
+     * <b>Idempotent.</b> De update raakt uitsluitend regels zonder classificatie, dus een regel die
+     * al vastgehouden is (D1) of al geclassificeerd is bij een eerdere doorloop, blijft staan.
+     */
+    private void classifyCandidates(Context context) {
+        long from = transaction.execute(status ->
+                batches.findById(context.batchId()).orElseThrow().getClassifyProgressRowNumber());
+        Long boundary;
+        while ((boundary = mutations.nextChunkBoundary(context.batchId(), from)) != null) {
+            long chunkFrom = from;
+            long chunkTo = boundary;
+            transaction.executeWithoutResult(status -> {
+                mutations.classifyChunk(context.batchId(), context.importLinkId(), chunkFrom, chunkTo);
+                ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
+                batch.setClassifyProgressRowNumber(chunkTo);
+                batches.saveAndFlush(batch);
+            });
+            from = chunkTo;
+        }
+    }
+
+    // --- Stap E2: controle van de kritieke koppelreferenties -----------------------------------
+
+    /**
+     * Beoordeelt de kritieke koppelreferenties van elke gewijzigde of nieuwe regel (R-ID-03/R-ID-04,
+     * R-REF-02..R-REF-06) en houdt elke regel met een incident vast (R-REF-09). Een afzonderlijke
+     * pass met een eigen hervatpunt ({@code import_batch.reference_progress_row_number}), die ná de
+     * classificatie en vóór de mutatiegeneratie draait.
+     * <p>
+     * <b>Wat deze pass doet en niet doet.</b> Ze wijzigt geen enkele referentie en geen enkele
+     * koppeling — dat kan alleen een mens, via de goedkeuringsroute. Ze schrijft:
+     * <ul>
+     *   <li>de uitkomst per referentie in {@code import_candidate_reference.match_result} (audit);</li>
+     *   <li>classificatie {@code IDENTITY_INCIDENT} op elke regel met een incident, zodat haar
+     *       inhoudelijke mutatie {@code BLOCKED} wordt en {@code accept-baseline} haar nooit
+     *       aanvaardt;</li>
+     *   <li>één {@code IDENTITY_REFERENCE_INCIDENT}-mutatie per incident, status
+     *       {@code AWAITING_APPROVAL}, met referentietype, oude en nieuwe waarde;</li>
+     *   <li>één kritieke melding per incident en één informatieve melding per voorgestelde
+     *       artikelkoppeling (R-ID-03), met dezelfde voorbeeldcap per foutcode als elke andere code.</li>
+     * </ul>
+     * <b>Niets te doen zonder referentiemappings.</b> Draagt deze batch geen enkele referentie, dan
+     * stopt de pass meteen en kost ze één telling — het gedrag blijft exact dat van bouwstap 3e.
+     */
+    private void controlReferences(Context context) {
+        if (!candidateReferences.hasReferences(context.batchId())) {
+            return;
+        }
+        // Eén query per batch voor de logische veldnamen; nooit een join per regel (par. 15.12).
+        Map<String, String> fieldNames = referenceControl.fieldNameByReferenceType();
+        ReferencePassProgress pass = new ReferencePassProgress(
+                rowIssues.countByBatchIdAndIssueCode(context.batchId(), CODE_IDENTITY_REFERENCE_INCIDENT),
+                rowIssues.countByBatchIdAndIssueCode(context.batchId(), CODE_REFERENCE_LINK_PROPOSED));
+        long from = transaction.execute(status ->
+                batches.findById(context.batchId()).orElseThrow().getReferenceProgressRowNumber());
+        Long boundary;
+        while ((boundary = referenceControl.nextChunkBoundary(context.batchId(), from)) != null) {
+            long chunkFrom = from;
+            long chunkTo = boundary;
+            // Meldingen, incidenten, classificatie en hervatpunt in dezelfde transactie: na een crash
+            // wordt geen enkele chunk een tweede keer beoordeeld en ontstaat er geen dubbel incident.
+            transaction.executeWithoutResult(status -> {
+                evaluateReferenceChunk(context, fieldNames, pass, chunkFrom, chunkTo);
+                ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
+                batch.setReferenceProgressRowNumber(chunkTo);
+                batches.saveAndFlush(batch);
+            });
+            from = chunkTo;
+        }
+        if (pass.capped) {
+            transaction.executeWithoutResult(status -> rowIssues.insertBatch(List.of(
+                    ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(), null,
+                            CODE_ROW_ISSUE_RECORDING_CAPPED, null, null, null,
+                            "referenceIncidentSamples: '" + maxSampleRowsPerCode + "' is the maximum "
+                                    + "number of example rows kept per issue code; occurrences counted "
+                                    + "in this reference control run: " + CODE_IDENTITY_REFERENCE_INCIDENT
+                                    + "=" + pass.incidents + ", " + CODE_REFERENCE_LINK_PROPOSED + "="
+                                    + pass.proposed, Instant.now()))));
+        }
+    }
+
+    private void evaluateReferenceChunk(Context context, Map<String, String> fieldNames,
+                                        ReferencePassProgress pass, long fromExclusive, long toInclusive) {
+        List<ReferenceCandidate> candidates = referenceControl.findCandidates(context.batchId(),
+                context.importLinkId(), context.libraryCode(), fromExclusive, toInclusive);
+        if (candidates.isEmpty()) {
+            return;
+        }
+        List<MatchUpdate> updates = new ArrayList<>();
+        List<Long> heldRows = new ArrayList<>();
+        List<IncidentMutation> incidents = new ArrayList<>();
+        List<IssueRow> issues = new ArrayList<>();
+        Instant now = Instant.now();
+        // De DAO levert op regelnummer geordend; één regel is dus één aaneengesloten blok.
+        List<ReferenceCandidate> group = new ArrayList<>();
+        for (ReferenceCandidate candidate : candidates) {
+            if (!group.isEmpty() && group.get(0).rowNumber() != candidate.rowNumber()) {
+                evaluateRecord(context, fieldNames, pass, group, updates, heldRows, incidents, issues, now);
+                group = new ArrayList<>();
+            }
+            group.add(candidate);
+        }
+        evaluateRecord(context, fieldNames, pass, group, updates, heldRows, incidents, issues, now);
+
+        referenceControl.markMatchResults(context.batchId(), updates);
+        referenceControl.classifyIdentityIncidents(context.batchId(), heldRows,
+                MutationDao.IDENTITY_INCIDENT_CLASSIFICATION);
+        referenceControl.insertIncidentMutations(context.mutationContext(), incidents, now);
+        rowIssues.insertBatch(issues);
+    }
+
+    private void evaluateRecord(Context context, Map<String, String> fieldNames,
+                                ReferencePassProgress pass, List<ReferenceCandidate> group,
+                                List<MatchUpdate> updates, List<Long> heldRows,
+                                List<IncidentMutation> incidents, List<IssueRow> issues, Instant now) {
+        if (group.isEmpty()) {
+            return;
+        }
+        long rowNumber = group.get(0).rowNumber();
+        RecordOutcome outcome = ReferenceControlEvaluator.evaluate(rowNumber, group);
+        for (ReferenceOutcome reference : outcome.references()) {
+            updates.add(new MatchUpdate(rowNumber, reference.referenceType(),
+                    reference.result().name(), reference.matchedSourceStateId()));
+        }
+        if (outcome.hasIncident()) {
+            heldRows.add(rowNumber);
+            for (ReferenceOutcome incident : outcome.incidents()) {
+                String fieldName = fieldNames.getOrDefault(incident.referenceType(),
+                        incident.referenceType());
+                String message = ReferenceControlEvaluator.message(incident, fieldName);
+                incidents.add(new IncidentMutation(rowNumber, incident.referenceType(),
+                        incident.result().name(), incident.beforeValue(), incident.afterValue(),
+                        message));
+                pass.incidents++;
+                if (pass.recordedIncidents >= maxSampleRowsPerCode) {
+                    pass.capped = true;
+                    continue;
+                }
+                pass.recordedIncidents++;
+                issues.add(ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(),
+                        rowNumber, CODE_IDENTITY_REFERENCE_INCIDENT, fieldName,
+                        incident.afterValue(), incident.result().name(), message, now));
+            }
+            return;
+        }
+        if (!outcome.linkProposed()) {
+            return;
+        }
+        // R-ID-03: geen incident maar een vaststelling - deze nieuwe aanbieding hoort bij hetzelfde
+        // artikel als een bestaande. De aanbieding wordt gewoon aangemaakt en de bestaande
+        // aanbiedingsidentiteit blijft onaangeroerd.
+        pass.proposed++;
+        if (pass.recordedProposed >= maxSampleRowsPerCode) {
+            pass.capped = true;
+            return;
+        }
+        pass.recordedProposed++;
+        ReferenceOutcome matching = outcome.references().stream()
+                .filter(reference -> outcome.proposedSourceStateId()
+                        .equals(reference.matchedSourceStateId()))
+                .findFirst().orElse(null);
+        String fieldName = matching == null ? null
+                : fieldNames.getOrDefault(matching.referenceType(), matching.referenceType());
+        String value = matching == null ? null : matching.afterValue();
+        issues.add(ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(), rowNumber,
+                CODE_REFERENCE_LINK_PROPOSED, fieldName, value,
+                String.valueOf(outcome.proposedSourceStateId()),
+                (fieldName == null ? "criticalReference" : fieldName) + ": '" + value
+                        + "' already identifies offer " + outcome.proposedSourceStateId()
+                        + " in this library; this is another supplier offer for the same article. The "
+                        + "new offer is created under the normal creation policy and the existing offer "
+                        + "identity is never replaced", now));
+    }
+
+    /** Lopende stand van één referentiecontrolepass; enkel binnen {@link #controlReferences(Context)}. */
+    private static final class ReferencePassProgress {
+        /** Reeds bewaarde voorbeeldrijen per code, inclusief die van een eerdere doorloop. */
+        private long recordedIncidents;
+        private long recordedProposed;
+        /** Vastgestelde aantallen in deze doorloop, ook boven de voorbeeldcap. */
+        private long incidents;
+        private long proposed;
+        private boolean capped;
+
+        private ReferencePassProgress(long recordedIncidents, long recordedProposed) {
+            this.recordedIncidents = recordedIncidents;
+            this.recordedProposed = recordedProposed;
+        }
     }
 
     // --- Stap E3: prijsafwijkingscontrole (ontwerp fase 3 par. 3.1, R-PRI-10..R-PRI-12) --------
@@ -888,9 +1225,14 @@ public class DeliveryScreeningService {
     }
 
     /**
-     * Design par. 9 stap E: per chunk één transactie die de classificatie, de mutaties én het
-     * hervatpunt samen vastlegt. Valt de verwerking tussen twee chunks weg, dan staat het hervatpunt
-     * altijd op een chunkgrens waarvan de mutaties gecommit zijn.
+     * Stap E5 (ontwerp fase 3 par. 3.1): per chunk één transactie die de mutaties én het hervatpunt
+     * samen vastlegt. Valt de verwerking tussen twee chunks weg, dan staat het hervatpunt altijd op
+     * een chunkgrens waarvan de mutaties gecommit zijn.
+     * <p>
+     * <b>De classificatie zit hier niet meer in</b> (fase 2 deed beide in dezelfde chunktransactie):
+     * ze is een eigen pass geworden (E1), omdat de referentiecontrole — en in bouwstap 3h de drempels —
+     * bepaalt of een mutatie {@code PLANNED} of {@code BLOCKED} wordt. Dat oordeel moet volledig zijn
+     * vóór de eerste mutatie geschreven wordt.
      */
     private void generateMutations(Context context) {
         MutationContext mutationContext = context.mutationContext();
@@ -905,7 +1247,6 @@ public class DeliveryScreeningService {
             long chunkFrom = from;
             long chunkTo = boundary;
             transaction.executeWithoutResult(status -> {
-                mutations.classifyChunk(context.batchId(), context.importLinkId(), chunkFrom, chunkTo);
                 mutations.insertContentMutations(mutationContext, componentCodes, chunkFrom, chunkTo,
                         Instant.now());
                 ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
@@ -931,6 +1272,11 @@ public class DeliveryScreeningService {
         batch.setUnchangedCount(classified.getOrDefault(CandidateClassification.UNCHANGED.name(), 0L));
         batch.setDuplicateIdentityCount(
                 classified.getOrDefault(CandidateClassification.DUPLICATE_IN_DELIVERY.name(), 0L));
+        // R-REF-09: een vastgehouden regel is wél geldig gelezen, maar wordt niet doorgelaten. Ze
+        // telt daarom in een eigen bak, zodat de reconciliatie blijft kloppen:
+        // valid = new + changed + unchanged + duplicate_identity + identity_incident.
+        batch.setIdentityIncidentCount(
+                classified.getOrDefault(CandidateClassification.IDENTITY_INCIDENT.name(), 0L));
         batch.setContentMutationCount(mutations.countContentMutations(context.batchId()));
         ValidationResult validationResult = determineValidationResult(context.batchId(), false);
         batch.setValidationResult(validationResult);
@@ -1061,10 +1407,11 @@ public class DeliveryScreeningService {
     private void fail(Context context, Throwable cause) {
         try {
             transaction.executeWithoutResult(status -> {
-                // Eerst de prijscomponenten: ze hangen met een foreign key aan de staging. De
-                // databasecascade zou ze ook opruimen; ze hier expliciet verwijderen houdt de bedoeling
-                // zichtbaar in plaats van ze aan een schema-eigenschap over te laten.
+                // Eerst de prijscomponenten en de referenties: ze hangen met een foreign key aan de
+                // staging. De databasecascade zou ze ook opruimen; ze hier expliciet verwijderen houdt
+                // de bedoeling zichtbaar in plaats van ze aan een schema-eigenschap over te laten.
                 candidatePrices.deleteByBatchId(context.batchId());
+                candidateReferences.deleteByBatchId(context.batchId());
                 stage.deleteByBatchId(context.batchId());
                 rowIssues.deleteByBatchId(context.batchId());
                 ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
@@ -1118,8 +1465,8 @@ public class DeliveryScreeningService {
                 batch.getRawRecordCount(), batch.getValidRecordCount(), batch.getRejectedRecordCount(),
                 batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
                 batch.getStagedRowCount(), batch.getDuplicateIdentityCount(), batch.getNewCount(),
-                batch.getChangedCount(), batch.getUnchangedCount(), batch.getContentMutationCount(),
-                batch.getBlockedCode(), batch.getBlockedReason());
+                batch.getChangedCount(), batch.getUnchangedCount(), batch.getIdentityIncidentCount(),
+                batch.getContentMutationCount(), batch.getBlockedCode(), batch.getBlockedReason());
     }
 
     private static String describe(Map<String, Long> issueCounts) {

@@ -243,8 +243,8 @@ class PriceComponentScreeningFlowTest {
 
         // Exact wat een hervatte acceptatie doet: dezelfde chunk nog een keer.
         AcceptanceContext context = new AcceptanceContext(fixture.linkId(), delivered.batchId(),
-                delivered.deliveryId(), IdentityProfileKind.THREE_PART.name(), "BASELINE_ACCEPTED",
-                "tester@example.test", Instant.now(), Instant.now());
+                delivered.deliveryId(), "PSARF050", IdentityProfileKind.THREE_PART.name(),
+                "BASELINE_ACCEPTED", "tester@example.test", Instant.now(), Instant.now());
         int written = sourceState.insertNewPricesFromStage(context, 0L, 999L);
 
         assertThat(written).isZero();

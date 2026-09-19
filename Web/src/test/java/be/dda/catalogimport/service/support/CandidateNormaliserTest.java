@@ -42,6 +42,7 @@ class CandidateNormaliserTest {
     private static final String EXTRA_TWO = "BARCODE";
     private static final String PRICE_COLUMN = "AKP";
     private static final String CURRENCY_COLUMN = "MUNT";
+    private static final String REFERENCE_COLUMN = "EAN_CODE";
 
     private final CandidateNormaliser normaliser = new CandidateNormaliser();
 
@@ -346,6 +347,131 @@ class CandidateNormaliserTest {
         assertThat(two.referenceFingerprint()).isNotNull().hasSize(32);
     }
 
+    // --- Canonicalisatieversie 2: de referentievingerafdruk (fase 3f, ontwerp par. 3.5) -----------
+
+    /**
+     * De referentievingerafdruk is <b>vastgepind</b> op zijn hexwaarde, onafhankelijk berekend uit de
+     * gedocumenteerde canonieke vorm. Het belangrijkste geval staat vooraan: een revisie <b>zonder</b>
+     * referentiemappings levert exact de tekst {@code "2"} op — precies wat bouwstap 3c opleverde.
+     * <p>
+     * Zonder deze pin zou bouwstap 3f de hash van élke bestaande versie 2-revisie verschuiven, zouden
+     * al haar aanbiedingen als {@code CHANGED} uit de delta komen en zou een volledige catalogus
+     * onterecht als gewijzigd gepubliceerd worden.
+     */
+    @Test
+    void keepsTheReferenceFingerprintOfARevisionWithoutReferenceMappingsByteIdentical() {
+        NormalisedCandidate withoutReferences = candidate(mappedRow("A1", "B1"), versionTwo(),
+                mappingConfig());
+
+        assertThat(hex(withoutReferences.referenceFingerprint()))
+                // SHA-256 van de canonieke tekst "2": het versienummer en geen enkel onderdeel.
+                .isEqualTo("d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35");
+        assertThat(withoutReferences.references()).isEmpty();
+    }
+
+    @Test
+    void coversEveryMappedCriticalReferenceWithItsNormalisedValueInTheReferenceFingerprint() {
+        ImportMappingConfig config = mappingConfig(referenceField("EAN", "EAN", 1, REFERENCE_COLUMN));
+
+        NormalisedCandidate candidate = candidate(referenceRow("5449000000996"), versionTwo(), config);
+
+        assertThat(hex(candidate.referenceFingerprint()))
+                // Canonieke tekst: "2" U+001F "EAN" U+001F "5449000000996".
+                .isEqualTo("ad73e7363591799fc34fd31dd832d7225f1d2d3c3894feab1a8c706a403ecb83");
+        assertThat(candidate.references()).singleElement().satisfies(reference -> {
+            assertThat(reference.referenceType()).isEqualTo("EAN");
+            assertThat(reference.valueNormalised()).isEqualTo("5449000000996");
+            assertThat(reference.isEmpty()).isFalse();
+        });
+
+        // Een andere referentiewaarde wijzigt uitsluitend het referentiedeel - niet het artikel, niet
+        // de prijs en niet de identiteit (R-PRI-09/par. 14.23.3, gescheiden deelvingerafdrukken).
+        NormalisedCandidate other = candidate(referenceRow("5449000000997"), versionTwo(), config);
+        assertThat(other.referenceFingerprint()).isNotEqualTo(candidate.referenceFingerprint());
+        assertThat(other.combinedFingerprint()).isNotEqualTo(candidate.combinedFingerprint());
+        assertThat(other.articleFingerprint()).isEqualTo(candidate.articleFingerprint());
+        assertThat(other.priceFingerprint()).isEqualTo(candidate.priceFingerprint());
+        assertThat(other.identityHash()).isEqualTo(candidate.identityHash());
+    }
+
+    /**
+     * R-REF-03, het onderscheid waar de hele referentiecontrole op steunt: "gemapt maar leeg" is een
+     * <b>uitspraak</b> van de leverancier (de referentie verdwijnt) en "niet gemapt" is er géén. Die
+     * twee mogen nooit dezelfde vingerafdruk opleveren, anders zou een verdwenen EAN onzichtbaar
+     * blijven in de delta.
+     */
+    @Test
+    void distinguishesAMappedButEmptyReferenceFromAnUnmappedOne() {
+        ImportMappingConfig withReference = mappingConfig(referenceField("EAN", "EAN", 1,
+                REFERENCE_COLUMN));
+        ImportMappingConfig withoutReference = mappingConfig();
+
+        NormalisedCandidate empty = candidate(referenceRow(""), versionTwo(), withReference);
+        NormalisedCandidate unmapped = candidate(referenceRow("5449000000996"), versionTwo(),
+                withoutReference);
+        NormalisedCandidate filled = candidate(referenceRow("5449000000996"), versionTwo(),
+                withReference);
+
+        assertThat(hex(empty.referenceFingerprint()))
+                // Canonieke tekst: "2" U+001F "EAN" U+001F U+0000 - een eigen marker die geen enkele
+                // echte waarde kan aannemen, want een genormaliseerde waarde is nooit leeg.
+                .isEqualTo("9bf26089077e52d71ce5bd4195eed1210c6f16486ff09b84617d0d614811b809");
+        assertThat(empty.referenceFingerprint()).isNotEqualTo(unmapped.referenceFingerprint());
+        assertThat(empty.referenceFingerprint()).isNotEqualTo(filled.referenceFingerprint());
+        // Niet gemapt levert geen enkele rij en dus geen uitspraak; gemapt-maar-leeg levert er wel een.
+        assertThat(unmapped.references()).isEmpty();
+        assertThat(empty.references()).singleElement().satisfies(reference -> {
+            assertThat(reference.isEmpty()).isTrue();
+            assertThat(reference.valueNormalised()).isNull();
+        });
+        // Een revisie zonder referentiemapping houdt de hash van bouwstap 3c, ook al staat de kolom
+        // gewoon in het bestand.
+        assertThat(hex(unmapped.referenceFingerprint()))
+                .isEqualTo("d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35");
+    }
+
+    /**
+     * De ruwe waarde blijft bewaard naast de genormaliseerde (R-REF-01), en de normalisatie verwijdert
+     * geen voorloopnullen: {@code 000123} en {@code 123} leveren verschillende vingerafdrukken op.
+     */
+    @Test
+    void keepsTheRawReferenceValueNextToTheNormalisedOneAndNeverStripsLeadingZeroes() {
+        ImportMappingConfig config = mappingConfig(referenceField("EAN", "EAN", 1, REFERENCE_COLUMN));
+
+        NormalisedCandidate padded = candidate(referenceRow("  000123  "), versionTwo(), config);
+        NormalisedCandidate plain = candidate(referenceRow("123"), versionTwo(), config);
+
+        assertThat(padded.references().get(0).valueRaw()).isEqualTo("  000123  ");
+        assertThat(padded.references().get(0).valueNormalised()).isEqualTo("000123");
+        assertThat(padded.referenceFingerprint()).isNotEqualTo(plain.referenceFingerprint());
+    }
+
+    /** De volgorde is die van het referentietype, niet die van het volgnummer van de mapping. */
+    @Test
+    void sortsTheReferenceFingerprintOnReferenceTypeAndNotOnMappingOrder() {
+        ImportMappingConfig ascending = mappingConfig(
+                referenceField("CAB_ID", "CAB_ID", 1, REFERENCE_COLUMN),
+                referenceField("EAN", "EAN", 2, EXTRA_TWO));
+        ImportMappingConfig renumbered = mappingConfig(
+                referenceField("EAN", "EAN", 1, EXTRA_TWO),
+                referenceField("CAB_ID", "CAB_ID", 2, REFERENCE_COLUMN));
+
+        assertThat(candidate(referenceRow("C-1", "E-1"), versionTwo(), renumbered).referenceFingerprint())
+                .isEqualTo(candidate(referenceRow("C-1", "E-1"), versionTwo(), ascending)
+                        .referenceFingerprint());
+    }
+
+    /** Een referentie die niet in {@code varchar(200)} past, verwerpt de regel en wordt nooit afgekapt. */
+    @Test
+    void rejectsAReferenceValueThatWouldNotFitInTheReferenceColumns() {
+        ImportMappingConfig config = mappingConfig(referenceField("EAN", "EAN", 1, REFERENCE_COLUMN));
+
+        Result result = normaliser.normalise(referenceRow("9".repeat(201)), versionTwo(), config);
+
+        assertThat(result).isInstanceOf(RowIssue.class);
+        assertThat(((RowIssue) result).code()).isEqualTo(CandidateNormaliser.CODE_VALUE_TOO_LONG);
+    }
+
     // --- Canonicalisatieversie 2: de prijsvingerafdruk (fase 3d, ontwerp par. 3.5) ----------------
 
     /**
@@ -492,6 +618,38 @@ class CandidateNormaliserTest {
         mapping.setSourceReference(sourceReference);
         mapping.setPriceComponentCode(componentCode);
         return mapping;
+    }
+
+    /**
+     * Een gemapte kritieke koppelreferentie: eigenaar {@code CRITICAL_REFERENCE} en die eigenaar is
+     * niet wisselbaar (R-REF-08), type TEKST zodat voorloopnullen en hoofdletters blijven (R-REC-01).
+     */
+    private static ImportFieldMapping referenceField(String code, String referenceType,
+                                                     int sequenceNumber, String sourceReference) {
+        ImportFieldCatalogEntry target = new ImportFieldCatalogEntry(code, "Referentie " + referenceType,
+                FieldDataType.TEXT, FieldOwner.CRITICAL_REFERENCE, IdentityClass.ARTICLE_REFERENCE, 90);
+        target.setReferenceType(referenceType);
+        target.setOwnerChangeable(false);
+        ImportFieldMapping mapping = new ImportFieldMapping(null, sequenceNumber, target,
+                FieldValueKind.SOURCE_FIELD, FieldDataType.TEXT, FieldOwner.CRITICAL_REFERENCE,
+                IdentityClass.ARTICLE_REFERENCE);
+        mapping.setSourceReference(sourceReference);
+        mapping.setReferenceType(referenceType);
+        return mapping;
+    }
+
+    /** Dezelfde zes kolommen als {@link #row}, met twee referentiekolommen erachter. */
+    private static ParsedRow referenceRow(String reference) {
+        return referenceRow(reference, "");
+    }
+
+    private static ParsedRow referenceRow(String reference, String secondReference) {
+        Map<String, Integer> positions = defaultPositions();
+        positions.put(REFERENCE_COLUMN, 6);
+        positions.put(EXTRA_TWO, 7);
+        List<String> values = Arrays.asList("ACME", "G1", "R-1", "", "1,50", "Boormachine",
+                nullToEmpty(reference), nullToEmpty(secondReference));
+        return new ParsedRow(12, values, new SourceFieldPositions(positions));
     }
 
     private static ImportFieldMapping field(String code, int sequenceNumber, String sourceReference,

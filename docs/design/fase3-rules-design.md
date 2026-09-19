@@ -555,10 +555,46 @@ Te laten beslissen door een Denker (of de mens) vóór 3h.
   komt met 3g). `import_row_issue.message` is varchar(500): de grens staat vooraan in de tekst.
 
 ### Open punten vóór 3h (moeten beslist zijn voordat 3h start)
-1. `validation_result` en ERROR-issues (zie §9): nu geeft een levering met alleen ERROR-issues (bv. ERROR-ernst
-   van de prijsafwijking, of verworpen records) `VALID`.
-2. Betekenis van "laatste 50/200 dagwaarden": nu = laatste N VASTGELEGDE goedgekeurde wijzigingen, niet N
-   kalenderdagen met doorgetrokken waarde. Een prijs die een jaar gelijk blijft levert één observatie op.
-   Business moet bevestigen of dat de bedoeling is, of dat ongewijzigde dagen ook moeten meetellen.
+1. `validation_result` en ERROR-issues (zie §9): BESLIST door de mens op 2026-09-20 (zie decisions.md): de
+   gebruiker geeft per kolom aan of die kritiek is; een fout op een kritieke kolom (kritieke lijn) vereist een
+   review, waarschuwingen niet. Nog uit te werken door een Denker vóór 3h (opslag van de kritiek-vlag per kolom,
+   relatie tot `max_critical_records`, effect op `validation_result` en mutatiestatussen).
+2. OPGELOST (mens, 2026-09-19, zie decisions.md): de 50-/200-gemiddelden zijn een extra referentie voor een
+   bewegend gemiddelde; gemiddelde over de laatste N vastgelegde goedgekeurde observaties volstaat (geen
+   doorgetrokken kalenderdagen). Huidige implementatie is dus correct.
 3. Ruisrisico: één basisprijswijziging kan N+1 afwijkingsmeldingen geven (basis + elke component); mitigatie is
    het bulkprijsincident (3g). Groeipad/retentie van `catalog_price_observation` is nog niet belegd.
+
+## 14. Aanvullingen uit stap 3f (geïmplementeerd, hoofdsessie akkoord)
+
+- Changesets: 004-8 `catalog_reference_state`, 004-9 `import_candidate_reference` (cascade), 004-11d
+  (`identity_incident_count`, `classify_progress_row_number`, `reference_progress_row_number`), 004-13
+  (`reference_type`, `before/after_reference_value`, `issue_group_id`; `action_type` varchar(20)→(40);
+  `ck_import_mutation_marker` heruitgegeven met drie soorten). Referentie-mappings actief onder v2 (onder v1
+  geblokkeerd).
+- Passopsplitsing gerealiseerd: C → D → D1 → E1 (classificatie) → E2 (referentiecontrole) → E3 (prijs) → E5
+  (mutaties) → F, elk met eigen voortgangskolom en afzonderlijk hervatbaar. 3h voegt E4 (aggregatie/drempels) in.
+- Normalisatie referenties (alle types): buitenste trim + verwijdering van onzichtbare tekens (Unicode Cc/Cf);
+  géén hoofdletterconversie, géén leading-zero-verwijdering; ruwe waarde blijft ernaast bewaard.
+  (Verschil met artikelvelden uit 3c, waar control characters gemeld i.p.v. verwijderd worden.)
+- REUSED vs AMBIGUOUS = aanwijsbaarheid: AMBIGUOUS = referenties van één regel wijzen naar ≥2 verschillende
+  bestaande aanbiedingen (of de aanbieding draagt zelf ≥2 actieve waarden voor één type); REUSED = precies één
+  maar een andere aanbieding. Zwaarte: AMBIGUOUS > REUSED > CHANGED > REMOVED.
+- E2 beoordeelt alleen NEW/CHANGED (nooit UNCHANGED). Eerste vastlegging van een referentie op een bestaande
+  aanbieding is GEEN incident (R-REF-06). D1-rijen worden ook vastgehouden maar krijgen geen incident-mutatie.
+- `idempotency_key` incident-mutatie: `<delivery>:<revisie>:<identity_hash_hex>:REFERENCE:<type>`.
+  `MutationDao.countContentMutations`/`skipPlannedContentMutations` tellen/raken enkel CREATE/UPDATE.
+- Eindstatus tussenstand: kritieke incidenten ⇒ batch SCREENED met `validation_result=BLOCKING` (3a-logica);
+  drempels/REVIEW_REQUIRED/BLOCKED komen in 3h.
+- Uniciteit van een referentie geldt per BIBLIOTHEEK (niet per koppeling). Nieuwe 409-code
+  `REFERENCE_ALREADY_ACTIVE_FOR_OTHER_OFFER`; property `catalogimport.screening.reference-control-chunk-size`.
+
+### Open punten (vóór 3h / Fase 4 te beslissen)
+1. Tegenstrijdigheid: §14.23.3 zegt dat ook een NIEUWE referentie op een bestaand artikel standaard de kritieke
+   route volgt; R-REF-06 laat de eerste vastlegging toe. Gevolgd: R-REF-06. Wil de business het strengere, dan is
+   een per-revisie schakelaar "eerste vastlegging vereist goedkeuring" nodig, anders is het inschakelen van
+   referentiemappings op een bestaande koppeling onuitvoerbaar.
+2. Normalisatie van referenties is niet meer wijzigbaar zonder migratie zodra `catalog_reference_state` gevuld
+   is: bevestigen vóór de eerste echte baseline.
+3. Geen unieke constraint op `(source_state_id, reference_type, active_marker)`: schematisch kan een aanbieding
+   twee actieve waarden voor één type hebben (evaluator behandelt dat als AMBIGUOUS).

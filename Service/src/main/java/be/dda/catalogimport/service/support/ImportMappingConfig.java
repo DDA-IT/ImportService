@@ -27,11 +27,12 @@ import java.util.List;
  * associatie aanraken. Ze wordt exact één keer per batch gebouwd, vóór er één byte gelezen is; er is
  * dus geen enkele query per bronregel.
  * <p>
- * <b>Grens van bouwstap 3d.</b> Doelvelden (3c) en afgeleide prijscomponenten (3d) worden gelezen,
- * gevalideerd én toegepast; ze zitten in de artikel- respectievelijk prijsvingerafdruk van
- * canonicalisatieversie 2. Een revisie met <b>referentiemappings</b> wordt nog geblokkeerd met
- * {@code CONFIG_CANONICALISATION_VERSION_REQUIRED} tot bouwstap 3f: zo kan er nooit een levering
- * verwerkt worden waarvan de vingerafdruk de gemapte velden niet dekt.
+ * <b>Stand sinds bouwstap 3f.</b> Doelvelden (3c), afgeleide prijscomponenten (3d) én kritieke
+ * koppelreferenties (3f) worden gelezen, gevalideerd én toegepast; ze zitten in de artikel-, prijs-
+ * respectievelijk referentievingerafdruk van canonicalisatieversie 2. Een revisie die één van die
+ * velden mapt en toch canonicalisatieversie 1 declareert, wordt geblokkeerd met
+ * {@code CONFIG_CANONICALISATION_VERSION_REQUIRED}: zo kan er nooit een levering verwerkt worden
+ * waarvan de vingerafdruk de gemapte velden niet dekt.
  *
  * @param canonicalisationVersion de versie die de revisie declareert; bepaalt welke velden in de
  *                                vingerafdrukken meetellen
@@ -177,6 +178,28 @@ public record ImportMappingConfig(int canonicalisationVersion, List<FieldMapping
     /** Heeft deze revisie afgeleide prijscomponenten? Zo niet, blijft het prijspad exact dat van 3c. */
     public boolean hasPriceComponents() {
         return fields.stream().anyMatch(FieldMapping::isPriceComponent);
+    }
+
+    /**
+     * De gemapte kritieke koppelreferenties, <b>gesorteerd op referentietype</b> (ontwerp fase 3,
+     * par. 3.5): dat is de volgorde waarin ze in de referentievingerafdruk staan. Sorteren op het
+     * referentietype en niet op het volgnummer van de mapping, zodat het hernummeren van de mappings
+     * nooit een ongewijzigde aanbieding als gewijzigd laat uitkomen.
+     */
+    public List<FieldMapping> referenceFields() {
+        return fields.stream()
+                .filter(field -> field.referenceType() != null)
+                .sorted(Comparator.comparing(FieldMapping::referenceType))
+                .toList();
+    }
+
+    /**
+     * Mapt deze revisie kritieke koppelreferenties? Zo niet, wordt er geen enkele
+     * {@code import_candidate_reference}-rij geschreven, draait de referentiecontrole niet en blijft
+     * de referentievingerafdruk exact die van bouwstap 3c — byte voor byte.
+     */
+    public boolean hasReferences() {
+        return fields.stream().anyMatch(field -> field.referenceType() != null);
     }
 
     /**

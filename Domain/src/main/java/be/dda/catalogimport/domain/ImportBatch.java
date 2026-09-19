@@ -103,6 +103,19 @@ public class ImportBatch {
     @Column(name = "price_progress_row_number", nullable = false)
     private long priceProgressRowNumber;
 
+    /**
+     * Hervatpunt van de classificatiepass (ontwerp fase 3, par. 3.1 stap E1). In fase 2 zat de
+     * classificatie in dezelfde chunktransactie als de mutatie-insert; vanaf fase 3 zijn dat aparte
+     * passes, omdat de referentiecontrole (E2) en de drempels (3h) de mutatiestatus bepalen en dus
+     * volledig berekend moeten zijn vóór er één mutatie geschreven wordt.
+     */
+    @Column(name = "classify_progress_row_number", nullable = false)
+    private long classifyProgressRowNumber;
+
+    /** Hervatpunt van de referentiecontrolepass (ontwerp fase 3, par. 3.1 stap E2). */
+    @Column(name = "reference_progress_row_number", nullable = false)
+    private long referenceProgressRowNumber;
+
     @Column(name = "raw_record_count")
     private Long rawRecordCount;
 
@@ -140,6 +153,15 @@ public class ImportBatch {
 
     @Column(name = "unchanged_count")
     private Long unchangedCount;
+
+    /**
+     * Aantal gestagede regels dat wegens een kritiek referentie-incident is vastgehouden
+     * ({@link CandidateClassification#IDENTITY_INCIDENT}, R-REF-09). Zo'n regel is geldig gelezen —
+     * ze telt dus mee in {@link #validRecordCount} — maar wordt niet doorgelaten. Vanaf fase 3f geldt
+     * {@code valid = new + changed + unchanged + duplicateIdentity + identityIncident}.
+     */
+    @Column(name = "identity_incident_count")
+    private Long identityIncidentCount;
 
     @Column(name = "content_mutation_count")
     private Long contentMutationCount;
@@ -290,6 +312,22 @@ public class ImportBatch {
         this.priceProgressRowNumber = priceProgressRowNumber;
     }
 
+    public long getClassifyProgressRowNumber() {
+        return classifyProgressRowNumber;
+    }
+
+    public void setClassifyProgressRowNumber(long classifyProgressRowNumber) {
+        this.classifyProgressRowNumber = classifyProgressRowNumber;
+    }
+
+    public long getReferenceProgressRowNumber() {
+        return referenceProgressRowNumber;
+    }
+
+    public void setReferenceProgressRowNumber(long referenceProgressRowNumber) {
+        this.referenceProgressRowNumber = referenceProgressRowNumber;
+    }
+
     public Long getRawRecordCount() {
         return rawRecordCount;
     }
@@ -360,6 +398,14 @@ public class ImportBatch {
 
     public void setUnchangedCount(Long unchangedCount) {
         this.unchangedCount = unchangedCount;
+    }
+
+    public Long getIdentityIncidentCount() {
+        return identityIncidentCount;
+    }
+
+    public void setIdentityIncidentCount(Long identityIncidentCount) {
+        this.identityIncidentCount = identityIncidentCount;
     }
 
     public Long getContentMutationCount() {

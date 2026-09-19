@@ -1,6 +1,7 @@
 package be.dda.catalogimport.service;
 
 import be.dda.catalogimport.dao.CandidatePriceDao;
+import be.dda.catalogimport.dao.CandidateReferenceDao;
 import be.dda.catalogimport.dao.ImportBatchRepository;
 import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.dao.PriceObservationDao;
@@ -15,6 +16,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -36,6 +38,17 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li>{@code NEW} wordt een nieuwe bronstaatrij ({@code state_origin=BASELINE_ACCEPTED}), {@code CHANGED}
  *       werkt de bestaande rij bij, {@code UNCHANGED} raakt de bronstaat niet aan (ook {@code updated_at}
  *       niet).</li>
+ *   <li><b>Een vastgehouden regel wordt nooit aanvaard</b> (fase 3f, R-REF-09). Een regel met
+ *       classificatie {@code IDENTITY_INCIDENT} komt niet in {@code catalog_source_state} en niet in
+ *       {@code catalog_reference_state}; haar inhoudelijke mutatie blijft {@code BLOCKED} en het
+ *       bijhorende {@code IDENTITY_REFERENCE_INCIDENT} blijft {@code AWAITING_APPROVAL}. Een
+ *       aanvaarding van de nulmeting is geen goedkeuring van een identiteitswijziging.</li>
+ *   <li>De kritieke koppelreferenties van de aanvaarde regels worden vastgelegd in
+ *       {@code catalog_reference_state} (fase 3, R-REF-06): genormaliseerd én ruw, met
+ *       {@code accepted_by}/{@code accepted_at}, {@code active_marker = TRUE}, en uitsluitend wanneer
+ *       de waarde binnen de bibliotheek nog niet actief is. Een waarde die al bij een andere
+ *       aanbieding actief staat, blijft daar: dat is de indirecte artikelkoppeling van matchingstap 2
+ *       (R-ID-03) en nooit een overname.</li>
  *   <li>De prijscomponenten van die aanbiedingen gaan mee naar {@code catalog_source_state_price}
  *       (fase 3, R-PRI-09): nieuwe rijen erbij, gewijzigde rijen vervangen, ongewijzigde rijen
  *       onaangeroerd. Dat is de "voor"-waarde waartegen de volgende levering een percentagewijziging
@@ -84,6 +97,14 @@ public class SourceStateBaselineService {
     public static final String CODE_SOURCE_STATE_CHANGED = "SOURCE_STATE_CHANGED_SINCE_SCREENING";
     /** {@code import_mutation.status_reason} van de mutaties die door een aanvaarding overgeslagen worden. */
     public static final String SKIPPED_REASON = "BASELINE_ACCEPTED_WITHOUT_PUBLICATION";
+    /**
+     * Een kritieke koppelreferentie van deze levering werd tussen de screening en deze aanvaarding
+     * door een andere batch actief gemaakt voor een andere aanbieding in dezelfde bibliotheek
+     * (R-REF-06). De unieke constraint {@code uk_catalog_reference_state_active} vangt die race op;
+     * de chunk wordt volledig teruggedraaid, zodat er nooit half werk blijft staan. De levering moet
+     * opnieuw gescreend worden tegen de gewijzigde bibliotheek.
+     */
+    public static final String CODE_REFERENCE_ALREADY_ACTIVE = "REFERENCE_ALREADY_ACTIVE_FOR_OTHER_OFFER";
 
     /** {@code catalog_source_state.accepted_by} en {@code import_batch.baseline_accepted_by}: varchar(100). */
     static final int MAX_ACCEPTED_BY_LENGTH = 100;
@@ -104,11 +125,13 @@ public class SourceStateBaselineService {
     }
 
     /** Wat buiten een transactie nodig is; bewust geen JPA-entiteiten. */
-    private record Prepared(long batchId, long deliveryId, long importLinkId, String identityProfileKind) {
+    private record Prepared(long batchId, long deliveryId, long importLinkId, String libraryCode,
+                            String identityProfileKind) {
     }
 
     private final SourceStateDao sourceState;
     private final CandidatePriceDao candidatePrices;
+    private final CandidateReferenceDao candidateReferences;
     private final PriceObservationDao observations;
     private final MutationDao mutations;
     private final ImportBatchRepository batches;
@@ -116,11 +139,13 @@ public class SourceStateBaselineService {
     private final Clock clock;
 
     public SourceStateBaselineService(SourceStateDao sourceState, CandidatePriceDao candidatePrices,
+                                      CandidateReferenceDao candidateReferences,
                                       PriceObservationDao observations, MutationDao mutations,
                                       ImportBatchRepository batches,
                                       PlatformTransactionManager transactionManager, Clock clock) {
         this.sourceState = sourceState;
         this.candidatePrices = candidatePrices;
+        this.candidateReferences = candidateReferences;
         this.observations = observations;
         this.mutations = mutations;
         this.batches = batches;
@@ -148,14 +173,17 @@ public class SourceStateBaselineService {
 
         // Chunkgewijs: elke chunk is één transactie en volledig idempotent (design par. 9 stap E).
         AcceptanceContext context = new AcceptanceContext(prepared.importLinkId(), prepared.batchId(),
-                prepared.deliveryId(), prepared.identityProfileKind(), SourceStateOrigin.BASELINE_ACCEPTED.name(),
-                user, acceptedAt, acceptedAt);
+                prepared.deliveryId(), prepared.libraryCode(), prepared.identityProfileKind(),
+                SourceStateOrigin.BASELINE_ACCEPTED.name(), user, acceptedAt, acceptedAt);
         ObservationContext observationContext = new ObservationContext(prepared.importLinkId(),
                 prepared.batchId(), observationDate, user, acceptedAt);
         // Draagt deze levering prijscomponenten? Zo niet, blijven catalog_source_state_price-rijen
         // volledig ongemoeid. Een revisie die haar componentmappings verloren heeft, wist zo nooit
         // stilzwijgend eerder aanvaarde verhoudingen: dat vraagt een bewuste herbaselining.
         boolean withPriceComponents = candidatePrices.countByBatchId(batchId) > 0;
+        // Draagt deze levering kritieke koppelreferenties? Zo niet, blijft catalog_reference_state
+        // volledig ongemoeid en kost de aanvaarding geen enkele extra query.
+        boolean withReferences = candidateReferences.hasReferences(batchId);
         long from = 0L;
         Long boundary;
         while ((boundary = sourceState.nextChunkBoundary(batchId, from)) != null) {
@@ -168,6 +196,13 @@ public class SourceStateBaselineService {
                     // Ná de bronstaatrijen zelf: de prijscomponenten hangen eraan met een foreign key.
                     sourceState.insertNewPricesFromStage(context, chunkFrom, chunkTo);
                     sourceState.replaceChangedPricesFromStage(context, chunkFrom, chunkTo);
+                }
+                if (withReferences) {
+                    // R-REF-06: eerste vastlegging van een kritieke koppelreferentie, enkel na
+                    // normalisatie, enkel wanneer ze binnen de bibliotheek nog niet actief is en enkel
+                    // voor regels die werkelijk aanvaard worden. Een vastgehouden regel
+                    // (IDENTITY_INCIDENT) komt hier nooit langs.
+                    acceptReferences(context, chunkFrom, chunkTo);
                 }
                 // De goedgekeurde dagwaarden (R-PRI-13): append-only, in dezelfde transactie als de
                 // bronstaatrij waarnaar ze verwijzen. UNCHANGED levert bewust geen observatie op - de
@@ -187,6 +222,29 @@ public class SourceStateBaselineService {
         return result;
     }
 
+    /**
+     * Legt de kritieke koppelreferenties van één chunk vast en zet een gelijktijdige claim door een
+     * andere batch om in een duidelijk conflict (R-REF-06).
+     * <p>
+     * De {@code not exists}-controle en de insert zitten in dezelfde statement maar niet in dezelfde
+     * grendel: een andere batch kan de waarde er tussenin actief maken. De unieke constraint
+     * {@code uk_catalog_reference_state_active} vangt dat op. Omdat de volledige chunk in één
+     * transactie zit, wordt alles van die chunk teruggedraaid — er blijft nooit half werk staan, en de
+     * batch blijft op {@code SCREENED} zodat ze opnieuw gescreend kan worden tegen de gewijzigde
+     * bibliotheek. Stilzwijgend overslaan zou betekenen dat de aanbieding zonder referentie in de
+     * bronstaat belandt en dat het conflict nooit gezien wordt.
+     */
+    private void acceptReferences(AcceptanceContext context, long fromExclusive, long toInclusive) {
+        try {
+            sourceState.insertReferencesFromStage(context, fromExclusive, toInclusive);
+        } catch (DuplicateKeyException race) {
+            throw new ConflictException(CODE_REFERENCE_ALREADY_ACTIVE, "A critical reference of batch "
+                    + context.batchId() + " became active for another offer in library "
+                    + context.libraryCode() + " while this baseline was being accepted; nothing of this "
+                    + "chunk was written. Screen the delivery again before accepting a baseline");
+        }
+    }
+
     /** Controleert de voorwaarden; schrijft niets, zodat een afgewezen aanroep nooit iets achterlaat. */
     private Prepared prepare(long batchId) {
         ImportBatch batch = batches.findById(batchId)
@@ -200,6 +258,7 @@ public class SourceStateBaselineService {
                     + " offers affected); screen the delivery again before accepting a baseline");
         }
         return new Prepared(batchId, batch.getDelivery().getId(), importLinkId,
+                batch.getImportLink().getLibraryCode(),
                 batch.getDefinitionRevision().getIdentityProfileKind().name());
     }
 

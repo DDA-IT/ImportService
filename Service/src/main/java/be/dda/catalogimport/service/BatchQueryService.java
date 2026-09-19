@@ -50,7 +50,8 @@ public class BatchQueryService {
                               Long rawRecordCount, Long validRecordCount, Long rejectedRecordCount,
                               Long filteredOutCount, Long errorBeforeFilterCount,
                               Long duplicateIdentityCount, Long newCount, Long changedCount,
-                              Long unchangedCount, Long contentMutationCount, String blockedCode,
+                              Long unchangedCount, Long identityIncidentCount,
+                              Long contentMutationCount, String blockedCode,
                               String blockedReason, String baselineAcceptedBy, Instant baselineAcceptedAt,
                               String baselineAcceptReason, Instant createdAt, String createdBy) {
 
@@ -65,18 +66,27 @@ public class BatchQueryService {
                     batch.getValidRecordCount(), batch.getRejectedRecordCount(),
                     batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
                     batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
-                    batch.getUnchangedCount(), batch.getContentMutationCount(), batch.getBlockedCode(),
+                    batch.getUnchangedCount(), batch.getIdentityIncidentCount(),
+                    batch.getContentMutationCount(), batch.getBlockedCode(),
                     batch.getBlockedReason(), batch.getBaselineAcceptedBy(), batch.getBaselineAcceptedAt(),
                     batch.getBaselineAcceptReason(), batch.getCreatedAt(), batch.getCreatedBy());
         }
     }
 
-    /** Eén regel van de mutatielijst (of de {@code IMPORT_MARKER}, dan zonder identiteit). */
+    /**
+     * Eén regel van de mutatielijst (of de {@code IMPORT_MARKER}, dan zonder identiteit).
+     * <p>
+     * {@code referenceType}, {@code beforeReferenceValue} en {@code afterReferenceValue} zijn additief
+     * toegevoegd in bouwstap 3f en zijn enkel gevuld op een {@code IDENTITY_REFERENCE_INCIDENT}: het
+     * soort kritieke koppelreferentie en haar oude en nieuwe genormaliseerde waarde. Voor elke andere
+     * mutatiesoort blijven ze {@code null}, precies zoals vóór 3f.
+     */
     public record MutationRow(long id, String actionType, String targetDomain, String status,
                               String statusReason, String identitySupplier, String identitySupplierGroup,
                               String identitySupplierReference, String identityDiscountCode,
                               String identityDiscountState, String domainMask, BigDecimal beforeBasePrice,
-                              BigDecimal afterBasePrice, String basePriceCurrency, Long sourceStateId,
+                              BigDecimal afterBasePrice, String basePriceCurrency, String referenceType,
+                              String beforeReferenceValue, String afterReferenceValue, Long sourceStateId,
                               Long sourceRowNumber, String resultSummary, String idempotencyKey,
                               Instant createdAt) {
 
@@ -87,7 +97,9 @@ public class BatchQueryService {
                     mutation.getIdentitySupplierReference(), mutation.getIdentityDiscountCode(),
                     mutation.getIdentityDiscountState() == null ? null : mutation.getIdentityDiscountState().name(),
                     mutation.getDomainMask(), mutation.getBeforeBasePrice(), mutation.getAfterBasePrice(),
-                    mutation.getBasePriceCurrency(), mutation.getSourceStateId(), mutation.getSourceRowNumber(),
+                    mutation.getBasePriceCurrency(), mutation.getReferenceType(),
+                    mutation.getBeforeReferenceValue(), mutation.getAfterReferenceValue(),
+                    mutation.getSourceStateId(), mutation.getSourceRowNumber(),
                     mutation.getResultSummary(), mutation.getIdempotencyKey(), mutation.getCreatedAt());
         }
     }

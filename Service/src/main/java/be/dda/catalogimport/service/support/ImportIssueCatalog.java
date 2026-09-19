@@ -63,6 +63,24 @@ public final class ImportIssueCatalog {
      * melding.
      */
     public static final String ROW_ISSUE_RECORDING_CAPPED = "ROW_ISSUE_RECORDING_CAPPED";
+    /**
+     * Een kritieke koppelreferentie (EAN, PIM-ID, CAB-ID, {@code E_MARK+ARTICLE_REFERENCE}) is
+     * gewijzigd, verwijderd, hergebruikt of dubbelzinnig geworden (R-REF-02..R-REF-05). Het soort
+     * staat in {@code expected_value} en in de melding.
+     */
+    public static final String IDENTITY_REFERENCE_INCIDENT = "IDENTITY_REFERENCE_INCIDENT";
+    /**
+     * Dezelfde genormaliseerde referentiewaarde staat in deze ene levering bij twee of meer
+     * verschillende aanbiedingsidentiteiten (R-REF-07). Nooit "laatste wint": élke betrokken regel
+     * wordt vastgehouden.
+     */
+    public static final String DUPLICATE_REFERENCE_IN_DELIVERY = "DUPLICATE_REFERENCE_IN_DELIVERY";
+    /**
+     * Matchingstap 2 (R-ID-03): deze nieuwe aanbieding hoort via een kritieke referentie bij hetzelfde
+     * artikel als een bestaande aanbieding. Informatief — de aanbieding wordt gewoon aangemaakt en de
+     * bestaande aanbiedingsidentiteit wordt nooit vervangen.
+     */
+    public static final String REFERENCE_LINK_PROPOSED = "REFERENCE_LINK_PROPOSED";
 
     /** Scheidingsteken tussen het voorvoegsel en het variabele deel van een dynamische code. */
     public static final char DYNAMIC_CODE_SEPARATOR = ':';
@@ -342,6 +360,23 @@ public final class ImportIssueCatalog {
         // mee te vergelijken.
         put(catalogue, PriceDeviationEvaluator.CODE_PRICE_REFERENCE_NOT_AVAILABLE, RowIssueSeverity.INFO,
                 IssueDomain.PRICE, ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+
+        // Bouwstap 3f, R-REF-02..R-REF-07: kritieke koppelreferenties. Ernst CRITICAL op RECORD-niveau
+        // is bewust de enige combinatie waarin een recordprobleem het eindoordeel van de hele levering
+        // op BLOCKING zet: een onbetrouwbare identiteitskoppeling blokkeert "ongeacht volume"
+        // (R-REF-07) en mag nooit meeliften op een drempel. Het record zelf wordt vastgehouden
+        // (R-REF-09), niet verworpen: het blijft geldig gelezen en telt in identity_incident_count.
+        for (String code : new String[] {
+                IDENTITY_REFERENCE_INCIDENT,
+                DUPLICATE_REFERENCE_IN_DELIVERY}) {
+            put(catalogue, code, RowIssueSeverity.CRITICAL, IssueDomain.IDENTITY_REFERENCE,
+                    ControlLevel.RECORD, ImpactScope.RECORD);
+        }
+        // R-ID-03: een nieuwe aanbieding voor hetzelfde artikel is geen fout maar een vaststelling.
+        // De aanbieding wordt volgens het gewone creatiebeleid gemaakt; de bestaande
+        // aanbiedingsidentiteit blijft onaangeroerd.
+        put(catalogue, REFERENCE_LINK_PROPOSED, RowIssueSeverity.INFO, IssueDomain.IDENTITY_REFERENCE,
+                ControlLevel.RECORD, ImpactScope.RECORD);
 
         return Collections.unmodifiableMap(catalogue);
     }

@@ -68,8 +68,9 @@ public class ImportMutation {
             foreignKey = @ForeignKey(name = "fk_import_mutation_task_run"))
     private TaskRun taskRun;
 
+    /** Sinds changeset 004-13 varchar(40): {@code IDENTITY_REFERENCE_INCIDENT} telt 27 tekens. */
     @Enumerated(EnumType.STRING)
-    @Column(name = "action_type", nullable = false, length = 20)
+    @Column(name = "action_type", nullable = false, length = 40)
     private MutationActionType actionType;
 
     @Enumerated(EnumType.STRING)
@@ -104,9 +105,37 @@ public class ImportMutation {
 
     // --- Inhoud van de mutatie ----------------------------------------------------------------
 
-    /** Betrokken domeinen van een UPDATE, bv. {@code PRICE}. */
-    @Column(name = "domain_mask", length = 100)
+    /** Betrokken domeinen van een UPDATE, bv. {@code PRICE}. Sinds changeset 004-13b varchar(200). */
+    @Column(name = "domain_mask", length = 200)
     private String domainMask;
+
+    /**
+     * Het soort kritieke koppelreferentie waarover dit incident gaat ({@code EAN}, {@code PIM_ID},
+     * {@code CAB_ID}, {@code E_MARK_ARTICLE_REFERENCE}); enkel gevuld op een
+     * {@link MutationActionType#IDENTITY_REFERENCE_INCIDENT} (changeset 004-13, R-REF-02..R-REF-05).
+     */
+    @Column(name = "reference_type", length = 30)
+    private String referenceType;
+
+    /**
+     * De <b>genormaliseerde</b> waarde die vóór dit incident actief was, of {@code null} wanneer de
+     * aanbieding er nog geen had. Bewust leesbare tekst naast de hash: een beslisser moet oude en
+     * nieuwe waarde kunnen zien zonder de staging te raadplegen, en die wordt opgeruimd.
+     */
+    @Column(name = "before_reference_value", length = 200)
+    private String beforeReferenceValue;
+
+    /** De genormaliseerde waarde uit de levering; {@code null} betekent "gemapt maar leeg" (R-REF-03). */
+    @Column(name = "after_reference_value", length = 200)
+    private String afterReferenceValue;
+
+    /**
+     * De issuegroep waarin dit incident later als bulkincident samengevat wordt (bouwstap 3g). In
+     * bouwstap 3f blijft deze verwijzing leeg; de kolom bestaat al zodat de groepering additief kan
+     * aansluiten.
+     */
+    @Column(name = "issue_group_id")
+    private Long issueGroupId;
 
     @Column(name = "before_base_price", precision = 24, scale = 6)
     private BigDecimal beforeBasePrice;
@@ -258,6 +287,38 @@ public class ImportMutation {
 
     public void setDomainMask(String domainMask) {
         this.domainMask = domainMask;
+    }
+
+    public String getReferenceType() {
+        return referenceType;
+    }
+
+    public void setReferenceType(String referenceType) {
+        this.referenceType = referenceType;
+    }
+
+    public String getBeforeReferenceValue() {
+        return beforeReferenceValue;
+    }
+
+    public void setBeforeReferenceValue(String beforeReferenceValue) {
+        this.beforeReferenceValue = beforeReferenceValue;
+    }
+
+    public String getAfterReferenceValue() {
+        return afterReferenceValue;
+    }
+
+    public void setAfterReferenceValue(String afterReferenceValue) {
+        this.afterReferenceValue = afterReferenceValue;
+    }
+
+    public Long getIssueGroupId() {
+        return issueGroupId;
+    }
+
+    public void setIssueGroupId(Long issueGroupId) {
+        this.issueGroupId = issueGroupId;
     }
 
     public BigDecimal getBeforeBasePrice() {

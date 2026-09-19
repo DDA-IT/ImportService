@@ -555,9 +555,11 @@ public class ImportMappingConfigFactory {
      * code — de v1-prijshash dekt enkel de basisprijs en de munt, zodat een gewijzigde verhouding
      * onzichtbaar zou blijven.
      * <p>
-     * <b>Kritieke referenties blokkeren nog altijd</b>, ook mét versie 2: hun deel van de
-     * vingerafdruk en hun incidentcontrole komen in bouwstap 3f. De gemapte waarden zouden nu gelezen
-     * maar niet gecontroleerd worden, en dat is precies het stille gedrag dat par. 3.5 uitsluit.
+     * <b>Kritieke referenties</b> zijn sinds bouwstap 3f volledig verwerkbaar onder versie 2: hun
+     * genormaliseerde waarden zitten in de referentievingerafdruk en lopen door de referentiecontrole
+     * (R-REF-02..R-REF-06). Onder versie 1 blijven ze geblokkeerd met dezelfde code — versie 1 kent
+     * geen referentiedeel, dus een gewijzigde EAN zou onzichtbaar blijven in de delta en dus stil als
+     * gewone update doorgaan. Dat is precies wat par. 14.23.3 verbiedt.
      * <p>
      * <b>Ook de munt.</b> Een revisie die {@code record_currency_field} declareert, wijzigt de
      * prijsvingerafdruk (de munt zit erin). Onder versie 1 zou dat de hash van elke bestaande bronstaat
@@ -567,12 +569,12 @@ public class ImportMappingConfigFactory {
                                                       List<FieldMapping> fields) {
         int version = revision.getRecordCanonicalisationVersion();
         boolean hasReferences = fields.stream().anyMatch(field -> field.referenceType() != null);
-        if (hasReferences) {
+        if (hasReferences && version != CANONICALISATION_VERSION_WITH_COMPONENTS) {
             throw blocked(CODE_CANONICALISATION_VERSION_REQUIRED, null, String.valueOf(version),
                     "This revision maps critical references. Those belong to canonicalisation version "
-                            + CANONICALISATION_VERSION_WITH_COMPONENTS + ", whose reference part is not "
-                            + "implemented yet; processing them now would leave changes to those fields "
-                            + "out of the fingerprint");
+                            + CANONICALISATION_VERSION_WITH_COMPONENTS + "; under version " + version
+                            + " a changed EAN, PIM or CAB would stay out of the fingerprint and would "
+                            + "silently pass as an ordinary update");
         }
         if (revision.getRecordCurrencyField() != null && !revision.getRecordCurrencyField().isBlank()
                 && version != CANONICALISATION_VERSION_WITH_COMPONENTS) {

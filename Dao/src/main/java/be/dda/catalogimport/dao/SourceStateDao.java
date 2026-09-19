@@ -29,6 +29,12 @@ import org.springframework.stereotype.Repository;
  * onaangeroerd. Dat is de "voor"-waarde waarmee de volgende levering een gewijzigde verhouding bij een
  * ongewijzigde basisprijs kan vaststellen (R-PRI-09).
  * <p>
+ * <b>Kritieke koppelreferenties.</b> Bij dezelfde acceptatie worden de genormaliseerde EAN-, PIM-,
+ * CAB- en {@code E_MARK+ARTICLE_REFERENCE}-waarden van de aanvaarde regels vastgelegd in
+ * {@code catalog_reference_state} (fase 3, R-REF-06) — enkel wanneer ze binnen de bibliotheek nog
+ * niet actief zijn. Een regel met classificatie {@code IDENTITY_INCIDENT} wordt nergens aanvaard: ze
+ * valt buiten élke query hier, want elke filtert op {@code classification in ('NEW', 'CHANGED')}.
+ * <p>
  * <b>Hervatbaar.</b> Elke schrijfoperatie is idempotent: een insert slaat identiteiten over die al
  * bestaan, een update raakt enkel rijen waarvan de gecombineerde vingerafdruk nog afwijkt. Een
  * onderbroken of herhaalde acceptatie kan dus vanaf het begin herstarten zonder dubbele of foutieve
@@ -142,6 +148,46 @@ public class SourceStateDao {
             + "where stage.batch_id = ? and stage.classification = 'CHANGED' "
             + "  and stage.row_number > ? and stage.row_number <= ?)";
 
+    /**
+     * De kritieke koppelreferenties van de aanvaarde regels van één chunk (R-REF-06). Alleen na
+     * normalisatie, alleen wanneer de waarde binnen de bibliotheek nog niet actief is, en alleen voor
+     * regels die werkelijk aanvaard worden ({@code NEW} of {@code CHANGED}) — een regel met
+     * classificatie {@code IDENTITY_INCIDENT} komt hier nooit langs.
+     * <p>
+     * <b>Waarom {@code not exists} én een unieke constraint.</b> De {@code not exists} doet twee
+     * dingen tegelijk: ze maakt de insert idempotent (een hervatte acceptatie schrijft niets dubbel)
+     * en ze slaat de waarden over die al actief zijn bij een <i>andere</i> aanbieding. Dat laatste is
+     * geen stille correctie maar het gewenste gedrag van matchingstap 2 (R-ID-03): twee
+     * leveranciersaanbiedingen voor hetzelfde artikel delen die ene referentie, en de bestaande
+     * koppeling blijft onaangeroerd. De unieke constraint
+     * {@code uk_catalog_reference_state_active} blijft daarnaast de harde garantie: raakt een andere
+     * batch de waarde tussen de {@code not exists} en de insert, dan faalt de chunk en wordt ze
+     * teruggedraaid in plaats van half geschreven.
+     * <p>
+     * {@code active_marker} krijgt {@code TRUE}: dit is de actieve koppeling. Historiek (marker
+     * {@code NULL}) ontstaat pas met de goedkeuringsroute van een incident (fase 4).
+     */
+    private static final String INSERT_REFERENCES_FROM_STAGE = "insert into catalog_reference_state ("
+            + "library_code, reference_type, value_normalised, value_raw, source_state_id, "
+            + "import_link_id, active_marker, accepted_by, accepted_at, created_at, updated_at) "
+            + "select cast(? as varchar(20)), ref.reference_type, ref.value_normalised, "
+            + "coalesce(ref.value_raw, ref.value_normalised), state.id, cast(? as bigint), true, "
+            + "cast(? as varchar(100)), cast(? as timestamp with time zone), "
+            + "cast(? as timestamp with time zone), cast(? as timestamp with time zone) "
+            + "from import_candidate_stage stage "
+            + "join import_candidate_reference ref "
+            + "  on ref.batch_id = stage.batch_id and ref.row_number = stage.row_number "
+            + "join catalog_source_state state "
+            + "  on state.import_link_id = ? and state.identity_hash = stage.identity_hash "
+            + "where stage.batch_id = ? and stage.classification in ('NEW', 'CHANGED') "
+            + "  and stage.row_number > ? and stage.row_number <= ? "
+            + "  and ref.is_empty = false "
+            + "  and not exists (select 1 from catalog_reference_state existing "
+            + "      where existing.library_code = cast(? as varchar(20)) "
+            + "        and existing.reference_type = ref.reference_type "
+            + "        and existing.value_normalised = ref.value_normalised "
+            + "        and existing.active_marker = true)";
+
     private record ChangedRow(byte[] identityHash, byte[] articleFingerprint, byte[] priceFingerprint,
                               byte[] referenceFingerprint, byte[] combinedFingerprint,
                               BigDecimal basePrice, String basePriceCurrency) {
@@ -152,8 +198,8 @@ public class SourceStateDao {
      * naam van het identiteitsprofiel van de definitierevisie waaronder de batch gescreend werd.
      */
     public record AcceptanceContext(long importLinkId, long batchId, long deliveryId,
-                                    String identityProfileKind, String stateOrigin, String acceptedBy,
-                                    Instant acceptedAt, Instant writtenAt) {
+                                    String libraryCode, String identityProfileKind, String stateOrigin,
+                                    String acceptedBy, Instant acceptedAt, Instant writtenAt) {
     }
 
     private final JdbcTemplate jdbc;
@@ -293,6 +339,32 @@ public class SourceStateDao {
         jdbc.update(DELETE_CHANGED_PRICES, context.importLinkId(), context.batchId(), fromExclusive,
                 toInclusive);
         return insertPricesFromStage(context, "CHANGED", fromExclusive, toInclusive);
+    }
+
+    /**
+     * Legt de kritieke koppelreferenties van de aanvaarde regels van één chunk vast (R-REF-06).
+     * Aanroepen ná {@link #insertNewFromStage}: de bronstaatrij moet bestaan.
+     *
+     * @return het aantal werkelijk vastgelegde referenties
+     * @throws org.springframework.dao.DuplicateKeyException wanneer een andere batch de waarde in
+     *         dezelfde bibliotheek actief maakte tussen de controle en de insert; de aanroeper zet die
+     *         race om in een duidelijk conflict en draait de chunk terug
+     */
+    public int insertReferencesFromStage(AcceptanceContext context, long fromExclusive,
+                                         long toInclusive) {
+        return jdbc.update(INSERT_REFERENCES_FROM_STAGE, statement -> {
+            statement.setString(1, context.libraryCode());
+            statement.setLong(2, context.importLinkId());
+            statement.setString(3, context.acceptedBy());
+            statement.setObject(4, utc(context.acceptedAt()));
+            statement.setObject(5, utc(context.writtenAt()));
+            statement.setObject(6, utc(context.writtenAt()));
+            statement.setLong(7, context.importLinkId());
+            statement.setLong(8, context.batchId());
+            statement.setLong(9, fromExclusive);
+            statement.setLong(10, toInclusive);
+            statement.setString(11, context.libraryCode());
+        });
     }
 
     private int insertPricesFromStage(AcceptanceContext context, String classification,

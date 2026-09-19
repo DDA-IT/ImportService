@@ -66,6 +66,11 @@ class ImportIssueCatalogTest {
             PriceRules.class,
             // Bouwstap 3e: de afwijkingscontrole tegen de prijshistoriek (R-PRI-10..R-PRI-12).
             PriceDeviationEvaluator.class,
+            // Bouwstap 3f: de normalisatie en de controle van de kritieke koppelreferenties
+            // (R-REF-01..R-REF-06). Ze stellen zelf geen codes vast, maar staan hier zodat een code
+            // die er later bijkomt niet aan de scan ontsnapt.
+            ReferenceNormaliser.class,
+            ReferenceControlEvaluator.class,
             DeliveryScreeningService.class,
             ScreeningRecoveryService.class);
 
@@ -142,15 +147,23 @@ class ImportIssueCatalogTest {
     }
 
     /**
-     * De hiërarchie moet in de classificatie zelf kloppen: een probleem dat de hele levering raakt
-     * is nooit een recordprobleem, en een recordprobleem trekt nooit de hele levering onderuit.
+     * De hiërarchie moet in de classificatie zelf kloppen: een probleem dat de hele levering raakt is
+     * nooit een recordprobleem, en een recordprobleem verklaart nooit de hele levering onbruikbaar.
+     * <p>
+     * <b>Eén uitzondering, en ze is bewust</b> (aangepast in bouwstap 3f): ernst {@code CRITICAL} op
+     * recordniveau. Een kritieke koppelreferentie blokkeert volgens R-REF-07 "ongeacht volume": het
+     * record zelf wordt vastgehouden (impactscope {@code RECORD}), maar het eindoordeel van de
+     * levering wordt {@code BLOCKING}. Wat een recordprobleem dus nooit mag zijn, is
+     * {@code BLOCKING}: die ernst hoort bij een contract-, structuur- of drempelfout, die per definitie
+     * de hele levering betreft.
      */
     @Test
     void severityAndControlLevelAgreeWithTheImpactScope() {
         ImportIssueCatalog.all().forEach((code, classification) -> {
             if (classification.controlLevel() == ControlLevel.RECORD) {
                 assertThat(classification.defaultImpactScope()).as("%s", code).isEqualTo(ImpactScope.RECORD);
-                assertThat(classification.severity().isBlockingForBatch()).as("%s", code).isFalse();
+                assertThat(classification.severity()).as("%s", code)
+                        .isNotEqualTo(RowIssueSeverity.BLOCKING);
             } else {
                 assertThat(classification.defaultImpactScope()).as("%s", code)
                         .isIn(ImpactScope.DELIVERY, ImpactScope.DEFINITION, ImpactScope.LIBRARY);

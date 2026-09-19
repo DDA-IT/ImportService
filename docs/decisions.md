@@ -191,3 +191,40 @@ beide namen vervangen door geverifieerde Keycloak-identiteiten. Alternatief (wei
 verworpen omdat het de eerste levering van elke nieuwe koppeling onbruikbaar zou maken.
 
 **Bron:** mens / `business-analyse-leveranciersbibliotheken.md` §16.1, §14.23.7, §16.8
+
+---
+
+## 2026-09-19 — Fase 3e: betekenis van de 50- en 200-daagse gemiddelden
+
+**Vraag:** De afwijkingscontrole vergelijkt met de vorige waarde en met het gemiddelde van de laatste 50 en 200
+"dagwaarden". Gaat dat over de laatste N vastgelegde goedgekeurde waarden, of over N kalenderdagen met
+doorgetrokken waarde (ook voor ongewijzigde dagen)?
+
+**Beslissing:** De 50- en 200-gemiddelden zijn slechts een extra referentie naast de vorige waarde, om een
+bewegend gemiddelde te hebben. Gemiddelde over de laatste N VASTGELEGDE goedgekeurde observaties volstaat;
+geen doorgetrokken kalenderdagen, geen extra observaties voor ongewijzigde dagen. De vorige waarde blijft de
+primaire referentie.
+
+**Bron:** mens / `docs/design/fase3-rules-design.md` §13
+
+---
+
+## 2026-09-20 — Fase 3: eindoordeel bij verworpen regels (validation_result) en kritieke kolommen
+
+**Vraag:** Welk eindoordeel (`validation_result`) krijgt een levering met regels die door gewone fouten
+verworpen zijn maar die verder doorgaat? (Open punt R-THR-06: ERROR staat niet in de regel.)
+
+**Beslissing (mens, letterlijk):** "de gebruiker heeft zelf een waarde gegeven aan kolommen (kritiek of niet);
+kritieke lijnfouten hebben een review nodig, waarschuwingen niet."
+Vertaling: per kolom (mapping/veld) bepaalt de gebruiker of die KRITIEK is of niet. Een fout op een kritieke
+kolom (kritieke lijn) vereist een review (⇒ `REVIEW_REQUIRED`); een waarschuwing of een fout op een niet-kritieke
+kolom vereist geen review (⇒ hooguit `VALID_WITH_WARNINGS`).
+
+**Status:** de exacte uitwerking ontbreekt nog in het ontwerp en moet vóór stap 3h door een Denker worden
+uitgewerkt en aan de mens voorgelegd waar het een §6-criterium raakt: (a) waar de kritiek-vlag per kolom
+opgeslagen wordt (bv. een additieve kolom op `import_field_mapping`; voor de revisie-eigen velden identiteit/
+basisprijs/omschrijving een aanvullende plek) en of de basisprijs/identiteit altijd kritiek zijn; (b) hoe dit
+zich verhoudt tot `max_critical_records` (design R-THR-05: default 0 ⇒ levering BLOCKED) — de mens zegt "review",
+niet "blokkeren"; (c) hoe `validation_result` en mutatiestatussen (AWAITING_APPROVAL) daarop reageren.
+
+**Bron:** mens / `docs/design/fase3-rules-design.md` §9, §13

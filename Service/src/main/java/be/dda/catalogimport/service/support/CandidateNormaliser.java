@@ -55,12 +55,12 @@ import java.util.List;
  *       {@code reference_fingerprint} bij en {@code combined_fingerprint} is de SHA-256 over
  *       identiteit ‖ artikel ‖ prijs ‖ referenties.</li>
  * </ul>
- * <b>Grens van bouwstap 3d.</b> De prijsvingerafdruk van versie 2 dekt de basisprijs, de munt en élke
+ * <b>Prijs en referenties onder versie 2.</b> De prijsvingerafdruk dekt de basisprijs, de munt en élke
  * gemapte prijscomponent met haar verhouding. Zonder {@code record_currency_field} blijft
  * {@code basePriceCurrency} {@code null} ("onbekend"); er wordt nooit stilzwijgend EUR verondersteld.
- * De referentielijst van versie 2 is nog <b>leeg</b>: die komt in bouwstap 3f, en tot dan blokkeert
- * {@link ImportMappingConfigFactory} elke revisie die referenties mapt. Een revisie zónder
- * prijscomponenten houdt exact de vingerafdruk van bouwstap 3c — byte voor byte.
+ * De referentievingerafdruk dekt élke gemapte kritieke koppelreferentie met haar <b>genormaliseerde</b>
+ * waarde, gesorteerd op referentietype (bouwstap 3f, R-REF-01). Een revisie zónder prijscomponenten
+ * en zónder referentiemappings houdt exact de vingerafdrukken van bouwstap 3c — byte voor byte.
  */
 public final class CandidateNormaliser {
 
@@ -79,6 +79,12 @@ public final class CandidateNormaliser {
     public static final int MAX_IDENTITY_LENGTH = 200;
     /** {@code description} is varchar(1000). */
     public static final int MAX_DESCRIPTION_LENGTH = 1000;
+    /**
+     * {@code import_candidate_reference.value_raw}/{@code value_normalised} en
+     * {@code catalog_reference_state} zijn varchar(200). Een langere referentie wordt <b>verworpen</b>
+     * en nooit afgekapt: een afgekapte EAN zou een andere aanbieding kunnen aanwijzen.
+     */
+    public static final int MAX_REFERENCE_LENGTH = 200;
     /** {@code base_price} is numeric(24,6): hoogstens 18 cijfers vóór de komma. */
     public static final int MAX_PRICE_INTEGER_DIGITS = 18;
 
@@ -99,8 +105,26 @@ public final class CandidateNormaliser {
     }
 
     /**
+     * Eén gemapte kritieke koppelreferentie van één bronregel (R-REF-01). De ruwe waarde blijft naast
+     * de genormaliseerde bewaard; {@code valueNormalised} is {@code null} wanneer het veld gemapt maar
+     * leeg is — dat is een uitspraak van de leverancier (R-REF-03) en iets anders dan een niet-gemapt
+     * veld, dat helemaal geen {@code ReferenceValue} oplevert.
+     */
+    public record ReferenceValue(String referenceType, String valueRaw, String valueNormalised) {
+
+        /** Gemapt maar leeg: de leverancier laat deze referentie weg. */
+        public boolean isEmpty() {
+            return valueNormalised == null;
+        }
+    }
+
+    /**
      * Een gevalideerde kandidaat, klaar om gestaged te worden. Hashes zijn binair (32 bytes).
      *
+     * @param references           de gemapte kritieke koppelreferenties, gesorteerd op referentietype;
+     *                             leeg wanneer de revisie er geen mapt — dan wordt er geen enkele
+     *                             {@code import_candidate_reference}-rij geschreven en blijft het
+     *                             gedrag exact dat van bouwstap 3c/3d
      * @param referenceFingerprint de deelvingerafdruk over de kritieke referenties; {@code null} bij
      *                             canonicalisatieversie 1, die geen referentiedeel kent
      * @param priceComponents      de rijen voor {@code import_candidate_price}: de basisprijs zelf en
@@ -129,10 +153,12 @@ public final class CandidateNormaliser {
             byte[] referenceFingerprint,
             byte[] combinedFingerprint,
             List<PriceRules.PriceComponent> priceComponents,
+            List<ReferenceValue> references,
             List<RowIssue> notices) implements Result {
 
         public NormalisedCandidate {
             priceComponents = List.copyOf(priceComponents);
+            references = List.copyOf(references);
             notices = List.copyOf(notices);
         }
 
@@ -226,6 +252,7 @@ public final class CandidateNormaliser {
             }
             List<PriceRules.PriceComponent> priceComponents =
                     priceComponents(row, basePrice, currency, mapped, mappingConfig, config);
+            List<ReferenceValue> references = references(row, mapped, mappingConfig);
 
             String description = null;
             if (config.descriptionField() != null) {
@@ -245,7 +272,7 @@ public final class CandidateNormaliser {
             byte[] priceFingerprint = ImportValueRules.sha256Utf8(
                     canonicalPrice(version, basePrice, currency, priceComponents));
             byte[] referenceFingerprint = version == CANONICALISATION_VERSION_WITH_FIELDS
-                    ? ImportValueRules.sha256Utf8(ImportValueRules.canonical(version))
+                    ? ImportValueRules.sha256Utf8(canonicalReferences(references))
                     : null;
             byte[] combinedFingerprint = referenceFingerprint == null
                     ? ImportValueRules.sha256(concat(identityHash, articleFingerprint, priceFingerprint))
@@ -255,7 +282,7 @@ public final class CandidateNormaliser {
             return new NormalisedCandidate(row.lineNumber(), supplier, group, reference, discountCode,
                     discountState, identityHash, basePrice, currency, description, articleFingerprint,
                     priceFingerprint, referenceFingerprint, combinedFingerprint, priceComponents,
-                    notices(row, mapped));
+                    references, notices(row, mapped));
         } catch (ImportValueException rejected) {
             return new RowIssue(row.lineNumber(), rejected.getCode(), rejected.getField(),
                     rejected.getRawValue(), rejected.getMessage());
@@ -330,6 +357,69 @@ public final class CandidateNormaliser {
         // in plaats van met een verzonnen percentage of een stille 0 gestaged te worden.
         PriceRules.requireComputable(components, config.basePriceField());
         return components;
+    }
+
+    /**
+     * De gemapte kritieke koppelreferenties van deze bronregel (R-REF-01/R-REF-03), gesorteerd op
+     * referentietype.
+     * <p>
+     * <b>Drie toestanden die nooit door elkaar mogen lopen.</b>
+     * <ul>
+     *   <li><b>niet gemapt</b> — er komt geen enkel element in de lijst en dus geen rij in
+     *       {@code import_candidate_reference}. Over dat referentietype doet deze levering geen
+     *       uitspraak, en de referentiecontrole beoordeelt het niet;</li>
+     *   <li><b>gemapt maar leeg</b> — een element met {@code valueNormalised = null}. Dat is wél een
+     *       uitspraak: de leverancier laat de referentie weg, wat voor een bestaande aanbieding een
+     *       kritiek incident oplevert (R-REF-03);</li>
+     *   <li><b>gemapt met waarde</b> — de ruwe bronwaarde én haar vergelijkingswaarde.</li>
+     * </ul>
+     * <b>Een revisie zonder referentiemappings levert een lege lijst</b> — dan is de
+     * referentievingerafdruk byte-identiek aan die van bouwstap 3c.
+     */
+    private static List<ReferenceValue> references(ParsedRow row, MappedRecord mapped,
+                                                   ImportMappingConfig mappingConfig) {
+        if (mappingConfig == null || !mappingConfig.hasReferences()) {
+            return List.of();
+        }
+        List<ReferenceValue> references = new ArrayList<>();
+        for (ImportMappingConfig.FieldMapping field : mappingConfig.referenceFields()) {
+            String mappedValue = mapped.value(field.targetFieldCode());
+            String raw = mappedValue == null ? null : sourceValue(row, field, mappedValue);
+            // Genormaliseerd wordt op de GEMAPTE waarde (na transformatie), niet op de ruwe kolom:
+            // anders zou een transformatie de vergelijkingswaarde niet bereiken.
+            String normalised = ReferenceNormaliser.normalise(mappedValue);
+            requireLength(raw, field.targetFieldName(), MAX_REFERENCE_LENGTH);
+            requireLength(normalised, field.targetFieldName(), MAX_REFERENCE_LENGTH);
+            references.add(new ReferenceValue(field.referenceType(), raw, normalised));
+        }
+        return references;
+    }
+
+    /**
+     * De canonieke referentietekst van versie 2 (ontwerp par. 3.5): per gemapte referentie het
+     * <b>referentietype</b> en de genormaliseerde waarde, gesorteerd op referentietype.
+     * <p>
+     * Een gemapt maar leeg veld krijgt in plaats van een waarde de "niet gemapt"-markering
+     * ({@code U+0000}, zie {@link ImportValueRules#canonical}). Dat is een eigen marker die geen
+     * enkele echte waarde kan aannemen: een genormaliseerde waarde is nooit leeg en nooit
+     * {@code null}. Zo blijven "gemapt maar leeg" en "gemapt met waarde" aantoonbaar verschillend,
+     * terwijl "niet gemapt" helemaal geen onderdeel bijdraagt.
+     * <p>
+     * <b>Een lege lijst levert exact {@code canonical(2)}</b> — precies de tekst van bouwstap 3c. Een
+     * revisie zonder referentiemappings houdt haar vingerafdruk dus byte voor byte, en een bestaande
+     * bronstaat komt nooit onterecht als gewijzigd uit de delta.
+     */
+    private static String canonicalReferences(List<ReferenceValue> references) {
+        if (references.isEmpty()) {
+            return ImportValueRules.canonical(CANONICALISATION_VERSION_WITH_FIELDS);
+        }
+        List<String> parts = new ArrayList<>(references.size() * 2);
+        for (ReferenceValue reference : references) {
+            parts.add(reference.referenceType());
+            parts.add(reference.valueNormalised());
+        }
+        return ImportValueRules.canonical(CANONICALISATION_VERSION_WITH_FIELDS,
+                parts.toArray(String[]::new));
     }
 
     /** De ruwe bronwaarde voor de melding; valt terug op de gemapte waarde bij een afgeleid veld. */

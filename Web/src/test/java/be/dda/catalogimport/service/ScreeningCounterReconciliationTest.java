@@ -129,9 +129,15 @@ class ScreeningCounterReconciliationTest {
         assertThat(outcome.filteredOutCount() + outcome.errorBeforeFilterCount()
                 + outcome.rejectedRecordCount() + outcome.validRecordCount())
                 .isEqualTo(outcome.rawRecordCount());
-        // En de tweede reconciliatie uit fase 2 blijft gelden.
+        // En de tweede reconciliatie blijft gelden. Sinds bouwstap 3f telt daar
+        // identity_incident_count bij: een record dat wegens een kritiek referentie-incident
+        // vastgehouden wordt (R-REF-09) is wél geldig gelezen, maar krijgt geen van de drie
+        // deltaclassificaties meer. Zonder die vierde bak zou de telling niet meer sluiten.
         assertThat(outcome.newCount() + outcome.changedCount() + outcome.unchangedCount()
-                + outcome.duplicateIdentityCount()).isEqualTo(outcome.validRecordCount());
+                + outcome.duplicateIdentityCount() + outcome.identityIncidentCount())
+                .isEqualTo(outcome.validRecordCount());
+        // Deze levering mapt geen kritieke referenties: dan is er niets vast te houden.
+        assertThat(outcome.identityIncidentCount()).isZero();
 
         // Alleen records binnen de scope zijn gestaged; een BEFR-regel is nooit verder onderzocht.
         assertThat(stagedReferences(uploaded)).containsExactly("R1", "R3", "R7");

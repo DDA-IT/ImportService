@@ -66,6 +66,24 @@ public class MutationDao {
     /** Scheidt het prijsdomein van de componentcode in {@code domain_mask}: {@code PRICE:AKP}. */
     public static final String COMPONENT_MASK_SEPARATOR = ":";
 
+    /**
+     * De classificatie van een regel die wegens een kritiek referentie-incident wordt vastgehouden
+     * (R-REF-09). Dezelfde waarde staat in {@code CandidateClassification.IDENTITY_INCIDENT} (Domain);
+     * ze staat hier letterlijk omdat de SQL ze nodig heeft en de Dao-laag geen enum uit de Domain-laag
+     * in haar statementtekst mag weven.
+     */
+    public static final String IDENTITY_INCIDENT_CLASSIFICATION = "IDENTITY_INCIDENT";
+
+    /**
+     * {@code import_mutation.status_reason} van de inhoudelijke mutatie van een vastgehouden regel.
+     * Eén uniforme reden voor alle kritieke referentie-incidenten; wélk incident het precies was
+     * (een gewijzigde, verwijderde, hergebruikte of dubbelzinnige referentie, of dezelfde
+     * referentiewaarde tweemaal in deze levering) staat in {@code import_row_issue} en in de
+     * bijhorende {@code IDENTITY_REFERENCE_INCIDENT}-mutatie. Een tweede reden in deze kolom zou een
+     * correlatie per regel vragen en op een miljoen regels een scan per regel opleveren.
+     */
+    public static final String BLOCKED_BY_IDENTITY_REFERENCE_INCIDENT = "IDENTITY_REFERENCE_INCIDENT";
+
     /** Het artikeldeel van {@code domain_mask}. */
     public static final String ARTICLE_MASK = "ARTICLE";
     /** Het basisprijsdeel van {@code domain_mask}; met een componentcode erachter: {@code PRICE:AKP}. */
@@ -83,7 +101,7 @@ public class MutationDao {
     private static final Pattern COMPONENT_CODE = Pattern.compile("[A-Z0-9_]{1,20}");
 
     private static final String CONTENT_MUTATION_COLUMNS = "batch_id, delivery_id, import_link_id, "
-            + "definition_revision_id, task_run_id, action_type, target_domain, status, "
+            + "definition_revision_id, task_run_id, action_type, target_domain, status, status_reason, "
             + "identity_supplier, identity_supplier_group, identity_supplier_reference, "
             + "identity_discount_code, identity_discount_state, identity_hash, "
             + "before_combined_fingerprint, after_combined_fingerprint, domain_mask, "
@@ -116,6 +134,18 @@ public class MutationDao {
      * Het domeinmasker van een {@code UPDATE} zegt welk deel van de aanbieding verschilt; zie
      * {@link #domainMask(List)}. De voor- en nabasisprijs worden apart bewaard, zodat een
      * prijswijziging zichtbaar is zonder de bronregel te hoeven bewaren.
+     * <p>
+     * <b>Vastgehouden regels krijgen wél hun mutatie, maar geblokkeerd</b> (R-REF-09). Een regel met
+     * classificatie {@code IDENTITY_INCIDENT} levert dezelfde {@code CREATE}- of {@code UPDATE}-rij
+     * op, maar met status {@code BLOCKED} en reden
+     * {@value #BLOCKED_BY_IDENTITY_REFERENCE_INCIDENT}. Ze helemaal weglaten zou verbergen wát er
+     * met die aanbieding zou gebeuren zodra het incident goedgekeurd of verworpen is; ze op
+     * {@code PLANNED} zetten zou een kritieke referentiewijziging alsnog als gewone update laten
+     * doorgaan. {@code accept-baseline} raakt een {@code BLOCKED}-mutatie nooit aan.
+     * <p>
+     * Of het een creatie of een wijziging is, volgt uit de <b>bronstaat</b> en niet uitsluitend uit de
+     * classificatie: een vastgehouden regel draagt haar oorspronkelijke {@code NEW}/{@code CHANGED}
+     * niet meer.
      *
      * @param componentCodes de prijscomponenten van deze batch, gesorteerd; leeg ⇒ exact het
      *                       fase 2-masker
@@ -124,7 +154,13 @@ public class MutationDao {
         return "insert into import_mutation ("
                 + CONTENT_MUTATION_COLUMNS + ") select "
                 + "cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), "
-                + "case when stage.classification = 'NEW' then 'CREATE' else 'UPDATE' end, 'OFFER', 'PLANNED', "
+                + "case when stage.classification = 'NEW' or state.id is null then 'CREATE' else 'UPDATE' end, "
+                + "'OFFER', "
+                + "case when stage.classification = '" + IDENTITY_INCIDENT_CLASSIFICATION + "' "
+                + "     then 'BLOCKED' else 'PLANNED' end, "
+                + "case when stage.classification = '" + IDENTITY_INCIDENT_CLASSIFICATION + "' "
+                + "     then cast('" + BLOCKED_BY_IDENTITY_REFERENCE_INCIDENT + "' as varchar(200)) "
+                + "     else cast(null as varchar(200)) end, "
                 + "stage.identity_supplier, stage.identity_supplier_group, stage.identity_supplier_reference, "
                 + "stage.identity_discount_code, stage.identity_discount_state, stage.identity_hash, "
                 + "state.combined_fingerprint, stage.combined_fingerprint, "
@@ -136,7 +172,8 @@ public class MutationDao {
                 + "left join catalog_source_state state "
                 + "  on state.import_link_id = ? and state.identity_hash = stage.identity_hash "
                 + "where stage.batch_id = ? and stage.row_number > ? and stage.row_number <= ? "
-                + "  and stage.classification in ('NEW', 'CHANGED') "
+                + "  and stage.classification in ('NEW', 'CHANGED', '"
+                + IDENTITY_INCIDENT_CLASSIFICATION + "') "
                 + "  and not exists (select 1 from import_mutation existing "
                 + "      where existing.idempotency_key = stage.mutation_key_prefix || '" + OFFER_KEY_SUFFIX + "')";
     }
@@ -173,10 +210,10 @@ public class MutationDao {
                     .append(" then ',").append(PRICE_MASK).append(COMPONENT_MASK_SEPARATOR).append(code)
                     .append("' else '' end");
         }
-        // NEW heeft geen "voor"-toestand en dus geen masker; een CHANGED zonder verschil in deze drie
-        // domeinen (vandaag enkel mogelijk via het referentiedeel, bouwstap 3f) krijgt null in plaats
-        // van een lege tekst die op "niets gewijzigd" zou lijken.
-        return "case when stage.classification = 'NEW' then cast(null as varchar("
+        // Een creatie heeft geen "voor"-toestand en dus geen masker; een CHANGED waarvan enkel het
+        // referentiedeel verschilt (bouwstap 3f) krijgt null in plaats van een lege tekst die op
+        // "niets gewijzigd" zou lijken.
+        return "case when stage.classification = 'NEW' or state.id is null then cast(null as varchar("
                 + MAX_DOMAIN_MASK_LENGTH + ")) "
                 + "else nullif(substr(" + parts + ", 2), '') end";
     }
@@ -396,15 +433,24 @@ public class MutationDao {
      * @return het aantal overgezette mutaties
      */
     public int skipPlannedContentMutations(long batchId, String statusReason) {
+        // Enkel CREATE/UPDATE en enkel PLANNED: een geblokkeerde mutatie (kritiek referentie-incident)
+        // en een incident dat op goedkeuring wacht, blijven onaangeroerd. Een aanvaarding van de
+        // nulmeting mag een vastgehouden identiteitswijziging nooit stilzwijgend afsluiten.
         return jdbc.update("update import_mutation set status = 'SKIPPED', status_reason = ? "
-                + "where batch_id = ? and action_type <> 'IMPORT_MARKER' and status = 'PLANNED'",
+                + "where batch_id = ? and action_type in ('CREATE', 'UPDATE') and status = 'PLANNED'",
                 statusReason, batchId);
     }
 
-    /** Het aantal inhoudelijke mutaties van deze batch; de marker telt bewust niet mee. */
+    /**
+     * Het aantal <b>inhoudelijke</b> mutaties van deze batch: {@code CREATE} en {@code UPDATE}. De
+     * {@code IMPORT_MARKER} telt bewust niet mee, en sinds bouwstap 3f ook een
+     * {@code IDENTITY_REFERENCE_INCIDENT} niet: dat is een vaststelling die wacht op goedkeuring en
+     * geen voorgestelde wijziging aan een aanbieding. Ze zou het aantal te publiceren mutaties
+     * overschatten. Het aantal incidenten staat in {@code import_batch.identity_incident_count}.
+     */
     public long countContentMutations(long batchId) {
         Long count = jdbc.queryForObject("select count(*) from import_mutation "
-                + "where batch_id = ? and action_type <> 'IMPORT_MARKER'", Long.class, batchId);
+                + "where batch_id = ? and action_type in ('CREATE', 'UPDATE')", Long.class, batchId);
         return count == null ? 0L : count;
     }
 

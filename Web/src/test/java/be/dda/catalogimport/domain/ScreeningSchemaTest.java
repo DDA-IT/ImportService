@@ -1034,6 +1034,214 @@ class ScreeningSchemaTest {
                 Long.class, identity)).isEqualTo(2L);
     }
 
+    // --- Fase 3f, changeset 004-8/004-9/004-11d/004-13: kritieke koppelreferenties --------------
+
+    /**
+     * R-REF-04/R-REF-06 op databaseniveau: eenzelfde genormaliseerde referentiewaarde is binnen één
+     * bibliotheek hoogstens bij <b>één</b> aanbieding actief. Die garantie mag niet van de
+     * applicatiecontrole afhangen — twee batches kunnen gelijktijdig aanvaard worden, en dan bestaat
+     * er geen enkel moment waarop de applicatie beide ziet.
+     * <p>
+     * De truc is dezelfde als bij {@code import_batch.open_marker}: {@code active_marker} is
+     * {@code TRUE} zolang de rij actief is en {@code NULL} zodra ze historiek wordt. NULL-waarden
+     * botsen niet in een unieke constraint, dus dezelfde waarde mag wel meermaals in de historiek
+     * staan en slechts één keer actief zijn.
+     */
+    @Test
+    void allowsOnlyOneActiveCriticalReferencePerLibraryButAnyNumberOfHistoricalOnes() {
+        Scenario s = scenario("REFUNIQ");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+        Long first = sourceStateId(s, batch, "REFUNIQ-a");
+        Long second = sourceStateId(s, batch, "REFUNIQ-b");
+
+        assertThatCode(() -> insertReferenceState(s, first, "EAN", "5449000000996", true))
+                .doesNotThrowAnyException();
+        // Dezelfde waarde, hetzelfde type, dezelfde bibliotheek, een andere aanbieding: geweigerd.
+        assertThatThrownBy(() -> insertReferenceState(s, second, "EAN", "5449000000996", true))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // Ook een tweede actieve rij voor dezelfde aanbieding botst.
+        assertThatThrownBy(() -> insertReferenceState(s, first, "EAN", "5449000000996", true))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        // Een ander referentietype met dezelfde waarde is een andere referentie.
+        assertThatCode(() -> insertReferenceState(s, second, "CAB_ID", "5449000000996", true))
+                .doesNotThrowAnyException();
+        // Historiek (marker NULL) botst niet - ook niet meermaals voor dezelfde waarde.
+        assertThatCode(() -> insertReferenceState(s, second, "EAN", "5449000000996", null))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> insertReferenceState(s, first, "EAN", "5449000000996", null))
+                .doesNotThrowAnyException();
+        assertThat(jdbc.queryForObject("select count(*) from catalog_reference_state "
+                        + "where library_code = ? and reference_type = 'EAN' and value_normalised = ?",
+                Long.class, s.link().getLibraryCode(), "5449000000996")).isEqualTo(3L);
+
+        // FALSE zou een derde toestand invoeren die de NULL-markertruc stilzwijgend uitschakelt.
+        assertThatThrownBy(() -> insertReferenceState(s, first, "PIM_ID", "P-1", false))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // '000123' en '123' zijn verschillende referenties: de uniciteit staat op de waarde zelf.
+        assertThatCode(() -> insertReferenceState(s, first, "PIM_ID", "000123", true))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> insertReferenceState(s, second, "PIM_ID", "123", true))
+                .doesNotThrowAnyException();
+    }
+
+    /**
+     * De checks van 004-9: "gemapt maar leeg" en "gemapt met waarde" zijn twee toestanden die nooit
+     * door elkaar mogen lopen (R-REF-03), en een uitkomst die niet in de gesloten lijst staat, bestaat
+     * niet.
+     */
+    @Test
+    void enforcesTheEmptyAndMatchChecksOnTheCandidateReferenceTable() {
+        Scenario s = scenario("REFCAND");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+        insertStage(batch.getId(), s.file().getId(), 2L, sha256("REFCAND-identity"));
+
+        assertThatCode(() -> insertCandidateReference(batch.getId(), 2L, "EAN", " 000123 ", "000123",
+                false)).doesNotThrowAnyException();
+        assertThatCode(() -> insertCandidateReference(batch.getId(), 2L, "PIM_ID", "", null, true))
+                .doesNotThrowAnyException();
+        // Leeg mét vergelijkingswaarde, of niet-leeg zónder: allebei zinloos en allebei geweigerd.
+        assertThatThrownBy(() -> insertCandidateReference(batch.getId(), 2L, "CAB_ID", "x", "x", true))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertCandidateReference(batch.getId(), 2L, "CAB_ID", "x", null, false))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // pk_import_candidate_reference: één rij per (batch, regel, referentietype).
+        assertThatThrownBy(() -> insertCandidateReference(batch.getId(), 2L, "EAN", "a", "a", false))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // Een referentie zonder haar gestagede regel kan niet bestaan (foreign key).
+        assertThatThrownBy(() -> insertCandidateReference(batch.getId(), 99L, "EAN", "a", "a", false))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // Een onbekende uitkomst bestaat niet.
+        assertThatThrownBy(() -> jdbc.update("update import_candidate_reference set match_result = 'HMM' "
+                + "where batch_id = ?", batch.getId())).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatCode(() -> jdbc.update("update import_candidate_reference set match_result = 'REUSED' "
+                + "where batch_id = ? and reference_type = 'EAN'", batch.getId()))
+                .doesNotThrowAnyException();
+
+        // De staging is één geheel: de referenties verdwijnen mee met hun regel.
+        jdbc.update("delete from import_candidate_stage where batch_id = ?", batch.getId());
+        assertThat(jdbc.queryForObject("select count(*) from import_candidate_reference "
+                + "where batch_id = ?", Long.class, batch.getId())).isZero();
+    }
+
+    /**
+     * De heruitgegeven {@code ck_import_mutation_marker} (004-13) kent drie soorten en houdt ze streng
+     * uit elkaar. Zonder die scheiding zou een {@code CREATE} met een referentiewaarde kunnen bestaan —
+     * een mutatie die tegelijk een aanbieding maakt én een kritieke referentie wijzigt, precies wat
+     * par. 14.23.3 verbiedt.
+     */
+    @Test
+    void acceptsAReferenceIncidentMutationAndKeepsTheThreeMutationKindsApart() {
+        Scenario s = scenario("REFMUT");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+        byte[] identity = sha256("REFMUT-identity");
+
+        assertThatCode(() -> insertIncidentMutation(s, batch, "REFMUT:1:REFERENCE:EAN", "EAN",
+                "5449000000996", "5449000000997", identity)).doesNotThrowAnyException();
+        Map<String, Object> stored = jdbc.queryForMap("select action_type, status, reference_type, "
+                + "before_reference_value, after_reference_value, issue_group_id "
+                + "from import_mutation where idempotency_key = ?", "REFMUT:1:REFERENCE:EAN");
+        assertThat(stored.get("action_type")).isEqualTo("IDENTITY_REFERENCE_INCIDENT");
+        assertThat(stored.get("status")).isEqualTo("AWAITING_APPROVAL");
+        assertThat(stored.get("reference_type")).isEqualTo("EAN");
+        assertThat(stored.get("before_reference_value")).isEqualTo("5449000000996");
+        assertThat(stored.get("after_reference_value")).isEqualTo("5449000000997");
+        // De groepering is bouwstap 3g; tot dan blijft de verwijzing leeg.
+        assertThat(stored.get("issue_group_id")).isNull();
+        // action_type is verbreed naar varchar(40): 27 tekens passen.
+        assertThat(MutationActionType.IDENTITY_REFERENCE_INCIDENT.name()).hasSize(27);
+
+        // Een incident zonder referentietype stelt niets vast.
+        assertThatThrownBy(() -> insertIncidentMutation(s, batch, "REFMUT:2", null,
+                "a", "b", identity)).isInstanceOf(DataIntegrityViolationException.class);
+        // Een incident zonder oude én zonder nieuwe waarde evenmin.
+        assertThatThrownBy(() -> insertIncidentMutation(s, batch, "REFMUT:3", "EAN", null, null,
+                identity)).isInstanceOf(DataIntegrityViolationException.class);
+        // Een incident zonder identiteitshash is niet herleidbaar tot een aanbieding.
+        assertThatThrownBy(() -> insertIncidentMutation(s, batch, "REFMUT:4", "EAN", "a", "b", null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // Enkel de leeggemaakte nieuwe waarde is geldig: dat is R-REF-03 (gemapt maar leeg).
+        assertThatCode(() -> insertIncidentMutation(s, batch, "REFMUT:5", "PIM_ID", "P-1", null,
+                identity)).doesNotThrowAnyException();
+
+        // De twee bestaande soorten blijven exact zoals ze waren, en dragen nooit een referentie.
+        assertThatCode(() -> mutations.saveAndFlush(createMutation(batch, "REFMUT-create")))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> mutations.saveAndFlush(marker(batch, "REFMUT-marker")))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> jdbc.update("update import_mutation set reference_type = 'EAN' "
+                + "where idempotency_key = ?", "REFMUT-create"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("update import_mutation set reference_type = 'EAN' "
+                + "where idempotency_key = ?", "REFMUT-marker"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    /**
+     * Changeset 004-11d: de incidentteller is nullable (null = onbekend, nooit stil 0) en de twee
+     * nieuwe hervatpunten beginnen op 0 — een volwaardige beginwaarde, geen onbekende.
+     */
+    @Test
+    void startsTheClassifyAndReferenceProgressAtZeroAndLeavesTheIncidentCounterUnknown() {
+        Scenario s = scenario("BREFPR");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+
+        ImportBatch found = batches.findById(batch.getId()).orElseThrow();
+        assertThat(found.getIdentityIncidentCount()).isNull();
+        assertThat(found.getClassifyProgressRowNumber()).isZero();
+        assertThat(found.getReferenceProgressRowNumber()).isZero();
+
+        found.setIdentityIncidentCount(2L);
+        found.setClassifyProgressRowNumber(17L);
+        found.setReferenceProgressRowNumber(11L);
+        batches.saveAndFlush(found);
+        Map<String, Object> stored = jdbc.queryForMap("select identity_incident_count, "
+                + "classify_progress_row_number, reference_progress_row_number "
+                + "from import_batch where id = ?", batch.getId());
+        assertThat(((Number) stored.get("identity_incident_count")).longValue()).isEqualTo(2L);
+        assertThat(((Number) stored.get("classify_progress_row_number")).longValue()).isEqualTo(17L);
+        assertThat(((Number) stored.get("reference_progress_row_number")).longValue()).isEqualTo(11L);
+    }
+
+    private Long sourceStateId(Scenario s, ImportBatch batch, String seed) {
+        byte[] identity = sha256(seed);
+        insertSourceState(s.link().getId(), s.delivery().getId(), batch.getId(), identity);
+        return jdbc.queryForObject("select id from catalog_source_state where import_link_id = ? "
+                + "and identity_hash = ?", Long.class, s.link().getId(), identity);
+    }
+
+    private void insertReferenceState(Scenario s, Long sourceStateId, String referenceType,
+                                      String value, Boolean activeMarker) {
+        jdbc.update("insert into catalog_reference_state (library_code, reference_type, "
+                        + "value_normalised, value_raw, source_state_id, import_link_id, active_marker, "
+                        + "accepted_by, accepted_at, created_at, updated_at) "
+                        + "values (?, ?, ?, ?, ?, ?, ?, 'tester@example.test', ?, ?, ?)",
+                s.link().getLibraryCode(), referenceType, value, value, sourceStateId,
+                s.link().getId(), activeMarker, OffsetDateTime.now(), OffsetDateTime.now(),
+                OffsetDateTime.now());
+    }
+
+    private void insertCandidateReference(Long batchId, long rowNumber, String referenceType,
+                                          String valueRaw, String valueNormalised, boolean empty) {
+        jdbc.update("insert into import_candidate_reference (batch_id, row_number, reference_type, "
+                        + "value_raw, value_normalised, is_empty) values (?, ?, ?, ?, ?, ?)",
+                batchId, rowNumber, referenceType, valueRaw, valueNormalised, empty);
+    }
+
+    private void insertIncidentMutation(Scenario s, ImportBatch batch, String idempotencyKey,
+                                        String referenceType, String before, String after,
+                                        byte[] identityHash) {
+        jdbc.update("insert into import_mutation (batch_id, delivery_id, import_link_id, "
+                        + "definition_revision_id, action_type, target_domain, status, "
+                        + "identity_supplier, identity_supplier_group, identity_supplier_reference, "
+                        + "identity_discount_state, identity_hash, reference_type, "
+                        + "before_reference_value, after_reference_value, idempotency_key, created_at) "
+                        + "values (?, ?, ?, ?, 'IDENTITY_REFERENCE_INCIDENT', 'OFFER', "
+                        + "'AWAITING_APPROVAL', 'LEV', 'GRP', 'REF', 'NOT_USED', ?, ?, ?, ?, ?, ?)",
+                batch.getId(), s.delivery().getId(), s.link().getId(), s.revision().getId(),
+                identityHash, referenceType, before, after, idempotencyKey, OffsetDateTime.now());
+    }
+
     // --- Helpers -------------------------------------------------------------------------------
 
     private ImportMutation createMutation(ImportBatch batch, String idempotencyKey) {
