@@ -449,9 +449,10 @@ class DeliveryScreeningFlowTest {
         Delivered delivered = deliver(fixture, "REF-1", csv(FIVE_ROWS));
         screening.screen(delivered.batchId());
 
+        // Geen prijscomponenten op deze revisie: het domeinmasker blijft exact dat van fase 2.
         int repeated = mutations.insertContentMutations(new MutationDao.MutationContext(delivered.batchId(),
                 delivered.deliveryId(), fixture.linkId(), fixture.revisionId(), delivered.taskRunId(),
-                delivered.deliveryFileId()), 0L, 999L, Instant.now());
+                delivered.deliveryFileId()), List.of(), 0L, 999L, Instant.now());
 
         assertThat(repeated).isZero();
         assertThat(contentMutations(delivered.batchId())).hasSize(5);
@@ -467,7 +468,7 @@ class DeliveryScreeningFlowTest {
                 throw new UncheckedIOException(new IOException("simulated failure halfway the generation"));
             }
             return invocation.callRealMethod();
-        }).when(mutations).insertContentMutations(any(), anyLong(), anyLong(), any());
+        }).when(mutations).insertContentMutations(any(), any(), anyLong(), anyLong(), any());
 
         assertThatThrownBy(() -> screening.screen(delivered.batchId()))
                 .isInstanceOf(UncheckedIOException.class);

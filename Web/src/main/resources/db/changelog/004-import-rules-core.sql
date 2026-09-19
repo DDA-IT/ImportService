@@ -368,3 +368,97 @@ alter table catalog_source_state add column reference_fingerprint ${hash.type};
 alter table import_candidate_stage add column reference_fingerprint ${hash.type};
 
 --rollback alter table import_candidate_stage drop column reference_fingerprint;
+
+-- =============================================================================================
+-- Bouwstap 3d: prijscomponenten en percentages (ontwerp fase 3 par. 2 sub-changesets 004-5 en
+-- 004-6, par. 3.4 rekenregels, R-PRI-02..R-PRI-09 en R-PRI-15). De reeds uitgevoerde changesets
+-- hierboven blijven ongewijzigd.
+--
+-- FINANCIEEL: bedragen zijn numeric(24,6) en percentages numeric(24,12) - nooit een drijvendekomma-
+-- type. Een bedrag dat niet gelezen kan worden komt hier niet terecht (die bronregel wordt verworpen);
+-- er bestaat dus geen rij met een stil ingevulde 0.
+-- =============================================================================================
+
+--changeset catalogimport:004-5-import-candidate-price
+--comment Prijscomponenten van één gestagede kandidaat (ontwerp fase 3 par. 2 004-5, R-PRI-04/R-PRI-05).
+
+-- JDBC-only, net als import_candidate_stage: een levering kan een miljoen regels met tot zeven
+-- componenten bevatten. De sleutel is (batch_id, row_number, component_code) - geen gegenereerde id -
+-- zodat een hervatte microbatch nooit een tweede rij voor dezelfde component kan schrijven.
+--
+-- De basisprijs krijgt bewust een eigen rij met component_code 'BASE_PRICE': zonder die rij is een
+-- percentage achteraf niet meer te reconstrueren (R-PRI-07) omdat import_candidate_stage.base_price
+-- een levend gegeven van de kandidaat is. percentage blijft daar NULL - de basisprijs is 100% van
+-- zichzelf en dat getal zou enkel verwarring stichten.
+--
+-- on delete cascade: de staging is één geheel. Bij een technisch mislukte poging wordt de staging
+-- opgeruimd (design fase 2 par. 9 stap C); haar prijscomponenten mogen dan niet als wees achterblijven
+-- en de opruiming mag niet van de volgorde in de Java-code afhangen.
+create table import_candidate_price (
+    batch_id       bigint not null,
+    row_number     bigint not null,
+    component_code varchar(20) not null,
+    source_amount  numeric(24,6),
+    percentage     numeric(24,12),
+    currency       varchar(3),
+    status         varchar(30) not null,
+    constraint pk_import_candidate_price primary key (batch_id, row_number, component_code),
+    constraint fk_import_candidate_price_stage foreign key (batch_id, row_number)
+        references import_candidate_stage (batch_id, row_number) on delete cascade,
+    -- De basisprijs draagt altijd een bedrag en nooit een percentage.
+    constraint ck_import_candidate_price_base
+        check (component_code <> 'BASE_PRICE' or (percentage is null and source_amount is not null)),
+    -- Een afgeleide component zonder percentage moet zeggen waarom: status <> 'OK' (bv. NO_BASE_PRICE).
+    -- Zo kan er nooit een component bestaan die stilzwijgend "geen verhouding" betekent.
+    constraint ck_import_candidate_price_component
+        check (component_code = 'BASE_PRICE' or percentage is not null or status <> 'OK')
+);
+
+create index idx_import_candidate_price_component on import_candidate_price (batch_id, component_code);
+
+--rollback drop table import_candidate_price;
+
+--changeset catalogimport:004-6-catalog-source-state-price
+--comment Aanvaarde prijscomponenten per bronstaat (ontwerp fase 3 par. 2 004-6, R-PRI-09).
+
+-- Dit is de "voor"-waarde waartegen de volgende levering vergeleken wordt: zonder deze tabel zou een
+-- percentagewijziging bij een ongewijzigde basisprijs onzichtbaar blijven in de delta (R-PRI-09).
+-- Enkel accept-baseline (en later de publicatie) schrijft hier; de screening nooit.
+--
+-- updated_at staat per component: een levering die enkel de aankoopprijs wijzigt, mag de tijdstempel
+-- van de andere componenten niet verzetten.
+create table catalog_source_state_price (
+    source_state_id bigint not null,
+    component_code  varchar(20) not null,
+    amount          numeric(24,6),
+    percentage      numeric(24,12),
+    currency        varchar(3),
+    updated_at      timestamp with time zone not null,
+    constraint pk_catalog_source_state_price primary key (source_state_id, component_code),
+    constraint fk_catalog_source_state_price_state foreign key (source_state_id)
+        references catalog_source_state (id),
+    constraint ck_catalog_source_state_price_base
+        check (component_code <> 'BASE_PRICE' or (percentage is null and amount is not null)),
+    -- Strenger dan de staging: in de aanvaarde bronstaat bestaat geen component zonder verhouding.
+    -- Een component die niet berekend kon worden, wordt nooit aanvaard.
+    constraint ck_catalog_source_state_price_component
+        check (component_code = 'BASE_PRICE' or percentage is not null)
+);
+
+--rollback drop table catalog_source_state_price;
+
+--changeset catalogimport:004-10b-import-definition-revision-base-price-flags
+--comment Nul- en negatiefbeleid van de basisprijs per revisie (R-PRI-02/R-PRI-03).
+
+-- Een afgeleide prijscomponent draagt zijn eigen zero_allowed/negative_allowed op import_field_mapping
+-- (004-2). De basisprijs heeft geen mappingrij en kan er ook geen krijgen: R-STR-06 verbiedt een tweede
+-- bron naast record_base_price_field. Daarom staan deze twee schakelaars op de revisie zelf.
+--
+-- Default false: een basisprijs 0 of negatief is een betekenisvolle, verdachte waarde en wordt
+-- geweigerd tenzij de beheerder ze uitdrukkelijk toelaat. Dat wijzigt het fase 2-gedrag, waarin een
+-- basisprijs 0 nog gestaged werd.
+alter table import_definition_revision add column base_price_zero_allowed boolean not null default false;
+alter table import_definition_revision add column base_price_negative_allowed boolean not null default false;
+
+--rollback alter table import_definition_revision drop column base_price_negative_allowed;
+--rollback alter table import_definition_revision drop column base_price_zero_allowed;

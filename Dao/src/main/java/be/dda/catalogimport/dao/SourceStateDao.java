@@ -24,6 +24,11 @@ import org.springframework.stereotype.Repository;
  * database daarbij niet. Enkel de gewijzigde rijen ({@code CHANGED}) worden per rij bijgewerkt in een
  * JDBC-batch: dat zijn er per definitie een fractie van de levering.
  * <p>
+ * <b>Prijscomponenten.</b> Bij dezelfde acceptatie gaan de prijscomponenten van de kandidaat mee naar
+ * {@code catalog_source_state_price} (fase 3, 004-6): nieuwe erbij, gewijzigde vervangen, ongewijzigde
+ * onaangeroerd. Dat is de "voor"-waarde waarmee de volgende levering een gewijzigde verhouding bij een
+ * ongewijzigde basisprijs kan vaststellen (R-PRI-09).
+ * <p>
  * <b>Hervatbaar.</b> Elke schrijfoperatie is idempotent: een insert slaat identiteiten over die al
  * bestaan, een update raakt enkel rijen waarvan de gecombineerde vingerafdruk nog afwijkt. Een
  * onderbroken of herhaalde acceptatie kan dus vanaf het begin herstarten zonder dubbele of foutieve
@@ -100,6 +105,42 @@ public class SourceStateDao {
             + "    or (state.id is not null and state.combined_fingerprint <> stage.combined_fingerprint "
             + "        and (mutation.before_combined_fingerprint is null "
             + "             or state.combined_fingerprint <> mutation.before_combined_fingerprint)))";
+
+    /**
+     * De aanvaarde prijscomponenten van één chunk, rechtstreeks uit {@code import_candidate_price}
+     * (ontwerp fase 3, 004-6). De binaire hashes en de bedragen verlaten de database niet: dit is één
+     * {@code insert ... select} per chunk, geen rij-per-rij-verwerking.
+     * <p>
+     * {@code not exists} maakt de insert idempotent: een hervatte of herhaalde acceptatie schrijft
+     * niets dubbel en verschuift {@code updated_at} niet van wat al klaar was.
+     */
+    private static final String INSERT_PRICES_FROM_STAGE = "insert into catalog_source_state_price ("
+            + "source_state_id, component_code, amount, percentage, currency, updated_at) "
+            + "select state.id, price.component_code, price.source_amount, price.percentage, "
+            + "price.currency, cast(? as timestamp with time zone) "
+            + "from import_candidate_stage stage "
+            + "join import_candidate_price price "
+            + "  on price.batch_id = stage.batch_id and price.row_number = stage.row_number "
+            + "join catalog_source_state state "
+            + "  on state.import_link_id = ? and state.identity_hash = stage.identity_hash "
+            + "where stage.batch_id = ? and stage.classification = ? "
+            + "  and stage.row_number > ? and stage.row_number <= ? "
+            + "  and not exists (select 1 from catalog_source_state_price existing "
+            + "      where existing.source_state_id = state.id "
+            + "        and existing.component_code = price.component_code)";
+
+    /**
+     * De prijscomponenten van de gewijzigde aanbiedingen van één chunk worden vervangen, niet
+     * bijgewerkt: een component kan er ook bij komen of wegvallen, en een gedeeltelijke update zou een
+     * weggevallen component stilzwijgend laten staan. Enkel {@code CHANGED}-regels; een
+     * {@code UNCHANGED}-regel raakt de bronstaat nooit aan, ook haar prijzen niet.
+     */
+    private static final String DELETE_CHANGED_PRICES = "delete from catalog_source_state_price "
+            + "where source_state_id in (select state.id from import_candidate_stage stage "
+            + "join catalog_source_state state "
+            + "  on state.import_link_id = ? and state.identity_hash = stage.identity_hash "
+            + "where stage.batch_id = ? and stage.classification = 'CHANGED' "
+            + "  and stage.row_number > ? and stage.row_number <= ?)";
 
     private record ChangedRow(byte[] identityHash, byte[] articleFingerprint, byte[] priceFingerprint,
                               byte[] referenceFingerprint, byte[] combinedFingerprint,
@@ -223,6 +264,47 @@ public class SourceStateDao {
             updated += Math.max(count, 0);
         }
         return updated;
+    }
+
+    /**
+     * Neemt de prijscomponenten van de <b>nieuwe</b> aanbiedingen van één chunk over in de bronstaat
+     * (R-PRI-09). Aanroepen ná {@link #insertNewFromStage}: de bronstaatrij moet bestaan.
+     *
+     * @return het aantal weggeschreven componentrijen
+     */
+    public int insertNewPricesFromStage(AcceptanceContext context, long fromExclusive, long toInclusive) {
+        return insertPricesFromStage(context, "NEW", fromExclusive, toInclusive);
+    }
+
+    /**
+     * Vervangt de prijscomponenten van de <b>gewijzigde</b> aanbiedingen van één chunk. Eerst
+     * verwijderen, dan overnemen: zo verdwijnt een component die de leverancier niet meer levert, in
+     * plaats van als verouderde verhouding te blijven staan.
+     * <p>
+     * <b>Alleen aanroepen wanneer deze batch werkelijk prijscomponenten heeft.</b> Anders zou een
+     * revisie zonder componenten de eerder aanvaarde componenten van haar aanbiedingen wissen — dat is
+     * een configuratiewijziging die om een bewuste herbaselining vraagt, geen stille verwijdering van
+     * financiële gegevens.
+     *
+     * @return het aantal weggeschreven componentrijen
+     */
+    public int replaceChangedPricesFromStage(AcceptanceContext context, long fromExclusive,
+                                             long toInclusive) {
+        jdbc.update(DELETE_CHANGED_PRICES, context.importLinkId(), context.batchId(), fromExclusive,
+                toInclusive);
+        return insertPricesFromStage(context, "CHANGED", fromExclusive, toInclusive);
+    }
+
+    private int insertPricesFromStage(AcceptanceContext context, String classification,
+                                      long fromExclusive, long toInclusive) {
+        return jdbc.update(INSERT_PRICES_FROM_STAGE, statement -> {
+            statement.setObject(1, utc(context.writtenAt()));
+            statement.setLong(2, context.importLinkId());
+            statement.setLong(3, context.batchId());
+            statement.setString(4, classification);
+            statement.setLong(5, fromExclusive);
+            statement.setLong(6, toInclusive);
+        });
     }
 
     public long countByImportLinkId(long importLinkId) {

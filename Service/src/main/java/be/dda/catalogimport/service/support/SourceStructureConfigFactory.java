@@ -3,6 +3,7 @@ package be.dda.catalogimport.service.support;
 import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.service.support.SourceStructureConfig.FieldReferenceKind;
+import java.math.BigDecimal;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.UnsupportedCharsetException;
@@ -109,6 +110,7 @@ public class SourceStructureConfigFactory {
             throw blocked(CODE_PRICE_FIELD_MISSING, "No base price field configured on the revision");
         }
         String description = trimToNull(revision.getRecordDescriptionField());
+        PricePolicy pricePolicy = pricePolicy(revision);
 
         int canonicalisationVersion = revision.getRecordCanonicalisationVersion();
         if (!SUPPORTED_CANONICALISATION_VERSIONS.contains(canonicalisationVersion)) {
@@ -119,7 +121,7 @@ public class SourceStructureConfigFactory {
 
         SourceStructureConfig config = new SourceStructureConfig(format, charset, delimiter, quote, hasHeader,
                 headerLineNumber, referenceKind, expectedColumnCount, identityProfileKind, supplier, group,
-                reference, discount, price, description, canonicalisationVersion);
+                reference, discount, price, description, canonicalisationVersion, pricePolicy);
 
         if (referenceKind == FieldReferenceKind.COLUMN_INDEX) {
             for (String field : config.declaredFields()) {
@@ -127,6 +129,25 @@ public class SourceStructureConfigFactory {
             }
         }
         return config;
+    }
+
+    /**
+     * Het prijsbeleid van deze revisie (fase 3, R-PRI-02/R-PRI-03/R-PRI-06/R-PRI-07). De tolerantie is
+     * een {@code not null}-kolom met default 0,01; staat er tóch niets, dan geldt de normatieve
+     * default in plaats van "geen tolerantie" — dat laatste zou elk reconstructieverschil aanvaarden.
+     * Een negatieve tolerantie is een configuratiefout en blokkeert de levering.
+     */
+    private static PricePolicy pricePolicy(ImportDefinitionRevision revision) {
+        BigDecimal tolerance = revision.getPriceDerivationTolerance();
+        if (tolerance == null) {
+            tolerance = PriceRules.DEFAULT_DERIVATION_TOLERANCE;
+        }
+        if (tolerance.signum() < 0) {
+            throw blocked(CODE_PRICE_FIELD_MISSING, "price_derivation_tolerance is negative ("
+                    + tolerance.toPlainString() + "); a tolerance is a distance and is never negative");
+        }
+        return new PricePolicy(trimToNull(revision.getRecordCurrencyField()),
+                revision.isBasePriceZeroAllowed(), revision.isBasePriceNegativeAllowed(), tolerance);
     }
 
     private static Charset charset(String name) {

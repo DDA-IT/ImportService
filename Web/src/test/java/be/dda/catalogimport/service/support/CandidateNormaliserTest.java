@@ -40,6 +40,8 @@ class CandidateNormaliserTest {
     private static final String DESCRIPTION = "OMSCHRIJVING";
     private static final String EXTRA_ONE = "E_LEV";
     private static final String EXTRA_TWO = "BARCODE";
+    private static final String PRICE_COLUMN = "AKP";
+    private static final String CURRENCY_COLUMN = "MUNT";
 
     private final CandidateNormaliser normaliser = new CandidateNormaliser();
 
@@ -344,6 +346,90 @@ class CandidateNormaliserTest {
         assertThat(two.referenceFingerprint()).isNotNull().hasSize(32);
     }
 
+    // --- Canonicalisatieversie 2: de prijsvingerafdruk (fase 3d, ontwerp par. 3.5) ----------------
+
+    /**
+     * De prijsvingerafdruk is <b>vastgepind</b> op zijn hexwaarde, onafhankelijk berekend uit de
+     * gedocumenteerde canonieke vorm. Drie dingen worden hier tegelijk bewezen:
+     * <ol>
+     *   <li>versie 1 blijft byte-identiek aan wat er al in bestaande bronstaten staat;</li>
+     *   <li>versie 2 <b>zonder</b> prijscomponenten levert exact dezelfde tekst op als bouwstap 3c
+     *       (basisprijs en munt, lege componentenlijst) — bouwstap 3d mag de hash van zo'n revisie niet
+     *       verschuiven, anders zou elke aanbieding onterecht als CHANGED uit de delta komen;</li>
+     *   <li>een component erbij wijzigt de hash aantoonbaar.</li>
+     * </ol>
+     */
+    @Test
+    void keepsThePriceFingerprintOfARevisionWithoutPriceComponentsUnchanged() {
+        NormalisedCandidate versionOne = candidate(row("ACME", "G1", "R-1", null, "1,50", null),
+                threePart(null));
+        NormalisedCandidate versionTwo = candidate(mappedRow("A1", "B1"), versionTwo(), mappingConfig());
+
+        assertThat(hex(versionOne.priceFingerprint()))
+                .isEqualTo("a69bed13cadfe6a3868f53f3fb3f90f8eea9c1bcd2240b77fb45c010de227f39");
+        assertThat(hex(versionTwo.priceFingerprint()))
+                .isEqualTo("12f8cd1cae0b1aa9b0a6f4a29835e1f6e0a55f845823d42777f486e2b192e2c8");
+        assertThat(versionOne.priceComponents()).isEmpty();
+        assertThat(versionTwo.priceComponents()).isEmpty();
+    }
+
+    @Test
+    void coversEveryPriceComponentWithItsPercentageInTheVersionTwoPriceFingerprint() {
+        ImportMappingConfig config = mappingConfig(priceField("AKP_PCT", "AKP", 1, PRICE_COLUMN));
+
+        // 0,75 van een basisprijs van 1,50 is exact 50%.
+        NormalisedCandidate candidate = candidate(priceRow("0,75"), versionTwo(), config);
+
+        assertThat(hex(candidate.priceFingerprint()))
+                .isEqualTo("29ce940c6aea72cac8678ac808b93fc0d605544ac85a98ec4d6b84edc94b56de");
+        assertThat(candidate.priceComponents()).hasSize(2);
+        assertThat(candidate.priceComponents().get(0).componentCode())
+                .isEqualTo(PriceRules.BASE_COMPONENT_CODE);
+        assertThat(candidate.priceComponents().get(0).sourceAmount().toPlainString())
+                .isEqualTo("1.500000");
+        assertThat(candidate.priceComponents().get(0).percentage()).isNull();
+        assertThat(candidate.priceComponents().get(1).percentage().toPlainString())
+                .isEqualTo("50.000000000000");
+
+        // Een andere verhouding bij dezelfde basisprijs wijzigt de prijsvingerafdruk (R-PRI-09).
+        NormalisedCandidate other = candidate(priceRow("0,90"), versionTwo(), config);
+        assertThat(other.priceFingerprint()).isNotEqualTo(candidate.priceFingerprint());
+        assertThat(other.articleFingerprint()).isEqualTo(candidate.articleFingerprint());
+        assertThat(other.identityHash()).isEqualTo(candidate.identityHash());
+    }
+
+    @Test
+    void readsTheCurrencyFromTheDeclaredSourceFieldAndNeverAssumesEuro() {
+        NormalisedCandidate withCurrency = candidate(currencyRow("EUR"), withCurrencyField());
+
+        assertThat(withCurrency.basePriceCurrency()).isEqualTo("EUR");
+        assertThat(hex(withCurrency.priceFingerprint()))
+                .isEqualTo("1e342ba81ce51a7af83c011621435e710941a589a08115b8d5e2387f3665b8ae");
+        // Zonder muntveld blijft de munt onbekend; dat is iets anders dan EUR.
+        assertThat(candidate(mappedRow("A1", "B1"), versionTwo(), mappingConfig()).basePriceCurrency())
+                .isNull();
+
+        Result unusable = normaliser.normalise(currencyRow("eur"), withCurrencyField());
+        assertThat(unusable).isInstanceOf(RowIssue.class);
+        assertThat(((RowIssue) unusable).code()).isEqualTo(PriceRules.CODE_PRICE_CURRENCY_MISMATCH);
+    }
+
+    /** R-PRI-02: een basisprijs 0 verwerpt de regel, tenzij de revisie ze uitdrukkelijk toelaat. */
+    @Test
+    void rejectsAZeroBasePriceUnlessTheRevisionAllowsIt() {
+        Result rejected = normaliser.normalise(row("ACME", "G1", "R-1", null, "0,00", null),
+                threePart(null));
+
+        assertThat(rejected).isInstanceOf(RowIssue.class);
+        assertThat(((RowIssue) rejected).code()).isEqualTo(PriceRules.CODE_PRICE_ZERO_NOT_ALLOWED);
+        assertThat(((RowIssue) rejected).fieldName()).isEqualTo(PRICE);
+        assertThat(((RowIssue) rejected).sourceValue()).isEqualTo("0,00");
+
+        NormalisedCandidate allowed = candidate(row("ACME", "G1", "R-1", null, "0,00", null),
+                threePartAllowingZero());
+        assertThat(allowed.basePrice().toPlainString()).isEqualTo("0.000000");
+    }
+
     @Test
     void rejectsOnlyTheRowWhoseMappedFieldIsUnusable() {
         ImportMappingConfig config = mappingConfig(field("E_SUPPLIER", 1, EXTRA_ONE, 3));
@@ -393,6 +479,21 @@ class CandidateNormaliserTest {
         return field(code, sequenceNumber, sourceReference, null);
     }
 
+    /** Een gemapte prijscomponent: eigenaar PRICE_CONTROL, DECIMAL, nooit identiteitsbeslissend. */
+    private static ImportFieldMapping priceField(String code, String componentCode, int sequenceNumber,
+                                                 String sourceReference) {
+        ImportFieldCatalogEntry target = new ImportFieldCatalogEntry(code,
+                "Aankoopprijs in procent van de basisprijs", FieldDataType.DECIMAL,
+                FieldOwner.PRICE_CONTROL, IdentityClass.NONE, 20);
+        target.setPriceComponentCode(componentCode);
+        ImportFieldMapping mapping = new ImportFieldMapping(null, sequenceNumber, target,
+                FieldValueKind.SOURCE_FIELD, FieldDataType.DECIMAL, FieldOwner.PRICE_CONTROL,
+                IdentityClass.NONE);
+        mapping.setSourceReference(sourceReference);
+        mapping.setPriceComponentCode(componentCode);
+        return mapping;
+    }
+
     private static ImportFieldMapping field(String code, int sequenceNumber, String sourceReference,
                                             Integer maxLength) {
         ImportFieldCatalogEntry target = new ImportFieldCatalogEntry(code,
@@ -404,6 +505,40 @@ class CandidateNormaliserTest {
         mapping.setSourceReference(sourceReference);
         mapping.setMaxLength(maxLength);
         return mapping;
+    }
+
+    /** Dezelfde zes kolommen als {@link #row}, met de aankoopprijskolom erachter. */
+    private static ParsedRow priceRow(String purchasePrice) {
+        Map<String, Integer> positions = defaultPositions();
+        positions.put(PRICE_COLUMN, 6);
+        List<String> values = Arrays.asList("ACME", "G1", "R-1", "", "1,50", "Boormachine",
+                nullToEmpty(purchasePrice));
+        return new ParsedRow(12, values, new SourceFieldPositions(positions));
+    }
+
+    /** Dezelfde zes kolommen als {@link #row}, met de muntkolom erachter. */
+    private static ParsedRow currencyRow(String currency) {
+        Map<String, Integer> positions = defaultPositions();
+        positions.put(CURRENCY_COLUMN, 6);
+        List<String> values = Arrays.asList("ACME", "G1", "R-1", "", "1,50", "Boormachine",
+                nullToEmpty(currency));
+        return new ParsedRow(12, values, new SourceFieldPositions(positions));
+    }
+
+    /** Versie 2 met een verklaard muntveld; de munt hoort dan in de prijsvingerafdruk. */
+    private static SourceStructureConfig withCurrencyField() {
+        return new SourceStructureConfig("CSV", StandardCharsets.UTF_8, ';', '"', true, 1,
+                FieldReferenceKind.HEADER_NAME, null, IdentityProfileKind.THREE_PART,
+                SUPPLIER, GROUP, REFERENCE, null, PRICE, null, 2,
+                new PricePolicy(CURRENCY_COLUMN, false, false, PriceRules.DEFAULT_DERIVATION_TOLERANCE));
+    }
+
+    /** Fase 2-configuratie waarin de beheerder een basisprijs 0 uitdrukkelijk toelaat (R-PRI-02). */
+    private static SourceStructureConfig threePartAllowingZero() {
+        return new SourceStructureConfig("CSV", StandardCharsets.UTF_8, ';', '"', true, 1,
+                FieldReferenceKind.HEADER_NAME, null, IdentityProfileKind.THREE_PART,
+                SUPPLIER, GROUP, REFERENCE, null, PRICE, null, 1,
+                new PricePolicy(null, true, false, PriceRules.DEFAULT_DERIVATION_TOLERANCE));
     }
 
     /** Dezelfde zes kolommen als {@link #row}, met twee extra gemapte bronkolommen erachter. */

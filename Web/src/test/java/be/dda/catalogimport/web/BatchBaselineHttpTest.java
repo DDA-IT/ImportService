@@ -458,7 +458,7 @@ class BatchBaselineHttpTest {
                 throw new UncheckedIOException(new IOException("simulated crash after the first chunk"));
             }
             return invocation.callRealMethod();
-        }).when(mutations).insertContentMutations(any(), anyLong(), anyLong(), any());
+        }).when(mutations).insertContentMutations(any(), any(), anyLong(), anyLong(), any());
 
         // De upload antwoordt met de tussenstand: de batch is hervatbaar, niet FAILED.
         Uploaded interrupted = upload(f, "REF-1", csv(false, FIVE_ROWS));

@@ -1,5 +1,6 @@
 package be.dda.catalogimport.service;
 
+import be.dda.catalogimport.dao.CandidatePriceDao;
 import be.dda.catalogimport.dao.ImportBatchRepository;
 import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.dao.SourceStateDao;
@@ -31,6 +32,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li>{@code NEW} wordt een nieuwe bronstaatrij ({@code state_origin=BASELINE_ACCEPTED}), {@code CHANGED}
  *       werkt de bestaande rij bij, {@code UNCHANGED} raakt de bronstaat niet aan (ook {@code updated_at}
  *       niet).</li>
+ *   <li>De prijscomponenten van die aanbiedingen gaan mee naar {@code catalog_source_state_price}
+ *       (fase 3, R-PRI-09): nieuwe rijen erbij, gewijzigde rijen vervangen, ongewijzigde rijen
+ *       onaangeroerd. Dat is de "voor"-waarde waartegen de volgende levering een percentagewijziging
+ *       bij een ongewijzigde basisprijs kan vaststellen.</li>
  *   <li>De inhoudelijke mutaties van de batch worden {@code SKIPPED} met reden
  *       {@link #SKIPPED_REASON}; de {@code IMPORT_MARKER} blijft {@code RECORDED}. De batch gaat naar
  *       {@code BASELINE_ACCEPTED} (terminaal).</li>
@@ -84,14 +89,16 @@ public class SourceStateBaselineService {
     }
 
     private final SourceStateDao sourceState;
+    private final CandidatePriceDao candidatePrices;
     private final MutationDao mutations;
     private final ImportBatchRepository batches;
     private final TransactionTemplate transaction;
 
-    public SourceStateBaselineService(SourceStateDao sourceState, MutationDao mutations,
-                                      ImportBatchRepository batches,
+    public SourceStateBaselineService(SourceStateDao sourceState, CandidatePriceDao candidatePrices,
+                                      MutationDao mutations, ImportBatchRepository batches,
                                       PlatformTransactionManager transactionManager) {
         this.sourceState = sourceState;
+        this.candidatePrices = candidatePrices;
         this.mutations = mutations;
         this.batches = batches;
         this.transaction = new TransactionTemplate(transactionManager);
@@ -116,6 +123,10 @@ public class SourceStateBaselineService {
         AcceptanceContext context = new AcceptanceContext(prepared.importLinkId(), prepared.batchId(),
                 prepared.deliveryId(), prepared.identityProfileKind(), SourceStateOrigin.BASELINE_ACCEPTED.name(),
                 user, acceptedAt, acceptedAt);
+        // Draagt deze levering prijscomponenten? Zo niet, blijven catalog_source_state_price-rijen
+        // volledig ongemoeid. Een revisie die haar componentmappings verloren heeft, wist zo nooit
+        // stilzwijgend eerder aanvaarde verhoudingen: dat vraagt een bewuste herbaselining.
+        boolean withPriceComponents = candidatePrices.countByBatchId(batchId) > 0;
         long from = 0L;
         Long boundary;
         while ((boundary = sourceState.nextChunkBoundary(batchId, from)) != null) {
@@ -124,6 +135,11 @@ public class SourceStateBaselineService {
             transaction.executeWithoutResult(status -> {
                 sourceState.insertNewFromStage(context, chunkFrom, chunkTo);
                 sourceState.updateChangedFromStage(context, chunkFrom, chunkTo);
+                if (withPriceComponents) {
+                    // Ná de bronstaatrijen zelf: de prijscomponenten hangen eraan met een foreign key.
+                    sourceState.insertNewPricesFromStage(context, chunkFrom, chunkTo);
+                    sourceState.replaceChangedPricesFromStage(context, chunkFrom, chunkTo);
+                }
             });
             from = chunkTo;
         }

@@ -218,6 +218,85 @@ class MappingConfigValidationTest {
                 List.of(akp));
     }
 
+    /**
+     * Bouwstap 3d: onder versie 2 is een prijscomponent wél volledig verwerkbaar — haar verhouding zit
+     * in de prijsvingerafdruk. Tot 3c werd zo'n revisie ook mét versie 2 geblokkeerd.
+     */
+    @Test
+    void acceptsAVersionTwoRevisionThatMapsPriceComponents() {
+        ImportDefinitionRevision revision = revisionWithCanonicalisationVersion(2);
+        ImportFieldMapping vkp = priceMapping(revision, 1, priceField("VKP1_PCT", "VKP1", 30), "VKP1");
+        ImportFieldMapping akp = priceMapping(revision, 2, priceField("AKP_PCT", "AKP", 20), "AKP");
+        akp.setTransformConfig("maxPercentage=250");
+
+        ImportMappingConfig config = factory.from(revision, structure(2), List.of(vkp, akp), List.of());
+
+        assertThat(config.hasPriceComponents()).isTrue();
+        // Gesorteerd op componentcode en niet op volgnummer: hernummeren mag de prijsvingerafdruk
+        // nooit verschuiven.
+        assertThat(config.priceComponentFields())
+                .extracting(ImportMappingConfig.FieldMapping::priceComponentCode)
+                .containsExactly("AKP", "VKP1");
+        assertThat(config.priceComponentFields().get(0).maxPercentage()).isEqualByComparingTo("250");
+        assertThat(config.priceComponentFields().get(1).maxPercentage()).isNull();
+    }
+
+    /**
+     * R-PRI-08: een bovengrens hoort bij een prijscomponent. Op een gewoon veld zou ze nooit gebruikt
+     * worden terwijl de beheerder denkt dat er gecontroleerd wordt.
+     */
+    @Test
+    void refusesAMaximumPercentageThatIsNotOnAPriceComponent() {
+        ImportDefinitionRevision revision = revisionWithCanonicalisationVersion(2);
+        ImportFieldMapping supporting = mapping(revision, 1, supportingField(), "E_LEV");
+        supporting.setTransformConfig("maxPercentage=250");
+
+        assertThatThrownBy(() -> factory.from(revision, structure(2), List.of(supporting), List.of()))
+                .isInstanceOf(ScreeningBlockedException.class)
+                .extracting(failure -> ((ScreeningBlockedException) failure).getCode())
+                .isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+
+        ImportFieldMapping akp = priceMapping(revision, 1, priceField("AKP_PCT", "AKP", 20), "AKP");
+        akp.setTransformConfig("maxPercentage=0");
+        assertThatThrownBy(() -> factory.from(revision, structure(2), List.of(akp), List.of()))
+                .isInstanceOf(ScreeningBlockedException.class)
+                .extracting(failure -> ((ScreeningBlockedException) failure).getCode())
+                .isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+    }
+
+    /** Een bedrag wordt bewaard met zes decimalen; meer declareren zou stil afgerond worden. */
+    @Test
+    void refusesAPriceComponentWithMoreDecimalsThanTheAmountColumnOrWithTheWrongType() {
+        ImportDefinitionRevision revision = revisionWithCanonicalisationVersion(2);
+        ImportFieldMapping tooPrecise = priceMapping(revision, 1, priceField("AKP_PCT", "AKP", 20), "AKP");
+        tooPrecise.setDecimalScale(8);
+
+        assertThatThrownBy(() -> factory.from(revision, structure(2), List.of(tooPrecise), List.of()))
+                .isInstanceOf(ScreeningBlockedException.class)
+                .extracting(failure -> ((ScreeningBlockedException) failure).getCode())
+                .isEqualTo(ImportMappingConfigFactory.CODE_MAPPING_TYPE_INCOMPATIBLE);
+    }
+
+    /**
+     * De munt zit in de prijsvingerafdruk van versie 2. Een versie 1-revisie die ze toch leest, zou de
+     * hash van elke bestaande bronstaat verschuiven.
+     */
+    @Test
+    void refusesAVersionOneRevisionThatReadsACurrencyFromTheSource() {
+        ImportDefinitionRevision revision = revision();
+        revision.setRecordCurrencyField("MUNT");
+
+        assertThatThrownBy(() -> factory.from(revision, structure(), List.of(), List.of()))
+                .isInstanceOf(ScreeningBlockedException.class)
+                .extracting(failure -> ((ScreeningBlockedException) failure).getCode())
+                .isEqualTo(ImportMappingConfigFactory.CODE_CANONICALISATION_VERSION_REQUIRED);
+
+        ImportDefinitionRevision versionTwo = revisionWithCanonicalisationVersion(2);
+        versionTwo.setRecordCurrencyField("MUNT");
+        assertThatCode(() -> factory.from(versionTwo, structure(2), List.of(), List.of()))
+                .doesNotThrowAnyException();
+    }
+
     @Test
     void refusesAVersionOneRevisionThatMapsACriticalReference() {
         ImportDefinitionRevision revision = revision();

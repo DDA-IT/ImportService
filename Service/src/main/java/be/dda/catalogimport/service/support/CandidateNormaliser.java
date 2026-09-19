@@ -6,6 +6,7 @@ import be.dda.catalogimport.domain.RevisionOwnedField;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.ParsedRow;
 import be.dda.catalogimport.service.support.FieldValueMapper.MappedRecord;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HexFormat;
@@ -31,6 +32,13 @@ import java.util.List;
  *       ({@link #CODE_IDENTITY_COMPONENT_EMPTY}); er wordt nooit een placeholder ingevuld.</li>
  *   <li>Een ontbrekende, onleesbare of te precieze prijs verwerpt de regel; de prijs wordt
  *       <b>nooit</b> 0 of {@code null} (businessanalyse par. 16.5).</li>
+ *   <li>Een basisprijs van 0 of een negatieve basisprijs verwerpt de regel, tenzij de revisie ze
+ *       uitdrukkelijk toelaat ({@code base_price_zero_allowed} / {@code base_price_negative_allowed},
+ *       R-PRI-02/R-PRI-03). Dat is een <b>wijziging t.o.v. fase 2</b>, waarin een basisprijs 0
+ *       gewoon gestaged werd.</li>
+ *   <li>Elke gemapte prijscomponent krijgt haar verhouding tot de basisprijs
+ *       ({@link PriceRules}); loopt dat mis, dan wordt <b>enkel die regel</b> verworpen en nooit een
+ *       percentage geraden of een prijs stil gecorrigeerd.</li>
  * </ul>
  * <b>Vingerafdrukken.</b> Ze hangen af van de canonicalisatieversie die de revisie declareert
  * (ontwerp fase 3, par. 3.5); het versienummer staat vooraan in elke canonieke tekst, zodat twee
@@ -47,12 +55,12 @@ import java.util.List;
  *       {@code reference_fingerprint} bij en {@code combined_fingerprint} is de SHA-256 over
  *       identiteit ‖ artikel ‖ prijs ‖ referenties.</li>
  * </ul>
- * <b>Grens van bouwstap 3c.</b> Er is nog geen muntveld in de bronconfiguratie:
- * {@code basePriceCurrency} blijft {@code null} ("onbekend"). Er wordt nooit stilzwijgend EUR
- * verondersteld. De prijscomponenten- en referentielijst van versie 2 zijn nog <b>leeg</b>: hun
- * inhoud komt in bouwstap 3d/3f, en tot dan blokkeert {@link ImportMappingConfigFactory} elke revisie
- * die zulke velden mapt. De formules zijn wel al die van versie 2, zodat 3d en 3f componenten kunnen
- * toevoegen zonder de hash van een revisie zónder componenten te wijzigen.
+ * <b>Grens van bouwstap 3d.</b> De prijsvingerafdruk van versie 2 dekt de basisprijs, de munt en élke
+ * gemapte prijscomponent met haar verhouding. Zonder {@code record_currency_field} blijft
+ * {@code basePriceCurrency} {@code null} ("onbekend"); er wordt nooit stilzwijgend EUR verondersteld.
+ * De referentielijst van versie 2 is nog <b>leeg</b>: die komt in bouwstap 3f, en tot dan blokkeert
+ * {@link ImportMappingConfigFactory} elke revisie die referenties mapt. Een revisie zónder
+ * prijscomponenten houdt exact de vingerafdruk van bouwstap 3c — byte voor byte.
  */
 public final class CandidateNormaliser {
 
@@ -95,6 +103,11 @@ public final class CandidateNormaliser {
      *
      * @param referenceFingerprint de deelvingerafdruk over de kritieke referenties; {@code null} bij
      *                             canonicalisatieversie 1, die geen referentiedeel kent
+     * @param priceComponents      de rijen voor {@code import_candidate_price}: de basisprijs zelf en
+     *                             elke gemapte prijscomponent met haar verhouding (R-PRI-04). Leeg
+     *                             wanneer de revisie geen enkele prijscomponent mapt — dan verandert er
+     *                             niets aan het fase 2/3c-gedrag en wordt er geen enkele prijsrij
+     *                             geschreven
      * @param notices              informatieve vaststellingen over deze regel (vandaag: toegepaste
      *                             standaardwaarden). Ze verwerpen de regel niet en tellen dus niet in
      *                             {@code rejected_record_count}, maar ze moeten wél zichtbaar zijn:
@@ -115,9 +128,11 @@ public final class CandidateNormaliser {
             byte[] priceFingerprint,
             byte[] referenceFingerprint,
             byte[] combinedFingerprint,
+            List<PriceRules.PriceComponent> priceComponents,
             List<RowIssue> notices) implements Result {
 
         public NormalisedCandidate {
+            priceComponents = List.copyOf(priceComponents);
             notices = List.copyOf(notices);
         }
 
@@ -200,7 +215,17 @@ public final class CandidateNormaliser {
                 throw new ImportValueException(CODE_PRICE_OUT_OF_RANGE, priceField, rawPrice,
                         "Base price has more than " + MAX_PRICE_INTEGER_DIGITS + " digits before the decimal point");
             }
-            String currency = null; // Fase 2 kent geen muntveld; nooit stil EUR veronderstellen.
+            // R-PRI-02/R-PRI-03: 0 en negatief zijn geleverde, betekenisvolle waarden en worden enkel
+            // doorgelaten wanneer de revisie ze uitdrukkelijk toelaat.
+            basePrice = PriceRules.basePrice(basePrice, priceField, rawPrice, config.pricePolicy());
+            // Geen muntveld ⇒ munt onbekend (null). Nooit stil EUR veronderstellen (aanname A22).
+            String currency = null;
+            if (config.currencyField() != null) {
+                String rawCurrency = row.value(position(row, config.currencyField()));
+                currency = PriceRules.currency(rawCurrency, config.currencyField());
+            }
+            List<PriceRules.PriceComponent> priceComponents =
+                    priceComponents(row, basePrice, currency, mapped, mappingConfig, config);
 
             String description = null;
             if (config.descriptionField() != null) {
@@ -218,7 +243,7 @@ public final class CandidateNormaliser {
                             ? canonicalArticle(description, mapped, mappingConfig)
                             : ImportValueRules.canonical(version, description));
             byte[] priceFingerprint = ImportValueRules.sha256Utf8(
-                    ImportValueRules.canonical(version, basePrice.toPlainString(), currency));
+                    canonicalPrice(version, basePrice, currency, priceComponents));
             byte[] referenceFingerprint = version == CANONICALISATION_VERSION_WITH_FIELDS
                     ? ImportValueRules.sha256Utf8(ImportValueRules.canonical(version))
                     : null;
@@ -229,7 +254,7 @@ public final class CandidateNormaliser {
 
             return new NormalisedCandidate(row.lineNumber(), supplier, group, reference, discountCode,
                     discountState, identityHash, basePrice, currency, description, articleFingerprint,
-                    priceFingerprint, referenceFingerprint, combinedFingerprint,
+                    priceFingerprint, referenceFingerprint, combinedFingerprint, priceComponents,
                     notices(row, mapped));
         } catch (ImportValueException rejected) {
             return new RowIssue(row.lineNumber(), rejected.getCode(), rejected.getField(),
@@ -264,6 +289,94 @@ public final class CandidateNormaliser {
         }
         return ImportValueRules.canonical(CANONICALISATION_VERSION_WITH_FIELDS,
                 parts.toArray(String[]::new));
+    }
+
+    /**
+     * De prijscomponenten van deze bronregel (R-PRI-04..R-PRI-08). Uitsluitend de mappings met een
+     * {@code price_component_code}; de basisprijs zelf komt uit de revisiekolom en krijgt in
+     * {@link PriceRules#components} haar eigen rij.
+     * <p>
+     * <b>Een revisie zonder prijscomponenten levert een lege lijst</b> — dan wordt er geen enkele
+     * {@code import_candidate_price}-rij geschreven en blijft de prijsvingerafdruk exact die van
+     * bouwstap 3c. Dat is bewust: een aparte basisprijsrij per regel zou voor elke bestaande levering
+     * een miljoen rijen toevoegen zonder iets te bewijzen, want {@code import_candidate_stage.base_price}
+     * blijft de basisprijs dragen.
+     * <p>
+     * <b>Een component zonder waarde levert geen rij.</b> Ontbrekend ({@code null}) en leeg
+     * ({@code ""}) betekenen dat de leverancier deze component niet meegaf; dat is iets anders dan 0 en
+     * wordt dus nooit als 0 bewaard. Wie een component verplicht wil maken, zet {@code required} op de
+     * mapping — dan verwerpt {@link FieldValueMapper} de regel al met {@code VALUE_MISSING}.
+     */
+    private static List<PriceRules.PriceComponent> priceComponents(ParsedRow row, BigDecimal basePrice,
+                                                                   String currency, MappedRecord mapped,
+                                                                   ImportMappingConfig mappingConfig,
+                                                                   SourceStructureConfig config) {
+        if (mappingConfig == null || !mappingConfig.hasPriceComponents()) {
+            return List.of();
+        }
+        List<PriceRules.ComponentInput> inputs = new ArrayList<>();
+        for (ImportMappingConfig.FieldMapping field : mappingConfig.priceComponentFields()) {
+            String value = mapped.value(field.targetFieldCode());
+            if (value == null || value.isEmpty()) {
+                continue;
+            }
+            inputs.add(new PriceRules.ComponentInput(field.priceComponentCode(), field.targetFieldName(),
+                    sourceValue(row, field, value), new BigDecimal(value), null, field.zeroAllowed(),
+                    field.negativeAllowed(), field.maxPercentage()));
+        }
+        List<PriceRules.PriceComponent> components =
+                PriceRules.components(basePrice, currency, inputs, config.pricePolicy());
+        // R-PRI-05: zonder bruikbare basisprijs bestaat er geen verhouding; die regel wordt verworpen
+        // in plaats van met een verzonnen percentage of een stille 0 gestaged te worden.
+        PriceRules.requireComputable(components, config.basePriceField());
+        return components;
+    }
+
+    /** De ruwe bronwaarde voor de melding; valt terug op de gemapte waarde bij een afgeleid veld. */
+    private static String sourceValue(ParsedRow row, ImportMappingConfig.FieldMapping field,
+                                      String mappedValue) {
+        if (field.sourceReference() == null) {
+            return mappedValue;
+        }
+        Integer position = row.positions().position(field.sourceReference());
+        if (position == null) {
+            return mappedValue;
+        }
+        String raw = row.value(position);
+        return raw == null ? mappedValue : raw;
+    }
+
+    /**
+     * De canonieke prijstekst. Versie 1 (fase 2, byte-identiek): de basisprijs en de munt. Versie 2
+     * (ontwerp par. 3.5): daarnaast elke afgeleide component als {@code componentcode, percentage},
+     * gesorteerd op componentcode, op schaal 12.
+     * <p>
+     * De basisprijsrij zelf staat <b>niet</b> in de lijst — de basisprijs is al het eerste onderdeel.
+     * Een revisie zonder componenten levert daardoor exact dezelfde tekst (en dus dezelfde hash) als
+     * bouwstap 3c: een bestaande bronstaat komt nooit onterecht als gewijzigd uit de delta.
+     */
+    private static String canonicalPrice(int version, BigDecimal basePrice, String currency,
+                                         List<PriceRules.PriceComponent> components) {
+        String amount = basePrice.setScale(PriceRules.AMOUNT_SCALE, RoundingMode.UNNECESSARY)
+                .toPlainString();
+        if (version != CANONICALISATION_VERSION_WITH_FIELDS || components.isEmpty()) {
+            return ImportValueRules.canonical(version, amount, currency);
+        }
+        List<String> parts = new ArrayList<>();
+        parts.add(amount);
+        parts.add(currency);
+        for (PriceRules.PriceComponent component : components) {
+            if (component.isBase()) {
+                continue;
+            }
+            parts.add(component.componentCode());
+            // Een component zonder verhouding (NO_BASE_PRICE) bereikt de staging niet; mocht een latere
+            // bouwstap haar wél bewaren, dan is "geen percentage" hier U+0000 en nooit 0.
+            parts.add(component.percentage() == null ? null
+                    : component.percentage().setScale(PriceRules.PERCENTAGE_SCALE,
+                            RoundingMode.UNNECESSARY).toPlainString());
+        }
+        return ImportValueRules.canonical(version, parts.toArray(String[]::new));
     }
 
     /** Informatieve vaststellingen van de mapping, als regelproblemen met ernst INFO. */

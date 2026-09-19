@@ -11,6 +11,7 @@ import be.dda.catalogimport.domain.IdentityClass;
 import be.dda.catalogimport.domain.MissingColumnBehaviour;
 import be.dda.catalogimport.service.support.HeaderExpectations.ExpectedField;
 import be.dda.catalogimport.service.support.ImportValueRules.DecimalFormat;
+import java.math.BigDecimal;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -26,13 +27,11 @@ import java.util.List;
  * associatie aanraken. Ze wordt exact één keer per batch gebouwd, vóór er één byte gelezen is; er is
  * dus geen enkele query per bronregel.
  * <p>
- * <b>Grens van bouwstap 3b.</b> De mappings worden hier gelezen en volledig gevalideerd, maar nog
- * niet toegepast: het omzetten van bronwaarden naar doelvelden (transformaties, defaults, types,
- * lengtes) is bouwstap 3c en de prijscomponenten zijn 3d. De <b>recordfilters werken wél</b> vanaf
- * deze bouwstap. Een revisie met prijscomponent- of referentiemappings wordt daarom geblokkeerd met
- * {@code CONFIG_CANONICALISATION_VERSION_REQUIRED}: zulke mappings horen bij canonicalisatieversie 2,
- * en die is in deze build nog niet ondersteund. Zo kan er nooit een levering verwerkt worden waarvan
- * de vingerafdruk de gemapte velden niet dekt.
+ * <b>Grens van bouwstap 3d.</b> Doelvelden (3c) en afgeleide prijscomponenten (3d) worden gelezen,
+ * gevalideerd én toegepast; ze zitten in de artikel- respectievelijk prijsvingerafdruk van
+ * canonicalisatieversie 2. Een revisie met <b>referentiemappings</b> wordt nog geblokkeerd met
+ * {@code CONFIG_CANONICALISATION_VERSION_REQUIRED} tot bouwstap 3f: zo kan er nooit een levering
+ * verwerkt worden waarvan de vingerafdruk de gemapte velden niet dekt.
  *
  * @param canonicalisationVersion de versie die de revisie declareert; bepaalt welke velden in de
  *                                vingerafdrukken meetellen
@@ -52,6 +51,10 @@ public record ImportMappingConfig(int canonicalisationVersion, List<FieldMapping
      * @param priceComponentCode gevuld voor een prijscomponent; eigenaar is dan {@code PRICE_CONTROL}
      * @param referenceType      gevuld voor een kritieke referentie; eigenaar is dan
      *                           {@code CRITICAL_REFERENCE} en niet wisselbaar
+     * @param maxPercentage      de uitdrukkelijk geconfigureerde semantische bovengrens van deze
+     *                           prijscomponent ({@code maxPercentage=} in {@code transform_config}), of
+     *                           {@code null}. Er is bewust géén algemene kunstmatige bovengrens
+     *                           (R-PRI-08): een verhouding van 900% kan legitiem zijn
      */
     public record FieldMapping(int sequenceNumber, String targetFieldCode, String targetFieldName,
                                FieldValueKind valueKind, String sourceReference, Integer expectedPosition,
@@ -62,13 +65,19 @@ public record ImportMappingConfig(int canonicalisationVersion, List<FieldMapping
                                FieldTransformKind transformKind, String transformConfig,
                                FieldTransform transform, ValueFormat valueFormat,
                                FieldOwner fieldOwner, IdentityClass identityClass,
-                               String priceComponentCode, String referenceType) {
+                               String priceComponentCode, String referenceType,
+                               BigDecimal maxPercentage) {
 
         /** Een veld dat de identiteit, de prijs of een kritieke referentie draagt. */
         public boolean isSemanticallyCritical() {
             return priceComponentCode != null || referenceType != null
                     || identityClass == IdentityClass.STRONG
                     || identityClass == IdentityClass.ARTICLE_REFERENCE;
+        }
+
+        /** Een veld dat een afgeleide prijscomponent draagt (eigenaar {@code PRICE_CONTROL}). */
+        public boolean isPriceComponent() {
+            return priceComponentCode != null;
         }
 
         /**
@@ -150,6 +159,24 @@ public record ImportMappingConfig(int canonicalisationVersion, List<FieldMapping
                 .filter(FieldMapping::isArticleField)
                 .sorted(Comparator.comparing(FieldMapping::targetFieldCode))
                 .toList();
+    }
+
+    /**
+     * De gemapte afgeleide prijscomponenten, <b>gesorteerd op componentcode</b> (ontwerp fase 3,
+     * par. 3.5): dat is de volgorde waarin ze in de prijsvingerafdruk staan. Sorteren op de
+     * componentcode en niet op het volgnummer van de mapping, zodat het hernummeren van de mappings
+     * nooit een ongewijzigde prijs als gewijzigd laat uitkomen.
+     */
+    public List<FieldMapping> priceComponentFields() {
+        return fields.stream()
+                .filter(FieldMapping::isPriceComponent)
+                .sorted(Comparator.comparing(FieldMapping::priceComponentCode))
+                .toList();
+    }
+
+    /** Heeft deze revisie afgeleide prijscomponenten? Zo niet, blijft het prijspad exact dat van 3c. */
+    public boolean hasPriceComponents() {
+        return fields.stream().anyMatch(FieldMapping::isPriceComponent);
     }
 
     /**

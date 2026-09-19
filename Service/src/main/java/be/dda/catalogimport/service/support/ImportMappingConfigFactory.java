@@ -18,6 +18,7 @@ import be.dda.catalogimport.service.support.ImportMappingConfig.RecordFilter;
 import be.dda.catalogimport.service.support.ImportMappingConfig.ValueFormat;
 import be.dda.catalogimport.service.support.ImportValueRules.DecimalFormat;
 import be.dda.catalogimport.service.support.SourceStructureConfig.FieldReferenceKind;
+import java.math.BigDecimal;
 import java.time.DateTimeException;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -62,10 +63,13 @@ import org.springframework.stereotype.Component;
  *   <li>Een onbekende of nog niet ondersteunde transformatiesoort ⇒
  *       {@code CONFIG_TRANSFORM_INVALID}; een onbruikbare filterrij ⇒
  *       {@code CONFIG_FILTER_INVALID}.</li>
- *   <li>Prijscomponent- of referentiemappings vereisen canonicalisatieversie 2 ⇒
- *       {@code CONFIG_CANONICALISATION_VERSION_REQUIRED} (par. 3.5). Versie 2 zelf komt in bouwstap
- *       3d/3f; tot dan blokkeert zo'n revisie, in plaats van te draaien met een vingerafdruk die de
- *       gemapte velden niet dekt.</li>
+ *   <li>Elke mapping vereist canonicalisatieversie 2 ⇒
+ *       {@code CONFIG_CANONICALISATION_VERSION_REQUIRED} (par. 3.5). Prijscomponenten werken sinds
+ *       bouwstap 3d onder versie 2; referentiemappings blokkeren nog tot bouwstap 3f, in plaats van te
+ *       draaien met een vingerafdruk die de gemapte velden niet dekt.</li>
+ *   <li>Een prijscomponent is DECIMAL met hoogstens {@value PriceRules#AMOUNT_SCALE} decimalen en kent
+ *       hoogstens één uitdrukkelijk geconfigureerde bovengrens ({@link #SETTING_MAX_PERCENTAGE},
+ *       R-PRI-08).</li>
  * </ul>
  * Deze klasse leest de revisie en haar mappings uitsluitend via getters en geeft een momentopname
  * terug; ze wordt daarom binnen de openende transactie aangeroepen en het resultaat wordt daarbuiten
@@ -103,6 +107,12 @@ public class ImportMappingConfigFactory {
     public static final String SETTING_DATE_FORMAT = "dateFormat";
     /** Instelling in {@code transform_config}: de tijdzone van een brontijdstempel (R-REC-05). */
     public static final String SETTING_ZONE = "zone";
+    /**
+     * Instelling in {@code transform_config}: de semantische bovengrens van een prijscomponent, in
+     * procent van de basisprijs (R-PRI-08). Zonder deze instelling wordt er géén bovengrens
+     * gecontroleerd — er bestaat geen kunstmatig plafond op een prijsverhouding.
+     */
+    public static final String SETTING_MAX_PERCENTAGE = "maxPercentage";
 
     private final ImportFieldMappingRepository mappings;
     private final ImportRecordFilterRepository filters;
@@ -185,6 +195,7 @@ public class ImportMappingConfigFactory {
             MappingSettings settings = MappingSettings.parse(code, row.getTransformConfig());
             ValueFormat valueFormat = readValueFormat(row, code, settings);
             FieldTransform transform = readTransform(row, code, settings, valueFormat);
+            BigDecimal maxPercentage = readMaxPercentage(row, code, settings);
             settings.verifyFullyUsed();
             verifySource(structure, row, code, transform);
             if (row.getPriceComponentCode() != null && !priceComponents.add(row.getPriceComponentCode())) {
@@ -193,9 +204,45 @@ public class ImportMappingConfigFactory {
                                 + "this revision; two sources for one price component are never reconciled "
                                 + "silently");
             }
-            fields.add(toFieldMapping(row, target, transform, valueFormat));
+            fields.add(toFieldMapping(row, target, transform, valueFormat, maxPercentage));
         }
         return fields;
+    }
+
+    /**
+     * R-PRI-08: de enige toegelaten bovengrens op een prijsverhouding is een <b>uitdrukkelijk
+     * geconfigureerde</b> semantische grens per component ({@code maxPercentage=} in
+     * {@code transform_config}). Zonder die instelling wordt er niet op de verhouding gecontroleerd —
+     * een aankoopprijs van 900% van de basisprijs kan legitiem zijn en mag niet door een verzonnen
+     * plafond geweigerd worden.
+     * <p>
+     * De instelling op een veld dat géén prijscomponent is, is een configuratiefout: ze zou nooit
+     * gebruikt worden en de beheerder zou denken dat er gecontroleerd wordt.
+     */
+    private static BigDecimal readMaxPercentage(ImportFieldMapping row, String code,
+                                                MappingSettings settings) {
+        String value = settings.get(SETTING_MAX_PERCENTAGE);
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        if (row.getPriceComponentCode() == null) {
+            throw blocked(CODE_TRANSFORM_INVALID, code, value,
+                    "Mapping for '" + code + "' declares " + SETTING_MAX_PERCENTAGE
+                            + " but carries no price component; the limit would never be checked");
+        }
+        BigDecimal max;
+        try {
+            max = new BigDecimal(value.replace(',', '.'));
+        } catch (NumberFormatException notANumber) {
+            throw blocked(CODE_TRANSFORM_INVALID, code, value, "Setting " + SETTING_MAX_PERCENTAGE
+                    + " of '" + code + "' must be a decimal percentage but is '" + value + "'");
+        }
+        if (max.signum() <= 0) {
+            throw blocked(CODE_TRANSFORM_INVALID, code, value, "Setting " + SETTING_MAX_PERCENTAGE
+                    + " of '" + code + "' must be higher than 0; a maximum of 0 would reject every "
+                    + "positive price");
+        }
+        return max;
     }
 
     /**
@@ -394,6 +441,23 @@ public class ImportMappingConfigFactory {
                     "Mapping for '" + code + "' declares price component '" + componentCode
                             + "' but the field catalogue declares '" + target.getPriceComponentCode() + "'");
         }
+        if (componentCode != null) {
+            if (row.getDataType() != FieldDataType.DECIMAL) {
+                throw blocked(CODE_MAPPING_TYPE_INCOMPATIBLE, code, String.valueOf(row.getDataType()),
+                        "Mapping for '" + code + "' carries price component '" + componentCode
+                                + "' but is declared as " + row.getDataType()
+                                + "; an amount is always DECIMAL");
+            }
+            // import_candidate_price.source_amount is numeric(24,6): een bronbedrag met meer decimalen
+            // zou bij het wegschrijven stil afgerond worden. Dat wordt hier geweigerd, niet afgerond.
+            if (row.getDecimalScale() != null && row.getDecimalScale() > PriceRules.AMOUNT_SCALE) {
+                throw blocked(CODE_MAPPING_TYPE_INCOMPATIBLE, code, String.valueOf(row.getDecimalScale()),
+                        "Mapping for '" + code + "' declares " + row.getDecimalScale() + " decimals for "
+                                + "price component '" + componentCode + "', but an amount is stored with "
+                                + "at most " + PriceRules.AMOUNT_SCALE
+                                + "; the remaining decimals would be rounded away silently");
+            }
+        }
         String reference = row.getReferenceType();
         if (reference != null && !reference.equals(target.getReferenceType())) {
             throw blocked(CODE_MAPPING_TYPE_INCOMPATIBLE, code, reference,
@@ -457,46 +521,60 @@ public class ImportMappingConfigFactory {
      * ({@code CONFIG_CANONICALISATION_VERSION_REQUIRED}) in plaats van te draaien met een
      * vingerafdruk die haar eigen mappings negeert.
      * <p>
-     * <b>Prijscomponenten en kritieke referenties blokkeren voorlopig altijd.</b> Hun deel van versie 2
-     * (prijsvingerafdruk met componenten, referentievingerafdruk) komt in bouwstap 3d/3f. Tot dan is
-     * een revisie die zulke velden mapt niet volledig verwerkbaar, ook niet wanneer ze versie 2
-     * declareert: de gemapte bedragen zouden gelezen maar niet gecontroleerd worden, en dat is precies
-     * het stille gedrag dat par. 3.5 wil uitsluiten.
+     * <b>Prijscomponenten</b> zijn sinds bouwstap 3d volledig verwerkbaar onder versie 2: hun
+     * percentages zitten in de prijsvingerafdruk. Onder versie 1 blijven ze geblokkeerd met dezelfde
+     * code — de v1-prijshash dekt enkel de basisprijs en de munt, zodat een gewijzigde verhouding
+     * onzichtbaar zou blijven.
+     * <p>
+     * <b>Kritieke referenties blokkeren nog altijd</b>, ook mét versie 2: hun deel van de
+     * vingerafdruk en hun incidentcontrole komen in bouwstap 3f. De gemapte waarden zouden nu gelezen
+     * maar niet gecontroleerd worden, en dat is precies het stille gedrag dat par. 3.5 uitsluit.
+     * <p>
+     * <b>Ook de munt.</b> Een revisie die {@code record_currency_field} declareert, wijzigt de
+     * prijsvingerafdruk (de munt zit erin). Onder versie 1 zou dat de hash van elke bestaande bronstaat
+     * doen verschuiven; zo'n revisie moet dus versie 2 declareren.
      */
     private static void verifyCanonicalisationVersion(ImportDefinitionRevision revision,
                                                       List<FieldMapping> fields) {
+        int version = revision.getRecordCanonicalisationVersion();
+        boolean hasReferences = fields.stream().anyMatch(field -> field.referenceType() != null);
+        if (hasReferences) {
+            throw blocked(CODE_CANONICALISATION_VERSION_REQUIRED, null, String.valueOf(version),
+                    "This revision maps critical references. Those belong to canonicalisation version "
+                            + CANONICALISATION_VERSION_WITH_COMPONENTS + ", whose reference part is not "
+                            + "implemented yet; processing them now would leave changes to those fields "
+                            + "out of the fingerprint");
+        }
+        if (revision.getRecordCurrencyField() != null && !revision.getRecordCurrencyField().isBlank()
+                && version != CANONICALISATION_VERSION_WITH_COMPONENTS) {
+            throw blocked(CODE_CANONICALISATION_VERSION_REQUIRED, null, String.valueOf(version),
+                    "This revision reads a currency from the source, which is part of the price "
+                            + "fingerprint of canonicalisation version " + CANONICALISATION_VERSION_WITH_COMPONENTS
+                            + "; under version " + version + " the currency would change the fingerprint of "
+                            + "every existing source state");
+        }
         if (fields.isEmpty()) {
             return;
         }
-        boolean hasComponents = fields.stream()
-                .anyMatch(field -> field.priceComponentCode() != null || field.referenceType() != null);
-        if (hasComponents) {
-            throw blocked(CODE_CANONICALISATION_VERSION_REQUIRED, null,
-                    String.valueOf(revision.getRecordCanonicalisationVersion()),
-                    "This revision maps price components or critical references. Those belong to "
-                            + "canonicalisation version " + CANONICALISATION_VERSION_WITH_COMPONENTS
-                            + ", whose price and reference part is not implemented yet; processing them now "
-                            + "would leave changes to those fields out of the fingerprint");
-        }
-        if (revision.getRecordCanonicalisationVersion() != CANONICALISATION_VERSION_WITH_COMPONENTS) {
-            throw blocked(CODE_CANONICALISATION_VERSION_REQUIRED, null,
-                    String.valueOf(revision.getRecordCanonicalisationVersion()),
+        if (version != CANONICALISATION_VERSION_WITH_COMPONENTS) {
+            throw blocked(CODE_CANONICALISATION_VERSION_REQUIRED, null, String.valueOf(version),
                     "This revision maps " + fields.size() + " target field(s), which must be covered by "
                             + "canonicalisation version " + CANONICALISATION_VERSION_WITH_COMPONENTS
-                            + "; version " + revision.getRecordCanonicalisationVersion() + " would leave "
+                            + "; version " + version + " would leave "
                             + "changes to those fields out of the fingerprint");
         }
     }
 
     private static FieldMapping toFieldMapping(ImportFieldMapping row, ImportFieldCatalogEntry target,
-                                               FieldTransform transform, ValueFormat valueFormat) {
+                                               FieldTransform transform, ValueFormat valueFormat,
+                                               BigDecimal maxPercentage) {
         return new FieldMapping(row.getSequenceNumber(), target.getCode(), target.getName(),
                 row.getValueKind(), trimToNull(row.getSourceReference()), row.getExpectedPosition(),
                 row.getFixedValue(), row.getBookmarkName(), row.getDefaultValue(), row.getDataType(),
                 row.isRequired(), row.getMaxLength(), row.getDecimalScale(), row.isZeroAllowed(),
                 row.isNegativeAllowed(), row.getTransformKind(), row.getTransformConfig(), transform,
                 valueFormat, row.getFieldOwner(), row.getIdentityClass(), row.getPriceComponentCode(),
-                row.getReferenceType());
+                row.getReferenceType(), maxPercentage);
     }
 
     // --- Recordfilters --------------------------------------------------------------------------

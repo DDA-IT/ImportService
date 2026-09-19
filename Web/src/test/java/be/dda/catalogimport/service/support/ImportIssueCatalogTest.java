@@ -62,6 +62,8 @@ class ImportIssueCatalogTest {
             FieldValueMapper.class,
             FieldTransform.class,
             MappingSettings.class,
+            // Bouwstap 3d: de prijsregels stellen zes eigen codes vast (R-PRI-02..R-PRI-08).
+            PriceRules.class,
             DeliveryScreeningService.class,
             ScreeningRecoveryService.class);
 
@@ -76,7 +78,10 @@ class ImportIssueCatalogTest {
             "BATCH_NOT_RESUMABLE",
             "DELIVERY_FILE_COUNT_UNSUPPORTED",
             "DELIVERY_ALREADY_SCREENED_WITH_THIS_REVISION",
-            "PHASE2_NO_COMPLETENESS_CONTRACT");
+            "PHASE2_NO_COMPLETENESS_CONTRACT",
+            // Bouwstap 3d: de componentcode van de basisprijs in import_candidate_price. Een waarde in
+            // een kolom, geen foutcode - ze belandt nooit in import_row_issue.
+            "BASE_PRICE");
 
     /** Een letterlijke foutcode in de broncode: minstens twee woorden in hoofdletters met underscores. */
     private static final Pattern SHOUTED_LITERAL = Pattern.compile("\"([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\"");

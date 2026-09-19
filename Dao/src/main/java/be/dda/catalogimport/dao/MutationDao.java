@@ -6,6 +6,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.OptionalLong;
+import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -29,6 +30,20 @@ import org.springframework.stereotype.Repository;
  * slaat rijen over waarvoor die sleutel al bestaat, zodat een hervatte chunk niets verdubbelt; de
  * unieke index {@code uk_import_mutation_idempotency} blijft de harde garantie.
  * <p>
+ * <b>Prijscomponenten staan niet in extra mutatiekolommen</b> (ontwerp fase 3, R-PRI-09). De mutatie
+ * draagt de voor- en nabasisprijs en een {@code domain_mask} dat zegt <i>welke</i> component wijzigde
+ * ({@code PRICE:AKP}); de voor- en nawaarde van die component zijn volledig herleidbaar zonder
+ * duplicatie:
+ * <ul>
+ *   <li><b>voor</b>: {@code catalog_source_state_price} van {@code import_mutation.source_state_id}
+ *       — de toestand waartegen gescreend is, zolang de mutatie nog niet uitgevoerd is;</li>
+ *   <li><b>na</b>: {@code import_candidate_price} op
+ *       {@code (batch_id, source_row_number)} van de mutatie.</li>
+ * </ul>
+ * Zeven componenten × twee waarden als kolommen zou de mutatielijst per component moeten laten
+ * meegroeien; erger nog, het zou een tweede bron van waarheid voor een bedrag zijn. Er is er precies
+ * één, en de mutatie verwijst ernaar.
+ * <p>
  * <b>Transactiegrens.</b> Deze DAO opent zelf geen transactie; de screeningservice bepaalt de
  * chunkgrens (design par. 9, stap E). Binnen één transactie wordt hier geschreven en nooit via JPA
  * teruggelezen.
@@ -47,6 +62,20 @@ public class MutationDao {
 
     /** {@code import_mutation.result_summary} is varchar(1000). */
     public static final int MAX_RESULT_SUMMARY_LENGTH = 1000;
+
+    /** Scheidt het prijsdomein van de componentcode in {@code domain_mask}: {@code PRICE:AKP}. */
+    public static final String COMPONENT_MASK_SEPARATOR = ":";
+
+    /** Het artikeldeel van {@code domain_mask}. */
+    public static final String ARTICLE_MASK = "ARTICLE";
+    /** Het basisprijsdeel van {@code domain_mask}; met een componentcode erachter: {@code PRICE:AKP}. */
+    public static final String PRICE_MASK = "PRICE";
+
+    /** {@code import_mutation.domain_mask} is varchar(100). */
+    public static final int MAX_DOMAIN_MASK_LENGTH = 100;
+
+    /** Vorm van een prijscomponentcode; zie {@link #verifyComponentCode(String)}. */
+    private static final Pattern COMPONENT_CODE = Pattern.compile("[A-Z0-9_]{1,20}");
 
     private static final String CONTENT_MUTATION_COLUMNS = "batch_id, delivery_id, import_link_id, "
             + "definition_revision_id, task_run_id, action_type, target_domain, status, "
@@ -79,34 +108,130 @@ public class MutationDao {
     /**
      * Schrijft de inhoudelijke mutaties van één chunk. {@code UNCHANGED} levert bewust geen rij op.
      * <p>
-     * Het domeinmasker van een {@code UPDATE} zegt welk deel van de aanbieding verschilt, afgeleid
-     * uit de deelvingerafdrukken: enkel de prijs ⇒ {@code PRICE}, enkel het artikel ⇒
-     * {@code ARTICLE}, beide ⇒ {@code ARTICLE,PRICE}. De voor- en nabasisprijs worden apart
-     * bewaard, zodat een prijswijziging zichtbaar is zonder de bronregel te hoeven bewaren.
+     * Het domeinmasker van een {@code UPDATE} zegt welk deel van de aanbieding verschilt; zie
+     * {@link #domainMask(List)}. De voor- en nabasisprijs worden apart bewaard, zodat een
+     * prijswijziging zichtbaar is zonder de bronregel te hoeven bewaren.
+     *
+     * @param componentCodes de prijscomponenten van deze batch, gesorteerd; leeg ⇒ exact het
+     *                       fase 2-masker
      */
-    private static final String INSERT_CONTENT_MUTATIONS = "insert into import_mutation ("
-            + CONTENT_MUTATION_COLUMNS + ") select "
-            + "cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), "
-            + "case when stage.classification = 'NEW' then 'CREATE' else 'UPDATE' end, 'OFFER', 'PLANNED', "
-            + "stage.identity_supplier, stage.identity_supplier_group, stage.identity_supplier_reference, "
-            + "stage.identity_discount_code, stage.identity_discount_state, stage.identity_hash, "
-            + "state.combined_fingerprint, stage.combined_fingerprint, "
-            + "case when stage.classification = 'NEW' then cast(null as varchar(100)) "
-            + "     when state.article_fingerprint <> stage.article_fingerprint "
-            + "          and state.price_fingerprint <> stage.price_fingerprint then 'ARTICLE,PRICE' "
-            + "     when state.price_fingerprint <> stage.price_fingerprint then 'PRICE' "
-            + "     when state.article_fingerprint <> stage.article_fingerprint then 'ARTICLE' "
-            + "     else cast(null as varchar(100)) end, "
-            + "state.base_price, stage.base_price, stage.base_price_currency, state.id, "
-            + "cast(? as bigint), stage.row_number, stage.mutation_key_prefix || '" + OFFER_KEY_SUFFIX + "', "
-            + "cast(? as timestamp with time zone) "
-            + "from import_candidate_stage stage "
-            + "left join catalog_source_state state "
-            + "  on state.import_link_id = ? and state.identity_hash = stage.identity_hash "
-            + "where stage.batch_id = ? and stage.row_number > ? and stage.row_number <= ? "
-            + "  and stage.classification in ('NEW', 'CHANGED') "
-            + "  and not exists (select 1 from import_mutation existing "
-            + "      where existing.idempotency_key = stage.mutation_key_prefix || '" + OFFER_KEY_SUFFIX + "')";
+    private static String insertContentMutations(List<String> componentCodes) {
+        return "insert into import_mutation ("
+                + CONTENT_MUTATION_COLUMNS + ") select "
+                + "cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), "
+                + "case when stage.classification = 'NEW' then 'CREATE' else 'UPDATE' end, 'OFFER', 'PLANNED', "
+                + "stage.identity_supplier, stage.identity_supplier_group, stage.identity_supplier_reference, "
+                + "stage.identity_discount_code, stage.identity_discount_state, stage.identity_hash, "
+                + "state.combined_fingerprint, stage.combined_fingerprint, "
+                + domainMask(componentCodes) + ", "
+                + "state.base_price, stage.base_price, stage.base_price_currency, state.id, "
+                + "cast(? as bigint), stage.row_number, stage.mutation_key_prefix || '" + OFFER_KEY_SUFFIX + "', "
+                + "cast(? as timestamp with time zone) "
+                + "from import_candidate_stage stage "
+                + "left join catalog_source_state state "
+                + "  on state.import_link_id = ? and state.identity_hash = stage.identity_hash "
+                + "where stage.batch_id = ? and stage.row_number > ? and stage.row_number <= ? "
+                + "  and stage.classification in ('NEW', 'CHANGED') "
+                + "  and not exists (select 1 from import_mutation existing "
+                + "      where existing.idempotency_key = stage.mutation_key_prefix || '" + OFFER_KEY_SUFFIX + "')";
+    }
+
+    /**
+     * Het domeinmasker van een {@code UPDATE}: welk deel van de aanbieding verschilt van de aanvaarde
+     * bronstaat (R-PRI-09).
+     * <ul>
+     *   <li>{@code ARTICLE} — de artikelvingerafdruk verschilt;</li>
+     *   <li>{@code PRICE} — de <b>basisprijs</b> of haar munt verschilt;</li>
+     *   <li>{@code PRICE:<COMPONENT>} — de verhouding of de munt van die ene prijscomponent verschilt,
+     *       of de component is erbij gekomen of weggevallen.</li>
+     * </ul>
+     * De onderdelen staan in een vaste, deterministische volgorde (artikel, basisprijs, daarna de
+     * componenten op code) en worden met een komma gescheiden: {@code ARTICLE,PRICE:AKP}. Zo kan een
+     * gebruiker zien dát enkel de aankoopprijsverhouding wijzigde terwijl de basisprijs gelijk bleef —
+     * precies het geval dat R-PRI-09 zichtbaar wil maken.
+     * <p>
+     * <b>Zonder prijscomponenten blijft dit exact het fase 2-masker</b> ({@code ARTICLE},
+     * {@code PRICE}, {@code ARTICLE,PRICE} of {@code null}): de basisprijsvergelijking is dan
+     * gelijkwaardig aan de vergelijking van de prijsvingerafdrukken, want die dekt in dat geval enkel
+     * de basisprijs en de munt.
+     */
+    private static String domainMask(List<String> componentCodes) {
+        verifyMaskFits(componentCodes);
+        StringBuilder parts = new StringBuilder();
+        parts.append("case when state.article_fingerprint <> stage.article_fingerprint "
+                + "then ',").append(ARTICLE_MASK).append("' else '' end");
+        parts.append(" || case when state.base_price <> stage.base_price "
+                + "or coalesce(state.base_price_currency, '') <> coalesce(stage.base_price_currency, '') "
+                + "then ',").append(PRICE_MASK).append("' else '' end");
+        for (String code : componentCodes) {
+            parts.append(" || case when ").append(componentDiffers(code))
+                    .append(" then ',").append(PRICE_MASK).append(COMPONENT_MASK_SEPARATOR).append(code)
+                    .append("' else '' end");
+        }
+        // NEW heeft geen "voor"-toestand en dus geen masker; een CHANGED zonder verschil in deze drie
+        // domeinen (vandaag enkel mogelijk via het referentiedeel, bouwstap 3f) krijgt null in plaats
+        // van een lege tekst die op "niets gewijzigd" zou lijken.
+        return "case when stage.classification = 'NEW' then cast(null as varchar(100)) "
+                + "else nullif(substr(" + parts + ", 2), '') end";
+    }
+
+    /**
+     * Verschilt deze prijscomponent van de aanvaarde bronstaat? Gelijk is: de component bestaat aan
+     * beide kanten met exact dezelfde verhouding en munt, óf ze bestaat aan geen van beide kanten.
+     * Elke andere toestand — toegevoegd, weggevallen, andere verhouding, andere munt — is een
+     * verschil. De vergelijking gebeurt op {@code numeric}, nooit op een afgeronde of tekstuele vorm.
+     */
+    private static String componentDiffers(String componentCode) {
+        String code = "'" + verifyComponentCode(componentCode) + "'";
+        return "not (exists (select 1 from import_candidate_price price "
+                + "join catalog_source_state_price accepted "
+                + "  on accepted.source_state_id = state.id "
+                + " and accepted.component_code = price.component_code "
+                + "where price.batch_id = stage.batch_id and price.row_number = stage.row_number "
+                + "  and price.component_code = " + code
+                + "  and price.percentage = accepted.percentage "
+                + "  and coalesce(price.currency, '') = coalesce(accepted.currency, '')) "
+                + "or (not exists (select 1 from import_candidate_price price "
+                + "      where price.batch_id = stage.batch_id and price.row_number = stage.row_number "
+                + "        and price.component_code = " + code + ") "
+                + "    and not exists (select 1 from catalog_source_state_price accepted "
+                + "      where accepted.source_state_id = state.id "
+                + "        and accepted.component_code = " + code + ")))";
+    }
+
+    /**
+     * Het masker moet in {@code import_mutation.domain_mask} passen. Met de zeven geseede
+     * prijscomponenten is het langst mogelijke masker 94 tekens; een definitie met méér of met langere
+     * componentcodes zou erbuiten vallen. Dat wordt hier <b>vooraf</b> vastgesteld met een duidelijke
+     * melding, in plaats van halverwege een levering op een databasefout te stranden — en het masker
+     * wordt nooit afgekapt, want dan zou een gewijzigde component onzichtbaar worden.
+     */
+    private static void verifyMaskFits(List<String> componentCodes) {
+        int length = ARTICLE_MASK.length() + 1 + PRICE_MASK.length();
+        for (String code : componentCodes) {
+            length += 1 + PRICE_MASK.length() + COMPONENT_MASK_SEPARATOR.length() + code.length();
+        }
+        if (length > MAX_DOMAIN_MASK_LENGTH) {
+            throw new IllegalArgumentException("The domain mask of " + componentCodes.size()
+                    + " price components would need " + length + " characters while domain_mask holds "
+                    + MAX_DOMAIN_MASK_LENGTH + "; widen the column before using these component codes. "
+                    + "Truncating the mask would hide which price component changed.");
+        }
+    }
+
+    /**
+     * De componentcode komt in de SQL-tekst zelf terecht (het aantal componenten verschilt per
+     * revisie), dus ze moet aantoonbaar onschadelijk zijn. Enkel hoofdletters, cijfers en liggende
+     * streepjes; alles anders is een programmeerfout en geen bronwaarde om te "ontsnappen".
+     */
+    private static String verifyComponentCode(String componentCode) {
+        if (componentCode == null || !COMPONENT_CODE.matcher(componentCode).matches()) {
+            throw new IllegalArgumentException("Price component code '" + componentCode + "' is not a "
+                    + "plain code (A-Z, 0-9, _, at most 20 characters) and cannot be used in the domain "
+                    + "mask");
+        }
+        return componentCode;
+    }
 
     private static final String INSERT_MARKER = "insert into import_mutation ("
             + "batch_id, delivery_id, import_link_id, definition_revision_id, task_run_id, "
@@ -184,10 +309,16 @@ public class MutationDao {
         return jdbc.update(CLASSIFY_CHUNK, importLinkId, importLinkId, batchId, fromExclusive, toInclusive);
     }
 
-    /** Zie {@link #INSERT_CONTENT_MUTATIONS}. */
-    public int insertContentMutations(MutationContext context, long fromExclusive, long toInclusive,
-                                      Instant createdAt) {
-        return jdbc.update(INSERT_CONTENT_MUTATIONS, statement -> {
+    /**
+     * Zie {@link #insertContentMutations(List)}.
+     *
+     * @param componentCodes de prijscomponenten die in deze batch voorkomen, gesorteerd
+     *                       ({@link CandidatePriceDao#componentCodes(long)}); een lege lijst levert
+     *                       exact het fase 2-gedrag op
+     */
+    public int insertContentMutations(MutationContext context, List<String> componentCodes,
+                                      long fromExclusive, long toInclusive, Instant createdAt) {
+        return jdbc.update(insertContentMutations(componentCodes), statement -> {
             statement.setLong(1, context.batchId());
             statement.setLong(2, context.deliveryId());
             statement.setLong(3, context.importLinkId());

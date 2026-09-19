@@ -188,6 +188,22 @@ public class ImportDefinitionRevision {
     @Column(name = "record_currency_field", length = 200)
     private String recordCurrencyField;
 
+    /**
+     * Mag de basisprijs 0 zijn (R-PRI-02)? Default {@code false}: 0 is een betekenisvolle, verdachte
+     * waarde en verwerpt de bronregel tenzij de beheerder ze uitdrukkelijk toelaat.
+     * <p>
+     * Deze schakelaar staat op de revisie en niet op een {@link ImportFieldMapping}, omdat de
+     * basisprijs geen mappingrij heeft en er ook geen kan krijgen: R-STR-06 verbiedt een tweede bron
+     * naast {@link #recordBasePriceField}. Afgeleide prijscomponenten dragen hun eigen
+     * {@code zero_allowed}/{@code negative_allowed} op hun mapping.
+     */
+    @Column(name = "base_price_zero_allowed", nullable = false)
+    private boolean basePriceZeroAllowed;
+
+    /** Mag de basisprijs negatief zijn (R-PRI-03)? Default {@code false}; zie hierboven. */
+    @Column(name = "base_price_negative_allowed", nullable = false)
+    private boolean basePriceNegativeAllowed;
+
     // --- Prijsbeleid (Fase 3, ontwerp par. 2 004-10) ------------------------------------------
     // De defaults zijn de normatieve waarden uit het ontwerp en gelden ook voor bestaande revisies.
     // Ze worden in bouwstap 3d-3e toegepast; hier worden ze enkel bevroren bij de revisie bewaard.
@@ -530,6 +546,22 @@ public class ImportDefinitionRevision {
 
     public void setRecordCurrencyField(String recordCurrencyField) {
         this.recordCurrencyField = recordCurrencyField;
+    }
+
+    public boolean isBasePriceZeroAllowed() {
+        return basePriceZeroAllowed;
+    }
+
+    public void setBasePriceZeroAllowed(boolean basePriceZeroAllowed) {
+        this.basePriceZeroAllowed = basePriceZeroAllowed;
+    }
+
+    public boolean isBasePriceNegativeAllowed() {
+        return basePriceNegativeAllowed;
+    }
+
+    public void setBasePriceNegativeAllowed(boolean basePriceNegativeAllowed) {
+        this.basePriceNegativeAllowed = basePriceNegativeAllowed;
     }
 
     public BigDecimal getPriceDeviationPercent() {

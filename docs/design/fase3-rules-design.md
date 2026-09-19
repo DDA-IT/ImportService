@@ -508,3 +508,31 @@ Te laten beslissen door een Denker (of de mens) vóór 3h.
   zonder veldnamen tot 3d/3f. De v2-artikelhash bevat DESCRIPTION altijd (U+0000 als de revisiekolom leeg is).
 - Constante hernoemd: `SourceStructureConfigFactory.SUPPORTED_CANONICALISATION_VERSION` (int) →
   `SUPPORTED_CANONICALISATION_VERSIONS` (Set<Integer>).
+
+## 12. Aanvullingen uit stap 3d (geïmplementeerd, hoofdsessie akkoord)
+
+- Changesets: 004-5 `import_candidate_price` (fk→stage met `on delete cascade`), 004-6
+  `catalog_source_state_price` (strengere check: geen component zonder percentage in de aanvaarde bronstaat),
+  004-10b (`base_price_zero_allowed`, `base_price_negative_allowed`, default false: de basisprijs heeft geen
+  mapping-rij, dus deze schakelaars staan op de revisie).
+- Gedragswijziging t.o.v. Fase 2: basisprijs 0 of negatief wordt nu verworpen tenzij de revisie het toelaat
+  (`PRICE_ZERO_NOT_ALLOWED`, `PRICE_NEGATIVE_NOT_ALLOWED`). Bestaande koppelingen die 0-prijzen leveren moeten
+  `base_price_zero_allowed` zetten (release-/deploynotitie).
+- `domain_mask`-notatie: `ARTICLE`, `PRICE` (basisprijs of munt), `PRICE:<price_component_code uit de
+  veldcatalogus>` (bv. `PRICE:AKP`), komma-gescheiden in vaste volgorde. Per-component voor/na is herleidbaar
+  via `source_state_id` (voor: `catalog_source_state_price`) en `batch_id + source_row_number` (na:
+  `import_candidate_price`); geen extra mutatiekolommen.
+- Revisies zonder prijscomponenten schrijven geen enkele prijsrij (byte-neutraal; hashes vastgepind).
+  Batch zonder prijsrijen raakt `catalog_source_state_price` niet aan.
+- `NO_BASE_PRICE` bestaat in model/schema/`PriceRules` maar bereikt de staging nu niet (issue is ERROR ⇒ record
+  verworpen); 3h kan dit anders regelen. Valuta: één munt per record uit `record_currency_field`
+  (`[A-Z]{3}`, nooit stil geüppercased of EUR); een v1-revisie met `record_currency_field` blokkeert
+  (`CONFIG_CANONICALISATION_VERSION_REQUIRED`).
+- Prijscomponent-mapping vereist DECIMAL en `decimal_scale ≤ 6` (`CONFIG_MAPPING_TYPE_INCOMPATIBLE`);
+  `maxPercentage=` als `transform_config`-sleutel (>0, alleen op prijscomponent). Prijscomponent-mappings zijn
+  onder v2 toegestaan; referentie-mappings blijven geblokkeerd tot 3f.
+- CHANGED-bronstaatprijzen worden per chunk vervangen (delete + insert); UNCHANGED blijft onaangeroerd.
+- Publieke signatuurwijziging: `MutationDao.insertContentMutations(...)` kreeg `List<String> componentCodes`.
+- RISICO: `import_mutation.domain_mask` is varchar(100); met de 7 geseede componenten is het langst mogelijke
+  masker 94 tekens. `MutationDao.verifyMaskFits` faalt vooraf duidelijk (nooit afkappen). Kolom verbreden
+  (aparte additieve changeset) in 3e/3h of vóór meer componenten worden geseed.

@@ -164,7 +164,7 @@ class ScreeningRecoveryServiceTest {
                 throw new UncheckedIOException(new IOException("simulated crash after the first chunk"));
             }
             return invocation.callRealMethod();
-        }).when(mutations).insertContentMutations(any(), anyLong(), anyLong(), any());
+        }).when(mutations).insertContentMutations(any(), any(), anyLong(), anyLong(), any());
         try {
             screening.screen(delivered.batchId());
         } catch (UncheckedIOException expected) {

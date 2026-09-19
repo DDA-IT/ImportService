@@ -261,7 +261,16 @@ public final class ImportIssueCatalog {
                 ImportValueRules.CODE_PRICE_MISSING,
                 ImportValueRules.CODE_PRICE_UNREADABLE,
                 ImportValueRules.CODE_PRICE_SCALE_EXCEEDED,
-                CandidateNormaliser.CODE_PRICE_OUT_OF_RANGE}) {
+                CandidateNormaliser.CODE_PRICE_OUT_OF_RANGE,
+                // Bouwstap 3d: de prijsregels van één bronregel (R-PRI-02..R-PRI-08). Allemaal ERROR op
+                // recordniveau: ze verwerpen uitsluitend de betrokken regel, en nooit wordt een bedrag,
+                // een verhouding of een munt stilzwijgend aangepast om de regel toch door te laten.
+                PriceRules.CODE_PRICE_ZERO_NOT_ALLOWED,
+                PriceRules.CODE_PRICE_NEGATIVE_NOT_ALLOWED,
+                PriceRules.CODE_PRICE_CURRENCY_MISMATCH,
+                PriceRules.CODE_PRICE_PERCENTAGE_NOT_COMPUTABLE,
+                PriceRules.CODE_PRICE_DERIVATION_MISMATCH,
+                PriceRules.CODE_PRICE_PERCENTAGE_OUT_OF_RANGE}) {
             put(catalogue, code, RowIssueSeverity.ERROR, IssueDomain.PRICE, ControlLevel.RECORD,
                     ImpactScope.RECORD);
         }

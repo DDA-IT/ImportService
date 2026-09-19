@@ -730,6 +730,132 @@ class ScreeningSchemaTest {
         assertThat(((Number) stored.get("error_before_filter_count")).longValue()).isZero();
     }
 
+    // --- Fase 3d, changeset 004-5/004-6/004-10b: prijscomponenten --------------------------------
+
+    /**
+     * De basisprijs draagt een bedrag en nooit een percentage; een afgeleide component zonder
+     * percentage moet met haar status zeggen waarom. Zonder deze twee checks zou er een prijsrij
+     * kunnen bestaan die stilzwijgend "geen verhouding" betekent.
+     */
+    @Test
+    void enforcesThePriceComponentChecksOnTheCandidatePriceTable() {
+        Scenario s = scenario("PRICECK");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+        insertStage(batch.getId(), s.file().getId(), 2L, sha256("PRICECK-identity"));
+
+        // Basisprijs: bedrag verplicht, percentage verboden.
+        assertThatCode(() -> insertCandidatePrice(batch.getId(), 2L, "BASE_PRICE",
+                new BigDecimal("100.000000"), null, "OK")).doesNotThrowAnyException();
+        assertThatThrownBy(() -> insertCandidatePrice(batch.getId(), 3L, "BASE_PRICE",
+                new BigDecimal("100.000000"), new BigDecimal("100"), "OK"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertCandidatePrice(batch.getId(), 2L, "BASE_PRICE", null, null, "OK"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        // Afgeleide component: percentage verplicht zolang de status OK is.
+        assertThatCode(() -> insertCandidatePrice(batch.getId(), 2L, "AKP",
+                new BigDecimal("80.000000"), new BigDecimal("80.000000000000"), "OK"))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> insertCandidatePrice(batch.getId(), 2L, "VKP1",
+                new BigDecimal("120.000000"), null, "OK"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatCode(() -> insertCandidatePrice(batch.getId(), 2L, "VKP1",
+                new BigDecimal("120.000000"), null, "NO_BASE_PRICE")).doesNotThrowAnyException();
+
+        // pk_import_candidate_price: één rij per (batch, regel, component).
+        assertThatThrownBy(() -> insertCandidatePrice(batch.getId(), 2L, "AKP",
+                new BigDecimal("80.000000"), new BigDecimal("80.000000000000"), "OK"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // Een prijsrij zonder haar gestagede regel kan niet bestaan (foreign key).
+        assertThatThrownBy(() -> insertCandidatePrice(batch.getId(), 99L, "AKP",
+                new BigDecimal("1.000000"), new BigDecimal("1"), "OK"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        // Het bedrag behoudt zijn zes decimalen en het percentage zijn twaalf.
+        Map<String, Object> stored = jdbc.queryForMap("select source_amount, percentage from "
+                + "import_candidate_price where batch_id = ? and row_number = 2 and component_code = 'AKP'",
+                batch.getId());
+        assertThat(((BigDecimal) stored.get("source_amount")).scale()).isEqualTo(6);
+        assertThat(((BigDecimal) stored.get("percentage")).scale()).isEqualTo(12);
+    }
+
+    /** De staging is één geheel: haar prijscomponenten verdwijnen mee, nooit als wees achterblijvend. */
+    @Test
+    void removesTheCandidatePricesWhenTheStagedRowIsRemoved() {
+        Scenario s = scenario("PRICECASC");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+        insertStage(batch.getId(), s.file().getId(), 2L, sha256("PRICECASC-identity"));
+        insertCandidatePrice(batch.getId(), 2L, "BASE_PRICE", new BigDecimal("100.000000"), null, "OK");
+
+        jdbc.update("delete from import_candidate_stage where batch_id = ?", batch.getId());
+
+        assertThat(jdbc.queryForObject("select count(*) from import_candidate_price where batch_id = ?",
+                Long.class, batch.getId())).isZero();
+    }
+
+    /**
+     * De aanvaarde bronstaat is strenger dan de staging: daar bestaat geen component zonder
+     * verhouding. Een component die niet berekend kon worden, wordt nooit als nulmeting aanvaard.
+     */
+    @Test
+    void enforcesAStricterCheckOnTheAcceptedSourceStatePrices() {
+        Scenario s = scenario("STATEPR");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+        byte[] identity = sha256("STATEPR-identity");
+        insertSourceState(s.link().getId(), s.delivery().getId(), batch.getId(), identity);
+        Long stateId = jdbc.queryForObject("select id from catalog_source_state where import_link_id = ?",
+                Long.class, s.link().getId());
+
+        assertThatCode(() -> insertSourceStatePrice(stateId, "BASE_PRICE", new BigDecimal("100.000000"),
+                null)).doesNotThrowAnyException();
+        assertThatCode(() -> insertSourceStatePrice(stateId, "AKP", new BigDecimal("80.000000"),
+                new BigDecimal("80.000000000000"))).doesNotThrowAnyException();
+        assertThatThrownBy(() -> insertSourceStatePrice(stateId, "VKP1", new BigDecimal("120.000000"),
+                null)).isInstanceOf(DataIntegrityViolationException.class);
+        // pk_catalog_source_state_price: één rij per (bronstaat, component).
+        assertThatThrownBy(() -> insertSourceStatePrice(stateId, "AKP", new BigDecimal("80.000000"),
+                new BigDecimal("80.000000000000"))).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertSourceStatePrice(999_999_999L, "AKP", new BigDecimal("1.000000"),
+                new BigDecimal("1"))).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    /**
+     * Changeset 004-10b: de basisprijs heeft geen mappingrij (R-STR-06 verbiedt een tweede bron), dus
+     * staan haar nul- en negatiefbeleid op de revisie. Default false: 0 en negatief zijn verdachte
+     * waarden en worden geweigerd tenzij de beheerder ze uitdrukkelijk toelaat.
+     */
+    @Test
+    void refusesAZeroOrNegativeBasePriceByDefaultOnEveryRevision() {
+        ImportDefinitionRevision revision = scenario("REVZERO").revision();
+
+        assertThat(revision.isBasePriceZeroAllowed()).isFalse();
+        assertThat(revision.isBasePriceNegativeAllowed()).isFalse();
+
+        Map<String, Object> stored = jdbc.queryForMap("select base_price_zero_allowed, "
+                + "base_price_negative_allowed from import_definition_revision where id = ?",
+                revision.getId());
+        assertThat(stored.get("base_price_zero_allowed")).isEqualTo(false);
+        assertThat(stored.get("base_price_negative_allowed")).isEqualTo(false);
+
+        revision.setBasePriceZeroAllowed(true);
+        revisions.saveAndFlush(revision);
+        assertThat(revisions.findById(revision.getId()).orElseThrow().isBasePriceZeroAllowed()).isTrue();
+    }
+
+    private void insertCandidatePrice(Long batchId, long rowNumber, String componentCode,
+                                      BigDecimal amount, BigDecimal percentage, String status) {
+        jdbc.update("insert into import_candidate_price (batch_id, row_number, component_code, "
+                        + "source_amount, percentage, currency, status) values (?, ?, ?, ?, ?, null, ?)",
+                batchId, rowNumber, componentCode, amount, percentage, status);
+    }
+
+    private void insertSourceStatePrice(Long sourceStateId, String componentCode, BigDecimal amount,
+                                        BigDecimal percentage) {
+        jdbc.update("insert into catalog_source_state_price (source_state_id, component_code, amount, "
+                        + "percentage, currency, updated_at) values (?, ?, ?, ?, null, ?)",
+                sourceStateId, componentCode, amount, percentage, OffsetDateTime.now());
+    }
+
     private String identityClassOf(String code) {
         return jdbc.queryForObject("select identity_class from import_field_catalog where code = ?",
                 String.class, code);

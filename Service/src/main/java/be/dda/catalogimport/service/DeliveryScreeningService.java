@@ -1,5 +1,7 @@
 package be.dda.catalogimport.service;
 
+import be.dda.catalogimport.dao.CandidatePriceDao;
+import be.dda.catalogimport.dao.CandidatePriceDao.PriceRow;
 import be.dda.catalogimport.dao.CandidateStageDao;
 import be.dda.catalogimport.dao.CandidateStageDao.DuplicateRow;
 import be.dda.catalogimport.dao.CandidateStageDao.StageRow;
@@ -28,6 +30,7 @@ import be.dda.catalogimport.service.support.CsvRecordStreamer.ReadSummary;
 import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import be.dda.catalogimport.service.support.ImportMappingConfig;
 import be.dda.catalogimport.service.support.ImportMappingConfigFactory;
+import be.dda.catalogimport.service.support.PriceRules;
 import be.dda.catalogimport.service.support.RecordFilterEvaluator;
 import be.dda.catalogimport.service.support.ScreeningBlockedException;
 import be.dda.catalogimport.service.support.SourceStructureConfig;
@@ -204,6 +207,8 @@ public class DeliveryScreeningService {
     /** Lopende stand van één screening; enkel binnen één {@link #screen(long)}-aanroep gebruikt. */
     private static final class Progress {
         private final List<StageRow> pendingRows = new ArrayList<>();
+        /** De prijscomponenten van dezelfde microbatch; ze worden in dezelfde transactie vastgelegd. */
+        private final List<PriceRow> pendingPrices = new ArrayList<>();
         private final List<IssueRow> pendingIssues = new ArrayList<>();
         /** Volledige aantallen per foutcode — ook boven de voorbeeldcap (R-ISS-03). */
         private final Map<String, Long> issueCounts = new TreeMap<>();
@@ -229,6 +234,7 @@ public class DeliveryScreeningService {
     private final DeliveryFileRepository deliveryFiles;
     private final TaskRunRepository runs;
     private final CandidateStageDao stage;
+    private final CandidatePriceDao candidatePrices;
     private final RowIssueDao rowIssues;
     private final MutationDao mutations;
     private final TransactionTemplate transaction;
@@ -239,7 +245,8 @@ public class DeliveryScreeningService {
     public DeliveryScreeningService(DeliveryArchiveStore archive, SourceStructureConfigFactory configFactory,
                                     ImportMappingConfigFactory mappingConfigFactory,
                                     ImportBatchRepository batches, DeliveryFileRepository deliveryFiles,
-                                    TaskRunRepository runs, CandidateStageDao stage, RowIssueDao rowIssues,
+                                    TaskRunRepository runs, CandidateStageDao stage,
+                                    CandidatePriceDao candidatePrices, RowIssueDao rowIssues,
                                     MutationDao mutations, PlatformTransactionManager transactionManager,
                                     @Value("${catalogimport.screening.stage-batch-size:2000}") int stageBatchSize,
                                     @Value("${catalogimport.screening.max-sample-rows-per-code:"
@@ -253,6 +260,7 @@ public class DeliveryScreeningService {
         this.deliveryFiles = deliveryFiles;
         this.runs = runs;
         this.stage = stage;
+        this.candidatePrices = candidatePrices;
         this.rowIssues = rowIssues;
         this.mutations = mutations;
         this.transaction = new TransactionTemplate(transactionManager);
@@ -477,6 +485,7 @@ public class DeliveryScreeningService {
                     context.mappingConfig());
             if (result instanceof NormalisedCandidate candidate) {
                 progress.pendingRows.add(stageRow(context, candidate));
+                progress.pendingPrices.addAll(priceRows(context, candidate));
                 progress.validCount++;
                 // Informatieve vaststellingen (een toegepaste standaardwaarde) horen bij een geldige
                 // regel: ze verwerpen niets, maar ze mogen ook niet onzichtbaar blijven.
@@ -515,6 +524,24 @@ public class DeliveryScreeningService {
                 candidate.referenceFingerprint(), candidate.combinedFingerprint(),
                 candidate.mutationKeyPrefix(context.deliveryId(), context.definitionRevisionId()),
                 Instant.now());
+    }
+
+    /**
+     * De prijscomponenten van één kandidaat (R-PRI-04). Leeg wanneer de revisie geen enkele
+     * prijscomponent mapt: er wordt dan geen enkele {@code import_candidate_price}-rij geschreven en
+     * het gedrag blijft exact dat van fase 2/3c.
+     */
+    private static List<PriceRow> priceRows(Context context, NormalisedCandidate candidate) {
+        if (candidate.priceComponents().isEmpty()) {
+            return List.of();
+        }
+        List<PriceRow> rows = new ArrayList<>(candidate.priceComponents().size());
+        for (PriceRules.PriceComponent component : candidate.priceComponents()) {
+            rows.add(new PriceRow(context.batchId(), candidate.rowNumber(), component.componentCode(),
+                    component.sourceAmount(), component.percentage(), component.currency(),
+                    component.status().name()));
+        }
+        return rows;
     }
 
     /**
@@ -582,9 +609,13 @@ public class DeliveryScreeningService {
             return;
         }
         List<StageRow> rows = List.copyOf(progress.pendingRows);
+        List<PriceRow> prices = List.copyOf(progress.pendingPrices);
         List<IssueRow> issues = List.copyOf(progress.pendingIssues);
         transaction.executeWithoutResult(status -> {
             stage.insertBatch(rows);
+            // Ná de stagingrijen: import_candidate_price heeft een foreign key naar de kandidaat, en
+            // een prijscomponent zonder haar regel mag niet kunnen bestaan.
+            candidatePrices.insertBatch(prices);
             rowIssues.insertBatch(issues);
             ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
             batch.setStagedRowCount(batch.getStagedRowCount() + rows.size());
@@ -592,6 +623,7 @@ public class DeliveryScreeningService {
         });
         progress.stagedCount += rows.size();
         progress.pendingRows.clear();
+        progress.pendingPrices.clear();
         progress.pendingIssues.clear();
     }
 
@@ -668,6 +700,10 @@ public class DeliveryScreeningService {
      */
     private void generateMutations(Context context) {
         MutationContext mutationContext = context.mutationContext();
+        // Exact één keer per batch, niet per chunk: welke prijscomponenten deze levering draagt, bepaalt
+        // het domeinmasker van élke mutatie (R-PRI-09). Uit de staging en niet uit de configuratie,
+        // zodat een hervatte batch hetzelfde masker oplevert als een batch in één keer.
+        List<String> componentCodes = candidatePrices.componentCodes(context.batchId());
         long from = transaction.execute(status ->
                 batches.findById(context.batchId()).orElseThrow().getMutationProgressRowNumber());
         Long boundary;
@@ -676,7 +712,8 @@ public class DeliveryScreeningService {
             long chunkTo = boundary;
             transaction.executeWithoutResult(status -> {
                 mutations.classifyChunk(context.batchId(), context.importLinkId(), chunkFrom, chunkTo);
-                mutations.insertContentMutations(mutationContext, chunkFrom, chunkTo, Instant.now());
+                mutations.insertContentMutations(mutationContext, componentCodes, chunkFrom, chunkTo,
+                        Instant.now());
                 ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
                 batch.setMutationProgressRowNumber(chunkTo);
                 batches.saveAndFlush(batch);
@@ -830,6 +867,10 @@ public class DeliveryScreeningService {
     private void fail(Context context, Throwable cause) {
         try {
             transaction.executeWithoutResult(status -> {
+                // Eerst de prijscomponenten: ze hangen met een foreign key aan de staging. De
+                // databasecascade zou ze ook opruimen; ze hier expliciet verwijderen houdt de bedoeling
+                // zichtbaar in plaats van ze aan een schema-eigenschap over te laten.
+                candidatePrices.deleteByBatchId(context.batchId());
                 stage.deleteByBatchId(context.batchId());
                 rowIssues.deleteByBatchId(context.batchId());
                 ImportBatch batch = batches.findById(context.batchId()).orElseThrow();

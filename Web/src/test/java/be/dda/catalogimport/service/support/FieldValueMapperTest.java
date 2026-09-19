@@ -256,7 +256,7 @@ class FieldValueMapperTest {
                         FieldValueKind.BOOKMARK, null, null, null, "BESTANDS_PREFIX", null,
                         FieldDataType.TEXT, false, null, null, false, false, FieldTransformKind.NONE, null,
                         new FieldTransform.Unchanged(), ImportMappingConfig.ValueFormat.DEFAULT,
-                        FieldOwner.CATALOG_SOURCE, IdentityClass.NONE, null, null)),
+                        FieldOwner.CATALOG_SOURCE, IdentityClass.NONE, null, null, null)),
                 List.of());
 
         assertThatThrownBy(() -> mapper.map(row("x", "", "", ""), config))
