@@ -684,6 +684,33 @@ class ScreeningSchemaTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /**
+     * Changeset 004-14/004-14b: de referentiedeelvingerafdruk is op beide tabellen nullable en blijft
+     * dat. Een revisie op canonicalisatieversie 1 kent geen referentiedeel; NULL betekent daar "onder
+     * versie 1 vastgelegd" en niet "geen referenties" — versie 2 schrijft ook zonder referenties een
+     * vingerafdruk. Was de kolom NOT NULL, dan zou elke bestaande fase 2-rij moeten migreren.
+     */
+    @Test
+    void keepsTheReferenceFingerprintNullableOnTheStageAndOnTheSourceState() {
+        Scenario s = scenario("REFFP");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+        byte[] identityHash = sha256("REFFP-identity");
+        insertStage(batch.getId(), s.file().getId(), 2L, identityHash);
+        insertSourceState(s.link().getId(), s.delivery().getId(), batch.getId(), identityHash);
+
+        assertThat(jdbc.queryForObject("select reference_fingerprint from import_candidate_stage "
+                + "where batch_id = ? and row_number = 2", byte[].class, batch.getId())).isNull();
+        assertThat(jdbc.queryForObject("select reference_fingerprint from catalog_source_state "
+                + "where import_link_id = ?", byte[].class, s.link().getId())).isNull();
+
+        // En de kolom aanvaardt wél een hash zodra versie 2 er één levert.
+        jdbc.update("update import_candidate_stage set reference_fingerprint = ? where batch_id = ?",
+                sha256("reference"), batch.getId());
+        assertThat(jdbc.queryForObject("select reference_fingerprint from import_candidate_stage "
+                + "where batch_id = ? and row_number = 2", byte[].class, batch.getId()))
+                .isEqualTo(sha256("reference"));
+    }
+
     /** De twee filtertellers zijn nullable: null betekent onbekend, nooit stil 0 (R-FLT-04). */
     @Test
     void leavesTheFilterCountersOnAFreshBatchUnknown() {

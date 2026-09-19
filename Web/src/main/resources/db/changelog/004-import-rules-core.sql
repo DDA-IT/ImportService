@@ -342,3 +342,29 @@ alter table import_batch add column error_before_filter_count bigint;
 
 --rollback alter table import_batch drop column error_before_filter_count;
 --rollback alter table import_batch drop column filtered_out_count;
+
+-- =============================================================================================
+-- Bouwstap 3c: de referentiedeelvingerafdruk van canonicalisatieversie 2 (ontwerp fase 3 par. 2
+-- sub-changeset 004-14 en par. 3.5). De reeds uitgevoerde changesets hierboven blijven ongewijzigd.
+-- =============================================================================================
+
+--changeset catalogimport:004-14-catalog-source-state-reference-fingerprint
+--comment Deelvingerafdruk over de kritieke referenties van een aanbieding (ontwerp fase 3 par. 2 004-14, par. 3.5).
+
+-- Nullable, en dat blijft zo: een revisie op canonicalisatieversie 1 kent geen referentiedeel. NULL
+-- betekent hier "deze bronstaat is onder versie 1 vastgelegd", niet "geen referenties" - die twee
+-- mogen nooit door elkaar lopen, want versie 2 schrijft voor een aanbieding zonder referenties wél
+-- een (lege) vingerafdruk.
+alter table catalog_source_state add column reference_fingerprint ${hash.type};
+
+--rollback alter table catalog_source_state drop column reference_fingerprint;
+
+--changeset catalogimport:004-14b-import-candidate-stage-reference-fingerprint
+--comment Dezelfde deelvingerafdruk op de staging, zodat de gecombineerde hash reproduceerbaar blijft.
+
+-- Zonder deze kolom zou accept-baseline de referentievingerafdruk van een kandidaat niet naar de
+-- bronstaat kunnen overnemen en zou combined_fingerprint achteraf niet meer uit zijn vier delen te
+-- herleiden zijn. Nullable om dezelfde reden als hierboven: versie 1 vult ze niet.
+alter table import_candidate_stage add column reference_fingerprint ${hash.type};
+
+--rollback alter table import_candidate_stage drop column reference_fingerprint;

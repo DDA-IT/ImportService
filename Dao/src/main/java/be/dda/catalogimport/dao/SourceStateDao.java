@@ -46,13 +46,15 @@ public class SourceStateDao {
     private static final String INSERT_NEW_FROM_STAGE = "insert into catalog_source_state ("
             + "import_link_id, identity_hash, identity_supplier, identity_supplier_group, "
             + "identity_supplier_reference, identity_discount_code, identity_discount_state, "
-            + "identity_profile_kind, article_fingerprint, price_fingerprint, combined_fingerprint, "
+            + "identity_profile_kind, article_fingerprint, price_fingerprint, reference_fingerprint, "
+            + "combined_fingerprint, "
             + "base_price, base_price_currency, state_origin, last_change_delivery_id, "
             + "last_change_batch_id, active, accepted_by, accepted_at, created_at, updated_at) "
             + "select cast(? as bigint), stage.identity_hash, stage.identity_supplier, "
             + "stage.identity_supplier_group, stage.identity_supplier_reference, "
             + "stage.identity_discount_code, stage.identity_discount_state, cast(? as varchar(40)), "
-            + "stage.article_fingerprint, stage.price_fingerprint, stage.combined_fingerprint, "
+            + "stage.article_fingerprint, stage.price_fingerprint, stage.reference_fingerprint, "
+            + "stage.combined_fingerprint, "
             + "stage.base_price, stage.base_price_currency, cast(? as varchar(30)), cast(? as bigint), "
             + "cast(? as bigint), true, cast(? as varchar(100)), cast(? as timestamp with time zone), "
             + "cast(? as timestamp with time zone), cast(? as timestamp with time zone) "
@@ -63,7 +65,8 @@ public class SourceStateDao {
             + "      where existing.import_link_id = ? and existing.identity_hash = stage.identity_hash)";
 
     private static final String SELECT_CHANGED_FROM_STAGE = "select identity_hash, article_fingerprint, "
-            + "price_fingerprint, combined_fingerprint, base_price, base_price_currency "
+            + "price_fingerprint, reference_fingerprint, combined_fingerprint, base_price, "
+            + "base_price_currency "
             + "from import_candidate_stage where batch_id = ? and classification = 'CHANGED' "
             + "and row_number > ? and row_number <= ? order by row_number";
 
@@ -72,7 +75,8 @@ public class SourceStateDao {
      * laat {@code updated_at} ongemoeid voor wat een eerdere (onderbroken) poging al bijwerkte.
      */
     private static final String UPDATE_CHANGED = "update catalog_source_state set article_fingerprint = ?, "
-            + "price_fingerprint = ?, combined_fingerprint = ?, base_price = ?, base_price_currency = ?, "
+            + "price_fingerprint = ?, reference_fingerprint = ?, combined_fingerprint = ?, base_price = ?, "
+            + "base_price_currency = ?, "
             + "state_origin = ?, last_change_delivery_id = ?, last_change_batch_id = ?, accepted_by = ?, "
             + "accepted_at = ?, updated_at = ? "
             + "where import_link_id = ? and identity_hash = ? and combined_fingerprint <> ?";
@@ -98,7 +102,8 @@ public class SourceStateDao {
             + "             or state.combined_fingerprint <> mutation.before_combined_fingerprint)))";
 
     private record ChangedRow(byte[] identityHash, byte[] articleFingerprint, byte[] priceFingerprint,
-                              byte[] combinedFingerprint, BigDecimal basePrice, String basePriceCurrency) {
+                              byte[] referenceFingerprint, byte[] combinedFingerprint,
+                              BigDecimal basePrice, String basePriceCurrency) {
     }
 
     /**
@@ -172,8 +177,8 @@ public class SourceStateDao {
     public int updateChangedFromStage(AcceptanceContext context, long fromExclusive, long toInclusive) {
         List<ChangedRow> rows = jdbc.query(SELECT_CHANGED_FROM_STAGE,
                 (resultSet, index) -> new ChangedRow(resultSet.getBytes(1), resultSet.getBytes(2),
-                        resultSet.getBytes(3), resultSet.getBytes(4), resultSet.getBigDecimal(5),
-                        resultSet.getString(6)),
+                        resultSet.getBytes(3), resultSet.getBytes(4), resultSet.getBytes(5),
+                        resultSet.getBigDecimal(6), resultSet.getString(7)),
                 context.batchId(), fromExclusive, toInclusive);
         if (rows.isEmpty()) {
             return 0;
@@ -184,22 +189,27 @@ public class SourceStateDao {
                 ChangedRow row = rows.get(index);
                 statement.setBytes(1, row.articleFingerprint());
                 statement.setBytes(2, row.priceFingerprint());
-                statement.setBytes(3, row.combinedFingerprint());
-                statement.setBigDecimal(4, row.basePrice());
-                if (row.basePriceCurrency() == null) {
-                    statement.setNull(5, Types.VARCHAR);
+                if (row.referenceFingerprint() == null) {
+                    statement.setNull(3, Types.BINARY);
                 } else {
-                    statement.setString(5, row.basePriceCurrency());
+                    statement.setBytes(3, row.referenceFingerprint());
                 }
-                statement.setString(6, context.stateOrigin());
-                statement.setLong(7, context.deliveryId());
-                statement.setLong(8, context.batchId());
-                statement.setString(9, context.acceptedBy());
-                statement.setObject(10, utc(context.acceptedAt()));
-                statement.setObject(11, utc(context.writtenAt()));
-                statement.setLong(12, context.importLinkId());
-                statement.setBytes(13, row.identityHash());
-                statement.setBytes(14, row.combinedFingerprint());
+                statement.setBytes(4, row.combinedFingerprint());
+                statement.setBigDecimal(5, row.basePrice());
+                if (row.basePriceCurrency() == null) {
+                    statement.setNull(6, Types.VARCHAR);
+                } else {
+                    statement.setString(6, row.basePriceCurrency());
+                }
+                statement.setString(7, context.stateOrigin());
+                statement.setLong(8, context.deliveryId());
+                statement.setLong(9, context.batchId());
+                statement.setString(10, context.acceptedBy());
+                statement.setObject(11, utc(context.acceptedAt()));
+                statement.setObject(12, utc(context.writtenAt()));
+                statement.setLong(13, context.importLinkId());
+                statement.setBytes(14, row.identityHash());
+                statement.setBytes(15, row.combinedFingerprint());
             }
 
             @Override

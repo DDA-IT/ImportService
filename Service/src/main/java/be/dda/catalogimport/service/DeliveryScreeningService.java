@@ -473,10 +473,17 @@ public class DeliveryScreeningService {
                     // Verder met de gewone recordcontroles.
                 }
             }
-            CandidateNormaliser.Result result = normaliser.normalise(row, context.config());
+            CandidateNormaliser.Result result = normaliser.normalise(row, context.config(),
+                    context.mappingConfig());
             if (result instanceof NormalisedCandidate candidate) {
                 progress.pendingRows.add(stageRow(context, candidate));
                 progress.validCount++;
+                // Informatieve vaststellingen (een toegepaste standaardwaarde) horen bij een geldige
+                // regel: ze verwerpen niets, maar ze mogen ook niet onzichtbaar blijven.
+                for (CandidateNormaliser.RowIssue notice : candidate.notices()) {
+                    addIssue(context, progress, notice.rowNumber(), notice.code(), notice.fieldName(),
+                            notice.sourceValue(), notice.message(), false);
+                }
                 if (progress.pendingRows.size() >= stageBatchSize) {
                     flush(context, progress);
                 }
@@ -504,7 +511,8 @@ public class DeliveryScreeningService {
                 candidate.supplier(), candidate.supplierGroup(), candidate.supplierReference(),
                 candidate.discountCode(), candidate.discountState(), candidate.identityHash(),
                 candidate.basePrice(), candidate.basePriceCurrency(), candidate.description(),
-                candidate.articleFingerprint(), candidate.priceFingerprint(), candidate.combinedFingerprint(),
+                candidate.articleFingerprint(), candidate.priceFingerprint(),
+                candidate.referenceFingerprint(), candidate.combinedFingerprint(),
                 candidate.mutationKeyPrefix(context.deliveryId(), context.definitionRevisionId()),
                 Instant.now());
     }

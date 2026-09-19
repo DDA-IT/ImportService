@@ -58,6 +58,10 @@ class ImportIssueCatalogTest {
             // Bouwstap 3b: de definitievalidatie en de recordfilters stellen eigen codes vast.
             ImportMappingConfigFactory.class,
             RecordFilterEvaluator.class,
+            // Bouwstap 3c: de recordvalidatie van de gemapte doelvelden en haar transformaties.
+            FieldValueMapper.class,
+            FieldTransform.class,
+            MappingSettings.class,
             DeliveryScreeningService.class,
             ScreeningRecoveryService.class);
 

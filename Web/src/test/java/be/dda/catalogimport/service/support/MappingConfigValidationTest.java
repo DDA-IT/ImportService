@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import be.dda.catalogimport.domain.FieldDataType;
 import be.dda.catalogimport.domain.FieldOwner;
+import be.dda.catalogimport.domain.FieldTransformKind;
 import be.dda.catalogimport.domain.FieldValueKind;
 import be.dda.catalogimport.domain.FilterNullBehaviour;
 import be.dda.catalogimport.domain.FilterOperator;
@@ -40,14 +41,16 @@ class MappingConfigValidationTest {
 
     @Test
     void acceptsAMappingAndAFilterThatSatisfyEveryRule() {
-        ImportDefinitionRevision revision = revision();
+        // Een revisie mét veldmappings moet canonicalisatieversie 2 declareren (bouwstap 3c): enkel die
+        // versie neemt de gemapte velden in de artikelvingerafdruk op.
+        ImportDefinitionRevision revision = revisionWithCanonicalisationVersion(2);
         ImportFieldMapping mapping = mapping(revision, 1, supportingField(), "E_LEV");
         mapping.setExpectedPosition(6);
 
-        ImportMappingConfig config = factory.from(revision, structure(), List.of(mapping),
+        ImportMappingConfig config = factory.from(revision, structure(2), List.of(mapping),
                 List.of(filter(revision, 1, "CULTURE", FilterOperator.EQUALS, "BENL", FilterOutcome.INCLUDE)));
 
-        assertThat(config.canonicalisationVersion()).isEqualTo(1);
+        assertThat(config.canonicalisationVersion()).isEqualTo(2);
         assertThat(config.hasFields()).isTrue();
         assertThat(config.hasFilters()).isTrue();
         assertThat(config.fields()).singleElement().satisfies(field -> {
@@ -165,11 +168,11 @@ class MappingConfigValidationTest {
     /** NONE is de enige toegelaten afwijking: "dit veld doet in deze bron niet mee aan de identiteit". */
     @Test
     void acceptsAMappingThatExplicitlyOptsOutOfTheIdentity() {
-        ImportDefinitionRevision revision = revision();
+        ImportDefinitionRevision revision = revisionWithCanonicalisationVersion(2);
         ImportFieldMapping neutral = mapping(revision, 1, supportingField(), "E_LEV");
         neutral.setIdentityClass(IdentityClass.NONE);
 
-        assertThatCode(() -> factory.from(revision, structure(), List.of(neutral), List.of()))
+        assertThatCode(() -> factory.from(revision, structure(2), List.of(neutral), List.of()))
                 .doesNotThrowAnyException();
     }
 
@@ -228,6 +231,95 @@ class MappingConfigValidationTest {
                 List.of(ean));
     }
 
+    @Test
+    void refusesAVersionOneRevisionThatMapsAnyTargetFieldAtAll() {
+        ImportDefinitionRevision revision = revision();
+
+        // Versie 1 hasht enkel de omschrijving: een wijziging in een gemapt veld zou onzichtbaar
+        // blijven in de delta. Dat is geen detail maar het verschil tussen "gewijzigd" en "ongewijzigd".
+        assertBlocks(ImportMappingConfigFactory.CODE_CANONICALISATION_VERSION_REQUIRED, revision,
+                List.of(mapping(revision, 1, supportingField(), "E_LEV")));
+    }
+
+    // --- R-REC-07: de transformatieconfiguratie wordt vóór het lezen geparsed -----------------------
+
+    @Test
+    void parsesEveryTransformationOnceBeforeASingleByteIsRead() {
+        ImportDefinitionRevision revision = revisionWithCanonicalisationVersion(2);
+        ImportFieldMapping translated = mapping(revision, 1, supportingField(), "E_LEV");
+        translated.setTransformKind(FieldTransformKind.MAP);
+        translated.setTransformConfig("values=A>1|B>2;caseSensitive=true");
+
+        ImportMappingConfig config = factory.from(revision, structure(2), List.of(translated), List.of());
+
+        assertThat(config.fields()).singleElement().satisfies(field -> {
+            assertThat(field.transform()).isInstanceOf(FieldTransform.Translate.class);
+            assertThat(((FieldTransform.Translate) field.transform()).values())
+                    .containsExactlyInAnyOrderEntriesOf(java.util.Map.of("A", "1", "B", "2"));
+            assertThat(field.valueFormat()).isNotNull();
+        });
+    }
+
+    @Test
+    void refusesATransformationWhoseConfigurationIsUnusable() {
+        ImportDefinitionRevision revision = revisionWithCanonicalisationVersion(2);
+
+        // Een vertaling zonder tabel, een splitsing zonder positie, een onbekende instelling en een
+        // deling door een vaste nul: stuk voor stuk configuratie die pas bij regel 1 zou opvallen.
+        assertBlocksTransform(revision, FieldTransformKind.MAP, null);
+        assertBlocksTransform(revision, FieldTransformKind.MAP, "values=A|B");
+        assertBlocksTransform(revision, FieldTransformKind.SPLIT, "separator=-");
+        assertBlocksTransform(revision, FieldTransformKind.PREFIX, "prefix=ART-;onbekend=x");
+        assertBlocksTransform(revision, FieldTransformKind.DIVIDE, "operand=0");
+        assertBlocksTransform(revision, FieldTransformKind.DIVIDE, "operand=2;operandField=KOL");
+        assertBlocksTransform(revision, FieldTransformKind.CONCAT, "sources=");
+        assertBlocksTransform(revision, FieldTransformKind.NONE, "dateFormat=dd/MM/yyyy");
+    }
+
+    @Test
+    void refusesADerivedFieldWhoseTransformationCannotBuildAValue() {
+        ImportDefinitionRevision revision = revisionWithCanonicalisationVersion(2);
+        ImportFieldMapping derived = mapping(revision, 1, supportingField(), null);
+        derived.setValueKind(FieldValueKind.DERIVED);
+        derived.setTransformKind(FieldTransformKind.PREFIX);
+        derived.setTransformConfig("prefix=ART-");
+
+        assertBlocks(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID, revision, List.of(derived));
+    }
+
+    @Test
+    void acceptsADerivedFieldThatConcatenatesTwoSourceColumns() {
+        ImportDefinitionRevision revision = revisionWithCanonicalisationVersion(2);
+        ImportFieldMapping derived = mapping(revision, 1, supportingField(), null);
+        derived.setValueKind(FieldValueKind.DERIVED);
+        derived.setTransformKind(FieldTransformKind.CONCAT);
+        derived.setTransformConfig("sources=LEVERANCIER|REFERENTIE;separator=-");
+
+        ImportMappingConfig config = factory.from(revision, structure(2), List.of(derived), List.of());
+
+        assertThat(config.fields()).singleElement().satisfies(field ->
+                assertThat(field.transform()).isInstanceOf(FieldTransform.Concat.class));
+    }
+
+    /** Een datumveld mag zijn bronformaat en tijdzone in de bestaande {@code transform_config} zetten. */
+    @Test
+    void readsTheDeclaredDateFormatAndZoneOfADateField() {
+        ImportDefinitionRevision revision = revisionWithCanonicalisationVersion(2);
+        ImportFieldCatalogEntry target = new ImportFieldCatalogEntry("E_SUPPLIER", "Geldig vanaf",
+                FieldDataType.DATE, FieldOwner.CATALOG_SOURCE, IdentityClass.NONE, 130);
+        ImportFieldMapping date = mapping(revision, 1, target, "VANAF");
+        date.setIdentityClass(IdentityClass.NONE);
+        date.setTransformConfig("dateFormat=dd/MM/yyyy;zone=Europe/Brussels");
+
+        ImportMappingConfig config = factory.from(revision, structure(2), List.of(date), List.of());
+
+        assertThat(config.fields()).singleElement().satisfies(field -> {
+            assertThat(field.valueFormat().datePattern()).isEqualTo("dd/MM/yyyy");
+            assertThat(field.valueFormat().dateFormatter()).isNotNull();
+            assertThat(field.valueFormat().zone()).isEqualTo(java.time.ZoneId.of("Europe/Brussels"));
+        });
+    }
+
     // --- Recordfilters ----------------------------------------------------------------------------
 
     @Test
@@ -281,6 +373,19 @@ class MappingConfigValidationTest {
                 .isEqualTo(expectedCode);
     }
 
+    private void assertBlocksTransform(ImportDefinitionRevision revision, FieldTransformKind kind,
+                                       String transformConfig) {
+        ImportFieldMapping mapping = mapping(revision, 1, supportingField(), "E_LEV");
+        mapping.setTransformKind(kind);
+        mapping.setTransformConfig(transformConfig);
+
+        assertThatThrownBy(() -> factory.from(revision, structure(2), List.of(mapping), List.of()))
+                .as("%s with '%s'", kind, transformConfig)
+                .isInstanceOf(ScreeningBlockedException.class)
+                .extracting(failure -> ((ScreeningBlockedException) failure).getCode())
+                .isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+    }
+
     private void assertBlocksFilter(ImportDefinitionRevision revision, ImportRecordFilter filter) {
         assertThatThrownBy(() -> factory.from(revision, structure(), List.of(), List.of(filter)))
                 .isInstanceOf(ScreeningBlockedException.class)
@@ -289,9 +394,13 @@ class MappingConfigValidationTest {
     }
 
     private static SourceStructureConfig structure() {
+        return structure(1);
+    }
+
+    private static SourceStructureConfig structure(int canonicalisationVersion) {
         return new SourceStructureConfig("CSV", StandardCharsets.UTF_8, ';', '"', true, 1,
                 FieldReferenceKind.HEADER_NAME, null, IdentityProfileKind.THREE_PART, "LEVERANCIER",
-                "GROEP", "REFERENTIE", null, "PRIJS", "OMSCHRIJVING", 1);
+                "GROEP", "REFERENTIE", null, "PRIJS", "OMSCHRIJVING", canonicalisationVersion);
     }
 
     private static ImportDefinitionRevision revision() {

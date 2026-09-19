@@ -484,3 +484,27 @@ Te laten beslissen door een Denker (of de mens) vóór 3h.
   blokkeren tot canonicalisatieversie 2 bestaat (`CONFIG_CANONICALISATION_VERSION_REQUIRED`).
   `BOXPLOT` en `FilterStage.TARGET_FIELD` zijn in het schema toegelaten maar worden geweigerd in de verwerking.
 - `UploadResponse` is niet uitgebreid met de nieuwe tellers (enkel GET-batch, GET-delivery en continue).
+
+## 11. Aanvullingen uit stap 3c (geïmplementeerd, hoofdsessie akkoord)
+
+- ELKE actieve mapping vereist canonicalisatieversie 2 (niet enkel prijs-/referentiemappings): de v1-artikelhash
+  dekt alleen de omschrijving, dus een gemapt veld zou wijzigingen onzichtbaar laten in de delta
+  (`CONFIG_CANONICALISATION_VERSION_REQUIRED`). Prijs-/referentiemappings blijven tot 3d/3f geblokkeerd, ook
+  mét v2, onder dezelfde code (tijdelijk; het v2-deel voor prijs/referentie bestaat pas dan).
+- `transform_config` is een platte `sleutel=waarde;...`-lijst (`MappingSettings`), één keer per batch geparsed;
+  onbekende sleutel blokkeert. Datumformaat/tijdzone: `dateFormat=`, `zone=` (STRICT: 31/02 ⇒ `DATE_UNREADABLE`).
+  Decimaalnotatie: `decimalSeparator=`, `groupingSeparator=` + `decimal_scale`; zonder verklaring blijft het
+  Fase 2-gedrag (komma én punt). BOOLEAN: `true/false/1/0`.
+- v2-vingerafdruk: `article = canonical(2, DESCRIPTION, waarde, [code, waarde]* gesorteerd op target_field_code)`;
+  `price` en `reference` volgens de v2-formules met (voorlopig) lege componenten-/referentielijst;
+  `combined = SHA-256(identity ‖ article ‖ price ‖ reference)`. v1 is byte-identiek gebleven (vastgepind in tests).
+  Kolommen `catalog_source_state.reference_fingerprint` (004-14) en `import_candidate_stage.reference_fingerprint`
+  (004-14b), nullable: NULL = "onder v1 vastgelegd".
+- `VALUE_DEFAULT_APPLIED` is voor CSV vrijwel onbereikbaar (elke gemapte kolom is minstens ""); pas relevant voor
+  bronnen met optionele elementen (XML/JSON).
+- INFO-issues lopen door dezelfde cap per foutcode als ERROR. Control characters worden niet verwijderd (dat zou
+  data stil wijzigen); gedrag blijft buitenste trim + `CANONICAL_CONTROL_CHARACTER` op de gereserveerde stuurtekens.
+- Gemapte waarden worden in 3c gevalideerd en gehasht maar niet per veld opgeslagen; `domain_mask=ARTICLE`
+  zonder veldnamen tot 3d/3f. De v2-artikelhash bevat DESCRIPTION altijd (U+0000 als de revisiekolom leeg is).
+- Constante hernoemd: `SourceStructureConfigFactory.SUPPORTED_CANONICALISATION_VERSION` (int) →
+  `SUPPORTED_CANONICALISATION_VERSIONS` (Set<Integer>).

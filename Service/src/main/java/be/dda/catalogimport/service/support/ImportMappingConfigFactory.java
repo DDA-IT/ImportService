@@ -2,6 +2,7 @@ package be.dda.catalogimport.service.support;
 
 import be.dda.catalogimport.dao.ImportFieldMappingRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
+import be.dda.catalogimport.domain.FieldDataType;
 import be.dda.catalogimport.domain.FieldOwner;
 import be.dda.catalogimport.domain.FieldValueKind;
 import be.dda.catalogimport.domain.FilterOperator;
@@ -14,7 +15,13 @@ import be.dda.catalogimport.domain.ImportRecordFilter;
 import be.dda.catalogimport.domain.RevisionOwnedField;
 import be.dda.catalogimport.service.support.ImportMappingConfig.FieldMapping;
 import be.dda.catalogimport.service.support.ImportMappingConfig.RecordFilter;
+import be.dda.catalogimport.service.support.ImportMappingConfig.ValueFormat;
+import be.dda.catalogimport.service.support.ImportValueRules.DecimalFormat;
 import be.dda.catalogimport.service.support.SourceStructureConfig.FieldReferenceKind;
+import java.time.DateTimeException;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.ResolverStyle;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -88,6 +95,15 @@ public class ImportMappingConfigFactory {
      */
     public static final int CANONICALISATION_VERSION_WITH_COMPONENTS = 2;
 
+    /** Instelling in {@code transform_config}: het decimaalteken van dit veld (R-REC-04). */
+    public static final String SETTING_DECIMAL_SEPARATOR = "decimalSeparator";
+    /** Instelling in {@code transform_config}: het duizendtalteken; enkel dán wordt het verwijderd. */
+    public static final String SETTING_GROUPING_SEPARATOR = "groupingSeparator";
+    /** Instelling in {@code transform_config}: het verklaarde bronformaat van een datum (R-REC-05). */
+    public static final String SETTING_DATE_FORMAT = "dateFormat";
+    /** Instelling in {@code transform_config}: de tijdzone van een brontijdstempel (R-REC-05). */
+    public static final String SETTING_ZONE = "zone";
+
     private final ImportFieldMappingRepository mappings;
     private final ImportRecordFilterRepository filters;
 
@@ -160,20 +176,131 @@ public class ImportMappingConfigFactory {
                         "Sequence number " + row.getSequenceNumber() + " occurs more than once in the "
                                 + "mapping of this revision");
             }
-            verifySource(structure, row, code);
             verifyTypes(row, target, code);
             verifyOwner(row, target, code);
             verifyIdentityClass(row, target, code);
-            verifyTransform(row, code);
+            // Stap B': de transformatie en de notatie worden hier exact één keer geparsed, vóór er één
+            // byte gelezen is. Een ongeldige configuratie blokkeert dus de levering in plaats van een
+            // miljoen identieke rijfouten op te leveren (R-REC-07, R-REC-05, R-REC-04).
+            MappingSettings settings = MappingSettings.parse(code, row.getTransformConfig());
+            ValueFormat valueFormat = readValueFormat(row, code, settings);
+            FieldTransform transform = readTransform(row, code, settings, valueFormat);
+            settings.verifyFullyUsed();
+            verifySource(structure, row, code, transform);
             if (row.getPriceComponentCode() != null && !priceComponents.add(row.getPriceComponentCode())) {
                 throw blocked(CODE_PRICE_COMPONENT_DUPLICATE, code, row.getPriceComponentCode(),
                         "Price component '" + row.getPriceComponentCode() + "' is mapped more than once in "
                                 + "this revision; two sources for one price component are never reconciled "
                                 + "silently");
             }
-            fields.add(toFieldMapping(row, target));
+            fields.add(toFieldMapping(row, target, transform, valueFormat));
         }
         return fields;
+    }
+
+    /**
+     * De verklaarde notatie van één veld (R-REC-04/R-REC-05), uit {@code transform_config}:
+     * {@code decimalSeparator}, {@code groupingSeparator}, {@code dateFormat} en {@code zone}.
+     * <p>
+     * <b>Waarom hier en niet in een nieuwe kolom.</b> {@code import_field_mapping.transform_config}
+     * bestaat al en draagt per definitie de parameters van één veld; een extra kolom zou een
+     * schemawijziging vragen zonder iets toe te voegen. De sleutels van de notatie en die van de
+     * transformatie kunnen elkaar niet overlappen, en een onbekende sleutel is een configuratiefout.
+     */
+    private static ValueFormat readValueFormat(ImportFieldMapping row, String code,
+                                               MappingSettings settings) {
+        DecimalFormat decimal = ValueFormat.DEFAULT.decimal();
+        if (row.getDecimalScale() != null || settings.get(SETTING_DECIMAL_SEPARATOR) != null
+                || settings.get(SETTING_GROUPING_SEPARATOR) != null) {
+            int scale = row.getDecimalScale() == null ? ImportValueRules.MAX_DECIMAL_SCALE
+                    : row.getDecimalScale();
+            Character decimalSeparator = settings.optionalCharacter(SETTING_DECIMAL_SEPARATOR);
+            Character groupingSeparator = settings.optionalCharacter(SETTING_GROUPING_SEPARATOR);
+            if (decimalSeparator != null && decimalSeparator.equals(groupingSeparator)) {
+                throw blocked(CODE_TRANSFORM_INVALID, code, String.valueOf(decimalSeparator),
+                        "Mapping for '" + code + "' declares the same decimal and grouping separator; the "
+                                + "notation of a number would then be undefined");
+            }
+            decimal = new DecimalFormat(scale, decimalSeparator, groupingSeparator);
+        }
+
+        String pattern = settings.get(SETTING_DATE_FORMAT);
+        ZoneId zone = zone(settings.get(SETTING_ZONE), code);
+        if (pattern == null || pattern.isEmpty()) {
+            if (zone != null && !isDateType(row)) {
+                throw blocked(CODE_TRANSFORM_INVALID, code, null,
+                        "Mapping for '" + code + "' declares a time zone but is not a date or timestamp");
+            }
+            return new ValueFormat(decimal, null, null, zone);
+        }
+        if (!isDateType(row)) {
+            throw blocked(CODE_TRANSFORM_INVALID, code, pattern,
+                    "Mapping for '" + code + "' declares a date format but its type is " + row.getDataType());
+        }
+        return new ValueFormat(decimal, dateFormatter(pattern, code), pattern, zone);
+    }
+
+    private static boolean isDateType(ImportFieldMapping row) {
+        return row.getDataType() == FieldDataType.DATE || row.getDataType() == FieldDataType.DATETIME;
+    }
+
+    /**
+     * Bouwt de datumparser één keer per batch. De parser staat bewust op {@code STRICT}: 31 februari
+     * bestaat niet en moet een fout opleveren, niet stilzwijgend 28 februari worden. Daarvoor is het
+     * proleptische jaarsymbool {@code u} nodig; een patroon met {@code y} (de gangbare schrijfwijze)
+     * wordt daarom op de jaarposities omgezet naar {@code u}. Dat wijzigt de betekenis niet — het
+     * verschil betreft uitsluitend de tijdrekening vóór onze jaartelling — en spaart de beheerder een
+     * val die anders elke datum onleesbaar zou maken.
+     */
+    private static DateTimeFormatter dateFormatter(String pattern, String code) {
+        try {
+            return DateTimeFormatter.ofPattern(prolepticYear(pattern))
+                    .withResolverStyle(ResolverStyle.STRICT);
+        } catch (IllegalArgumentException invalid) {
+            throw blocked(CODE_TRANSFORM_INVALID, code, pattern,
+                    "Mapping for '" + code + "' declares the date format '" + pattern
+                            + "', which is not a valid pattern: " + invalid.getMessage());
+        }
+    }
+
+    /** Vervangt {@code y} door {@code u} buiten aanhalingstekens; letterlijke tekst blijft ongemoeid. */
+    private static String prolepticYear(String pattern) {
+        StringBuilder proleptic = new StringBuilder(pattern.length());
+        boolean quoted = false;
+        for (int i = 0; i < pattern.length(); i++) {
+            char current = pattern.charAt(i);
+            if (current == '\'') {
+                quoted = !quoted;
+            }
+            proleptic.append(!quoted && current == 'y' ? 'u' : current);
+        }
+        return proleptic.toString();
+    }
+
+    private static ZoneId zone(String zone, String code) {
+        if (zone == null || zone.isEmpty()) {
+            return null;
+        }
+        try {
+            return ZoneId.of(zone);
+        } catch (DateTimeException unknown) {
+            throw blocked(CODE_TRANSFORM_INVALID, code, zone,
+                    "Mapping for '" + code + "' declares the unknown time zone '" + zone + "'");
+        }
+    }
+
+    /**
+     * R-REC-07: de transformatie komt uit de gesloten lijst van {@link FieldTransform}. Een onbekende
+     * of onvolledige configuratie blokkeert; ze wordt nooit als "geen transformatie" behandeld.
+     */
+    private static FieldTransform readTransform(ImportFieldMapping row, String code,
+                                                MappingSettings settings, ValueFormat valueFormat) {
+        if (row.getTransformKind() == null) {
+            throw blocked(CODE_TRANSFORM_INVALID, code, null,
+                    "Mapping for '" + code + "' has no transform kind; use NONE to state that there is no "
+                            + "transformation");
+        }
+        return FieldTransform.of(row.getTransformKind(), settings, code, valueFormat.decimal());
     }
 
     /** R-STR-06: de revisiekolommen blijven autoritair; een tweede bron voor dezelfde waarde is fout. */
@@ -200,7 +327,8 @@ public class ImportMappingConfigFactory {
         };
     }
 
-    private static void verifySource(SourceStructureConfig structure, ImportFieldMapping row, String code) {
+    private static void verifySource(SourceStructureConfig structure, ImportFieldMapping row, String code,
+                                     FieldTransform transform) {
         FieldValueKind kind = row.getValueKind();
         if (kind == FieldValueKind.FIXED_VALUE) {
             if (row.getFixedValue() == null) {
@@ -209,12 +337,23 @@ public class ImportMappingConfigFactory {
             }
             return;
         }
-        if (kind != FieldValueKind.SOURCE_FIELD) {
-            // BOOKMARK en DERIVED bestaan al in het schema (sjabloonklaar, beslissingslog 18/09), maar
-            // er is nog geen invulmechanisme: stil negeren zou een leeg doelveld opleveren.
-            throw blocked(CODE_MAPPING_SOURCE_UNRESOLVED, code, kind.name(),
-                    "Mapping for '" + code + "' uses value kind " + kind + ", which this build cannot "
-                            + "resolve yet");
+        if (kind == FieldValueKind.BOOKMARK) {
+            // Sjablonen en bookmarks bestaan al in het schema (beslissingslog 18/09) maar er is nog geen
+            // invulmechanisme; stil negeren zou een leeg doelveld opleveren dat op een bewuste blanco lijkt.
+            throw blocked(CODE_MAPPING_SOURCE_UNRESOLVED, code, row.getBookmarkName(),
+                    "Mapping for '" + code + "' reads the template value '" + row.getBookmarkName()
+                            + "', which this build cannot fill in yet");
+        }
+        if (kind == FieldValueKind.DERIVED) {
+            // Een afgeleid veld heeft geen bronkolom: enkel een transformatie die haar waarde zélf
+            // opbouwt kan het vullen (R-REC-07). Elke andere transformatie zou een leeg veld opleveren.
+            if (!(transform instanceof FieldTransform.Fixed) && !(transform instanceof FieldTransform.Concat)) {
+                throw blocked(CODE_TRANSFORM_INVALID, code, String.valueOf(row.getTransformKind()),
+                        "Mapping for '" + code + "' is derived but its transformation " + row.getTransformKind()
+                                + " needs a source value; only a fixed value or a concatenation can build a "
+                                + "derived field on its own");
+            }
+            return;
         }
         String reference = row.getSourceReference();
         if (reference == null || reference.isBlank()) {
@@ -277,14 +416,6 @@ public class ImportMappingConfigFactory {
         }
     }
 
-    private static void verifyTransform(ImportFieldMapping row, String code) {
-        if (row.getTransformKind() == null) {
-            throw blocked(CODE_TRANSFORM_INVALID, code, null,
-                    "Mapping for '" + code + "' has no transform kind; use NONE to state that there is no "
-                            + "transformation");
-        }
-    }
-
     /**
      * R-STR-05: geen enkel veld is tegelijk sterk identificerend en ondersteunend/zwak, en er is
      * minstens één sterke identiteitsregel. De bestaande revisiekolommen (leverancier,
@@ -320,32 +451,52 @@ public class ImportMappingConfigFactory {
     }
 
     /**
-     * Par. 3.5: de vingerafdruk moet alle gemapte prijscomponenten en referenties dekken. Een revisie
-     * die die mapt maar canonicalisatieversie 1 declareert, zou wijzigingen aan die velden niet in de
-     * delta zien — die blokkeert dus, ook al is versie 2 zelf pas in bouwstap 3d/3f ondersteund.
+     * Par. 3.5: de vingerafdruk moet <b>elk</b> gemapt veld dekken. Een revisie die velden mapt maar
+     * canonicalisatieversie 1 declareert, zou wijzigingen aan die velden niet in de delta zien: de
+     * artikelvingerafdruk van versie 1 dekt enkel de omschrijving. Zo'n revisie blokkeert daarom
+     * ({@code CONFIG_CANONICALISATION_VERSION_REQUIRED}) in plaats van te draaien met een
+     * vingerafdruk die haar eigen mappings negeert.
+     * <p>
+     * <b>Prijscomponenten en kritieke referenties blokkeren voorlopig altijd.</b> Hun deel van versie 2
+     * (prijsvingerafdruk met componenten, referentievingerafdruk) komt in bouwstap 3d/3f. Tot dan is
+     * een revisie die zulke velden mapt niet volledig verwerkbaar, ook niet wanneer ze versie 2
+     * declareert: de gemapte bedragen zouden gelezen maar niet gecontroleerd worden, en dat is precies
+     * het stille gedrag dat par. 3.5 wil uitsluiten.
      */
     private static void verifyCanonicalisationVersion(ImportDefinitionRevision revision,
                                                       List<FieldMapping> fields) {
-        boolean needsComponents = fields.stream()
+        if (fields.isEmpty()) {
+            return;
+        }
+        boolean hasComponents = fields.stream()
                 .anyMatch(field -> field.priceComponentCode() != null || field.referenceType() != null);
-        if (needsComponents
-                && revision.getRecordCanonicalisationVersion() != CANONICALISATION_VERSION_WITH_COMPONENTS) {
+        if (hasComponents) {
             throw blocked(CODE_CANONICALISATION_VERSION_REQUIRED, null,
                     String.valueOf(revision.getRecordCanonicalisationVersion()),
-                    "This revision maps price components or critical references, which must be covered by "
+                    "This revision maps price components or critical references. Those belong to "
+                            + "canonicalisation version " + CANONICALISATION_VERSION_WITH_COMPONENTS
+                            + ", whose price and reference part is not implemented yet; processing them now "
+                            + "would leave changes to those fields out of the fingerprint");
+        }
+        if (revision.getRecordCanonicalisationVersion() != CANONICALISATION_VERSION_WITH_COMPONENTS) {
+            throw blocked(CODE_CANONICALISATION_VERSION_REQUIRED, null,
+                    String.valueOf(revision.getRecordCanonicalisationVersion()),
+                    "This revision maps " + fields.size() + " target field(s), which must be covered by "
                             + "canonicalisation version " + CANONICALISATION_VERSION_WITH_COMPONENTS
                             + "; version " + revision.getRecordCanonicalisationVersion() + " would leave "
                             + "changes to those fields out of the fingerprint");
         }
     }
 
-    private static FieldMapping toFieldMapping(ImportFieldMapping row, ImportFieldCatalogEntry target) {
+    private static FieldMapping toFieldMapping(ImportFieldMapping row, ImportFieldCatalogEntry target,
+                                               FieldTransform transform, ValueFormat valueFormat) {
         return new FieldMapping(row.getSequenceNumber(), target.getCode(), target.getName(),
                 row.getValueKind(), trimToNull(row.getSourceReference()), row.getExpectedPosition(),
-                row.getFixedValue(), row.getDefaultValue(), row.getDataType(), row.isRequired(),
-                row.getMaxLength(), row.getDecimalScale(), row.isZeroAllowed(), row.isNegativeAllowed(),
-                row.getTransformKind(), row.getTransformConfig(), row.getFieldOwner(),
-                row.getIdentityClass(), row.getPriceComponentCode(), row.getReferenceType());
+                row.getFixedValue(), row.getBookmarkName(), row.getDefaultValue(), row.getDataType(),
+                row.isRequired(), row.getMaxLength(), row.getDecimalScale(), row.isZeroAllowed(),
+                row.isNegativeAllowed(), row.getTransformKind(), row.getTransformConfig(), transform,
+                valueFormat, row.getFieldOwner(), row.getIdentityClass(), row.getPriceComponentCode(),
+                row.getReferenceType());
     }
 
     // --- Recordfilters --------------------------------------------------------------------------

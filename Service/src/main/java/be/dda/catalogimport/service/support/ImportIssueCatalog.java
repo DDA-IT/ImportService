@@ -234,6 +234,15 @@ public final class ImportIssueCatalog {
                 ImportValueRules.CODE_VALUE_MISSING,
                 ImportValueRules.CODE_CANONICAL_CONTROL_CHARACTER,
                 CandidateNormaliser.CODE_VALUE_TOO_LONG,
+                // Bouwstap 3c: de recordvalidatie van de gemapte doelvelden (R-REC-01..R-REC-08). Elk
+                // van deze fouten verwerpt uitsluitend de betrokken bronregel; de waarde wordt nooit
+                // stil 0, leeg, afgekapt of geraden.
+                FieldValueMapper.CODE_VALUE_TYPE_MISMATCH,
+                FieldValueMapper.CODE_DATE_UNREADABLE,
+                FieldValueMapper.CODE_DATE_AMBIGUOUS,
+                FieldTransform.CODE_TRANSFORM_FAILED,
+                FieldTransform.CODE_TRANSFORM_DIVIDE_BY_ZERO,
+                FieldTransform.CODE_MAPPING_VALUE_UNKNOWN,
                 // Bouwstap 3b: een regel die door een REJECT-filterrij verworpen wordt. Bewust ERROR en
                 // geen stille uitsluiting: de beheerder heeft verklaard dat zo'n record niet hoort te
                 // bestaan, dus het moet zichtbaar zijn en in rejected_record_count tellen.
@@ -243,6 +252,11 @@ public final class ImportIssueCatalog {
         }
         put(catalogue, CandidateNormaliser.CODE_IDENTITY_COMPONENT_EMPTY, RowIssueSeverity.ERROR,
                 IssueDomain.IDENTITY_REFERENCE, ControlLevel.RECORD, ImpactScope.RECORD);
+        // Bouwstap 3c, R-REC-03: een toegepaste standaardwaarde verwerpt niets en blokkeert niets,
+        // maar ze is wél een afwijking van wat de leverancier stuurde. INFO houdt haar buiten
+        // rejected_record_count en buiten validation_result, en zichtbaar in de probleemlijst.
+        put(catalogue, FieldValueMapper.CODE_VALUE_DEFAULT_APPLIED, RowIssueSeverity.INFO,
+                IssueDomain.MAPPING_VALIDATION, ControlLevel.RECORD, ImpactScope.RECORD);
         for (String code : new String[] {
                 ImportValueRules.CODE_PRICE_MISSING,
                 ImportValueRules.CODE_PRICE_UNREADABLE,

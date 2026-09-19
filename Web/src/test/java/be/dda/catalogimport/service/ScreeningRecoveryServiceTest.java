@@ -236,9 +236,10 @@ class ScreeningRecoveryServiceTest {
 
     private static StageRow stageRow(Delivered delivered, long rowNumber, String reference, Instant now) {
         byte[] hash = ImportValueRules.sha256Utf8(ImportValueRules.canonical(1, "ACME", "G1", reference));
+        // Canonicalisatieversie 1 kent geen referentiedeelvingerafdruk: die blijft null.
         return new StageRow(delivered.batchId(), rowNumber, delivered.deliveryFileId(), "ACME", "G1", reference,
-                null, DiscountCodeState.NOT_USED, hash, new BigDecimal("1.50"), null, null, hash, hash, hash,
-                delivered.deliveryId() + ":1:" + reference, now);
+                null, DiscountCodeState.NOT_USED, hash, new BigDecimal("1.50"), null, null, hash, hash, null,
+                hash, delivered.deliveryId() + ":1:" + reference, now);
     }
 
     private Delivered deliver(Fixture f, String reference) {

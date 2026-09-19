@@ -6,6 +6,7 @@ import be.dda.catalogimport.service.support.SourceStructureConfig.FieldReference
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.UnsupportedCharsetException;
+import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
@@ -39,8 +40,21 @@ public class SourceStructureConfigFactory {
     public static final String CODE_CANONICALISATION_VERSION_UNSUPPORTED =
             "CONFIG_CANONICALISATION_VERSION_UNSUPPORTED";
 
-    /** De enige canonicalisatieversie die deze code kent (design par. 8, aanname A8). */
-    public static final int SUPPORTED_CANONICALISATION_VERSION = 1;
+    /**
+     * De canonicalisatieversies die deze build kent (ontwerp fase 3, par. 3.5, aanname A15).
+     * <ul>
+     *   <li><b>1</b> — fase 2: de artikelvingerafdruk dekt de omschrijving, de prijsvingerafdruk de
+     *       basisprijs en de munt. Dit pad blijft byte-identiek: bestaande bronstaten mogen nooit
+     *       onterecht als gewijzigd uit de delta komen.</li>
+     *   <li><b>2</b> — fase 3: de artikelvingerafdruk dekt daarnaast élk gemapt catalogusveld,
+     *       gesorteerd op doelveldcode, en er komt een aparte referentievingerafdruk bij. Een revisie
+     *       met veldmappings <b>moet</b> versie 2 declareren.</li>
+     * </ul>
+     * Een gewijzigde canonicalisatieregel vereist een nieuwe definitieversie en een bewuste
+     * herbaselining (businessanalyse par. 14.23.4); daarom staat het versienummer vooraan in de
+     * canonieke tekst en levert versie 2 met zekerheid andere hashes op dan versie 1.
+     */
+    public static final Set<Integer> SUPPORTED_CANONICALISATION_VERSIONS = Set.of(1, 2);
 
     /**
      * @throws ScreeningBlockedException bij ontbrekende of tegenstrijdige bronconfiguratie
@@ -97,9 +111,10 @@ public class SourceStructureConfigFactory {
         String description = trimToNull(revision.getRecordDescriptionField());
 
         int canonicalisationVersion = revision.getRecordCanonicalisationVersion();
-        if (canonicalisationVersion != SUPPORTED_CANONICALISATION_VERSION) {
+        if (!SUPPORTED_CANONICALISATION_VERSIONS.contains(canonicalisationVersion)) {
             throw blocked(CODE_CANONICALISATION_VERSION_UNSUPPORTED,
-                    "Canonicalisation version " + canonicalisationVersion + " is not supported by this build");
+                    "Canonicalisation version " + canonicalisationVersion + " is not supported by this build; "
+                            + "supported versions are " + SUPPORTED_CANONICALISATION_VERSIONS);
         }
 
         SourceStructureConfig config = new SourceStructureConfig(format, charset, delimiter, quote, hasHeader,

@@ -2,10 +2,14 @@ package be.dda.catalogimport.service.support;
 
 import be.dda.catalogimport.domain.DiscountCodeState;
 import be.dda.catalogimport.domain.IdentityProfileKind;
+import be.dda.catalogimport.domain.RevisionOwnedField;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.ParsedRow;
+import be.dda.catalogimport.service.support.FieldValueMapper.MappedRecord;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.List;
 
 /**
  * Zet één geparste bronregel om in een kandidaat met haar aanbiedingsidentiteit en vingerafdrukken
@@ -28,13 +32,27 @@ import java.util.HexFormat;
  *   <li>Een ontbrekende, onleesbare of te precieze prijs verwerpt de regel; de prijs wordt
  *       <b>nooit</b> 0 of {@code null} (businessanalyse par. 16.5).</li>
  * </ul>
- * <b>Vingerafdrukken.</b> {@code article_fingerprint} dekt de omschrijving,
- * {@code price_fingerprint} de basisprijs en munt, {@code combined_fingerprint} is de SHA-256 over
- * de binaire aaneenschakeling van identiteit, artikel en prijs. Zo kan de delta in fase 2d op
- * hashniveau bepalen of een aanbieding gewijzigd is, zonder de bronregel te bewaren.
- * <p>
- * <b>Grens van fase 2.</b> Er is nog geen muntveld in de bronconfiguratie: {@code basePriceCurrency}
- * blijft {@code null} ("onbekend"). Er wordt nooit stilzwijgend EUR verondersteld.
+ * <b>Vingerafdrukken.</b> Ze hangen af van de canonicalisatieversie die de revisie declareert
+ * (ontwerp fase 3, par. 3.5); het versienummer staat vooraan in elke canonieke tekst, zodat twee
+ * versies met zekerheid andere hashes opleveren.
+ * <ul>
+ *   <li><b>Versie 1</b> (fase 2, ongewijzigd): {@code article_fingerprint} dekt de omschrijving,
+ *       {@code price_fingerprint} de basisprijs en de munt, {@code combined_fingerprint} is de
+ *       SHA-256 over de aaneenschakeling van identiteit, artikel en prijs. Dit pad blijft
+ *       <b>byte-identiek</b>: een bestaande bronstaat mag nooit onterecht als gewijzigd uit de delta
+ *       komen.</li>
+ *   <li><b>Versie 2</b> (fase 3): {@code article_fingerprint} dekt daarnaast élk gemapt catalogusveld
+ *       — gesorteerd op doelveldcode, met de doelveldcode zelf in de canonieke tekst, zodat twee
+ *       velden nooit van plaats kunnen wisselen zonder dat de hash verandert. Er komt een
+ *       {@code reference_fingerprint} bij en {@code combined_fingerprint} is de SHA-256 over
+ *       identiteit ‖ artikel ‖ prijs ‖ referenties.</li>
+ * </ul>
+ * <b>Grens van bouwstap 3c.</b> Er is nog geen muntveld in de bronconfiguratie:
+ * {@code basePriceCurrency} blijft {@code null} ("onbekend"). Er wordt nooit stilzwijgend EUR
+ * verondersteld. De prijscomponenten- en referentielijst van versie 2 zijn nog <b>leeg</b>: hun
+ * inhoud komt in bouwstap 3d/3f, en tot dan blokkeert {@link ImportMappingConfigFactory} elke revisie
+ * die zulke velden mapt. De formules zijn wel al die van versie 2, zodat 3d en 3f componenten kunnen
+ * toevoegen zonder de hash van een revisie zónder componenten te wijzigen.
  */
 public final class CandidateNormaliser {
 
@@ -56,11 +74,32 @@ public final class CandidateNormaliser {
     /** {@code base_price} is numeric(24,6): hoogstens 18 cijfers vóór de komma. */
     public static final int MAX_PRICE_INTEGER_DIGITS = 18;
 
+    /**
+     * De canonicalisatieversie waarvan de artikelvingerafdruk élk gemapt veld dekt en waarin een
+     * aparte referentievingerafdruk bestaat (ontwerp fase 3, par. 3.5).
+     */
+    public static final int CANONICALISATION_VERSION_WITH_FIELDS =
+            ImportMappingConfigFactory.CANONICALISATION_VERSION_WITH_COMPONENTS;
+
+    /** De doelveldcode van de omschrijving; die wordt door de revisiekolom bepaald (R-STR-06). */
+    private static final String DESCRIPTION_FIELD_CODE = RevisionOwnedField.DESCRIPTION.name();
+
+    private final FieldValueMapper mapper = new FieldValueMapper();
+
     /** Resultaat van één regel: ofwel een kandidaat, ofwel precies één verwerpingsreden. */
     public sealed interface Result permits NormalisedCandidate, RowIssue {
     }
 
-    /** Een gevalideerde kandidaat, klaar om gestaged te worden. Hashes zijn binair (32 bytes). */
+    /**
+     * Een gevalideerde kandidaat, klaar om gestaged te worden. Hashes zijn binair (32 bytes).
+     *
+     * @param referenceFingerprint de deelvingerafdruk over de kritieke referenties; {@code null} bij
+     *                             canonicalisatieversie 1, die geen referentiedeel kent
+     * @param notices              informatieve vaststellingen over deze regel (vandaag: toegepaste
+     *                             standaardwaarden). Ze verwerpen de regel niet en tellen dus niet in
+     *                             {@code rejected_record_count}, maar ze moeten wél zichtbaar zijn:
+     *                             een ingevulde default is een afwijking van wat de leverancier stuurde
+     */
     public record NormalisedCandidate(
             long rowNumber,
             String supplier,
@@ -74,7 +113,13 @@ public final class CandidateNormaliser {
             String description,
             byte[] articleFingerprint,
             byte[] priceFingerprint,
-            byte[] combinedFingerprint) implements Result {
+            byte[] referenceFingerprint,
+            byte[] combinedFingerprint,
+            List<RowIssue> notices) implements Result {
+
+        public NormalisedCandidate {
+            notices = List.copyOf(notices);
+        }
 
         /**
          * De idempotentievoorvoegsel van de mutaties van deze kandidaat (design par. 2 en par. 4):
@@ -92,14 +137,36 @@ public final class CandidateNormaliser {
     }
 
     /**
-     * Normaliseert één regel.
+     * Normaliseert één regel zonder veldmapping; exact het fase 2-gedrag. Uitsluitend voor revisies
+     * die geen enkele mapping hebben — die draaien altijd op canonicalisatieversie 1.
      *
      * @throws ScreeningBlockedException wanneer de configuratie zelf niet op dit bestand past; dat
      *                                   blokkeert de levering in plaats van elke regel afzonderlijk
      *                                   te verwerpen
      */
     public Result normalise(ParsedRow row, SourceStructureConfig config) {
+        return normalise(row, config, null);
+    }
+
+    /**
+     * Normaliseert één regel, inclusief de gemapte doelvelden van de revisie (ontwerp fase 3,
+     * par. 3.1 stap C).
+     * <p>
+     * Een fout in een gemapt veld verwerpt <b>enkel deze regel</b>, net als een onleesbare prijs: de
+     * levering loopt door en de regel telt in {@code rejected_record_count}. Een fout in de definitie
+     * zelf blokkeert de volledige levering.
+     *
+     * @param mappingConfig de gevalideerde veldmapping, of {@code null} wanneer er geen is
+     * @throws ScreeningBlockedException wanneer de configuratie zelf niet op dit bestand past
+     */
+    public Result normalise(ParsedRow row, SourceStructureConfig config,
+                            ImportMappingConfig mappingConfig) {
         try {
+            // Ontwerp par. 3.1 stap C: mapping en transformatie draaien ná het recordfilter en vóór de
+            // identiteit. Zo wordt een regel die de definitie niet kan invullen, verworpen vóórdat er
+            // een aanbiedingsidentiteit uit afgeleid wordt.
+            MappedRecord mapped = mapper.map(row, mappingConfig);
+
             String supplier = identityComponent(row, config.supplierField(), row.value(
                     position(row, config.supplierField())));
             String group = identityComponent(row, config.supplierGroupField(), row.value(
@@ -147,19 +214,69 @@ public final class CandidateNormaliser {
                     : ImportValueRules.canonical(version, supplier, group, discountCode, reference);
             byte[] identityHash = ImportValueRules.sha256Utf8(canonicalIdentity);
             byte[] articleFingerprint = ImportValueRules.sha256Utf8(
-                    ImportValueRules.canonical(version, description));
+                    version == CANONICALISATION_VERSION_WITH_FIELDS
+                            ? canonicalArticle(description, mapped, mappingConfig)
+                            : ImportValueRules.canonical(version, description));
             byte[] priceFingerprint = ImportValueRules.sha256Utf8(
                     ImportValueRules.canonical(version, basePrice.toPlainString(), currency));
-            byte[] combinedFingerprint = ImportValueRules.sha256(
-                    concat(identityHash, articleFingerprint, priceFingerprint));
+            byte[] referenceFingerprint = version == CANONICALISATION_VERSION_WITH_FIELDS
+                    ? ImportValueRules.sha256Utf8(ImportValueRules.canonical(version))
+                    : null;
+            byte[] combinedFingerprint = referenceFingerprint == null
+                    ? ImportValueRules.sha256(concat(identityHash, articleFingerprint, priceFingerprint))
+                    : ImportValueRules.sha256(concat(identityHash, articleFingerprint, priceFingerprint,
+                            referenceFingerprint));
 
             return new NormalisedCandidate(row.lineNumber(), supplier, group, reference, discountCode,
                     discountState, identityHash, basePrice, currency, description, articleFingerprint,
-                    priceFingerprint, combinedFingerprint);
+                    priceFingerprint, referenceFingerprint, combinedFingerprint,
+                    notices(row, mapped));
         } catch (ImportValueException rejected) {
             return new RowIssue(row.lineNumber(), rejected.getCode(), rejected.getField(),
                     rejected.getRawValue(), rejected.getMessage());
         }
+    }
+
+    /**
+     * De canonieke artikeltekst van versie 2 (ontwerp par. 3.5): de omschrijving en élk gemapt
+     * catalogusveld, gesorteerd op doelveldcode. Elk onderdeel bestaat uit de <b>doelveldcode</b> en
+     * de waarde, zodat twee velden nooit stilzwijgend van plaats kunnen wisselen en een later
+     * toegevoegd veld de hash aantoonbaar wijzigt. Een veld zonder waarde levert de
+     * "niet gemapt"-markering ({@code U+0000}) op en blijft daardoor verschillend van een gemapt maar
+     * leeg veld.
+     */
+    private static String canonicalArticle(String description, MappedRecord mapped,
+                                           ImportMappingConfig mappingConfig) {
+        List<String> parts = new ArrayList<>();
+        parts.add(DESCRIPTION_FIELD_CODE);
+        parts.add(description);
+        if (mappingConfig != null) {
+            for (ImportMappingConfig.FieldMapping field : mappingConfig.articleFingerprintFields()) {
+                if (DESCRIPTION_FIELD_CODE.equals(field.targetFieldCode())) {
+                    // De revisiekolom en een mapping kunnen nooit samen de omschrijving bepalen
+                    // (R-STR-06); de gemapte waarde vervangt dan de (lege) revisiewaarde.
+                    parts.set(1, mapped.value(field.targetFieldCode()));
+                    continue;
+                }
+                parts.add(field.targetFieldCode());
+                parts.add(mapped.value(field.targetFieldCode()));
+            }
+        }
+        return ImportValueRules.canonical(CANONICALISATION_VERSION_WITH_FIELDS,
+                parts.toArray(String[]::new));
+    }
+
+    /** Informatieve vaststellingen van de mapping, als regelproblemen met ernst INFO. */
+    private static List<RowIssue> notices(ParsedRow row, MappedRecord mapped) {
+        if (mapped.notices().isEmpty()) {
+            return List.of();
+        }
+        List<RowIssue> notices = new ArrayList<>(mapped.notices().size());
+        for (FieldValueMapper.Notice notice : mapped.notices()) {
+            notices.add(new RowIssue(notice.rowNumber(), notice.code(), notice.fieldName(),
+                    notice.sourceValue(), notice.message()));
+        }
+        return notices;
     }
 
     private static int position(ParsedRow row, String field) {

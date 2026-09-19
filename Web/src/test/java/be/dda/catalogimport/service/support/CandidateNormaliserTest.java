@@ -4,13 +4,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import be.dda.catalogimport.domain.DiscountCodeState;
+import be.dda.catalogimport.domain.FieldDataType;
+import be.dda.catalogimport.domain.FieldOwner;
+import be.dda.catalogimport.domain.FieldValueKind;
+import be.dda.catalogimport.domain.IdentityClass;
 import be.dda.catalogimport.domain.IdentityProfileKind;
+import be.dda.catalogimport.domain.ImportDefinitionRevision;
+import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
+import be.dda.catalogimport.domain.ImportFieldMapping;
 import be.dda.catalogimport.service.support.CandidateNormaliser.NormalisedCandidate;
 import be.dda.catalogimport.service.support.CandidateNormaliser.Result;
 import be.dda.catalogimport.service.support.CandidateNormaliser.RowIssue;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.ParsedRow;
 import be.dda.catalogimport.service.support.SourceStructureConfig.FieldReferenceKind;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,8 +38,40 @@ class CandidateNormaliserTest {
     private static final String DISCOUNT = "KORTING";
     private static final String PRICE = "PRIJS";
     private static final String DESCRIPTION = "OMSCHRIJVING";
+    private static final String EXTRA_ONE = "E_LEV";
+    private static final String EXTRA_TWO = "BARCODE";
 
     private final CandidateNormaliser normaliser = new CandidateNormaliser();
+
+    // --- Canonicalisatieversie 1 ligt vast -------------------------------------------------------
+
+    /**
+     * De hashes van versie 1 zijn <b>vastgepind</b> op hun hexwaarde, onafhankelijk berekend uit de
+     * gedocumenteerde canonieke vorm (versienummer, onderdelen gescheiden door {@code U+001F}, een
+     * niet-gemapt onderdeel als {@code U+0000}).
+     * <p>
+     * Zonder deze pin zou een wijziging aan de canonicalisatie — een extra onderdeel, een andere
+     * volgorde, een andere scheiding — zichzelf bewijzen: de test zou dan gewoon de nieuwe hash
+     * herberekenen. Het gevolg in productie is groot: elke bestaande bronstaat zou als CHANGED uit de
+     * delta komen en een volledige catalogus zou onterecht als gewijzigd gepubliceerd worden.
+     */
+    @Test
+    void keepsTheVersionOneFingerprintsByteIdenticalToTheOnesAlreadyInTheSourceState() {
+        NormalisedCandidate candidate = candidate(row("ACME", "G1", "R-1", null, "1,50", "Boormachine"),
+                threePart(DESCRIPTION));
+
+        assertThat(hex(candidate.identityHash()))
+                .isEqualTo("dff236898555b53c1cc5d938b32aea5a7eb40352eef59d7e03e3422db13ae3ba");
+        assertThat(hex(candidate.articleFingerprint()))
+                .isEqualTo("93596a1d3671d8d2d34fe5333bf7f33327f9fad2ae7e5a9d3b119b91462c76c3");
+        assertThat(hex(candidate.priceFingerprint()))
+                .isEqualTo("a69bed13cadfe6a3868f53f3fb3f90f8eea9c1bcd2240b77fb45c010de227f39");
+        assertThat(hex(candidate.combinedFingerprint()))
+                .isEqualTo("8d41d04385229e381addd8e615f5989cc7882fde949ba508be54a20bb6216875");
+        // Versie 1 kent geen referentiedeel; null is hier "bestaat niet", niet "leeg".
+        assertThat(candidate.referenceFingerprint()).isNull();
+        assertThat(candidate.notices()).isEmpty();
+    }
 
     // --- Normaal scenario ----------------------------------------------------------------------
 
@@ -222,12 +263,183 @@ class CandidateNormaliserTest {
         assertThat(((RowIssue) result).code()).isEqualTo(CandidateNormaliser.CODE_VALUE_TOO_LONG);
     }
 
+    // --- Canonicalisatieversie 2: de gemapte velden zitten in de artikelvingerafdruk --------------
+
+    @Test
+    void coversEveryMappedCatalogueFieldInTheVersionTwoArticleFingerprint() {
+        ImportMappingConfig config = mappingConfig(field("E_SUPPLIER", 1, EXTRA_ONE),
+                field("SUPPLIER_BARCODE", 2, EXTRA_TWO));
+
+        NormalisedCandidate first = candidate(mappedRow("A1", "B1"), versionTwo(), config);
+        NormalisedCandidate second = candidate(mappedRow("A1", "B2"), versionTwo(), config);
+
+        assertThat(second.articleFingerprint()).isNotEqualTo(first.articleFingerprint());
+        assertThat(second.combinedFingerprint()).isNotEqualTo(first.combinedFingerprint());
+        // De identiteit en de prijs zijn niet gewijzigd: enkel het artikeldeel verschilt.
+        assertThat(second.identityHash()).isEqualTo(first.identityHash());
+        assertThat(second.priceFingerprint()).isEqualTo(first.priceFingerprint());
+    }
+
+    /**
+     * De volgorde in de vingerafdruk is die van de doelveldcode, niet die van het volgnummer van de
+     * mapping. Een beheerder die zijn mappings hernummert, mag nooit een volledige catalogus als
+     * gewijzigd laten uitkomen.
+     */
+    @Test
+    void sortsTheArticleFingerprintOnTargetFieldCodeAndNotOnMappingOrder() {
+        ImportMappingConfig ascending = mappingConfig(field("E_SUPPLIER", 1, EXTRA_ONE),
+                field("SUPPLIER_BARCODE", 2, EXTRA_TWO));
+        ImportMappingConfig renumbered = mappingConfig(field("SUPPLIER_BARCODE", 1, EXTRA_TWO),
+                field("E_SUPPLIER", 2, EXTRA_ONE));
+
+        assertThat(candidate(mappedRow("A1", "B1"), versionTwo(), renumbered).articleFingerprint())
+                .isEqualTo(candidate(mappedRow("A1", "B1"), versionTwo(), ascending).articleFingerprint());
+    }
+
+    /** Niet gemapt, gemapt maar ontbrekend en gemapt maar leeg zijn drie verschillende toestanden. */
+    @Test
+    void distinguishesAnUnmappedFieldFromAnAbsentValueAndFromAnEmptyValue() {
+        ImportMappingConfig withField = mappingConfig(field("E_SUPPLIER", 1, EXTRA_ONE));
+        ImportMappingConfig withoutField = mappingConfig();
+
+        byte[] unmapped = candidate(mappedRow("A1", "B1"), versionTwo(), withoutField).articleFingerprint();
+        byte[] empty = candidate(mappedRow("", "B1"), versionTwo(), withField).articleFingerprint();
+        byte[] absent = candidate(rowWithoutMappedColumns(), versionTwo(), withField).articleFingerprint();
+
+        assertThat(empty).isNotEqualTo(unmapped);
+        assertThat(absent).isNotEqualTo(empty);
+        assertThat(absent).isNotEqualTo(unmapped);
+    }
+
+    @Test
+    void producesByteIdenticalVersionTwoFingerprintsForIdenticalInput() {
+        ImportMappingConfig config = mappingConfig(field("E_SUPPLIER", 1, EXTRA_ONE));
+
+        NormalisedCandidate first = candidate(mappedRow("A1", "B1"), versionTwo(), config);
+        NormalisedCandidate second = candidate(mappedRow("A1", "B1"), versionTwo(), config);
+
+        assertThat(second.identityHash()).isEqualTo(first.identityHash());
+        assertThat(second.articleFingerprint()).isEqualTo(first.articleFingerprint());
+        assertThat(second.priceFingerprint()).isEqualTo(first.priceFingerprint());
+        assertThat(second.referenceFingerprint()).isEqualTo(first.referenceFingerprint());
+        assertThat(second.combinedFingerprint()).isEqualTo(first.combinedFingerprint());
+    }
+
+    /**
+     * Versie 2 levert met zekerheid andere hashes op dan versie 1 — het versienummer staat vooraan in
+     * elke canonieke tekst. Een revisie die van versie wisselt, vraagt dus een bewuste herbaselining
+     * en kan nooit stilzwijgend "ongewijzigd" opleveren.
+     */
+    @Test
+    void neverProducesTheSameFingerprintsUnderVersionTwoAsUnderVersionOne() {
+        NormalisedCandidate one = candidate(mappedRow("A1", "B1"), threePart(DESCRIPTION));
+        NormalisedCandidate two = candidate(mappedRow("A1", "B1"), versionTwo(), mappingConfig());
+
+        assertThat(two.identityHash()).isNotEqualTo(one.identityHash());
+        assertThat(two.articleFingerprint()).isNotEqualTo(one.articleFingerprint());
+        assertThat(two.priceFingerprint()).isNotEqualTo(one.priceFingerprint());
+        assertThat(two.combinedFingerprint()).isNotEqualTo(one.combinedFingerprint());
+        // Enkel versie 2 heeft een referentiedeel; onder versie 2 bestaat het ook zonder referenties.
+        assertThat(one.referenceFingerprint()).isNull();
+        assertThat(two.referenceFingerprint()).isNotNull().hasSize(32);
+    }
+
+    @Test
+    void rejectsOnlyTheRowWhoseMappedFieldIsUnusable() {
+        ImportMappingConfig config = mappingConfig(field("E_SUPPLIER", 1, EXTRA_ONE, 3));
+
+        Result result = normaliser.normalise(mappedRow("TE-LANG", "B1"), versionTwo(), config);
+
+        assertThat(result).isInstanceOf(RowIssue.class);
+        RowIssue issue = (RowIssue) result;
+        assertThat(issue.code()).isEqualTo(FieldValueMapper.CODE_VALUE_TOO_LONG);
+        assertThat(issue.fieldName()).isEqualTo("Externe leveranciersidentiteit");
+        assertThat(issue.rowNumber()).isEqualTo(12);
+    }
+
     // --- Helpers -------------------------------------------------------------------------------
 
     private NormalisedCandidate candidate(ParsedRow row, SourceStructureConfig config) {
         Result result = normaliser.normalise(row, config);
         assertThat(result).isInstanceOf(NormalisedCandidate.class);
         return (NormalisedCandidate) result;
+    }
+
+    private NormalisedCandidate candidate(ParsedRow row, SourceStructureConfig config,
+                                          ImportMappingConfig mappingConfig) {
+        Result result = normaliser.normalise(row, config, mappingConfig);
+        assertThat(result).isInstanceOf(NormalisedCandidate.class);
+        return (NormalisedCandidate) result;
+    }
+
+    private static String hex(byte[] hash) {
+        return HexFormat.of().formatHex(hash);
+    }
+
+    private ImportMappingConfig mappingConfig(ImportFieldMapping... mappings) {
+        ImportDefinitionRevision revision = new ImportDefinitionRevision(null, 1,
+                IdentityProfileKind.THREE_PART, "beheerder@example.test");
+        revision.setIdentitySupplierField(SUPPLIER);
+        revision.setIdentitySupplierGroupField(GROUP);
+        revision.setIdentitySupplierReferenceField(REFERENCE);
+        revision.setRecordBasePriceField(PRICE);
+        revision.setRecordDescriptionField(DESCRIPTION);
+        revision.setRecordCanonicalisationVersion(2);
+        return new ImportMappingConfigFactory(null, null)
+                .from(revision, versionTwo(), List.of(mappings), List.of());
+    }
+
+    private static ImportFieldMapping field(String code, int sequenceNumber, String sourceReference) {
+        return field(code, sequenceNumber, sourceReference, null);
+    }
+
+    private static ImportFieldMapping field(String code, int sequenceNumber, String sourceReference,
+                                            Integer maxLength) {
+        ImportFieldCatalogEntry target = new ImportFieldCatalogEntry(code,
+                "Externe leveranciersidentiteit", FieldDataType.TEXT, FieldOwner.CATALOG_SOURCE,
+                IdentityClass.SUPPORTING, 130);
+        ImportFieldMapping mapping = new ImportFieldMapping(null, sequenceNumber, target,
+                FieldValueKind.SOURCE_FIELD, FieldDataType.TEXT, FieldOwner.CATALOG_SOURCE,
+                IdentityClass.SUPPORTING);
+        mapping.setSourceReference(sourceReference);
+        mapping.setMaxLength(maxLength);
+        return mapping;
+    }
+
+    /** Dezelfde zes kolommen als {@link #row}, met twee extra gemapte bronkolommen erachter. */
+    private static ParsedRow mappedRow(String extraOne, String extraTwo) {
+        Map<String, Integer> positions = defaultPositions();
+        positions.put(EXTRA_ONE, 6);
+        positions.put(EXTRA_TWO, 7);
+        List<String> values = Arrays.asList("ACME", "G1", "R-1", "", "1,50", "Boormachine",
+                nullToEmpty(extraOne), nullToEmpty(extraTwo));
+        return new ParsedRow(12, values, new SourceFieldPositions(positions));
+    }
+
+    /** Dezelfde kolommen gedeclareerd, maar deze regel draagt er geen waarde voor: werkelijk ontbrekend. */
+    private static ParsedRow rowWithoutMappedColumns() {
+        Map<String, Integer> positions = defaultPositions();
+        positions.put(EXTRA_ONE, 6);
+        positions.put(EXTRA_TWO, 7);
+        List<String> values = Arrays.asList("ACME", "G1", "R-1", "", "1,50", "Boormachine");
+        return new ParsedRow(12, values, new SourceFieldPositions(positions));
+    }
+
+    private static Map<String, Integer> defaultPositions() {
+        Map<String, Integer> positions = new LinkedHashMap<>();
+        positions.put(SUPPLIER, 0);
+        positions.put(GROUP, 1);
+        positions.put(REFERENCE, 2);
+        positions.put(DISCOUNT, 3);
+        positions.put(PRICE, 4);
+        positions.put(DESCRIPTION, 5);
+        return positions;
+    }
+
+    private static SourceStructureConfig versionTwo() {
+        return new SourceStructureConfig("CSV", StandardCharsets.UTF_8, ';', '"', true, 1,
+                FieldReferenceKind.HEADER_NAME, null, IdentityProfileKind.THREE_PART,
+                SUPPLIER, GROUP, REFERENCE, null, PRICE, DESCRIPTION, 2);
     }
 
     /** Vaste kolomindeling: leverancier, groep, referentie, kortingscode, prijs, omschrijving. */

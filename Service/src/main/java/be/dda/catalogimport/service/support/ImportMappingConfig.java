@@ -10,7 +10,11 @@ import be.dda.catalogimport.domain.FilterOutcome;
 import be.dda.catalogimport.domain.IdentityClass;
 import be.dda.catalogimport.domain.MissingColumnBehaviour;
 import be.dda.catalogimport.service.support.HeaderExpectations.ExpectedField;
+import be.dda.catalogimport.service.support.ImportValueRules.DecimalFormat;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -43,6 +47,7 @@ public record ImportMappingConfig(int canonicalisationVersion, List<FieldMapping
      *                           meldingen getoond wordt (meldingsstijl par. 15.12)
      * @param sourceReference    headernaam of 1-gebaseerde kolomindex; {@code null} bij een vaste waarde
      * @param expectedPosition   1-gebaseerde positie voor de headercontrole, of {@code null}
+     * @param bookmarkName       de sjabloonwaarde die dit veld vult; nog niet invulbaar (3b/3c blokkeren)
      * @param defaultValue       enkel toe te passen bij een werkelijk ontbrekende waarde (R-REC-03)
      * @param priceComponentCode gevuld voor een prijscomponent; eigenaar is dan {@code PRICE_CONTROL}
      * @param referenceType      gevuld voor een kritieke referentie; eigenaar is dan
@@ -50,10 +55,12 @@ public record ImportMappingConfig(int canonicalisationVersion, List<FieldMapping
      */
     public record FieldMapping(int sequenceNumber, String targetFieldCode, String targetFieldName,
                                FieldValueKind valueKind, String sourceReference, Integer expectedPosition,
-                               String fixedValue, String defaultValue, FieldDataType dataType,
+                               String fixedValue, String bookmarkName, String defaultValue,
+                               FieldDataType dataType,
                                boolean required, Integer maxLength, Integer decimalScale,
                                boolean zeroAllowed, boolean negativeAllowed,
                                FieldTransformKind transformKind, String transformConfig,
+                               FieldTransform transform, ValueFormat valueFormat,
                                FieldOwner fieldOwner, IdentityClass identityClass,
                                String priceComponentCode, String referenceType) {
 
@@ -63,6 +70,46 @@ public record ImportMappingConfig(int canonicalisationVersion, List<FieldMapping
                     || identityClass == IdentityClass.STRONG
                     || identityClass == IdentityClass.ARTICLE_REFERENCE;
         }
+
+        /**
+         * Een veld dat in de <b>artikelvingerafdruk</b> hoort (ontwerp fase 3, par. 3.5): eigenaar
+         * {@code CATALOG_SOURCE}, geen prijscomponent en geen kritieke referentie. Prijs en
+         * referenties hebben hun eigen deelvingerafdruk, zodat de mutatielijst kan tonen wélk domein
+         * gewijzigd is.
+         */
+        public boolean isArticleField() {
+            return fieldOwner == FieldOwner.CATALOG_SOURCE && priceComponentCode == null
+                    && referenceType == null;
+        }
+
+        /**
+         * Een veld waarvan de schrijfwijze betekenis draagt: artikelnummer, leveranciersnummer, groep,
+         * referentie, barcode, PIM/CAB (R-REC-01). Zo'n veld blijft tekst — voorloopnullen, lengte en
+         * hoofdletters blijven bewaard.
+         */
+        public boolean isIdentifyingText() {
+            return referenceType != null || identityClass != IdentityClass.NONE;
+        }
+    }
+
+    /**
+     * De verklaarde notatie van één veld: hoe een decimale waarde gelezen wordt (R-REC-04) en volgens
+     * welk formaat en welke tijdzone een datum of tijdstip gelezen wordt (R-REC-05). Beide komen uit
+     * {@code transform_config} en worden één keer per batch geparsed; er is dus geen formatter of
+     * parse per bronregel.
+     *
+     * @param dateFormatter {@code null} wanneer de revisie geen bronformaat verklaart; een datum die
+     *                      niet onmiskenbaar ISO-8601 is, is dan <b>ambigu</b> en wordt geweigerd in
+     *                      plaats van geraden ({@code DATE_AMBIGUOUS})
+     * @param zone          de tijdzone van een {@code DATETIME}-bronwaarde; {@code null} betekent dat
+     *                      een lokale tijdstempel niet naar een tijdstip omgezet kan worden
+     */
+    public record ValueFormat(DecimalFormat decimal, DateTimeFormatter dateFormatter, String datePattern,
+                              ZoneId zone) {
+
+        /** Fase 2-notatie: schaal 6, komma en punt als decimaalteken, geen verklaard datumformaat. */
+        public static final ValueFormat DEFAULT =
+                new ValueFormat(DecimalFormat.DEFAULT, null, null, null);
     }
 
     /**
@@ -90,6 +137,19 @@ public record ImportMappingConfig(int canonicalisationVersion, List<FieldMapping
 
     public boolean hasFields() {
         return !fields.isEmpty();
+    }
+
+    /**
+     * De velden die in de artikelvingerafdruk van canonicalisatieversie 2 meetellen, <b>gesorteerd op
+     * {@code target_field_code}</b> (ontwerp fase 3, par. 3.5). De sortering is bewust op de
+     * doelveldcode en niet op het volgnummer van de mapping: het hernummeren van de mappings mag
+     * nooit de vingerafdruk van een ongewijzigde catalogus veranderen.
+     */
+    public List<FieldMapping> articleFingerprintFields() {
+        return fields.stream()
+                .filter(FieldMapping::isArticleField)
+                .sorted(Comparator.comparing(FieldMapping::targetFieldCode))
+                .toList();
     }
 
     /**

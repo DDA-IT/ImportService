@@ -42,8 +42,8 @@ public class CandidateStageDao {
             + "batch_id, row_number, delivery_file_id, identity_supplier, identity_supplier_group, "
             + "identity_supplier_reference, identity_discount_code, identity_discount_state, identity_hash, "
             + "base_price, base_price_currency, description, article_fingerprint, price_fingerprint, "
-            + "combined_fingerprint, mutation_key_prefix, created_at) "
-            + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            + "reference_fingerprint, combined_fingerprint, mutation_key_prefix, created_at) "
+            + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     /**
      * Eén te stagen kandidaat.
@@ -52,6 +52,8 @@ public class CandidateStageDao {
      *                             maar leeg"; die twee mogen nooit door elkaar lopen
      * @param basePrice            nooit {@code null} en nooit 0 bij een parsefout: zo'n regel wordt
      *                             niet gestaged maar verworpen
+     * @param referenceFingerprint {@code null} bij canonicalisatieversie 1, die geen referentiedeel
+     *                             kent; dat is iets anders dan een lege referentielijst onder versie 2
      */
     public record StageRow(
             long batchId,
@@ -68,6 +70,7 @@ public class CandidateStageDao {
             String description,
             byte[] articleFingerprint,
             byte[] priceFingerprint,
+            byte[] referenceFingerprint,
             byte[] combinedFingerprint,
             String mutationKeyPrefix,
             Instant createdAt) {
@@ -248,8 +251,13 @@ public class CandidateStageDao {
         }
         statement.setBytes(13, row.articleFingerprint());
         statement.setBytes(14, row.priceFingerprint());
-        statement.setBytes(15, row.combinedFingerprint());
-        statement.setString(16, row.mutationKeyPrefix());
-        statement.setObject(17, OffsetDateTime.ofInstant(row.createdAt(), ZoneOffset.UTC));
+        if (row.referenceFingerprint() == null) {
+            statement.setNull(15, Types.BINARY);
+        } else {
+            statement.setBytes(15, row.referenceFingerprint());
+        }
+        statement.setBytes(16, row.combinedFingerprint());
+        statement.setString(17, row.mutationKeyPrefix());
+        statement.setObject(18, OffsetDateTime.ofInstant(row.createdAt(), ZoneOffset.UTC));
     }
 }
