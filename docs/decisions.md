@@ -158,3 +158,36 @@ reden `BASELINE_ACCEPTED_WITHOUT_PUBLICATION`. In Fase 5 wordt dit aangevuld/ver
 de echte publicatieroute (`state_origin = PUBLISHED`).
 
 **Bron:** mens / `docs/design/fase2-screening-design.md` §3, §10, §11
+
+---
+
+## 2026-09-19 — Fase 3: ontwerp business rules en validatie
+
+**Vraag:** Welke regels uit de businessanalyse horen in Fase 3 en hoe worden ze gemodelleerd?
+
+**Beslissing:** Het ontwerp in `docs/design/fase3-rules-design.md` is bindend, inclusief de vier
+afwijkingen van het Fase 0-uitgangspunt: (A) recordfilters wél in Fase 3, (B) prijsobservatiehistoriek
+wél in Fase 3, (C) `TOO_MANY_ROW_ISSUES` vervalt als blokkeerreden, (D) `validation_result` als aparte
+statusas; `import_row_issue` wordt uitgebreid (niet vervangen); canonicalisatieversie 2 naast 1;
+creatiedrempel 100 nieuwe aanbiedingen EN 1% van de importscope (niet 100%); bouwstappen 3a-3h
+sequentieel, rapport aan de mens na 3d en na 3h.
+
+**Bron:** denker-zwaar / `business-analyse-leveranciersbibliotheken.md` §14.4, §14.9, §14.11-§14.12,
+§14.23, §15.12, §16.1, §16.2, §16.5
+
+---
+
+## 2026-09-19 — Fase 3: vier-ogen bij accept-baseline zonder authenticatie
+
+**Vraag:** §16.1/§14.23.7/§16.8 eisen vier-ogen-goedkeuring (twee verschillende gebruikers) bij een
+bulkcreatie, bulkprijsincident of initialisatie. Er is nog geen authenticatie (Keycloak = Fase 5).
+Wat doet `accept-baseline` in de tussentijd?
+
+**Beslissing:** Zodra een batch een bulkincident, wachtende creaties (`AWAITING_APPROVAL`) of een
+initialisatie heeft, is `accept-baseline` alleen toegestaan met een extra verplicht veld `approvedBy`
+(niet leeg, niet `system`, verschillend van `acceptedBy`, case-insensitief). Beide namen worden persistent
+bewaard op `import_batch`. Ontbreekt het veld: 409 `FOUR_EYES_APPROVAL_REQUIRED`. In Fase 5 worden
+beide namen vervangen door geverifieerde Keycloak-identiteiten. Alternatief (weigeren tot Fase 4/5) is
+verworpen omdat het de eerste levering van elke nieuwe koppeling onbruikbaar zou maken.
+
+**Bron:** mens / `business-analyse-leveranciersbibliotheken.md` §16.1, §14.23.7, §16.8
