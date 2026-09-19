@@ -1,5 +1,9 @@
 package be.dda.catalogimport.dao;
 
+import be.dda.catalogimport.domain.ControlLevel;
+import be.dda.catalogimport.domain.ImpactScope;
+import be.dda.catalogimport.domain.IssueDomain;
+import be.dda.catalogimport.domain.IssueHandlingStatus;
 import be.dda.catalogimport.domain.RowIssueSeverity;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -7,16 +11,28 @@ import java.sql.Types;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /**
- * Bulkopslag van regelproblemen in {@code import_row_issue} (design par. 5).
+ * Bulkopslag van vastgestelde problemen in {@code import_row_issue} (fase 2 design par. 5, fase 3
+ * changeset 004-12).
+ * <p>
+ * <b>Niet alleen regelproblemen.</b> Ondanks de tabelnaam draagt deze tabel sinds fase 3 alle drie de
+ * controleniveaus uit {@link ControlLevel}: {@code rowNumber} en {@code deliveryFileId} mogen daarom
+ * {@code null} zijn voor een probleem dat de hele levering of het bestandscontract raakt.
+ * <p>
+ * <b>Classificatie komt altijd van buiten.</b> Ernst, domein, niveau en impactscope worden
+ * gedenormaliseerd op elke rij bewaard (R-ISS-02) en staan verplicht in {@link IssueRow}. De
+ * foutcodecatalogus die ze bepaalt leeft in de Service-laag; deze DAO weigert enkel een rij zonder
+ * classificatie, zodat er nooit een ongeclassificeerd probleem in de database belandt.
  * <p>
  * Schrijven gebeurt met {@code batchUpdate} in dezelfde microbatchtransactie als de staging, zodat
  * een gestagede regel en haar problemen nooit uit elkaar lopen. Lezen (paginering) gebeurt via de
@@ -35,24 +51,59 @@ public class RowIssueDao {
     public static final int MAX_FIELD_NAME_LENGTH = 200;
     /** {@code source_value} is varchar(200) en bevat een fragment, geen volledige bronregel. */
     public static final int MAX_SOURCE_VALUE_LENGTH = 200;
+    /** {@code expected_value} is varchar(200). */
+    public static final int MAX_EXPECTED_VALUE_LENGTH = 200;
     /** {@code message} is varchar(500). */
     public static final int MAX_MESSAGE_LENGTH = 500;
 
     private static final String INSERT = "insert into import_row_issue ("
-            + "batch_id, delivery_file_id, row_number, issue_code, field_name, severity, source_value, "
-            + "message, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            + "batch_id, delivery_file_id, row_number, issue_code, field_name, severity, issue_domain, "
+            + "control_level, impact_scope, handling_status, source_value, expected_value, message, "
+            + "created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
-    /** Eén te bewaren regelprobleem. */
+    /**
+     * Eén te bewaren probleem.
+     *
+     * @param deliveryFileId {@code null} wanneer het probleem niet aan één bronbestand hangt
+     * @param rowNumber      {@code null} bij een probleem op leverings- of structuurniveau; nooit 0
+     *                       als plaatsvervanger
+     * @param expectedValue  wat er verwacht werd, náást {@code sourceValue}; nooit stil toegepast
+     */
     public record IssueRow(
             long batchId,
-            long deliveryFileId,
-            long rowNumber,
+            Long deliveryFileId,
+            Long rowNumber,
             String issueCode,
             String fieldName,
             RowIssueSeverity severity,
+            IssueDomain issueDomain,
+            ControlLevel controlLevel,
+            ImpactScope impactScope,
+            IssueHandlingStatus handlingStatus,
             String sourceValue,
+            String expectedValue,
             String message,
             Instant createdAt) {
+
+        public IssueRow {
+            Objects.requireNonNull(issueCode, "issueCode");
+            Objects.requireNonNull(message, "message");
+            Objects.requireNonNull(createdAt, "createdAt");
+            // Een ongeclassificeerd probleem is een programmeerfout: zonder ernst en domein is later
+            // niet meer vast te stellen hoe zwaar deze levering beoordeeld werd (R-ISS-02).
+            requireClassification(severity, "severity", issueCode);
+            requireClassification(issueDomain, "issueDomain", issueCode);
+            requireClassification(controlLevel, "controlLevel", issueCode);
+            requireClassification(impactScope, "impactScope", issueCode);
+            requireClassification(handlingStatus, "handlingStatus", issueCode);
+        }
+
+        private static void requireClassification(Object value, String field, String issueCode) {
+            if (value == null) {
+                throw new IllegalArgumentException("Issue " + issueCode + " has no " + field
+                        + "; every issue must be classified through the issue catalogue before it is stored");
+            }
+        }
     }
 
     private final JdbcTemplate jdbc;
@@ -101,14 +152,28 @@ public class RowIssueDao {
     }
 
     /**
-     * Aantal reeds bewaarde problemen met deze ernst. De duplicaatdetectie draait ná het stagen en
-     * moet weten hoeveel van de issue-cap al opgebruikt is; waarschuwingen tellen daarbij niet mee.
+     * Aantal reeds bewaarde problemen met deze foutcode. Gebruikt om de voorbeeldcap per code te
+     * bewaken en om te voorkomen dat dezelfde blokkade bij een hervatting een tweede issuerij krijgt.
      */
-    public long countBySeverity(long batchId, RowIssueSeverity severity) {
+    public long countByBatchIdAndIssueCode(long batchId, String issueCode) {
         Long count = jdbc.queryForObject(
-                "select count(*) from import_row_issue where batch_id = ? and severity = ?",
-                Long.class, batchId, severity.name());
+                "select count(*) from import_row_issue where batch_id = ? and issue_code = ?",
+                Long.class, batchId, truncate(issueCode, MAX_ISSUE_CODE_LENGTH));
         return count == null ? 0L : count;
+    }
+
+    /**
+     * Aantallen per ernst; de basis voor {@code import_batch.validation_result} (R-THR-06). Eén
+     * query in plaats van een telling per ernst, zodat het oordeel op één momentopname berust.
+     */
+    public Map<RowIssueSeverity, Long> countsBySeverity(long batchId) {
+        Map<RowIssueSeverity, Long> counts = new EnumMap<>(RowIssueSeverity.class);
+        jdbc.query("select severity, count(*) from import_row_issue where batch_id = ? group by severity",
+                resultSet -> {
+                    counts.merge(RowIssueSeverity.valueOf(resultSet.getString(1)), resultSet.getLong(2),
+                            Long::sum);
+                }, batchId);
+        return counts;
     }
 
     /** Aantallen per {@code issue_code}, gesorteerd op code; gebruikt in de blokkeerreden. */
@@ -125,14 +190,19 @@ public class RowIssueDao {
 
     private static void bind(PreparedStatement statement, IssueRow row) throws SQLException {
         statement.setLong(1, row.batchId());
-        statement.setLong(2, row.deliveryFileId());
-        statement.setLong(3, row.rowNumber());
+        setNullableLong(statement, 2, row.deliveryFileId());
+        setNullableLong(statement, 3, row.rowNumber());
         statement.setString(4, truncate(row.issueCode(), MAX_ISSUE_CODE_LENGTH));
         setNullable(statement, 5, truncate(row.fieldName(), MAX_FIELD_NAME_LENGTH));
         statement.setString(6, row.severity().name());
-        setNullable(statement, 7, truncate(row.sourceValue(), MAX_SOURCE_VALUE_LENGTH));
-        statement.setString(8, truncate(row.message(), MAX_MESSAGE_LENGTH));
-        statement.setObject(9, OffsetDateTime.ofInstant(row.createdAt(), ZoneOffset.UTC));
+        statement.setString(7, row.issueDomain().name());
+        statement.setString(8, row.controlLevel().name());
+        statement.setString(9, row.impactScope().name());
+        statement.setString(10, row.handlingStatus().name());
+        setNullable(statement, 11, truncate(row.sourceValue(), MAX_SOURCE_VALUE_LENGTH));
+        setNullable(statement, 12, truncate(row.expectedValue(), MAX_EXPECTED_VALUE_LENGTH));
+        statement.setString(13, truncate(row.message(), MAX_MESSAGE_LENGTH));
+        statement.setObject(14, OffsetDateTime.ofInstant(row.createdAt(), ZoneOffset.UTC));
     }
 
     private static void setNullable(PreparedStatement statement, int index, String value) throws SQLException {
@@ -140,6 +210,14 @@ public class RowIssueDao {
             statement.setNull(index, Types.VARCHAR);
         } else {
             statement.setString(index, value);
+        }
+    }
+
+    private static void setNullableLong(PreparedStatement statement, int index, Long value) throws SQLException {
+        if (value == null) {
+            statement.setNull(index, Types.BIGINT);
+        } else {
+            statement.setLong(index, value);
         }
     }
 

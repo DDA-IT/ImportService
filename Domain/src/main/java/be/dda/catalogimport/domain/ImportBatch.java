@@ -119,6 +119,16 @@ public class ImportBatch {
     @Column(name = "content_mutation_count")
     private Long contentMutationCount;
 
+    /**
+     * Het inhoudelijke eindoordeel, als aparte statusas naast {@link #status} (ontwerp fase 3,
+     * afwijking D en R-THR-06). {@code null} zolang de screening niet afgerond is én bij een
+     * technische fout ({@code FAILED}): er is dan niets vastgesteld, en dat wordt nooit stil
+     * {@link ValidationResult#VALID}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "validation_result", length = 30)
+    private ValidationResult validationResult;
+
     @Column(name = "blocked_code", length = 60)
     private String blockedCode;
 
@@ -309,6 +319,14 @@ public class ImportBatch {
 
     public void setContentMutationCount(Long contentMutationCount) {
         this.contentMutationCount = contentMutationCount;
+    }
+
+    public ValidationResult getValidationResult() {
+        return validationResult;
+    }
+
+    public void setValidationResult(ValidationResult validationResult) {
+        this.validationResult = validationResult;
     }
 
     public String getBlockedCode() {

@@ -8,6 +8,7 @@ import be.dda.catalogimport.domain.ImportBatch;
 import be.dda.catalogimport.domain.ImportBatchStatus;
 import be.dda.catalogimport.domain.TaskRun;
 import be.dda.catalogimport.domain.TaskRunStatus;
+import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,7 +44,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class ScreeningRecoveryService {
 
     /** Blokkeercode van een screening die door een herstart onderbroken werd. */
-    public static final String CODE_SCREENING_INTERRUPTED = "SCREENING_INTERRUPTED";
+    public static final String CODE_SCREENING_INTERRUPTED = ImportIssueCatalog.SCREENING_INTERRUPTED;
 
     private static final int MAX_BLOCKED_REASON_LENGTH = 500;
     private static final Logger LOG = LoggerFactory.getLogger(ScreeningRecoveryService.class);

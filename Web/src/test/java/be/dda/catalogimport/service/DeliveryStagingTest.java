@@ -16,6 +16,7 @@ import be.dda.catalogimport.dao.ImportRowIssueRepository;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import be.dda.catalogimport.dao.TaskRunRepository;
 import be.dda.catalogimport.domain.CatalogImportTask;
+import be.dda.catalogimport.domain.ControlLevel;
 import be.dda.catalogimport.domain.Delivery;
 import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.ImportBatch;
@@ -61,8 +62,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 /**
  * Fase 2c: de stagingfase van de screening (design par. 8 en par. 9 stap C) tegen de echte
- * service, DAO's, het bestandsarchief en H2. De microbatchgrootte staat op 2 en de issue-cap op 5,
- * zodat meerdere microbatch-commits en de cap met kleine bestanden aantoonbaar zijn.
+ * service, DAO's, het bestandsarchief en H2. De microbatchgrootte staat op 2 en de voorbeeldcap per
+ * foutcode op 5, zodat meerdere microbatch-commits en de cap met kleine bestanden aantoonbaar zijn.
+ * <p>
+ * De cap is sinds bouwstap 3a géén blokkeerreden meer (ontwerp fase 3, afwijking C): boven de cap
+ * worden er enkel minder voorbeeldrijen bewaard.
  * <p>
  * Sinds bouwstap 2d loopt {@code screen} door tot de eindstatus; deze tests kijken naar het
  * stagingdeel daarvan. De delta, de mutatielijst en de marker worden in
@@ -73,7 +77,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
  */
 @SpringBootTest(properties = {
         "catalogimport.screening.stage-batch-size=2",
-        "catalogimport.screening.max-recorded-row-issues=5"})
+        "catalogimport.screening.max-sample-rows-per-code=5"})
 @ActiveProfiles("local")
 class DeliveryStagingTest {
 
@@ -284,8 +288,14 @@ class DeliveryStagingTest {
                 });
     }
 
+    /**
+     * Aangepast in bouwstap 3a (ontwerp fase 3, afwijking C): veel identieke regelfouten waren in
+     * fase 2 een blokkeerreden ({@code TOO_MANY_ROW_ISSUES}), maar dat was een technische
+     * logginggrens die zich als businessoordeel voordeed. Nu worden er enkel minder voorbeeldrijen
+     * bewaard; het bestand wordt volledig gelezen en de volledige aantallen per code blijven bewaard.
+     */
     @Test
-    void blocksTheDeliveryAboveTheConfiguredIssueCapAndReportsTheCountPerCode() {
+    void keepsOnlyTheConfiguredNumberOfExampleRowsPerCodeWithoutBlockingTheDelivery() {
         StringBuilder csv = new StringBuilder(HEADER);
         for (int i = 1; i <= 8; i++) {
             csv.append("ACME;G1;R").append(i).append(";fout;Boormachine\n");
@@ -294,18 +304,57 @@ class DeliveryStagingTest {
 
         ScreeningOutcome outcome = screening.screen(screened.batchId());
 
-        assertThat(outcome.status()).isEqualTo(ImportBatchStatus.BLOCKED);
-        assertThat(outcome.blockedCode()).isEqualTo(DeliveryScreeningService.CODE_TOO_MANY_ROW_ISSUES);
-        assertThat(outcome.blockedReason()).contains(ImportValueRules.CODE_PRICE_UNREADABLE + "=6");
-        // Precies de cap wordt bewaard; het lezen stopt daarna in plaats van de rest te verwerken.
-        assertThat(rowIssues.countByBatchId(screened.batchId())).isEqualTo(5);
-        assertThat(outcome.rawRecordCount()).isNull(); // onvolledig gelezen: nooit stil een 0
+        assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
+        assertThat(outcome.blockedCode()).isNull();
+        // Het bestand is volledig gelezen: alle acht de regels zijn geteld en verworpen.
+        assertThat(outcome.rawRecordCount()).isEqualTo(8L);
+        assertThat(outcome.rejectedRecordCount()).isEqualTo(8L);
+        assertThat(outcome.validRecordCount()).isZero();
+
+        // Vijf voorbeelden (de laagste regelnummers) plus één melding met de volledige aantallen.
+        List<ImportRowIssue> issues = rowIssues.findByBatchId(screened.batchId(), PageRequest.of(0, 20))
+                .getContent();
+        assertThat(issues).filteredOn(issue ->
+                        issue.getIssueCode().equals(ImportValueRules.CODE_PRICE_UNREADABLE))
+                .hasSize(5)
+                .extracting(ImportRowIssue::getRowNumber).containsExactly(2L, 3L, 4L, 5L, 6L);
+        assertThat(issues).filteredOn(issue -> issue.getIssueCode()
+                        .equals(DeliveryScreeningService.CODE_ROW_ISSUE_RECORDING_CAPPED))
+                .singleElement()
+                .satisfies(capped -> {
+                    assertThat(capped.getSeverity()).isEqualTo(RowIssueSeverity.INFO);
+                    assertThat(capped.getControlLevel()).isEqualTo(ControlLevel.DELIVERY);
+                    assertThat(capped.getRowNumber()).isNull();
+                    // Het volledige aantal gaat nooit verloren, ook al zijn er maar vijf voorbeelden.
+                    assertThat(capped.getMessage()).contains(ImportValueRules.CODE_PRICE_UNREADABLE + "=8");
+                });
+        assertThat(rowIssues.countByBatchId(screened.batchId())).isEqualTo(6);
         assertThat(runs.findById(screened.taskRunId()).orElseThrow().getStatus())
                 .isEqualTo(TaskRunStatus.COMPLETED);
     }
 
+    /** Grensgeval: precies de cap halen is geen overschrijding, dus geen melding erbij. */
     @Test
-    void recordsAtMostTheIssueCapForDuplicateIdentitiesButStillCountsThemAll() {
+    void doesNotReportACapWhenTheNumberOfErrorsIsExactlyTheConfiguredMaximum() {
+        StringBuilder csv = new StringBuilder(HEADER);
+        for (int i = 1; i <= 5; i++) {
+            csv.append("ACME;G1;R").append(i).append(";fout;Boormachine\n");
+        }
+        Screened screened = upload("CAPEXACT", csv.toString().getBytes(StandardCharsets.UTF_8));
+
+        ScreeningOutcome outcome = screening.screen(screened.batchId());
+
+        assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
+        assertThat(outcome.rejectedRecordCount()).isEqualTo(5L);
+        assertThat(rowIssues.countByBatchId(screened.batchId())).isEqualTo(5);
+        assertThat(jdbc.queryForObject("select count(*) from import_row_issue where batch_id = ? "
+                        + "and issue_code = ?", Long.class, screened.batchId(),
+                DeliveryScreeningService.CODE_ROW_ISSUE_RECORDING_CAPPED)).isZero();
+    }
+
+    /** De voorbeeldcap geldt ook voor duplicaten; het volledige aantal blijft in de tellers staan. */
+    @Test
+    void recordsAtMostTheSampleCapForDuplicateIdentitiesButStillCountsThemAll() {
         StringBuilder csv = new StringBuilder(HEADER);
         for (int i = 1; i <= 8; i++) {
             csv.append("ACME;G1;R1;1,5").append(i).append(";Boormachine\n");

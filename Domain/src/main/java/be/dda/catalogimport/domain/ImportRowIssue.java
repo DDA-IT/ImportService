@@ -16,9 +16,23 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 
 /**
- * Een probleem bij één fysieke bronregel van een {@link ImportBatch}. Bulk-schrijven gebeurt via
- * JdbcTemplate; deze entiteit is bedoeld om te lezen (paginering) en voor tests.
- * {@code sourceValue} is afgekapt; de brontekst zelf staat enkel in het gearchiveerde bestand.
+ * Eén vastgesteld probleem binnen een {@link ImportBatch}. Bulk-schrijven gebeurt via JdbcTemplate;
+ * deze entiteit is bedoeld om te lezen (paginering) en voor tests. {@code sourceValue} is afgekapt;
+ * de brontekst zelf staat enkel in het gearchiveerde bestand.
+ * <p>
+ * <b>De tabelnaam is historisch en dekt sinds fase 3 de lading niet meer volledig.</b> Ondanks
+ * "row" draagt deze tabel <b>alle drie</b> de controleniveaus uit {@link ControlLevel}: een
+ * leverings- of structuurprobleem (leeg bestand, ontbrekende headerkolom, configuratiefout) staat
+ * hier net zo goed in als een regelprobleem. Daarom zijn {@code rowNumber} en {@code deliveryFile}
+ * sinds changeset 004-12 <b>nullable</b>: een probleem dat de hele levering raakt hoort bij geen
+ * enkele regel, en een verzonnen regelnummer 0 zou dat verbergen. De tabel is bewust uitgebreid en
+ * niet vervangen (ontwerp fase 3, 004-12 en aanname A14): dat houdt de fase 2-contracten heel en
+ * vraagt geen datamigratie.
+ * <p>
+ * {@code severity}, {@code issueDomain}, {@code controlLevel} en {@code impactScope} staan
+ * gedenormaliseerd op elke rij (R-ISS-02). Ze komen uit de foutcodecatalogus op het moment van
+ * vaststellen; een latere wijziging van die catalogus mag het oordeel over een reeds verwerkte
+ * levering nooit met terugwerkende kracht veranderen.
  */
 @Entity
 @Table(name = "import_row_issue")
@@ -34,14 +48,18 @@ public class ImportRowIssue {
             foreignKey = @ForeignKey(name = "fk_import_row_issue_batch"))
     private ImportBatch batch;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "delivery_file_id", nullable = false,
+    /** {@code null} bij een probleem dat niet aan één bronbestand toe te wijzen is. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "delivery_file_id",
             foreignKey = @ForeignKey(name = "fk_import_row_issue_file"))
     private DeliveryFile deliveryFile;
 
-    /** Fysiek regelnummer (1-gebaseerd, inclusief header/prefix). */
-    @Column(name = "row_number", nullable = false)
-    private long rowNumber;
+    /**
+     * Fysiek regelnummer (1-gebaseerd, inclusief header/prefix), of {@code null} bij een probleem op
+     * leverings- of structuurniveau dat bij geen enkele regel hoort.
+     */
+    @Column(name = "row_number")
+    private Long rowNumber;
 
     @Column(name = "issue_code", nullable = false, length = 60)
     private String issueCode;
@@ -52,6 +70,43 @@ public class ImportRowIssue {
     @Enumerated(EnumType.STRING)
     @Column(name = "severity", nullable = false, length = 20)
     private RowIssueSeverity severity = RowIssueSeverity.ERROR;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "issue_domain", nullable = false, length = 40)
+    private IssueDomain issueDomain = IssueDomain.MAPPING_VALIDATION;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "control_level", nullable = false, length = 20)
+    private ControlLevel controlLevel = ControlLevel.RECORD;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "impact_scope", nullable = false, length = 20)
+    private ImpactScope impactScope = ImpactScope.RECORD;
+
+    /**
+     * De groep waarin dit probleem samengevat is, of {@code null} zolang het los staat. Groeperen
+     * gebeurt pas in bouwstap 3g; de kolom en haar tabel bestaan hier al zodat die stap geen
+     * migratie van bestaande issuerijen nodig heeft. Bewust een losse sleutel en geen
+     * {@code @ManyToOne}: {@code import_issue_group} wordt set-based geschreven.
+     */
+    @Column(name = "issue_group_id")
+    private Long issueGroupId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "handling_status", nullable = false, length = 30)
+    private IssueHandlingStatus handlingStatus = IssueHandlingStatus.DETECTED;
+
+    /** Versie van de regelconfiguratie waaronder dit vastgesteld is; nog niet gevuld in fase 3a. */
+    @Column(name = "rule_config_version")
+    private Integer ruleConfigVersion;
+
+    /** Wat er verwacht werd, náást de bronwaarde — nooit stilzwijgend toegepast, enkel getoond. */
+    @Column(name = "expected_value", length = 200)
+    private String expectedValue;
+
+    /** Volgnummer binnen de groep; gevuld vanaf bouwstap 3g. */
+    @Column(name = "occurrence_seq")
+    private Integer occurrenceSeq;
 
     @Column(name = "source_value", length = 200)
     private String sourceValue;
@@ -66,7 +121,7 @@ public class ImportRowIssue {
         // JPA
     }
 
-    public ImportRowIssue(ImportBatch batch, DeliveryFile deliveryFile, long rowNumber,
+    public ImportRowIssue(ImportBatch batch, DeliveryFile deliveryFile, Long rowNumber,
                           String issueCode, String message) {
         this.batch = batch;
         this.deliveryFile = deliveryFile;
@@ -94,7 +149,8 @@ public class ImportRowIssue {
         return deliveryFile;
     }
 
-    public long getRowNumber() {
+    /** {@code null} bij een probleem op leverings- of structuurniveau. */
+    public Long getRowNumber() {
         return rowNumber;
     }
 
@@ -116,6 +172,54 @@ public class ImportRowIssue {
 
     public void setSeverity(RowIssueSeverity severity) {
         this.severity = severity;
+    }
+
+    public IssueDomain getIssueDomain() {
+        return issueDomain;
+    }
+
+    public void setIssueDomain(IssueDomain issueDomain) {
+        this.issueDomain = issueDomain;
+    }
+
+    public ControlLevel getControlLevel() {
+        return controlLevel;
+    }
+
+    public void setControlLevel(ControlLevel controlLevel) {
+        this.controlLevel = controlLevel;
+    }
+
+    public ImpactScope getImpactScope() {
+        return impactScope;
+    }
+
+    public void setImpactScope(ImpactScope impactScope) {
+        this.impactScope = impactScope;
+    }
+
+    public Long getIssueGroupId() {
+        return issueGroupId;
+    }
+
+    public IssueHandlingStatus getHandlingStatus() {
+        return handlingStatus;
+    }
+
+    public Integer getRuleConfigVersion() {
+        return ruleConfigVersion;
+    }
+
+    public String getExpectedValue() {
+        return expectedValue;
+    }
+
+    public void setExpectedValue(String expectedValue) {
+        this.expectedValue = expectedValue;
+    }
+
+    public Integer getOccurrenceSeq() {
+        return occurrenceSeq;
     }
 
     public String getSourceValue() {

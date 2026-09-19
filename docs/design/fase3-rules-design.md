@@ -441,3 +441,26 @@ verwijderen). Voor Fase 7: acceptatiedocument herschrijven met per regel-ID uit 
 
 > Important technical constraint discovered
 > Classificatie en mutatie-insert moeten aparte passes worden (drempels bepalen de mutatiestatus).
+
+## 9. Aanvullingen uit stap 3a (geïmplementeerd, hoofdsessie akkoord)
+
+- Property `catalogimport.screening.max-recorded-row-issues` is hernoemd naar
+  `catalogimport.screening.max-sample-rows-per-code` (default 200); de oude sleutel wordt genegeerd
+  (melden in de release-/deploynotitie).
+- `ImportIssueCatalog` (34 codes + dynamisch voorvoegsel `HEADER_FIELD_MISSING`) is de Java-bron van
+  waarheid; `classify()` gooit een exception op een onbekende code. Niveau-invulling: `SOURCE_FILE_EMPTY`
+  en `SOURCE_NO_DATA_RECORDS` ⇒ DELIVERY; alle `CONFIG_*` en headercodes ⇒ STRUCTURE.
+- Elke blokkade schrijft één issuerij (geen dubbele bij hervatten). Bij duplicaten wordt geen
+  `ROW_ISSUE_RECORDING_CAPPED` geschreven (totaal staat in `duplicate_identity_count` en `blocked_reason`;
+  uniforme telling komt in 3g). FAILED schrijft geen issuerij (staging + issues worden bij FAILED opgeruimd).
+- Changeset-nummering: 004-11 bevat enkel `validation_result`; de overige `import_batch`-kolommen
+  (tellers, voortgangskolommen E1-E3, `baseline_approved_by`) komen in 3b-3h onder een eigen id
+  `004-11b` (uitgevoerde changesets mogen niet wijzigen).
+- `GET /batches/{id}/issues` sorteert op rowNumber; NULL-volgorde verschilt tussen H2 (vooraan) en
+  PostgreSQL (achteraan); nog niet gelijkgetrokken.
+
+### Open punt vóór 3h (moet beslist zijn voordat 3h start)
+R-THR-06 noemt CRITICAL/BLOCKING en WARNING maar niet ERROR: letterlijk geïmplementeerd krijgt een
+levering met 500 verworpen regels `validation_result = VALID`. Voorstel: ERROR (verworpen records) ⇒
+minstens `VALID_WITH_WARNINGS`, of expliciet overlaten aan `REJECTED_RECORD_THRESHOLD_EXCEEDED`.
+Te laten beslissen door een Denker (of de mens) vóór 3h.

@@ -14,3 +14,5 @@ databaseChangeLog:
       file: db/changelog/002-import-screening-core.sql
   - include:
       file: db/changelog/003-import-batch-baseline-audit.sql
+  - include:
+      file: db/changelog/004-import-rules-core.sql

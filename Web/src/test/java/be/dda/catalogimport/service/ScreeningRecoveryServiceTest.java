@@ -13,7 +13,6 @@ import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.dao.RowIssueDao;
-import be.dda.catalogimport.dao.RowIssueDao.IssueRow;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import be.dda.catalogimport.dao.TaskRunRepository;
 import be.dda.catalogimport.domain.CatalogImportTask;
@@ -25,7 +24,6 @@ import be.dda.catalogimport.domain.ImportDefinition;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportLink;
 import be.dda.catalogimport.domain.RevisionStatus;
-import be.dda.catalogimport.domain.RowIssueSeverity;
 import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.domain.SourceOrganisationType;
 import be.dda.catalogimport.domain.TaskRun;
@@ -33,6 +31,7 @@ import be.dda.catalogimport.domain.TaskRunStatus;
 import be.dda.catalogimport.domain.TaskTriggerType;
 import be.dda.catalogimport.service.DeliveryScreeningService.ScreeningOutcome;
 import be.dda.catalogimport.service.ScreeningRecoveryService.RecoveryReport;
+import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import be.dda.catalogimport.service.support.ImportValueRules;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -228,8 +227,10 @@ class ScreeningRecoveryServiceTest {
         batches.saveAndFlush(batch);
         Instant now = Instant.now();
         stage.insertBatch(List.of(stageRow(delivered, 2, "R1", now), stageRow(delivered, 3, "R2", now)));
-        rowIssues.insertBatch(List.of(new IssueRow(delivered.batchId(), delivered.deliveryFileId(), 4,
-                "PRICE_UNREADABLE", "PRIJS", RowIssueSeverity.ERROR, "12,3x", "unreadable price", now)));
+        // Classificatie loopt altijd via de catalogus; een test mag daar geen uitzondering op zijn.
+        rowIssues.insertBatch(List.of(ImportIssueCatalog.issue(delivered.batchId(),
+                delivered.deliveryFileId(), 4L, ImportValueRules.CODE_PRICE_UNREADABLE, "PRIJS", "12,3x",
+                null, "unreadable price", now)));
         return new Stuck(delivered.batchId(), delivered.taskRunId());
     }
 

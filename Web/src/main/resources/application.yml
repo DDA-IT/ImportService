@@ -26,8 +26,11 @@ catalogimport:
     # Aantal gestagede regels per chunk-transactie tijdens de delta en de mutatiegeneratie
     # (design par. 9 stap E). Elke chunk legt ook het hervatpunt vast.
     mutation-chunk-size: 5000
-    # Boven dit aantal verworpen regels wordt de levering geblokkeerd in plaats van verder gelezen.
-    max-recorded-row-issues: 1000
+    # Aantal bewaarde voorbeeldrijen per foutcode (ontwerp fase 3, R-ISS-03). Boven dit aantal worden er
+    # geen extra voorbeelden bewaard, maar blijven de volledige aantallen per code behouden in één
+    # ROW_ISSUE_RECORDING_CAPPED-melding. De levering blokkeert hier NIET door: dit is een logginggrens,
+    # geen businessoordeel (vervangt de fase 2-grens max-recorded-row-issues / TOO_MANY_ROW_ISSUES).
+    max-sample-rows-per-code: 200
     # Maximale lengte van een datalijn in tekens; langere regels worden verworpen, niet afgekapt.
     max-line-length: 100000
     # Bij het opstarten: een batch die op SCREENING bleef staan wordt FAILED (SCREENING_INTERRUPTED); een batch

@@ -65,14 +65,20 @@ public record DeliveryView(
      * De tellers zijn additief toegevoegd in bouwstap 2d: {@code null} betekent onbekend (de
      * screening is er niet aan toegekomen) en nooit stil {@code 0}. {@code contentMutationCount}
      * telt de aanbiedingsmutaties zonder de {@code IMPORT_MARKER}.
+     * <p>
+     * {@code validationResult} is additief toegevoegd in bouwstap 3a: het inhoudelijke eindoordeel
+     * naast {@code status}, {@code null} zolang er niets vastgesteld is.
      */
-    public record BatchView(long batchId, String status, int attemptNo, Long rawRecordCount,
-                            Long validRecordCount, Long rejectedRecordCount, Long duplicateIdentityCount,
-                            Long newCount, Long changedCount, Long unchangedCount,
-                            Long contentMutationCount, String blockedCode, String blockedReason) {
+    public record BatchView(long batchId, String status, String validationResult, int attemptNo,
+                            Long rawRecordCount, Long validRecordCount, Long rejectedRecordCount,
+                            Long duplicateIdentityCount, Long newCount, Long changedCount,
+                            Long unchangedCount, Long contentMutationCount, String blockedCode,
+                            String blockedReason) {
 
         static BatchView of(ImportBatch batch) {
-            return new BatchView(batch.getId(), batch.getStatus().name(), batch.getAttemptNo(),
+            return new BatchView(batch.getId(), batch.getStatus().name(),
+                    batch.getValidationResult() == null ? null : batch.getValidationResult().name(),
+                    batch.getAttemptNo(),
                     batch.getRawRecordCount(), batch.getValidRecordCount(), batch.getRejectedRecordCount(),
                     batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
                     batch.getUnchangedCount(), batch.getContentMutationCount(), batch.getBlockedCode(),

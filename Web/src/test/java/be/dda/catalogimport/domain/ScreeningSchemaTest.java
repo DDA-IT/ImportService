@@ -19,6 +19,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,9 +30,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * Fase 2a (docs/design/fase2-screening-design.md): bewijst dat changeset 002 migreert, dat
- * Hibernate de nieuwe entiteiten met {@code ddl-auto: validate} aanvaardt en dat de
- * databaseconstraints van het screeningschema werkelijk afdwingen wat ze beloven.
+ * Fase 2a (docs/design/fase2-screening-design.md) en fase 3a (docs/design/fase3-rules-design.md
+ * par. 2): bewijst dat changeset 002 en 004 migreren, dat Hibernate de entiteiten met
+ * {@code ddl-auto: validate} aanvaardt en dat de databaseconstraints van het screeningschema
+ * werkelijk afdwingen wat ze beloven.
  * {@code import_candidate_stage} en {@code catalog_source_state} hebben geen entiteit en worden
  * via JdbcTemplate getest. Codes zijn per test uniek omdat de H2-database gedeeld is.
  */
@@ -346,15 +348,134 @@ class ScreeningSchemaTest {
         Scenario s = scenario("ISSUE");
         ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
         DeliveryFile file = s.file();
-        ImportRowIssue issue = new ImportRowIssue(batch, file, 7, "PRICE_UNREADABLE", "Prijs onleesbaar");
+        ImportRowIssue issue = new ImportRowIssue(batch, file, 7L, "PRICE_UNREADABLE", "Prijs onleesbaar");
         issue.setFieldName("PRIJS");
         issue.setSourceValue("12,3x");
         rowIssues.saveAndFlush(issue);
-        rowIssues.saveAndFlush(new ImportRowIssue(batch, file, 9, "IDENTITY_COMPONENT_EMPTY", "Leeg"));
+        rowIssues.saveAndFlush(new ImportRowIssue(batch, file, 9L, "IDENTITY_COMPONENT_EMPTY", "Leeg"));
 
         assertThat(rowIssues.countByBatchId(batch.getId())).isEqualTo(2);
         assertThat(rowIssues.findByBatchId(batch.getId(), PageRequest.of(0, 1)).getContent()).hasSize(1);
         assertThat(rowIssues.findById(issue.getId()).orElseThrow().getSeverity()).isEqualTo(RowIssueSeverity.ERROR);
+    }
+
+    // --- Fase 3a, changeset 004-12: import_row_issue draagt alle drie de controleniveaus ---------
+
+    /**
+     * Een probleem op leverings- of structuurniveau hangt aan geen enkele bronregel en aan geen
+     * enkel bestand. Beide kolommen moeten daarom {@code null} kunnen zijn; een verzonnen
+     * regelnummer 0 zou dat verschil verbergen.
+     */
+    @Test
+    void acceptsAnIssueWithoutARowNumberAndWithoutADeliveryFile() {
+        Scenario s = scenario("ISSNULL");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+
+        ImportRowIssue deliveryIssue = new ImportRowIssue(batch, null, null, "SOURCE_FILE_EMPTY",
+                "The delivery file contains no lines");
+        deliveryIssue.setSeverity(RowIssueSeverity.BLOCKING);
+        deliveryIssue.setIssueDomain(IssueDomain.STRUCTURE_DATASET);
+        deliveryIssue.setControlLevel(ControlLevel.DELIVERY);
+        deliveryIssue.setImpactScope(ImpactScope.DELIVERY);
+        deliveryIssue.setExpectedValue("1");
+        rowIssues.saveAndFlush(deliveryIssue);
+
+        ImportRowIssue found = rowIssues.findById(deliveryIssue.getId()).orElseThrow();
+        assertThat(found.getRowNumber()).isNull();
+        assertThat(found.getDeliveryFile()).isNull();
+        assertThat(found.getSeverity()).isEqualTo(RowIssueSeverity.BLOCKING);
+        assertThat(found.getIssueDomain()).isEqualTo(IssueDomain.STRUCTURE_DATASET);
+        assertThat(found.getControlLevel()).isEqualTo(ControlLevel.DELIVERY);
+        assertThat(found.getImpactScope()).isEqualTo(ImpactScope.DELIVERY);
+        assertThat(found.getHandlingStatus()).isEqualTo(IssueHandlingStatus.DETECTED);
+        assertThat(found.getExpectedValue()).isEqualTo("1");
+        assertThat(found.getIssueGroupId()).isNull();
+        assertThat(found.getOccurrenceSeq()).isNull();
+        assertThat(found.getRuleConfigVersion()).isNull();
+    }
+
+    /**
+     * Changeset 004-12 breidt de bestaande tabel uit in plaats van ze te vervangen: een rij die
+     * enkel de fase 2-kolommen invult - zoals elke rij die vóór de migratie bestond - blijft geldig
+     * en krijgt de gedocumenteerde defaults.
+     */
+    @Test
+    void appliesTheDocumentedDefaultsSoPhaseTwoRowsStayValid() {
+        Scenario s = scenario("ISSDEF");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+
+        jdbc.update("insert into import_row_issue (batch_id, issue_code, message, created_at) "
+                + "values (?, 'PRICE_UNREADABLE', 'legacy row', ?)", batch.getId(), OffsetDateTime.now());
+
+        assertThat(rowIssues.findByBatchId(batch.getId(), PageRequest.of(0, 10)).getContent())
+                .singleElement()
+                .satisfies(found -> {
+                    assertThat(found.getSeverity()).isEqualTo(RowIssueSeverity.ERROR);
+                    assertThat(found.getIssueDomain()).isEqualTo(IssueDomain.MAPPING_VALIDATION);
+                    assertThat(found.getControlLevel()).isEqualTo(ControlLevel.RECORD);
+                    assertThat(found.getImpactScope()).isEqualTo(ImpactScope.RECORD);
+                    assertThat(found.getHandlingStatus()).isEqualTo(IssueHandlingStatus.DETECTED);
+                });
+    }
+
+    @Test
+    void refusesAnIssueThatPointsToAnUnknownIssueGroup() {
+        Scenario s = scenario("ISSFK");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+
+        assertThatThrownBy(() -> jdbc.update("insert into import_row_issue (batch_id, issue_code, message, "
+                        + "issue_group_id, created_at) values (?, 'PRICE_UNREADABLE', 'orphan', ?, ?)",
+                batch.getId(), 999_999_999L, OffsetDateTime.now()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    // --- Fase 3a, changeset 004-4: import_issue_group (JDBC-only, gevuld vanaf bouwstap 3g) ------
+
+    @Test
+    void keepsOneIssueGroupPerSignatureAndAppliesItsDefaults() {
+        Scenario s = scenario("GRP");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+
+        insertIssueGroup(batch.getId(), "PRICE_UNREADABLE", "PRIJS|unreadable", 500L, 200);
+
+        // uk_import_issue_group_signature: dezelfde signatuur is één groep, geen tweede rij.
+        assertThatThrownBy(() -> insertIssueGroup(batch.getId(), "PRICE_UNREADABLE", "PRIJS|unreadable",
+                500L, 200)).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatCode(() -> insertIssueGroup(batch.getId(), "PRICE_UNREADABLE", "BEDRAG|unreadable",
+                3L, 3)).doesNotThrowAnyException();
+
+        Map<String, Object> group = jdbc.queryForMap("select incident_kind, is_bulk_incident, "
+                        + "handling_status, occurrence_count, recorded_sample_count from import_issue_group "
+                        + "where batch_id = ? and signature = ?", batch.getId(), "PRIJS|unreadable");
+        assertThat(group.get("incident_kind")).isEqualTo("GENERIC");
+        assertThat(group.get("is_bulk_incident")).isEqualTo(false);
+        assertThat(group.get("handling_status")).isEqualTo("DETECTED");
+        // Het volledige aantal en het aantal bewaarde voorbeelden lopen bewust uiteen (R-ISS-03).
+        assertThat(((Number) group.get("occurrence_count")).longValue()).isEqualTo(500L);
+        assertThat(((Number) group.get("recorded_sample_count")).intValue()).isEqualTo(200);
+    }
+
+    @Test
+    void rejectsAnUnknownIncidentKindOnAnIssueGroup() {
+        Scenario s = scenario("GRPKIND");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+
+        assertThatThrownBy(() -> jdbc.update("insert into import_issue_group (batch_id, issue_code, "
+                        + "signature, severity, issue_domain, control_level, impact_scope, incident_kind, "
+                        + "occurrence_count, recorded_sample_count) "
+                        + "values (?, 'PRICE_UNREADABLE', 'x', 'ERROR', 'PRICE', 'RECORD', 'RECORD', "
+                        + "'NONSENSE', 1, 1)", batch.getId()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    private void insertIssueGroup(Long batchId, String issueCode, String signature, long occurrences,
+                                  int samples) {
+        jdbc.update("insert into import_issue_group (batch_id, issue_code, signature, severity, "
+                        + "issue_domain, control_level, impact_scope, occurrence_count, recorded_sample_count, "
+                        + "first_detected_at, last_detected_at) "
+                        + "values (?, ?, ?, 'ERROR', 'PRICE', 'RECORD', 'RECORD', ?, ?, ?, ?)",
+                batchId, issueCode, signature, occurrences, samples, OffsetDateTime.now(),
+                OffsetDateTime.now());
     }
 
     // --- import_candidate_stage (JDBC-only) ----------------------------------------------------

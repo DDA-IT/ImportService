@@ -32,10 +32,16 @@ public class BatchQueryService {
     public static final int DEFAULT_PAGE_SIZE = 50;
     public static final int MAX_PAGE_SIZE = 200;
 
-    /** De volledige stand van één screeningbatch; tellers zijn {@code null} wanneer ze onbekend zijn. */
+    /**
+     * De volledige stand van één screeningbatch; tellers zijn {@code null} wanneer ze onbekend zijn.
+     * <p>
+     * {@code validationResult} is het inhoudelijke eindoordeel naast {@code status} (fase 3,
+     * afwijking D) en is {@code null} zolang de screening loopt of bij een technische fout.
+     */
     public record BatchDetail(long batchId, long deliveryId, long importLinkId, long definitionRevisionId,
-                              Long taskRunId, int attemptNo, String status, Instant startedAt,
-                              Instant finishedAt, long stagedRowCount, long mutationProgressRowNumber,
+                              Long taskRunId, int attemptNo, String status, String validationResult,
+                              Instant startedAt, Instant finishedAt, long stagedRowCount,
+                              long mutationProgressRowNumber,
                               Long rawRecordCount, Long validRecordCount, Long rejectedRecordCount,
                               Long duplicateIdentityCount, Long newCount, Long changedCount,
                               Long unchangedCount, Long contentMutationCount, String blockedCode,
@@ -46,7 +52,9 @@ public class BatchQueryService {
             return new BatchDetail(batch.getId(), batch.getDelivery().getId(), batch.getImportLink().getId(),
                     batch.getDefinitionRevision().getId(),
                     batch.getTaskRun() == null ? null : batch.getTaskRun().getId(), batch.getAttemptNo(),
-                    batch.getStatus().name(), batch.getStartedAt(), batch.getFinishedAt(),
+                    batch.getStatus().name(),
+                    batch.getValidationResult() == null ? null : batch.getValidationResult().name(),
+                    batch.getStartedAt(), batch.getFinishedAt(),
                     batch.getStagedRowCount(), batch.getMutationProgressRowNumber(), batch.getRawRecordCount(),
                     batch.getValidRecordCount(), batch.getRejectedRecordCount(),
                     batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
@@ -77,13 +85,25 @@ public class BatchQueryService {
         }
     }
 
-    /** Eén probleem bij één fysieke bronregel; {@code sourceValue} is een afgekapt fragment. */
-    public record IssueRow(long id, long rowNumber, String issueCode, String fieldName, String severity,
-                           String sourceValue, String message, Instant createdAt) {
+    /**
+     * Eén vastgesteld probleem; {@code sourceValue} is een afgekapt fragment.
+     * <p>
+     * {@code rowNumber} is sinds fase 3 <b>nullable</b>: een probleem op leverings- of
+     * structuurniveau ({@code controlLevel}) hoort bij geen enkele bronregel. {@code severity} kan
+     * naast {@code ERROR}/{@code WARNING} ook {@code CRITICAL}, {@code BLOCKING} of {@code INFO}
+     * zijn. {@code issueDomain}, {@code controlLevel}, {@code impactScope} en {@code handlingStatus}
+     * zijn additief toegevoegd.
+     */
+    public record IssueRow(long id, Long rowNumber, String issueCode, String fieldName, String severity,
+                           String issueDomain, String controlLevel, String impactScope,
+                           String handlingStatus, String sourceValue, String expectedValue,
+                           String message, Instant createdAt) {
 
         private static IssueRow of(ImportRowIssue issue) {
             return new IssueRow(issue.getId(), issue.getRowNumber(), issue.getIssueCode(), issue.getFieldName(),
-                    issue.getSeverity().name(), issue.getSourceValue(), issue.getMessage(), issue.getCreatedAt());
+                    issue.getSeverity().name(), issue.getIssueDomain().name(), issue.getControlLevel().name(),
+                    issue.getImpactScope().name(), issue.getHandlingStatus().name(), issue.getSourceValue(),
+                    issue.getExpectedValue(), issue.getMessage(), issue.getCreatedAt());
         }
     }
 

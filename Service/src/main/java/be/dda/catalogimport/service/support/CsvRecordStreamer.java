@@ -192,7 +192,8 @@ public final class CsvRecordStreamer {
                         "Header line " + physicalLineCount + " cannot be parsed: " + unreadable.getMessage());
             }
             if (config.expectedColumnCount() != null && header.length != config.expectedColumnCount()) {
-                throw new ScreeningBlockedException(CODE_HEADER_COLUMN_COUNT_MISMATCH,
+                throw new ScreeningBlockedException(CODE_HEADER_COLUMN_COUNT_MISMATCH, null,
+                        String.valueOf(header.length), String.valueOf(config.expectedColumnCount()),
                         "Header has " + header.length + " columns but the revision declares "
                                 + config.expectedColumnCount());
             }
@@ -218,8 +219,8 @@ public final class CsvRecordStreamer {
             for (String field : config.declaredFields()) {
                 Integer position = byName.get(normalise(field));
                 if (position == null) {
-                    throw new ScreeningBlockedException(CODE_HEADER_FIELD_MISSING + ":" + field,
-                            "Declared field '" + field + "' is missing from the header on line "
+                    throw new ScreeningBlockedException(CODE_HEADER_FIELD_MISSING + ":" + field, field,
+                            null, field, "Declared field '" + field + "' is missing from the header on line "
                                     + physicalLineCount);
                 }
                 resolved.put(field, position);

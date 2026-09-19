@@ -18,12 +18,14 @@ import be.dda.catalogimport.domain.ImportBatchStatus;
 import be.dda.catalogimport.domain.RowIssueSeverity;
 import be.dda.catalogimport.domain.TaskRun;
 import be.dda.catalogimport.domain.TaskRunStatus;
+import be.dda.catalogimport.domain.ValidationResult;
 import be.dda.catalogimport.service.support.CandidateNormaliser;
 import be.dda.catalogimport.service.support.CandidateNormaliser.NormalisedCandidate;
 import be.dda.catalogimport.service.support.CsvRecordStreamer;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.LineIssue;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.ParsedRow;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.ReadSummary;
+import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import be.dda.catalogimport.service.support.ScreeningBlockedException;
 import be.dda.catalogimport.service.support.SourceStructureConfig;
 import be.dda.catalogimport.service.support.SourceStructureConfigFactory;
@@ -33,6 +35,7 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
@@ -57,9 +60,17 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       een prijs 0 op; de batch eindigt dan gewoon op {@code SCREENED} met
  *       {@code rejected_record_count > 0}.</li>
  *   <li>Een contract- of structuurfout (leeg bestand, header-only, ontbrekend headerveld,
- *       kolomaantal, aantalsmismatch, te veel rijfouten, dubbele identiteit, hashcollisie) blokkeert
- *       de <b>volledige</b> levering: {@code BLOCKED}, nul inhoudelijke mutaties, wel één marker met
- *       {@code outcome=BLOCKED}.</li>
+ *       kolomaantal, aantalsmismatch, dubbele identiteit, hashcollisie) blokkeert de <b>volledige</b>
+ *       levering: {@code BLOCKED}, nul inhoudelijke mutaties, wel één marker met
+ *       {@code outcome=BLOCKED}. Elke blokkade laat sinds fase 3 ook één issuerij achter op niveau
+ *       {@code STRUCTURE} of {@code DELIVERY} — de blokkeerreden op de batch blijft daarnaast
+ *       ongewijzigd bestaan.</li>
+ *   <li><b>Veel identieke regelfouten blokkeren niet.</b> Per foutcode worden hoogstens
+ *       {@code catalogimport.screening.max-sample-rows-per-code} voorbeeldrijen bewaard (de laagste
+ *       regelnummers, want er wordt in leesvolgorde gestreamd); de volledige aantallen per code
+ *       blijven bewaard in één {@code ROW_ISSUE_RECORDING_CAPPED}-melding. Dat vervangt de
+ *       fase 2-blokkade {@code TOO_MANY_ROW_ISSUES}, die een technische logginglimiet was en geen
+ *       businessoordeel (ontwerp fase 3, afwijking C).</li>
  *   <li>Een dubbele aanbiedingsidentiteit binnen één levering is nooit "laatste wint": élke
  *       betrokken regel krijgt een probleem en de levering blokkeert.</li>
  *   <li>De screening schrijft <b>nooit</b> in {@code catalog_source_state}. Een ongewijzigde regel
@@ -91,23 +102,31 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class DeliveryScreeningService {
 
     /** Het verwachte byte-aantal uit het manifest klopt niet met het ontvangen bestand. */
-    public static final String CODE_BYTE_SIZE_MISMATCH = "BYTE_SIZE_MISMATCH";
+    public static final String CODE_BYTE_SIZE_MISMATCH = ImportIssueCatalog.BYTE_SIZE_MISMATCH;
     /** Het verwachte recordaantal uit het manifest klopt niet met het gelezen bestand. */
-    public static final String CODE_RECORD_COUNT_MISMATCH = "RECORD_COUNT_MISMATCH";
+    public static final String CODE_RECORD_COUNT_MISMATCH = ImportIssueCatalog.RECORD_COUNT_MISMATCH;
     /** Het bestand bevat een header maar geen enkele datalijn (aanname A3). */
-    public static final String CODE_SOURCE_NO_DATA_RECORDS = "SOURCE_NO_DATA_RECORDS";
-    /** Meer verworpen regels dan {@code catalogimport.screening.max-recorded-row-issues}. */
-    public static final String CODE_TOO_MANY_ROW_ISSUES = "TOO_MANY_ROW_ISSUES";
+    public static final String CODE_SOURCE_NO_DATA_RECORDS = ImportIssueCatalog.SOURCE_NO_DATA_RECORDS;
     /** Dezelfde aanbiedingsidentiteit komt meermaals voor in één levering; nooit "laatste wint". */
-    public static final String CODE_DUPLICATE_IDENTITY_IN_DELIVERY = "DUPLICATE_IDENTITY_IN_DELIVERY";
+    public static final String CODE_DUPLICATE_IDENTITY_IN_DELIVERY =
+            ImportIssueCatalog.DUPLICATE_IDENTITY_IN_DELIVERY;
     /** Zelfde identiteitshash, andere sleutelcomponenten: de identiteit is niet betrouwbaar. */
-    public static final String CODE_IDENTITY_HASH_COLLISION = "IDENTITY_HASH_COLLISION";
+    public static final String CODE_IDENTITY_HASH_COLLISION = ImportIssueCatalog.IDENTITY_HASH_COLLISION;
     /** Technische fout tijdens de screening; batch en run eindigen op FAILED. */
-    public static final String CODE_SCREENING_FAILED = "SCREENING_FAILED";
+    public static final String CODE_SCREENING_FAILED = ImportIssueCatalog.SCREENING_FAILED;
+    /**
+     * Er zijn meer voorvallen van een foutcode dan er voorbeeldrijen bewaard worden. Informatief:
+     * dit blokkeert de levering <b>niet</b> (ontwerp fase 3, afwijking C).
+     */
+    public static final String CODE_ROW_ISSUE_RECORDING_CAPPED =
+            ImportIssueCatalog.ROW_ISSUE_RECORDING_CAPPED;
     /** Deze levering is onder deze revisie al gescreend; een tweede screening is een conflict. */
     public static final String CODE_ALREADY_SCREENED = "DELIVERY_ALREADY_SCREENED_WITH_THIS_REVISION";
     /** Alleen een batch in {@code MUTATING} kan hervat worden. */
     public static final String CODE_BATCH_NOT_RESUMABLE = "BATCH_NOT_RESUMABLE";
+
+    /** Standaardaantal bewaarde voorbeeldrijen per foutcode (ontwerp fase 3, R-ISS-03). */
+    public static final int DEFAULT_MAX_SAMPLE_ROWS_PER_CODE = 200;
 
     /** Fase 2 kent geen volledigheidscontract; {@code completeness_proven} is altijd false (A6). */
     public static final String COMPLETENESS_REASON = "PHASE2_NO_COMPLETENESS_CONTRACT";
@@ -123,10 +142,10 @@ public class DeliveryScreeningService {
      * zijn — nooit stil {@code 0}. Een geblokkeerde batch die de delta nooit bereikt heeft, heeft
      * dus geen {@code newCount}, maar wél {@code contentMutationCount = 0}: dát is wél zeker.
      */
-    public record ScreeningOutcome(long batchId, ImportBatchStatus status, Long rawRecordCount,
-                                   Long validRecordCount, Long rejectedRecordCount, long stagedRowCount,
-                                   Long duplicateIdentityCount, Long newCount, Long changedCount,
-                                   Long unchangedCount, Long contentMutationCount,
+    public record ScreeningOutcome(long batchId, ImportBatchStatus status, ValidationResult validationResult,
+                                   Long rawRecordCount, Long validRecordCount, Long rejectedRecordCount,
+                                   long stagedRowCount, Long duplicateIdentityCount, Long newCount,
+                                   Long changedCount, Long unchangedCount, Long contentMutationCount,
                                    String blockedCode, String blockedReason) {
     }
 
@@ -143,19 +162,41 @@ public class DeliveryScreeningService {
         }
     }
 
-    /** Een vastgestelde reden om de volledige levering te blokkeren, met wat eromheen bekend is. */
-    private record Blockage(String code, String reason, Long duplicateRowCount) {
+    /**
+     * Een vastgestelde reden om de volledige levering te blokkeren, met wat eromheen bekend is.
+     * {@code rowNumber} is gevuld wanneer de blokkade aan één regel op te hangen is (hashcollisie);
+     * bij een leverings- of structuurfout blijft die bewust {@code null} in plaats van 0.
+     */
+    private record Blockage(String code, String reason, String fieldName, String sourceValue,
+                            String expectedValue, Long rowNumber, Long duplicateRowCount) {
+
+        private static Blockage of(ScreeningBlockedException blocked) {
+            return new Blockage(blocked.getCode(), blocked.getMessage(), blocked.getFieldName(),
+                    blocked.getSourceValue(), blocked.getExpectedValue(), null, null);
+        }
+
+        private static Blockage onRow(String code, long rowNumber, String reason) {
+            return new Blockage(code, reason, null, null, null, rowNumber, null);
+        }
+
+        private static Blockage duplicates(String code, long duplicateRowCount, String reason) {
+            return new Blockage(code, reason, null, null, null, null, duplicateRowCount);
+        }
     }
 
     /** Lopende stand van één screening; enkel binnen één {@link #screen(long)}-aanroep gebruikt. */
     private static final class Progress {
         private final List<StageRow> pendingRows = new ArrayList<>();
         private final List<IssueRow> pendingIssues = new ArrayList<>();
+        /** Volledige aantallen per foutcode — ook boven de voorbeeldcap (R-ISS-03). */
         private final Map<String, Long> issueCounts = new TreeMap<>();
+        /** Aantal reeds bewaarde voorbeeldrijen per foutcode. */
+        private final Map<String, Integer> recordedSamples = new HashMap<>();
         private long validCount;
         private long rejectedCount;
         private long stagedCount;
-        private long recordedErrorCount;
+        private boolean sampleCapReached;
+        private boolean capNoticeRecorded;
         private Long rawRecordCount;
     }
 
@@ -172,7 +213,7 @@ public class DeliveryScreeningService {
     private final MutationDao mutations;
     private final TransactionTemplate transaction;
     private final int stageBatchSize;
-    private final int maxRecordedRowIssues;
+    private final int maxSampleRowsPerCode;
     private final int maxLineLength;
 
     public DeliveryScreeningService(DeliveryArchiveStore archive, SourceStructureConfigFactory configFactory,
@@ -180,8 +221,9 @@ public class DeliveryScreeningService {
                                     TaskRunRepository runs, CandidateStageDao stage, RowIssueDao rowIssues,
                                     MutationDao mutations, PlatformTransactionManager transactionManager,
                                     @Value("${catalogimport.screening.stage-batch-size:2000}") int stageBatchSize,
-                                    @Value("${catalogimport.screening.max-recorded-row-issues:1000}")
-                                    int maxRecordedRowIssues,
+                                    @Value("${catalogimport.screening.max-sample-rows-per-code:"
+                                            + DEFAULT_MAX_SAMPLE_ROWS_PER_CODE + "}")
+                                    int maxSampleRowsPerCode,
                                     @Value("${catalogimport.screening.max-line-length:100000}") int maxLineLength) {
         this.archive = archive;
         this.configFactory = configFactory;
@@ -193,7 +235,8 @@ public class DeliveryScreeningService {
         this.mutations = mutations;
         this.transaction = new TransactionTemplate(transactionManager);
         this.stageBatchSize = stageBatchSize > 0 ? stageBatchSize : CandidateStageDao.DEFAULT_BATCH_SIZE;
-        this.maxRecordedRowIssues = maxRecordedRowIssues;
+        this.maxSampleRowsPerCode = maxSampleRowsPerCode > 0
+                ? maxSampleRowsPerCode : DEFAULT_MAX_SAMPLE_ROWS_PER_CODE;
         this.maxLineLength = maxLineLength > 0 ? maxLineLength : CsvRecordStreamer.DEFAULT_MAX_LINE_LENGTH;
     }
 
@@ -219,13 +262,14 @@ public class DeliveryScreeningService {
             verifyExpectedByteSize(context);
             ReadSummary summary = readAndStage(context, progress);
             progress.rawRecordCount = summary.rawRecordCount();
+            recordSampleCapNotice(context, progress);
             flush(context, progress);
             verifyRecordCount(context, progress);
             transaction.executeWithoutResult(status -> toMutating(context, progress));
         } catch (ScreeningBlockedException blocked) {
+            recordSampleCapNotice(context, progress);
             flushBeforeBlocking(context, progress);
-            return transaction.execute(status ->
-                    block(context, new Blockage(blocked.getCode(), blocked.getMessage(), null), progress));
+            return transaction.execute(status -> block(context, Blockage.of(blocked), progress));
         } catch (RuntimeException | Error technical) {
             fail(context, technical);
             throw technical;
@@ -317,7 +361,8 @@ public class DeliveryScreeningService {
     private void verifyExpectedByteSize(Context context) {
         Long expected = context.expectedByteSize();
         if (expected != null && expected != context.fileByteSize()) {
-            throw new ScreeningBlockedException(CODE_BYTE_SIZE_MISMATCH,
+            throw new ScreeningBlockedException(CODE_BYTE_SIZE_MISMATCH, "byteSize",
+                    String.valueOf(context.fileByteSize()), String.valueOf(expected),
                     "Manifest declares " + expected + " bytes but the delivered file has "
                             + context.fileByteSize());
         }
@@ -331,7 +376,8 @@ public class DeliveryScreeningService {
         }
         Long expected = context.expectedRecordCount();
         if (expected != null && expected != raw) {
-            throw new ScreeningBlockedException(CODE_RECORD_COUNT_MISMATCH,
+            throw new ScreeningBlockedException(CODE_RECORD_COUNT_MISMATCH, "recordCount",
+                    String.valueOf(raw), String.valueOf(expected),
                     "Manifest declares " + expected + " records but the file contains " + raw);
         }
     }
@@ -377,20 +423,15 @@ public class DeliveryScreeningService {
                     flush(context, progress);
                 }
             } else if (result instanceof CandidateNormaliser.RowIssue rejected) {
-                progress.rejectedCount++;
                 addIssue(context, progress, rejected.rowNumber(), rejected.code(), rejected.fieldName(),
-                        rejected.sourceValue(), rejected.message(), RowIssueSeverity.ERROR);
+                        rejected.sourceValue(), rejected.message());
             }
         }
 
         @Override
         public void issue(LineIssue issue) {
-            RowIssueSeverity severity = issue.warning() ? RowIssueSeverity.WARNING : RowIssueSeverity.ERROR;
-            if (severity == RowIssueSeverity.ERROR) {
-                progress.rejectedCount++;
-            }
             addIssue(context, progress, issue.lineNumber(), issue.code(), issue.fieldName(),
-                    issue.sourceValue(), issue.message(), severity);
+                    issue.sourceValue(), issue.message());
         }
     }
 
@@ -404,22 +445,51 @@ public class DeliveryScreeningService {
                 Instant.now());
     }
 
+    /**
+     * Legt één vastgesteld probleem vast. De ernst komt uit {@link ImportIssueCatalog} en nooit uit
+     * de aanroeper: zo kan geen enkel pad een eigen oordeel wegschrijven (R-ISS-02/R-ISS-06).
+     * <p>
+     * <b>Alle voorvallen tellen, niet alle voorvallen worden bewaard.</b> De teller per code loopt
+     * altijd door — {@code rejected_record_count} blijft dus exact — maar per code worden hoogstens
+     * {@code maxSampleRowsPerCode} voorbeeldrijen bewaard. Omdat er in leesvolgorde gestreamd wordt,
+     * zijn dat deterministisch de laagste regelnummers (R-ISS-03).
+     */
     private void addIssue(Context context, Progress progress, long rowNumber, String code, String field,
-                          String sourceValue, String message, RowIssueSeverity severity) {
+                          String sourceValue, String message) {
+        RowIssueSeverity severity = ImportIssueCatalog.classify(code).severity();
         progress.issueCounts.merge(code, 1L, Long::sum);
         if (severity == RowIssueSeverity.ERROR) {
-            progress.recordedErrorCount++;
-            if (progress.recordedErrorCount > maxRecordedRowIssues) {
-                throw new ScreeningBlockedException(CODE_TOO_MANY_ROW_ISSUES,
-                        "More than " + maxRecordedRowIssues + " rows were rejected; recorded "
-                                + maxRecordedRowIssues + ", issues per code: " + describe(progress.issueCounts));
-            }
+            progress.rejectedCount++;
         }
-        progress.pendingIssues.add(new IssueRow(context.batchId(), context.deliveryFileId(), rowNumber, code,
-                field, severity, sourceValue, message, Instant.now()));
+        int recorded = progress.recordedSamples.getOrDefault(code, 0);
+        if (recorded >= maxSampleRowsPerCode) {
+            progress.sampleCapReached = true;
+            return;
+        }
+        progress.recordedSamples.put(code, recorded + 1);
+        progress.pendingIssues.add(ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(),
+                rowNumber, code, field, sourceValue, null, message, Instant.now()));
         if (progress.pendingIssues.size() >= stageBatchSize) {
             flush(context, progress);
         }
+    }
+
+    /**
+     * Eén informatieve melding wanneer er voorbeeldrijen weggelaten zijn, met de <b>volledige</b>
+     * aantallen per foutcode. Zo blijft na een bestand met een miljoen identieke fouten nog steeds
+     * zichtbaar hoeveel het er werkelijk waren, zonder een miljoen rijen te bewaren. Dit blokkeert de
+     * levering niet (ontwerp fase 3, afwijking C).
+     */
+    private void recordSampleCapNotice(Context context, Progress progress) {
+        if (!progress.sampleCapReached || progress.capNoticeRecorded) {
+            return;
+        }
+        progress.capNoticeRecorded = true;
+        progress.pendingIssues.add(ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(),
+                null, CODE_ROW_ISSUE_RECORDING_CAPPED, null, null, null,
+                "rowIssueSamples: '" + maxSampleRowsPerCode + "' is the maximum number of example rows kept "
+                        + "per issue code; occurrences per code: " + describe(progress.issueCounts),
+                Instant.now()));
     }
 
     /**
@@ -488,22 +558,24 @@ public class DeliveryScreeningService {
     private Blockage detectIdentityProblems(Context context) {
         OptionalLong inDelivery = stage.findIdentityHashCollisionRow(context.batchId());
         if (inDelivery.isPresent()) {
-            return new Blockage(CODE_IDENTITY_HASH_COLLISION, "Line " + inDelivery.getAsLong()
-                    + " shares its identity hash with another line in this delivery that has different "
-                    + "identity components", null);
+            return Blockage.onRow(CODE_IDENTITY_HASH_COLLISION, inDelivery.getAsLong(),
+                    "Line " + inDelivery.getAsLong()
+                            + " shares its identity hash with another line in this delivery that has different "
+                            + "identity components");
         }
         OptionalLong againstState = mutations.findSourceStateCollisionRow(context.batchId(),
                 context.importLinkId());
         if (againstState.isPresent()) {
-            return new Blockage(CODE_IDENTITY_HASH_COLLISION, "Line " + againstState.getAsLong()
-                    + " shares its identity hash with a known offer that has different identity components", null);
+            return Blockage.onRow(CODE_IDENTITY_HASH_COLLISION, againstState.getAsLong(),
+                    "Line " + againstState.getAsLong()
+                            + " shares its identity hash with a known offer that has different identity "
+                            + "components");
         }
         long duplicates = stage.countDuplicateRows(context.batchId());
         if (duplicates > 0) {
-            return new Blockage(CODE_DUPLICATE_IDENTITY_IN_DELIVERY, duplicates
+            return Blockage.duplicates(CODE_DUPLICATE_IDENTITY_IN_DELIVERY, duplicates, duplicates
                     + " lines repeat an offer identity that already occurs in this delivery; the delivery is "
-                    + "blocked because a repeated identity is never resolved by keeping the last line",
-                    duplicates);
+                    + "blocked because a repeated identity is never resolved by keeping the last line");
         }
         return null;
     }
@@ -548,12 +620,36 @@ public class DeliveryScreeningService {
         batch.setDuplicateIdentityCount(
                 classified.getOrDefault(CandidateClassification.DUPLICATE_IN_DELIVERY.name(), 0L));
         batch.setContentMutationCount(mutations.countContentMutations(context.batchId()));
+        ValidationResult validationResult = determineValidationResult(context.batchId(), false);
+        batch.setValidationResult(validationResult);
         batch.setStatus(ImportBatchStatus.SCREENED);
         batch.setFinishedAt(Instant.now());
         batches.saveAndFlush(batch);
-        writeMarker(context, "outcome=SCREENED");
+        writeMarker(context, "outcome=SCREENED", validationResult);
         finishTaskRun(context, TaskRunStatus.COMPLETED);
         return outcome(batch);
+    }
+
+    /**
+     * Het inhoudelijke eindoordeel naast de status (R-THR-06), voor zover in deze bouwstap te
+     * berekenen: {@code BLOCKING} bij een geblokkeerde levering of minstens één kritiek/blokkerend
+     * probleem, anders {@code VALID_WITH_WARNINGS} bij minstens één waarschuwing, anders
+     * {@code VALID}. {@code REVIEW_REQUIRED} (bulkincidenten en wachtende creaties) komt met de
+     * drempels in bouwstap 3h; tot dan wordt die waarde nooit gezet in plaats van geraden.
+     * <p>
+     * Leest met JdbcTemplate wat in deze transactie met JdbcTemplate geschreven is — nooit via JPA.
+     */
+    private ValidationResult determineValidationResult(long batchId, boolean blocked) {
+        Map<RowIssueSeverity, Long> counts = rowIssues.countsBySeverity(batchId);
+        boolean blockingIssue = counts.entrySet().stream()
+                .anyMatch(entry -> entry.getKey().isBlockingForBatch() && entry.getValue() > 0);
+        if (blocked || blockingIssue) {
+            return ValidationResult.BLOCKING;
+        }
+        if (counts.getOrDefault(RowIssueSeverity.WARNING, 0L) > 0) {
+            return ValidationResult.VALID_WITH_WARNINGS;
+        }
+        return ValidationResult.VALID;
     }
 
     /**
@@ -575,36 +671,59 @@ public class DeliveryScreeningService {
             recordDuplicateIssues(context, blockage.duplicateRowCount());
             batch.setDuplicateIdentityCount(blockage.duplicateRowCount());
         }
+        recordBlockageIssue(context, blockage);
         // Nul is hier geen aanname maar een vaststelling: een geblokkeerde levering genereert niets.
         batch.setContentMutationCount(mutations.countContentMutations(context.batchId()));
+        ValidationResult validationResult = determineValidationResult(context.batchId(), true);
+        batch.setValidationResult(validationResult);
         batch.setBlockedCode(truncate(blockage.code(), MAX_BLOCKED_CODE_LENGTH));
         batch.setBlockedReason(truncate(blockage.code() + ": " + blockage.reason(), MAX_BLOCKED_REASON_LENGTH));
         batch.setStatus(ImportBatchStatus.BLOCKED);
         batch.setFinishedAt(Instant.now());
         batches.saveAndFlush(batch);
-        writeMarker(context, "outcome=BLOCKED;blockedCode=" + blockage.code());
+        writeMarker(context, "outcome=BLOCKED;blockedCode=" + blockage.code(), validationResult);
         finishTaskRun(context, TaskRunStatus.COMPLETED);
         LOG.info("Batch {} blocked: {} ({})", context.batchId(), blockage.code(), blockage.reason());
         return outcome(batch);
     }
 
     /**
+     * Elke blokkade laat ook een issuerij achter (ontwerp fase 3, par. 3.3), op controleniveau
+     * {@code STRUCTURE} of {@code DELIVERY} met impactscope {@code DELIVERY}. Zonder die rij zou de
+     * zwaarste vaststelling over een levering alléén in {@code blocked_code} staan en dus buiten de
+     * probleemlijst vallen die de gebruiker leest. {@code blocked_code}/{@code blocked_reason}
+     * blijven onveranderd bestaan.
+     * <p>
+     * <b>Nooit twee keer.</b> Bestaat er al een rij met deze foutcode voor deze batch, dan wordt er
+     * geen samenvattende rij meer bijgeschreven: een dubbele identiteit heeft haar regels dan al
+     * gemeld, en een hervatte verwerking mag de blokkade niet verdubbelen.
+     */
+    private void recordBlockageIssue(Context context, Blockage blockage) {
+        if (rowIssues.countByBatchIdAndIssueCode(context.batchId(), blockage.code()) > 0) {
+            return;
+        }
+        rowIssues.insertBatch(List.of(ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(),
+                blockage.rowNumber(), blockage.code(), blockage.fieldName(), blockage.sourceValue(),
+                blockage.expectedValue(), blockage.reason(), Instant.now())));
+    }
+
+    /**
      * Elke regel die bij een dubbele identiteit betrokken is, krijgt haar eigen probleem met het
      * regelnummer van de eerste voorkomst — ook de eerste regel zelf, want zonder de rest is ook zij
-     * niet te vertrouwen. De issue-cap geldt onverkort: boven de cap worden er geen problemen meer
-     * bewaard, maar het volledige aantal staat in de blokkeerreden en in
-     * {@code duplicate_identity_count}.
+     * niet te vertrouwen. De voorbeeldcap per foutcode geldt onverkort: boven de cap worden er geen
+     * voorbeelden meer bewaard, maar het volledige aantal staat in de blokkeerreden én in
+     * {@code duplicate_identity_count} — het gaat dus nooit verloren.
      */
     private void recordDuplicateIssues(Context context, long duplicateRowCount) {
         stage.classifyDuplicates(context.batchId());
-        long alreadyRecorded = rowIssues.countBySeverity(context.batchId(), RowIssueSeverity.ERROR);
-        int budget = (int) Math.max(0, Math.min(maxRecordedRowIssues - alreadyRecorded, duplicateRowCount));
+        long alreadyRecorded = rowIssues.countByBatchIdAndIssueCode(context.batchId(),
+                CODE_DUPLICATE_IDENTITY_IN_DELIVERY);
+        int budget = (int) Math.max(0, Math.min(maxSampleRowsPerCode - alreadyRecorded, duplicateRowCount));
         List<DuplicateRow> duplicates = stage.findDuplicateRows(context.batchId(), budget);
         Instant now = Instant.now();
         List<IssueRow> issues = duplicates.stream()
-                .map(duplicate -> new IssueRow(context.batchId(), context.deliveryFileId(),
-                        duplicate.rowNumber(), CODE_DUPLICATE_IDENTITY_IN_DELIVERY, null,
-                        RowIssueSeverity.ERROR, null,
+                .map(duplicate -> ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(),
+                        duplicate.rowNumber(), CODE_DUPLICATE_IDENTITY_IN_DELIVERY, null, null, null,
                         "Offer identity occurs more than once in this delivery; first occurrence on line "
                                 + duplicate.firstRowNumber(), now))
                 .toList();
@@ -616,10 +735,11 @@ public class DeliveryScreeningService {
      * volledigheid in fase 2 niet bewezen is en welk bestand gescreend werd, zodat een latere
      * reconciliatie niet van de (wijzigbare) leveringsrijen hoeft af te hangen.
      */
-    private void writeMarker(Context context, String outcome) {
+    private void writeMarker(Context context, String outcome, ValidationResult validationResult) {
         mutations.insertMarker(context.mutationContext(),
                 outcome + ";completenessProven=false;completenessReason=" + COMPLETENESS_REASON
-                        + ";fileSha256=" + context.fileSha256(), Instant.now());
+                        + ";fileSha256=" + context.fileSha256()
+                        + ";validationResult=" + validationResult.name(), Instant.now());
     }
 
     /**
@@ -669,11 +789,11 @@ public class DeliveryScreeningService {
     }
 
     private static ScreeningOutcome outcome(ImportBatch batch) {
-        return new ScreeningOutcome(batch.getId(), batch.getStatus(), batch.getRawRecordCount(),
-                batch.getValidRecordCount(), batch.getRejectedRecordCount(), batch.getStagedRowCount(),
-                batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
-                batch.getUnchangedCount(), batch.getContentMutationCount(), batch.getBlockedCode(),
-                batch.getBlockedReason());
+        return new ScreeningOutcome(batch.getId(), batch.getStatus(), batch.getValidationResult(),
+                batch.getRawRecordCount(), batch.getValidRecordCount(), batch.getRejectedRecordCount(),
+                batch.getStagedRowCount(), batch.getDuplicateIdentityCount(), batch.getNewCount(),
+                batch.getChangedCount(), batch.getUnchangedCount(), batch.getContentMutationCount(),
+                batch.getBlockedCode(), batch.getBlockedReason());
     }
 
     private static String describe(Map<String, Long> issueCounts) {

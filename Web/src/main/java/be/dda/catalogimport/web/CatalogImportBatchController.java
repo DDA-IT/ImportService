@@ -50,7 +50,12 @@ public class CatalogImportBatchController {
         this.screening = screening;
     }
 
-    /** Status, alle tellers en eventuele blokkeerreden van één batch. */
+    /**
+     * Status, alle tellers en eventuele blokkeerreden van één batch.
+     * <p>
+     * Additief sinds bouwstap 3a: {@code validationResult} is het inhoudelijke eindoordeel naast
+     * {@code status} en is {@code null} zolang er niets vastgesteld is.
+     */
     @GetMapping("/{batchId}")
     BatchDetail batch(@PathVariable("batchId") long batchId) {
         return queries.getBatch(batchId);
@@ -66,7 +71,15 @@ public class CatalogImportBatchController {
         return queries.getMutations(batchId, actionType, page, size);
     }
 
-    /** De regelproblemen (rijnummer, code, veld, bronwaarde), gepagineerd. */
+    /**
+     * De vastgestelde problemen (rijnummer, code, veld, bronwaarde), gepagineerd.
+     * <p>
+     * Sinds bouwstap 3a draagt deze lijst alle drie de controleniveaus: {@code rowNumber} kan
+     * {@code null} zijn (een leverings- of structuurprobleem hoort bij geen enkele regel) en
+     * {@code severity} kan naast {@code ERROR}/{@code WARNING} ook {@code CRITICAL},
+     * {@code BLOCKING} of {@code INFO} zijn. {@code issueDomain}, {@code controlLevel},
+     * {@code impactScope}, {@code handlingStatus} en {@code expectedValue} zijn additief.
+     */
     @GetMapping("/{batchId}/issues")
     PageResult<IssueRow> issues(@PathVariable("batchId") long batchId,
                                 @RequestParam(value = "page", required = false) Integer page,
