@@ -464,3 +464,23 @@ R-THR-06 noemt CRITICAL/BLOCKING en WARNING maar niet ERROR: letterlijk geïmple
 levering met 500 verworpen regels `validation_result = VALID`. Voorstel: ERROR (verworpen records) ⇒
 minstens `VALID_WITH_WARNINGS`, of expliciet overlaten aan `REJECTED_RECORD_THRESHOLD_EXCEEDED`.
 Te laten beslissen door een Denker (of de mens) vóór 3h.
+
+## 10. Aanvullingen uit stap 3b (geïmplementeerd, hoofdsessie akkoord)
+
+- Changesets: 004-1 (+ 004-1b seed van 17 velden), 004-2, 004-3, 004-10, 004-11b (`filtered_out_count`,
+  `error_before_filter_count`). `import_record_filter` heeft extra nullable `created_at/created_by`.
+  Overige `import_batch`-kolommen volgen onder 004-11c/d in latere stappen.
+- Filtercombinatiesemantiek: evaluatie op `sequence_number`; in scope = (geen INCLUDE-rijen OF ≥1 INCLUDE
+  matcht) EN geen EXCLUDE matcht; matchende REJECT verwerpt met `FILTER_RECORD_REJECTED` (ERROR).
+  `null_behaviour`: `EXCLUDE` (default), `REJECT`, `COMPARE_AS_EMPTY`.
+- Tellers: met filters tellen structureel onleesbare records (`ROW_COLUMN_COUNT_MISMATCH`, `ROW_TOO_LONG`,
+  `CSV_UNCLOSED_QUOTE`) in `error_before_filter_count`, niet in `rejected_record_count`; zonder filters
+  gaat alles naar `rejected_record_count` (Fase 2-gedrag ongewijzigd).
+- Extra codes: `CONFIG_MAPPING_TYPE_INCOMPATIBLE`, `FILTER_RECORD_REJECTED`. `IdentityClass.NONE` toegevoegd.
+  Voorbehouden doelveldcodes (SUPPLIER, SUPPLIER_GROUP, SUPPLIER_REFERENCE, DISCOUNT_CODE) staan niet in de seed.
+- Beperking R-STR-02/03: geldt enkel voor mapping- en filterkolommen (revisiekolommen dragen geen
+  `expected_position`).
+- Mappings worden in 3b gevalideerd maar nog niet toegepast (3c/3d). Prijscomponent- of referentiemappings
+  blokkeren tot canonicalisatieversie 2 bestaat (`CONFIG_CANONICALISATION_VERSION_REQUIRED`).
+  `BOXPLOT` en `FilterStage.TARGET_FIELD` zijn in het schema toegelaten maar worden geweigerd in de verwerking.
+- `UploadResponse` is niet uitgebreid met de nieuwe tellers (enkel GET-batch, GET-delivery en continue).

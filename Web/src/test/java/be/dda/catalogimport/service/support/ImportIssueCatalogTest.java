@@ -55,6 +55,9 @@ class ImportIssueCatalogTest {
             CsvRecordStreamer.class,
             CandidateNormaliser.class,
             ImportValueRules.class,
+            // Bouwstap 3b: de definitievalidatie en de recordfilters stellen eigen codes vast.
+            ImportMappingConfigFactory.class,
+            RecordFilterEvaluator.class,
             DeliveryScreeningService.class,
             ScreeningRecoveryService.class);
 

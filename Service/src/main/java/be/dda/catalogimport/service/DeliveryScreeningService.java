@@ -26,6 +26,9 @@ import be.dda.catalogimport.service.support.CsvRecordStreamer.LineIssue;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.ParsedRow;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.ReadSummary;
 import be.dda.catalogimport.service.support.ImportIssueCatalog;
+import be.dda.catalogimport.service.support.ImportMappingConfig;
+import be.dda.catalogimport.service.support.ImportMappingConfigFactory;
+import be.dda.catalogimport.service.support.RecordFilterEvaluator;
 import be.dda.catalogimport.service.support.ScreeningBlockedException;
 import be.dda.catalogimport.service.support.SourceStructureConfig;
 import be.dda.catalogimport.service.support.SourceStructureConfigFactory;
@@ -71,6 +74,14 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       blijven bewaard in één {@code ROW_ISSUE_RECORDING_CAPPED}-melding. Dat vervangt de
  *       fase 2-blokkade {@code TOO_MANY_ROW_ISSUES}, die een technische logginglimiet was en geen
  *       businessoordeel (ontwerp fase 3, afwijking C).</li>
+ *   <li><b>Recordfilters bepalen de importscope</b> (fase 3, R-FLT-01..R-FLT-04). Ze draaien
+ *       onmiddellijk na het parsen en vóór identiteit, prijs en referenties; een record dat buiten de
+ *       scope valt krijgt geen enkele verdere controle en telt in {@code filtered_out_count} — dat is
+ *       geen fout. Een record dat al vóór het filter onleesbaar was, kan niet meer aan de scope
+ *       toegewezen worden en telt in {@code error_before_filter_count}, niet in
+ *       {@code rejected_record_count}. Het bronbestand wordt altijd <b>volledig</b> gelezen: header,
+ *       structuur, parsefouten en het ruwe recordaantal gelden over 100% van de levering. Zonder
+ *       geconfigureerde filters staan beide tellers op 0 en blijft het gedrag exact dat van fase 2.</li>
  *   <li>Een dubbele aanbiedingsidentiteit binnen één levering is nooit "laatste wint": élke
  *       betrokken regel krijgt een probleem en de levering blokkeert.</li>
  *   <li>De screening schrijft <b>nooit</b> in {@code catalog_source_state}. Een ongewijzigde regel
@@ -144,6 +155,7 @@ public class DeliveryScreeningService {
      */
     public record ScreeningOutcome(long batchId, ImportBatchStatus status, ValidationResult validationResult,
                                    Long rawRecordCount, Long validRecordCount, Long rejectedRecordCount,
+                                   Long filteredOutCount, Long errorBeforeFilterCount,
                                    long stagedRowCount, Long duplicateIdentityCount, Long newCount,
                                    Long changedCount, Long unchangedCount, Long contentMutationCount,
                                    String blockedCode, String blockedReason) {
@@ -154,11 +166,16 @@ public class DeliveryScreeningService {
                            long definitionRevisionId, Long taskRunId, String archiveReference,
                            long fileByteSize, String fileSha256, Long expectedRecordCount,
                            Long expectedByteSize, SourceStructureConfig config,
-                           ScreeningBlockedException configFailure) {
+                           ImportMappingConfig mappingConfig, ScreeningBlockedException configFailure) {
 
         private MutationContext mutationContext() {
             return new MutationContext(batchId, deliveryId, importLinkId, definitionRevisionId, taskRunId,
                     deliveryFileId);
+        }
+
+        /** Zonder geconfigureerde recordfilters blijft het gedrag exact dat van fase 2. */
+        private boolean hasRecordFilters() {
+            return mappingConfig != null && mappingConfig.hasFilters();
         }
     }
 
@@ -194,6 +211,8 @@ public class DeliveryScreeningService {
         private final Map<String, Integer> recordedSamples = new HashMap<>();
         private long validCount;
         private long rejectedCount;
+        private long filteredOutCount;
+        private long errorBeforeFilterCount;
         private long stagedCount;
         private boolean sampleCapReached;
         private boolean capNoticeRecorded;
@@ -205,6 +224,7 @@ public class DeliveryScreeningService {
 
     private final DeliveryArchiveStore archive;
     private final SourceStructureConfigFactory configFactory;
+    private final ImportMappingConfigFactory mappingConfigFactory;
     private final ImportBatchRepository batches;
     private final DeliveryFileRepository deliveryFiles;
     private final TaskRunRepository runs;
@@ -217,6 +237,7 @@ public class DeliveryScreeningService {
     private final int maxLineLength;
 
     public DeliveryScreeningService(DeliveryArchiveStore archive, SourceStructureConfigFactory configFactory,
+                                    ImportMappingConfigFactory mappingConfigFactory,
                                     ImportBatchRepository batches, DeliveryFileRepository deliveryFiles,
                                     TaskRunRepository runs, CandidateStageDao stage, RowIssueDao rowIssues,
                                     MutationDao mutations, PlatformTransactionManager transactionManager,
@@ -227,6 +248,7 @@ public class DeliveryScreeningService {
                                     @Value("${catalogimport.screening.max-line-length:100000}") int maxLineLength) {
         this.archive = archive;
         this.configFactory = configFactory;
+        this.mappingConfigFactory = mappingConfigFactory;
         this.batches = batches;
         this.deliveryFiles = deliveryFiles;
         this.runs = runs;
@@ -309,10 +331,14 @@ public class DeliveryScreeningService {
 
         // De configuratie wordt hier gelezen omdat de revisie een lazy JPA-entiteit is. Een fout
         // blokkeert de batch en mag deze transactie dus niet terugdraaien: ze reist mee als resultaat.
+        // Dit is stap B' uit ontwerp fase 3 par. 3.1: structuur, veldmapping, recordfilters en
+        // drempels worden één keer per batch geladen en gevalideerd, vóór er één byte gelezen is.
         SourceStructureConfig config = null;
+        ImportMappingConfig mappingConfig = null;
         ScreeningBlockedException configFailure = null;
         try {
             config = configFactory.from(batch.getDefinitionRevision());
+            mappingConfig = mappingConfigFactory.from(batch.getDefinitionRevision(), config);
         } catch (ScreeningBlockedException failure) {
             configFailure = failure;
         }
@@ -321,7 +347,7 @@ public class DeliveryScreeningService {
         batch.setStartedAt(Instant.now());
         batches.saveAndFlush(batch);
 
-        return context(batch, delivery, file, config, configFailure);
+        return context(batch, delivery, file, config, mappingConfig, configFailure);
     }
 
     private Context resume(long batchId) {
@@ -333,7 +359,7 @@ public class DeliveryScreeningService {
         }
         Delivery delivery = batch.getDelivery();
         // De bronconfiguratie is hier niet meer nodig: het bestand is al gelezen en gestaged.
-        return context(batch, delivery, singleFile(delivery), null, null);
+        return context(batch, delivery, singleFile(delivery), null, null, null);
     }
 
     private DeliveryFile singleFile(Delivery delivery) {
@@ -347,12 +373,13 @@ public class DeliveryScreeningService {
     }
 
     private static Context context(ImportBatch batch, Delivery delivery, DeliveryFile file,
-                                   SourceStructureConfig config, ScreeningBlockedException configFailure) {
+                                   SourceStructureConfig config, ImportMappingConfig mappingConfig,
+                                   ScreeningBlockedException configFailure) {
         return new Context(batch.getId(), delivery.getId(), file.getId(), batch.getImportLink().getId(),
                 batch.getDefinitionRevision().getId(),
                 batch.getTaskRun() == null ? null : batch.getTaskRun().getId(), file.getArchiveReference(),
                 file.getByteSize(), file.getContentHash(), delivery.getExpectedRecordCount(),
-                delivery.getExpectedByteSize(), config, configFailure);
+                delivery.getExpectedByteSize(), config, mappingConfig, configFailure);
     }
 
     // --- Stap 2: volledigheidscontroles ------------------------------------------------------
@@ -385,10 +412,13 @@ public class DeliveryScreeningService {
     // --- Stap 3: lezen en stagen -------------------------------------------------------------
 
     private ReadSummary readAndStage(Context context, Progress progress) {
+        ImportMappingConfig mappingConfig = context.mappingConfig();
+        RecordFilterEvaluator filters = new RecordFilterEvaluator(mappingConfig.filters());
         try (InputStream archived = archive.open(context.archiveReference());
              CountingInputStream counting = new CountingInputStream(archived)) {
-            ReadSummary summary = streamer.read(counting, context.config(), maxLineLength,
-                    new StagingSink(context, progress));
+            ReadSummary summary = streamer.read(counting, context.config(),
+                    mappingConfig.headerExpectations(), maxLineLength,
+                    new StagingSink(context, progress, filters));
             if (counting.count() != context.fileByteSize()) {
                 // Het archief is onveranderlijk: een ander byte-aantal betekent een beschadigd of
                 // afgekapt object. Dat is technisch, geen leveringsprobleem.
@@ -402,19 +432,47 @@ public class DeliveryScreeningService {
         }
     }
 
-    /** Vertaalt leesresultaten naar stagingrijen en problemen, en commit per microbatch. */
+    /**
+     * Vertaalt leesresultaten naar stagingrijen en problemen, en commit per microbatch.
+     * <p>
+     * <b>Volgorde (R-FLT-02).</b> Het recordfilter draait onmiddellijk na het parsen en vóór
+     * identiteit, prijs en referenties. Een record dat buiten de importscope valt, krijgt dus géén
+     * enkele verdere controle: het kan nooit een identiteits-, prijs- of referentieprobleem
+     * veroorzaken en telt in {@code filtered_out_count} in plaats van in
+     * {@code rejected_record_count}.
+     */
     private final class StagingSink implements CsvRecordStreamer.Sink {
 
         private final Context context;
         private final Progress progress;
+        private final RecordFilterEvaluator filters;
 
-        private StagingSink(Context context, Progress progress) {
+        private StagingSink(Context context, Progress progress, RecordFilterEvaluator filters) {
             this.context = context;
             this.progress = progress;
+            this.filters = filters;
         }
 
         @Override
         public void record(ParsedRow row) {
+            RecordFilterEvaluator.Decision decision = filters.evaluate(row);
+            switch (decision.kind()) {
+                case FILTERED_OUT -> {
+                    // Geen probleemrij: buiten de scope vallen is geen fout. Het aantal blijft wel
+                    // zichtbaar, zodat de reconciliatie van de tellers klopt.
+                    progress.filteredOutCount++;
+                    return;
+                }
+                case REJECTED -> {
+                    addIssue(context, progress, row.lineNumber(),
+                            RecordFilterEvaluator.CODE_FILTER_RECORD_REJECTED, decision.fieldName(),
+                            decision.sourceValue(), decision.message(), false);
+                    return;
+                }
+                case IN_SCOPE -> {
+                    // Verder met de gewone recordcontroles.
+                }
+            }
             CandidateNormaliser.Result result = normaliser.normalise(row, context.config());
             if (result instanceof NormalisedCandidate candidate) {
                 progress.pendingRows.add(stageRow(context, candidate));
@@ -424,14 +482,20 @@ public class DeliveryScreeningService {
                 }
             } else if (result instanceof CandidateNormaliser.RowIssue rejected) {
                 addIssue(context, progress, rejected.rowNumber(), rejected.code(), rejected.fieldName(),
-                        rejected.sourceValue(), rejected.message());
+                        rejected.sourceValue(), rejected.message(), false);
             }
         }
 
+        /**
+         * Een probleem dat bij het lezen zelf ontstaat (kolomaantal, niet-gesloten aanhalingsteken, te
+         * lange regel) of een waarschuwing over de header. Zo'n regel is niet parseerbaar en kan dus
+         * <b>niet</b> aan de importscope toegewezen worden: met geconfigureerde filters telt ze in
+         * {@code error_before_filter_count} en niet in {@code rejected_record_count}.
+         */
         @Override
         public void issue(LineIssue issue) {
             addIssue(context, progress, issue.lineNumber(), issue.code(), issue.fieldName(),
-                    issue.sourceValue(), issue.message());
+                    issue.sourceValue(), issue.message(), true);
         }
     }
 
@@ -453,13 +517,22 @@ public class DeliveryScreeningService {
      * altijd door — {@code rejected_record_count} blijft dus exact — maar per code worden hoogstens
      * {@code maxSampleRowsPerCode} voorbeeldrijen bewaard. Omdat er in leesvolgorde gestreamd wordt,
      * zijn dat deterministisch de laagste regelnummers (R-ISS-03).
+     *
+     * @param beforeFilter of dit probleem ontstond vóór het recordfilter kon draaien. Alleen wanneer
+     *                     er werkelijk filters geconfigureerd zijn, krijgt zo'n regel een eigen teller
+     *                     ({@code error_before_filter_count}); zonder filters is er geen scope om
+     *                     buiten te vallen en blijft het fase 2-gedrag gelden (R-FLT-04).
      */
     private void addIssue(Context context, Progress progress, long rowNumber, String code, String field,
-                          String sourceValue, String message) {
+                          String sourceValue, String message, boolean beforeFilter) {
         RowIssueSeverity severity = ImportIssueCatalog.classify(code).severity();
         progress.issueCounts.merge(code, 1L, Long::sum);
         if (severity == RowIssueSeverity.ERROR) {
-            progress.rejectedCount++;
+            if (beforeFilter && context.hasRecordFilters()) {
+                progress.errorBeforeFilterCount++;
+            } else {
+                progress.rejectedCount++;
+            }
         }
         int recorded = progress.recordedSamples.getOrDefault(code, 0);
         if (recorded >= maxSampleRowsPerCode) {
@@ -765,13 +838,22 @@ public class DeliveryScreeningService {
         }
     }
 
-    /** Alleen een volledig gelezen bestand levert eindtellers op; anders blijven ze onbekend (null). */
+    /**
+     * Alleen een volledig gelezen bestand levert eindtellers op; anders blijven ze onbekend (null).
+     * <p>
+     * De vijf tellers reconciliëren (R-FLT-04):
+     * {@code raw = filtered_out + error_before_filter + rejected + valid}. Zonder geconfigureerde
+     * recordfilters staan {@code filtered_out} en {@code error_before_filter} op 0 — dat is geen
+     * aanname maar een vaststelling: zonder filters is er niets om buiten te vallen.
+     */
     private static void applyCounts(ImportBatch batch, Progress progress) {
         batch.setStagedRowCount(progress.stagedCount);
         if (progress.rawRecordCount != null) {
             batch.setRawRecordCount(progress.rawRecordCount);
             batch.setValidRecordCount(progress.validCount);
             batch.setRejectedRecordCount(progress.rejectedCount);
+            batch.setFilteredOutCount(progress.filteredOutCount);
+            batch.setErrorBeforeFilterCount(progress.errorBeforeFilterCount);
         }
     }
 
@@ -791,6 +873,7 @@ public class DeliveryScreeningService {
     private static ScreeningOutcome outcome(ImportBatch batch) {
         return new ScreeningOutcome(batch.getId(), batch.getStatus(), batch.getValidationResult(),
                 batch.getRawRecordCount(), batch.getValidRecordCount(), batch.getRejectedRecordCount(),
+                batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
                 batch.getStagedRowCount(), batch.getDuplicateIdentityCount(), batch.getNewCount(),
                 batch.getChangedCount(), batch.getUnchangedCount(), batch.getContentMutationCount(),
                 batch.getBlockedCode(), batch.getBlockedReason());

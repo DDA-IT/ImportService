@@ -55,6 +55,12 @@ public class CatalogImportBatchController {
      * <p>
      * Additief sinds bouwstap 3a: {@code validationResult} is het inhoudelijke eindoordeel naast
      * {@code status} en is {@code null} zolang er niets vastgesteld is.
+     * <p>
+     * Additief sinds bouwstap 3b: {@code filteredOutCount} (records die een recordfilter buiten de
+     * importscope zette) en {@code errorBeforeFilterCount} (records die al vóór dat filter onleesbaar
+     * waren). Samen met de bestaande tellers geldt
+     * {@code raw = filteredOut + errorBeforeFilter + rejected + valid}; zonder geconfigureerde
+     * recordfilters staan beide op 0 en blijven de fase 2-waarden ongewijzigd.
      */
     @GetMapping("/{batchId}")
     BatchDetail batch(@PathVariable("batchId") long batchId) {

@@ -37,12 +37,18 @@ public class BatchQueryService {
      * <p>
      * {@code validationResult} is het inhoudelijke eindoordeel naast {@code status} (fase 3,
      * afwijking D) en is {@code null} zolang de screening loopt of bij een technische fout.
+     * <p>
+     * {@code filteredOutCount} en {@code errorBeforeFilterCount} zijn additief toegevoegd in bouwstap
+     * 3b (R-FLT-04). Samen met de bestaande tellers geldt
+     * {@code raw = filteredOut + errorBeforeFilter + rejected + valid}. Zonder geconfigureerde
+     * recordfilters staan beide op 0; {@code null} betekent zoals altijd "onbekend".
      */
     public record BatchDetail(long batchId, long deliveryId, long importLinkId, long definitionRevisionId,
                               Long taskRunId, int attemptNo, String status, String validationResult,
                               Instant startedAt, Instant finishedAt, long stagedRowCount,
                               long mutationProgressRowNumber,
                               Long rawRecordCount, Long validRecordCount, Long rejectedRecordCount,
+                              Long filteredOutCount, Long errorBeforeFilterCount,
                               Long duplicateIdentityCount, Long newCount, Long changedCount,
                               Long unchangedCount, Long contentMutationCount, String blockedCode,
                               String blockedReason, String baselineAcceptedBy, Instant baselineAcceptedAt,
@@ -57,6 +63,7 @@ public class BatchQueryService {
                     batch.getStartedAt(), batch.getFinishedAt(),
                     batch.getStagedRowCount(), batch.getMutationProgressRowNumber(), batch.getRawRecordCount(),
                     batch.getValidRecordCount(), batch.getRejectedRecordCount(),
+                    batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
                     batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
                     batch.getUnchangedCount(), batch.getContentMutationCount(), batch.getBlockedCode(),
                     batch.getBlockedReason(), batch.getBaselineAcceptedBy(), batch.getBaselineAcceptedAt(),

@@ -155,7 +155,20 @@ public final class ImportIssueCatalog {
                 SourceStructureConfigFactory.CODE_FIELD_REFERENCE_INVALID,
                 SourceStructureConfigFactory.CODE_CANONICALISATION_VERSION_UNSUPPORTED,
                 CandidateNormaliser.CODE_CONFIG_DISCOUNT_FIELD_MISSING,
-                CandidateNormaliser.CODE_CONFIG_FIELD_NOT_RESOLVED}) {
+                CandidateNormaliser.CODE_CONFIG_FIELD_NOT_RESOLVED,
+                // Bouwstap 3b: de veldmapping en de recordfilters van de revisie (R-STR-04..R-STR-06,
+                // R-REF-08, R-FLT-01). Ook deze blokkeren vóór er één byte gelezen is.
+                ImportMappingConfigFactory.CODE_MAPPING_TARGET_UNKNOWN,
+                ImportMappingConfigFactory.CODE_MAPPING_SOURCE_UNRESOLVED,
+                ImportMappingConfigFactory.CODE_MAPPING_DUPLICATE_TARGET,
+                ImportMappingConfigFactory.CODE_MAPPING_TYPE_INCOMPATIBLE,
+                ImportMappingConfigFactory.CODE_FIELD_MAPPING_DUPLICATES_REVISION,
+                ImportMappingConfigFactory.CODE_IDENTITY_CLASS_CONFLICT,
+                ImportMappingConfigFactory.CODE_OWNER_NOT_CHANGEABLE,
+                ImportMappingConfigFactory.CODE_PRICE_COMPONENT_DUPLICATE,
+                ImportMappingConfigFactory.CODE_TRANSFORM_INVALID,
+                ImportMappingConfigFactory.CODE_FILTER_INVALID,
+                ImportMappingConfigFactory.CODE_CANONICALISATION_VERSION_REQUIRED}) {
             put(catalogue, code, RowIssueSeverity.BLOCKING, IssueDomain.AUTHORISATION_CONFIG,
                     ControlLevel.STRUCTURE, ImpactScope.DELIVERY);
         }
@@ -166,12 +179,28 @@ public final class ImportIssueCatalog {
                 CsvRecordStreamer.CODE_HEADER_LINE_MISSING,
                 CsvRecordStreamer.CODE_HEADER_FIELD_MISSING,
                 CsvRecordStreamer.CODE_HEADER_DUPLICATE_FIELD,
-                CsvRecordStreamer.CODE_HEADER_COLUMN_COUNT_MISMATCH}) {
+                CsvRecordStreamer.CODE_HEADER_COLUMN_COUNT_MISMATCH,
+                // Bouwstap 3b: een andere headernaam op de verwachte positie van een identiteits-,
+                // prijs- of referentieveld is geen verschuiving maar een betekeniswijziging: doorgaan
+                // zou de verkeerde kolom als sleutel of als prijs inlezen (R-STR-02).
+                CsvRecordStreamer.CODE_HEADER_FIELD_SEMANTIC_CHANGE,
+                // Bouwstap 3b: zonder de kolom waarop de importscope gedefinieerd is, valt niet vast te
+                // stellen welke records tot deze import horen (R-FLT-03).
+                RecordFilterEvaluator.CODE_FILTER_COLUMN_MISSING}) {
             put(catalogue, code, RowIssueSeverity.BLOCKING, IssueDomain.STRUCTURE_DATASET,
                     ControlLevel.STRUCTURE, ImpactScope.DELIVERY);
         }
         put(catalogue, CsvRecordStreamer.CODE_SOURCE_BOM_REMOVED, RowIssueSeverity.WARNING,
                 IssueDomain.STRUCTURE_DATASET, ControlLevel.STRUCTURE, ImpactScope.DELIVERY);
+        // Een verschoven of extra kolom is een waarschuwing: de kolom wordt op naam teruggevonden, de
+        // levering gaat door, maar de beheerder moet weten dat de bron van vorm veranderd is
+        // (R-STR-02/R-STR-03).
+        for (String code : new String[] {
+                CsvRecordStreamer.CODE_HEADER_FIELD_SHIFTED,
+                CsvRecordStreamer.CODE_HEADER_UNKNOWN_COLUMN}) {
+            put(catalogue, code, RowIssueSeverity.WARNING, IssueDomain.STRUCTURE_DATASET,
+                    ControlLevel.STRUCTURE, ImpactScope.DELIVERY);
+        }
 
         // --- Niveau 1: de levering als geheel ---------------------------------------------------
         put(catalogue, CsvRecordStreamer.CODE_SOURCE_FILE_EMPTY, RowIssueSeverity.BLOCKING,
@@ -204,7 +233,11 @@ public final class ImportIssueCatalog {
         for (String code : new String[] {
                 ImportValueRules.CODE_VALUE_MISSING,
                 ImportValueRules.CODE_CANONICAL_CONTROL_CHARACTER,
-                CandidateNormaliser.CODE_VALUE_TOO_LONG}) {
+                CandidateNormaliser.CODE_VALUE_TOO_LONG,
+                // Bouwstap 3b: een regel die door een REJECT-filterrij verworpen wordt. Bewust ERROR en
+                // geen stille uitsluiting: de beheerder heeft verklaard dat zo'n record niet hoort te
+                // bestaan, dus het moet zichtbaar zijn en in rejected_record_count tellen.
+                RecordFilterEvaluator.CODE_FILTER_RECORD_REJECTED}) {
             put(catalogue, code, RowIssueSeverity.ERROR, IssueDomain.MAPPING_VALIDATION,
                     ControlLevel.RECORD, ImpactScope.RECORD);
         }

@@ -104,6 +104,23 @@ public class ImportBatch {
     @Column(name = "rejected_record_count")
     private Long rejectedRecordCount;
 
+    /**
+     * Aantal gelezen records dat door een recordfilter buiten de importscope viel (R-FLT-04). Dat is
+     * geen fout: zonder geconfigureerde filters staat deze teller op 0, met filters is hij het bewijs
+     * dat het bestand volledig gelezen is en welk deel bewust niet meetelt.
+     */
+    @Column(name = "filtered_out_count")
+    private Long filteredOutCount;
+
+    /**
+     * Aantal gelezen records dat al vóór het filter onleesbaar was (kolomaantal, niet-gesloten quote,
+     * te lange regel) en dus niet meer aan de importscope toegewezen kon worden (R-FLT-04). Zulke
+     * records tellen bewust <b>niet</b> in {@link #rejectedRecordCount}: dat is het aantal verworpen
+     * records <b>binnen</b> de scope, waarop de drempels rekenen.
+     */
+    @Column(name = "error_before_filter_count")
+    private Long errorBeforeFilterCount;
+
     @Column(name = "duplicate_identity_count")
     private Long duplicateIdentityCount;
 
@@ -279,6 +296,22 @@ public class ImportBatch {
 
     public void setRejectedRecordCount(Long rejectedRecordCount) {
         this.rejectedRecordCount = rejectedRecordCount;
+    }
+
+    public Long getFilteredOutCount() {
+        return filteredOutCount;
+    }
+
+    public void setFilteredOutCount(Long filteredOutCount) {
+        this.filteredOutCount = filteredOutCount;
+    }
+
+    public Long getErrorBeforeFilterCount() {
+        return errorBeforeFilterCount;
+    }
+
+    public void setErrorBeforeFilterCount(Long errorBeforeFilterCount) {
+        this.errorBeforeFilterCount = errorBeforeFilterCount;
     }
 
     public Long getDuplicateIdentityCount() {

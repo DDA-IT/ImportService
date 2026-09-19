@@ -12,6 +12,7 @@ import be.dda.catalogimport.dao.ImportDefinitionRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.dao.ImportMutationRepository;
+import be.dda.catalogimport.dao.ImportRecordFilterRepository;
 import be.dda.catalogimport.dao.ImportRowIssueRepository;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import java.math.BigDecimal;
@@ -19,6 +20,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -61,6 +63,8 @@ class ScreeningSchemaTest {
     private ImportMutationRepository mutations;
     @Autowired
     private ImportRowIssueRepository rowIssues;
+    @Autowired
+    private ImportRecordFilterRepository recordFilters;
     @Autowired
     private JdbcTemplate jdbc;
 
@@ -476,6 +480,258 @@ class ScreeningSchemaTest {
                         + "values (?, ?, ?, 'ERROR', 'PRICE', 'RECORD', 'RECORD', ?, ?, ?, ?)",
                 batchId, issueCode, signature, occurrences, samples, OffsetDateTime.now(),
                 OffsetDateTime.now());
+    }
+
+    // --- Fase 3b, changeset 004-1/004-1b: de veldcatalogus --------------------------------------
+
+    /**
+     * De seed is referentiedata waar de mapping op steunt: als een doelveld ontbreekt of verkeerd
+     * geclassificeerd is, wordt een import ofwel geweigerd ofwel - erger - met het verkeerde
+     * eigenaarschap toegelaten.
+     */
+    @Test
+    void seedsTheFieldCatalogueConsistentlyWithItsOwnConstraints() {
+        List<Map<String, Object>> entries = jdbc.queryForList("select code, data_type, default_owner, "
+                + "identity_class, price_component_code, reference_type, owner_changeable, active "
+                + "from import_field_catalog order by sort_order");
+
+        assertThat(entries).extracting(row -> row.get("code"))
+                .contains("BASE_PRICE", "AKP_PCT", "VKP1_PCT", "VKP2_PCT", "VKP3_PCT", "VKP4_PCT",
+                        "VKP5_PCT", "VKP_GROSS_PCT", "EAN", "PIM_ID", "CAB_ID", "E_MARK_ARTICLE_REFERENCE",
+                        "E_SUPPLIER", "SUPPLIER_BARCODE", "DESCRIPTION", "BRAND", "UNIT");
+        assertThat(entries).allSatisfy(row -> {
+            // Een prijscomponent hoort bij de prijsmodule, een referentie bij de referentiecontrole.
+            if (row.get("price_component_code") != null) {
+                assertThat(row.get("default_owner")).as("%s", row.get("code")).isEqualTo("PRICE_CONTROL");
+                assertThat(row.get("identity_class")).as("%s", row.get("code")).isEqualTo("NONE");
+            }
+            if (row.get("reference_type") != null) {
+                assertThat(row.get("default_owner")).as("%s", row.get("code"))
+                        .isEqualTo("CRITICAL_REFERENCE");
+                assertThat(row.get("owner_changeable")).as("%s", row.get("code")).isEqualTo(false);
+            }
+            assertThat(row.get("active")).as("%s", row.get("code")).isEqualTo(true);
+        });
+        // Prijs en omschrijving zijn nooit identiteitsbeslissend (R-ID-08).
+        assertThat(identityClassOf("BASE_PRICE")).isEqualTo("NONE");
+        assertThat(identityClassOf("DESCRIPTION")).isEqualTo("NONE");
+        // Merk en eenheid zijn eigendom van de Prodis-gebruiker en niet door een import te wijzigen.
+        assertThat(ownerOf("BRAND")).isEqualTo("PRODIS_USER");
+        assertThat(ownerOf("UNIT")).isEqualTo("PRODIS_USER");
+        assertThat(jdbc.queryForObject("select owner_changeable from import_field_catalog where code = ?",
+                Boolean.class, "BRAND")).isFalse();
+    }
+
+    @Test
+    void refusesACatalogueEntryWhoseReferenceTypeWouldBeOwnedByAnyoneElse() {
+        // ck_import_field_catalog_reference: een kritieke referentie is nooit van eigenaar te wisselen.
+        assertThatThrownBy(() -> jdbc.update("insert into import_field_catalog (code, name, data_type, "
+                + "default_owner, identity_class, reference_type, owner_changeable, sort_order) "
+                + "values ('CI_TEST_REF', 'Test', 'TEXT', 'CATALOG_SOURCE', 'ARTICLE_REFERENCE', "
+                + "'EAN', true, 900)")).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("insert into import_field_catalog (code, name, data_type, "
+                + "default_owner, identity_class, price_component_code, sort_order) "
+                + "values ('CI_TEST_PRICE', 'Test', 'DECIMAL', 'CATALOG_SOURCE', 'NONE', 'AKP', 901)"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("insert into import_field_catalog (code, name, data_type, "
+                + "default_owner, identity_class, sort_order) "
+                + "values ('CI_TEST_CLASS', 'Test', 'TEXT', 'CATALOG_SOURCE', 'NONSENSE', 902)"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    // --- Fase 3b, changeset 004-2: import_field_mapping ------------------------------------------
+
+    @Test
+    void keepsOneMappingPerTargetFieldAndPerSequenceNumberWithinARevision() {
+        Scenario s = scenario("MAP");
+        Long revisionId = s.revision().getId();
+
+        insertMapping(revisionId, 1, "E_SUPPLIER", "E_LEV");
+
+        // uk_import_field_mapping_target: één doelveld heeft exact één bron.
+        assertThatThrownBy(() -> insertMapping(revisionId, 2, "E_SUPPLIER", "E_LEV_2"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // uk_import_field_mapping_sequence: de verwerkingsvolgorde is eenduidig.
+        assertThatThrownBy(() -> insertMapping(revisionId, 1, "SUPPLIER_BARCODE", "BARCODE"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatCode(() -> insertMapping(revisionId, 2, "SUPPLIER_BARCODE", "BARCODE"))
+                .doesNotThrowAnyException();
+
+        Map<String, Object> mapping = jdbc.queryForMap("select value_kind, transform_kind, required, "
+                        + "zero_allowed, negative_allowed, active from import_field_mapping "
+                        + "where definition_revision_id = ? and target_field_code = ?",
+                revisionId, "E_SUPPLIER");
+        assertThat(mapping.get("value_kind")).isEqualTo("SOURCE_FIELD");
+        assertThat(mapping.get("transform_kind")).isEqualTo("NONE");
+        assertThat(mapping.get("required")).isEqualTo(false);
+        // Nul en negatief zijn voor een bedrag betekenisvolle, verdachte waarden: standaard verboden.
+        assertThat(mapping.get("zero_allowed")).isEqualTo(false);
+        assertThat(mapping.get("negative_allowed")).isEqualTo(false);
+        assertThat(mapping.get("active")).isEqualTo(true);
+    }
+
+    @Test
+    void refusesAMappingThatContradictsItsOwnValueKindOwnerOrUnknownTargetField() {
+        Scenario s = scenario("MAPCK");
+        Long revisionId = s.revision().getId();
+
+        // SOURCE_FIELD zonder bronkolom, FIXED_VALUE zonder waarde, BOOKMARK zonder naam.
+        assertThatThrownBy(() -> jdbc.update(mappingInsert("SOURCE_FIELD"), revisionId, 1, "E_SUPPLIER",
+                null, "TEXT", "CATALOG_SOURCE", "SUPPORTING", null, null, OffsetDateTime.now()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // Een prijscomponent hoort bij de prijsmodule, een referentietype bij de referentiecontrole.
+        assertThatThrownBy(() -> jdbc.update(mappingInsert("SOURCE_FIELD"), revisionId, 2, "AKP_PCT",
+                "AKP", "DECIMAL", "CATALOG_SOURCE", "NONE", "AKP", null, OffsetDateTime.now()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(mappingInsert("SOURCE_FIELD"), revisionId, 3, "EAN",
+                "EAN13", "TEXT", "CATALOG_SOURCE", "ARTICLE_REFERENCE", null, "EAN", OffsetDateTime.now()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // fk_import_field_mapping_target: een mapping wijst altijd naar een bestaand doelveld.
+        assertThatThrownBy(() -> insertMapping(revisionId, 4, "NO_SUCH_FIELD", "X"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    // --- Fase 3b, changeset 004-3: import_record_filter -------------------------------------------
+
+    @Test
+    void appliesTheDocumentedFilterDefaultsAndKeepsOneRulePerSequenceNumber() {
+        Scenario s = scenario("FLT");
+        ImportDefinitionRevision revision = s.revision();
+
+        ImportRecordFilter filter = recordFilters.saveAndFlush(new ImportRecordFilter(revision, 1,
+                "CULTURE", FilterOperator.EQUALS, "BENL", FilterOutcome.INCLUDE));
+
+        ImportRecordFilter found = recordFilters.findById(filter.getId()).orElseThrow();
+        assertThat(found.getFilterStage()).isEqualTo(FilterStage.SOURCE_FIELD);
+        assertThat(found.isCaseSensitive()).isFalse();
+        assertThat(found.isTrimBeforeCompare()).isTrue();
+        // Standaard: een lege waarde valt buiten de scope, een ontbrekende kolom blokkeert de levering.
+        assertThat(found.getNullBehaviour()).isEqualTo(FilterNullBehaviour.EXCLUDE);
+        assertThat(found.getMissingColumnBehaviour()).isEqualTo(MissingColumnBehaviour.BLOCK);
+
+        assertThatThrownBy(() -> recordFilters.saveAndFlush(new ImportRecordFilter(revision, 1, "STATUS",
+                FilterOperator.EQUALS, "EOL", FilterOutcome.EXCLUDE)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatCode(() -> recordFilters.saveAndFlush(new ImportRecordFilter(revision, 2, "STATUS",
+                FilterOperator.EQUALS, "EOL", FilterOutcome.EXCLUDE))).doesNotThrowAnyException();
+    }
+
+    @Test
+    void refusesAnUnknownOperatorOutcomeOrBehaviourOnARecordFilter() {
+        Scenario s = scenario("FLTCK");
+        Long revisionId = s.revision().getId();
+
+        assertThatThrownBy(() -> insertFilter(revisionId, 1, "REGEX", "INCLUDE", "EXCLUDE", "BLOCK"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertFilter(revisionId, 2, "EQUALS", "MAYBE", "EXCLUDE", "BLOCK"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // Er bestaat geen null-gedrag dat neerkomt op "het filter matcht dan maar niet" (R-FLT-03).
+        assertThatThrownBy(() -> insertFilter(revisionId, 3, "EQUALS", "INCLUDE", "IGNORE", "BLOCK"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertFilter(revisionId, 4, "EQUALS", "INCLUDE", "EXCLUDE", "IGNORE"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    // --- Fase 3b, changeset 004-10 en 004-11b -----------------------------------------------------
+
+    /**
+     * De defaults zijn normatief (ontwerp fase 3, par. 2 004-10) en gelden ook voor revisies die al
+     * bestonden: 15% afwijkingsgrens, tolerantie 0,01, vensters 50/200 en een creatiedrempel van 100
+     * nieuwe aanbiedingen EN 1% van de importscope - nadrukkelijk niet 100%.
+     */
+    @Test
+    void appliesTheNormativePriceAndThresholdDefaultsToEveryRevision() {
+        ImportDefinitionRevision revision = scenario("REVRULE").revision();
+
+        assertThat(revision.getPriceDeviationPercent()).isEqualByComparingTo("15");
+        assertThat(revision.getPriceDeviationSeverity()).isEqualTo(RowIssueSeverity.WARNING);
+        assertThat(revision.getPriceDerivationTolerance()).isEqualByComparingTo("0.01");
+        assertThat(revision.getPriceAvgShortWindow()).isEqualTo(50);
+        assertThat(revision.getPriceAvgLongWindow()).isEqualTo(200);
+        assertThat(revision.getPriceControlModel()).isEqualTo(PriceControlModel.DEVIATION);
+        assertThat(revision.getCreationThresholdAbsolute()).isEqualTo(100);
+        assertThat(revision.getCreationThresholdSharePercent()).isEqualByComparingTo("1");
+        // Eén kritiek record blokkeert de levering tenzij expliciet anders ingesteld (R-THR-05).
+        assertThat(revision.getMaxCriticalRecords()).isZero();
+        // Niet geconfigureerd is null, nooit 0 (aanname A18).
+        assertThat(revision.getMaxRejectedRecords()).isNull();
+        assertThat(revision.getMaxRejectedSharePercent()).isNull();
+        assertThat(revision.getRecordCurrencyField()).isNull();
+
+        // Ook op databaseniveau: een rij die enkel de fase 1/2-kolommen invult krijgt deze defaults.
+        Map<String, Object> stored = jdbc.queryForMap("select price_deviation_percent, "
+                + "price_control_model, creation_threshold_share_percent, max_critical_records, "
+                + "max_rejected_records from import_definition_revision where id = ?", revision.getId());
+        assertThat((BigDecimal) stored.get("price_deviation_percent")).isEqualByComparingTo("15");
+        assertThat(stored.get("price_control_model")).isEqualTo("DEVIATION");
+        assertThat((BigDecimal) stored.get("creation_threshold_share_percent")).isEqualByComparingTo("1");
+        assertThat(((Number) stored.get("max_critical_records")).intValue()).isZero();
+        assertThat(stored.get("max_rejected_records")).isNull();
+    }
+
+    @Test
+    void refusesAnUnsupportedPriceControlModelOrDeviationSeverity() {
+        ImportDefinitionRevision boxplot = newRevision(definition("REVBOX"), 1);
+        boxplot.setPriceControlModel(PriceControlModel.BOXPLOT);
+
+        // BOXPLOT is gedeclareerd en dus toegelaten in het schema; de verwerking weigert het later.
+        assertThatCode(() -> revisions.saveAndFlush(boxplot)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> jdbc.update("update import_definition_revision set price_control_model = "
+                + "'NONSENSE' where id = ?", boxplot.getId()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("update import_definition_revision set "
+                + "price_deviation_severity = 'CRITICAL' where id = ?", boxplot.getId()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    /** De twee filtertellers zijn nullable: null betekent onbekend, nooit stil 0 (R-FLT-04). */
+    @Test
+    void leavesTheFilterCountersOnAFreshBatchUnknown() {
+        Scenario s = scenario("BFLT");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+
+        ImportBatch found = batches.findById(batch.getId()).orElseThrow();
+        assertThat(found.getFilteredOutCount()).isNull();
+        assertThat(found.getErrorBeforeFilterCount()).isNull();
+
+        found.setFilteredOutCount(3L);
+        found.setErrorBeforeFilterCount(0L);
+        batches.saveAndFlush(found);
+        Map<String, Object> stored = jdbc.queryForMap("select filtered_out_count, "
+                + "error_before_filter_count from import_batch where id = ?", batch.getId());
+        assertThat(((Number) stored.get("filtered_out_count")).longValue()).isEqualTo(3L);
+        assertThat(((Number) stored.get("error_before_filter_count")).longValue()).isZero();
+    }
+
+    private String identityClassOf(String code) {
+        return jdbc.queryForObject("select identity_class from import_field_catalog where code = ?",
+                String.class, code);
+    }
+
+    private String ownerOf(String code) {
+        return jdbc.queryForObject("select default_owner from import_field_catalog where code = ?",
+                String.class, code);
+    }
+
+    private void insertMapping(Long revisionId, int sequenceNumber, String targetFieldCode,
+                               String sourceReference) {
+        jdbc.update(mappingInsert("SOURCE_FIELD"), revisionId, sequenceNumber, targetFieldCode,
+                sourceReference, "TEXT", "CATALOG_SOURCE", "SUPPORTING", null, null, OffsetDateTime.now());
+    }
+
+    private static String mappingInsert(String valueKind) {
+        return "insert into import_field_mapping (definition_revision_id, sequence_number, "
+                + "target_field_code, value_kind, source_reference, data_type, field_owner, "
+                + "identity_class, price_component_code, reference_type, created_at) "
+                + "values (?, ?, ?, '" + valueKind + "', ?, ?, ?, ?, ?, ?, ?)";
+    }
+
+    private void insertFilter(Long revisionId, int sequenceNumber, String operator, String outcome,
+                              String nullBehaviour, String missingColumnBehaviour) {
+        jdbc.update("insert into import_record_filter (definition_revision_id, sequence_number, "
+                        + "source_reference, operator, compare_value, outcome, null_behaviour, "
+                        + "missing_column_behaviour) values (?, ?, 'CULTURE', ?, 'BENL', ?, ?, ?)",
+                revisionId, sequenceNumber, operator, outcome, nullBehaviour, missingColumnBehaviour);
     }
 
     // --- import_candidate_stage (JDBC-only) ----------------------------------------------------

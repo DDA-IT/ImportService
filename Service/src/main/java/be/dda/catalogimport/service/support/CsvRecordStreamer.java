@@ -8,10 +8,12 @@ import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Leest een CSV-bronbestand regel per regel en geeft elke datalijn als {@link ParsedRow} door
@@ -42,6 +44,13 @@ import java.util.Map;
  * header, ontbrekend headerveld, verkeerd kolomaantal in de header) gooit een
  * {@link ScreeningBlockedException} en stopt het lezen; alles wat één regel raakt, komt als
  * {@link LineIssue} bij de {@link Sink} terecht en het lezen gaat door.
+ * <p>
+ * <b>Headerpositiecontrole (fase 3, R-STR-02/R-STR-03).</b> Krijgt de streamer
+ * {@link HeaderExpectations} mee, dan controleert hij ook de kolommen van de veldmapping en de
+ * recordfilters: een verschoven kolom is een waarschuwing (ze wordt op naam teruggevonden), een
+ * andere kolom op de verwachte positie van een identiteits-, prijs- of referentieveld blokkeert, en
+ * een onbekende kolom achteraan is een waarschuwing. Zonder verwachtingen blijft het gedrag exact dat
+ * van fase 2: de bestaande revisiekolommen dragen geen verwachte positie.
  */
 public final class CsvRecordStreamer {
 
@@ -59,6 +68,12 @@ public final class CsvRecordStreamer {
     public static final String CODE_HEADER_COLUMN_COUNT_MISMATCH = "HEADER_COLUMN_COUNT_MISMATCH";
     /** Een gedeclareerde kolomindex valt buiten het werkelijke kolomaantal. */
     public static final String CODE_COLUMN_INDEX_OUT_OF_RANGE = "CONFIG_COLUMN_INDEX_OUT_OF_RANGE";
+    /** Een verwachte kolom staat op een andere positie; ze is op naam teruggevonden (WARNING). */
+    public static final String CODE_HEADER_FIELD_SHIFTED = "HEADER_FIELD_SHIFTED";
+    /** Op de verwachte positie van een identiteits-, prijs- of referentieveld staat een andere kolom. */
+    public static final String CODE_HEADER_FIELD_SEMANTIC_CHANGE = "HEADER_FIELD_SEMANTIC_CHANGE";
+    /** Achteraan staat een kolom die de definitie niet kent; niets verschoof (WARNING). */
+    public static final String CODE_HEADER_UNKNOWN_COLUMN = "HEADER_UNKNOWN_COLUMN";
     /** Een datalijn heeft een ander kolomaantal dan het contract. */
     public static final String CODE_ROW_COLUMN_COUNT_MISMATCH = "ROW_COLUMN_COUNT_MISMATCH";
     /** Een datalijn is langer dan {@code catalogimport.screening.max-line-length}. */
@@ -105,16 +120,36 @@ public final class CsvRecordStreamer {
     }
 
     /**
-     * Leest het volledige bestand en meldt elke datalijn of regelfout aan de sink.
+     * Leest het volledige bestand en meldt elke datalijn of regelfout aan de sink, zonder
+     * headerpositiecontrole. Gelijk aan {@link #read(InputStream, SourceStructureConfig,
+     * HeaderExpectations, int, Sink)} met {@link HeaderExpectations#none()}.
      *
      * @param maxLineLength maximale lengte van een datalijn in tekens
      * @throws ScreeningBlockedException bij een contract-/structuurfout die de levering blokkeert
      * @throws UncheckedIOException      bij een lees- of decodeerfout (technische fout)
      */
     public ReadSummary read(InputStream source, SourceStructureConfig config, int maxLineLength, Sink sink) {
+        return read(source, config, HeaderExpectations.none(), maxLineLength, sink);
+    }
+
+    /**
+     * Leest het volledige bestand, meldt elke datalijn of regelfout aan de sink en controleert
+     * daarbij de kolommen die de veldmapping en de recordfilters verwachten (R-STR-02/R-STR-03).
+     * <p>
+     * De opgeloste posities van die verwachte kolommen komen mee in
+     * {@link ParsedRow#positions()}, zodat de filterevaluatie en (vanaf bouwstap 3c) de mapping ze
+     * per regel kunnen opzoeken zonder de header opnieuw te lezen.
+     *
+     * @param expectations de verwachte kolommen; {@link HeaderExpectations#none()} schakelt de
+     *                     positiecontrole volledig uit en levert exact het fase 2-gedrag op
+     * @throws ScreeningBlockedException bij een contract-/structuurfout die de levering blokkeert
+     * @throws UncheckedIOException      bij een lees- of decodeerfout (technische fout)
+     */
+    public ReadSummary read(InputStream source, SourceStructureConfig config,
+                            HeaderExpectations expectations, int maxLineLength, Sink sink) {
         BufferedReader reader = new BufferedReader(new InputStreamReader(source, config.charset()),
                 READ_BUFFER_CHARS);
-        State state = new State(config, maxLineLength, sink);
+        State state = new State(config, expectations, maxLineLength, sink);
         try {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -136,8 +171,14 @@ public final class CsvRecordStreamer {
     private static final class State {
 
         private final SourceStructureConfig config;
+        private final HeaderExpectations expectations;
         private final int maxLineLength;
         private final Sink sink;
+
+        /** De gedeclareerde revisievelden; ontbreken is altijd blokkerend. */
+        private Map<String, Integer> declared = new LinkedHashMap<>();
+        /** De kolommen van mappings en filters; een ontbrekende filterkolom is niet blokkerend. */
+        private Map<String, Integer> expected = new LinkedHashMap<>();
 
         private long physicalLineCount;
         private long prefixLineCount;
@@ -147,16 +188,21 @@ public final class CsvRecordStreamer {
         private boolean headerDone;
         private SourceFieldPositions positions;
 
-        private State(SourceStructureConfig config, int maxLineLength, Sink sink) {
+        private State(SourceStructureConfig config, HeaderExpectations expectations, int maxLineLength,
+                      Sink sink) {
             this.config = config;
+            this.expectations = expectations;
             this.maxLineLength = maxLineLength;
             this.sink = sink;
             if (!config.hasHeader()) {
                 this.headerDone = true;
-                this.positions = columnIndexPositions(config);
+                this.declared = columnIndexPositions(config.declaredFields());
+                this.expected = columnIndexPositions(expectations.references());
+                buildPositions();
                 if (config.expectedColumnCount() != null) {
                     this.columnCount = config.expectedColumnCount();
                     verifyPositionsFitColumnCount();
+                    buildPositions();
                 }
             }
         }
@@ -200,8 +246,11 @@ public final class CsvRecordStreamer {
             columnCount = header.length;
 
             if (config.fieldReferenceKind() == FieldReferenceKind.COLUMN_INDEX) {
-                positions = columnIndexPositions(config);
+                declared = columnIndexPositions(config.declaredFields());
+                expected = columnIndexPositions(expectations.references());
+                buildPositions();
                 verifyPositionsFitColumnCount();
+                buildPositions();
                 return;
             }
 
@@ -225,7 +274,111 @@ public final class CsvRecordStreamer {
                 }
                 resolved.put(field, position);
             }
-            positions = new SourceFieldPositions(resolved);
+            declared = resolved;
+            expected = resolveExpectedColumns(byName, header);
+            buildPositions();
+        }
+
+        /**
+         * R-STR-02/R-STR-03: de kolommen van de veldmapping en de recordfilters worden op naam
+         * teruggevonden; hun verwachte positie dient enkel als controle.
+         * <ul>
+         *   <li>gevonden op een andere positie ⇒ {@link #CODE_HEADER_FIELD_SHIFTED} (waarschuwing, de
+         *       levering gaat door en de naam blijft leidend);</li>
+         *   <li>niet gevonden terwijl er een andere kolom staat op de verwachte positie van een
+         *       identiteits-, prijs- of referentieveld ⇒ {@link #CODE_HEADER_FIELD_SEMANTIC_CHANGE}
+         *       (blokkerend: doorgaan zou de verkeerde kolom als sleutel of prijs inlezen);</li>
+         *   <li>niet gevonden terwijl een mapping de kolom nodig heeft ⇒
+         *       {@code CONFIG_MAPPING_SOURCE_UNRESOLVED} (blokkerend);</li>
+         *   <li>niet gevonden terwijl enkel een filter de kolom gebruikt ⇒ niets hier; dat filter
+         *       heeft zijn eigen {@code missing_column_behaviour} (R-FLT-03).</li>
+         * </ul>
+         */
+        private Map<String, Integer> resolveExpectedColumns(Map<String, Integer> byName, String[] header) {
+            Map<String, Integer> resolved = new LinkedHashMap<>();
+            if (expectations.isEmpty()) {
+                return resolved;
+            }
+            boolean shifted = false;
+            for (HeaderExpectations.ExpectedField field : expectations.fields()) {
+                Integer position = byName.get(normalise(field.reference()));
+                if (position == null) {
+                    reportMissingExpectedColumn(field, header);
+                    continue;
+                }
+                resolved.put(field.reference(), position);
+                Integer expectedPosition = field.expectedPosition();
+                if (expectedPosition != null && expectedPosition != position + 1) {
+                    shifted = true;
+                    sink.issue(new LineIssue(physicalLineCount, CODE_HEADER_FIELD_SHIFTED, field.reference(),
+                            String.valueOf(position + 1),
+                            "Column '" + field.reference() + "' was expected at position " + expectedPosition
+                                    + " but is at position " + (position + 1)
+                                    + "; it is read by name, not by position", true));
+                }
+            }
+            if (!shifted) {
+                reportUnknownTrailingColumns(header, resolved);
+            }
+            return resolved;
+        }
+
+        private void reportMissingExpectedColumn(HeaderExpectations.ExpectedField field, String[] header) {
+            Integer expectedPosition = field.expectedPosition();
+            if (field.semanticallyCritical() && expectedPosition != null) {
+                String found = expectedPosition >= 1 && expectedPosition <= header.length
+                        ? header[expectedPosition - 1].trim() : null;
+                throw new ScreeningBlockedException(CODE_HEADER_FIELD_SEMANTIC_CHANGE, field.reference(),
+                        found, field.reference(),
+                        "Position " + expectedPosition + " carries column '" + found + "' instead of the "
+                                + "expected identity, price or reference column '" + field.reference()
+                                + "', which is not in this header at all");
+            }
+            if (field.requiredInHeader()) {
+                throw new ScreeningBlockedException(
+                        ImportMappingConfigFactory.CODE_MAPPING_SOURCE_UNRESOLVED, field.reference(), null,
+                        field.reference(), "Mapped column '" + field.reference() + "' is missing from the "
+                                + "header on line " + physicalLineCount);
+            }
+        }
+
+        /**
+         * R-STR-03: een extra kolom achteraan die de definitie niet kent, zonder dat er iets verschoven
+         * is. Informatief — de bron is uitgebreid — maar nooit stil: een nieuwe kolom kan een nieuw
+         * veld zijn dat de beheerder wil mappen.
+         */
+        private void reportUnknownTrailingColumns(String[] header, Map<String, Integer> expectedPositions) {
+            Set<String> known = new HashSet<>();
+            int lastKnown = -1;
+            for (String field : config.declaredFields()) {
+                known.add(normalise(field));
+            }
+            for (Map.Entry<String, Integer> entry : declared.entrySet()) {
+                lastKnown = Math.max(lastKnown, entry.getValue());
+            }
+            for (Map.Entry<String, Integer> entry : expectedPositions.entrySet()) {
+                known.add(normalise(entry.getKey()));
+                lastKnown = Math.max(lastKnown, entry.getValue());
+            }
+            for (int i = lastKnown + 1; i < header.length; i++) {
+                if (known.contains(normalise(header[i]))) {
+                    continue;
+                }
+                sink.issue(new LineIssue(physicalLineCount, CODE_HEADER_UNKNOWN_COLUMN, header[i].trim(),
+                        String.valueOf(i + 1), "Column '" + header[i].trim() + "' at position " + (i + 1)
+                        + " is not used by this import definition", true));
+            }
+        }
+
+        /** De gedeclareerde velden plus de verwachte kolommen die binnen dit bestand passen. */
+        private void buildPositions() {
+            Map<String, Integer> merged = new LinkedHashMap<>(declared);
+            for (Map.Entry<String, Integer> entry : expected.entrySet()) {
+                if (columnCount < 0 || entry.getValue() < columnCount) {
+                    merged.putIfAbsent(entry.getKey(), entry.getValue());
+                }
+            }
+            positions = new SourceFieldPositions(merged);
         }
 
         private void readDataLine(String line) {
@@ -252,6 +405,7 @@ public final class CsvRecordStreamer {
                 // Bestand zonder header en zonder gedeclareerd kolomaantal: de eerste datalijn zet het contract.
                 columnCount = values.length;
                 verifyPositionsFitColumnCount();
+                buildPositions();
             }
             if (values.length != columnCount) {
                 sink.issue(new LineIssue(physicalLineCount, CODE_ROW_COLUMN_COUNT_MISMATCH, null, sample(line),
@@ -272,11 +426,17 @@ public final class CsvRecordStreamer {
             }
         }
 
+        /**
+         * Alleen de <b>gedeclareerde</b> revisievelden blokkeren wanneer hun kolomindex buiten het
+         * bestand valt. Een verwachte kolom van een filter die buiten het bestand valt wordt uit
+         * {@link #positions} weggelaten; dat filter beslist dan via zijn eigen
+         * {@code missing_column_behaviour} (R-FLT-03).
+         */
         private void verifyPositionsFitColumnCount() {
             if (columnCount < 0) {
                 return;
             }
-            for (Map.Entry<String, Integer> entry : positions.byReference().entrySet()) {
+            for (Map.Entry<String, Integer> entry : declared.entrySet()) {
                 if (entry.getValue() >= columnCount) {
                     throw new ScreeningBlockedException(CODE_COLUMN_INDEX_OUT_OF_RANGE,
                             "Declared column index " + entry.getKey() + " is beyond the " + columnCount
@@ -285,9 +445,9 @@ public final class CsvRecordStreamer {
             }
         }
 
-        private static SourceFieldPositions columnIndexPositions(SourceStructureConfig config) {
+        private static Map<String, Integer> columnIndexPositions(List<String> references) {
             Map<String, Integer> resolved = new LinkedHashMap<>();
-            for (String field : config.declaredFields()) {
+            for (String field : references) {
                 try {
                     resolved.put(field, Integer.parseInt(field.trim()) - 1);
                 } catch (NumberFormatException notAnIndex) {
@@ -295,7 +455,7 @@ public final class CsvRecordStreamer {
                             "Field reference " + field + " must be a 1-based column index");
                 }
             }
-            return new SourceFieldPositions(resolved);
+            return resolved;
         }
 
         private static String normalise(String headerName) {

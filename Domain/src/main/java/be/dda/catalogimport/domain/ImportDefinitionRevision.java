@@ -15,6 +15,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
@@ -182,6 +183,64 @@ public class ImportDefinitionRevision {
 
     @Column(name = "record_canonicalisation_version", nullable = false)
     private int recordCanonicalisationVersion = 1;
+
+    /** Bronveld (of kolomindex) van de munt; {@code null} betekent onbekend, nooit stil EUR (A22). */
+    @Column(name = "record_currency_field", length = 200)
+    private String recordCurrencyField;
+
+    // --- Prijsbeleid (Fase 3, ontwerp par. 2 004-10) ------------------------------------------
+    // De defaults zijn de normatieve waarden uit het ontwerp en gelden ook voor bestaande revisies.
+    // Ze worden in bouwstap 3d-3e toegepast; hier worden ze enkel bevroren bij de revisie bewaard.
+
+    /** Toegelaten prijsafwijking in procent t.o.v. de referenties; default 15 (R-PRI-10). */
+    @Column(name = "price_deviation_percent", nullable = false, precision = 24, scale = 12)
+    private BigDecimal priceDeviationPercent = new BigDecimal("15");
+
+    /** Ernst van een overschrijding: standaard {@code WARNING}, per revisie te verzwaren naar {@code ERROR}. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "price_deviation_severity", nullable = false, length = 20)
+    private RowIssueSeverity priceDeviationSeverity = RowIssueSeverity.WARNING;
+
+    /** Tolerantie op de prijsreconstructie {@code basis × pct / 100}; default 0,01 (R-PRI-07). */
+    @Column(name = "price_derivation_tolerance", nullable = false, precision = 24, scale = 6)
+    private BigDecimal priceDerivationTolerance = new BigDecimal("0.01");
+
+    /** Venster (in goedgekeurde dagwaarden) van het korte gemiddelde; default 50 (R-PRI-10). */
+    @Column(name = "price_avg_short_window", nullable = false)
+    private int priceAvgShortWindow = 50;
+
+    /** Venster (in goedgekeurde dagwaarden) van het lange gemiddelde; default 200 (R-PRI-10). */
+    @Column(name = "price_avg_long_window", nullable = false)
+    private int priceAvgLongWindow = 200;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "price_control_model", nullable = false, length = 20)
+    private PriceControlModel priceControlModel = PriceControlModel.DEVIATION;
+
+    // --- Drempels (Fase 3, ontwerp par. 2 004-10, R-THR-01/R-THR-05) ---------------------------
+
+    /** Automatisch aanmaken tot dit aantal nieuwe aanbiedingen; default 100. */
+    @Column(name = "creation_threshold_absolute", nullable = false)
+    private int creationThresholdAbsolute = 100;
+
+    /**
+     * Én tot dit aandeel van de importscope; default 1 procent. Bewust <b>niet</b> 100: het oude
+     * requirementsdocument is op dit punt aantoonbaar fout (ontwerp fase 3, par. 8).
+     */
+    @Column(name = "creation_threshold_share_percent", nullable = false, precision = 24, scale = 12)
+    private BigDecimal creationThresholdSharePercent = BigDecimal.ONE;
+
+    /** Aantal toegelaten kritieke records; default 0 ⇒ één kritiek record blokkeert de levering. */
+    @Column(name = "max_critical_records", nullable = false)
+    private int maxCriticalRecords;
+
+    /** {@code null} betekent "niet geconfigureerd", nooit 0 (aanname A18). */
+    @Column(name = "max_rejected_records")
+    private Integer maxRejectedRecords;
+
+    /** {@code null} betekent "niet geconfigureerd", nooit 0 (aanname A18). */
+    @Column(name = "max_rejected_share_percent", precision = 24, scale = 12)
+    private BigDecimal maxRejectedSharePercent;
 
     // --- Herkomst en audit --------------------------------------------------------------------
 
@@ -463,6 +522,102 @@ public class ImportDefinitionRevision {
 
     public void setRecordCanonicalisationVersion(int recordCanonicalisationVersion) {
         this.recordCanonicalisationVersion = recordCanonicalisationVersion;
+    }
+
+    public String getRecordCurrencyField() {
+        return recordCurrencyField;
+    }
+
+    public void setRecordCurrencyField(String recordCurrencyField) {
+        this.recordCurrencyField = recordCurrencyField;
+    }
+
+    public BigDecimal getPriceDeviationPercent() {
+        return priceDeviationPercent;
+    }
+
+    public void setPriceDeviationPercent(BigDecimal priceDeviationPercent) {
+        this.priceDeviationPercent = priceDeviationPercent;
+    }
+
+    public RowIssueSeverity getPriceDeviationSeverity() {
+        return priceDeviationSeverity;
+    }
+
+    public void setPriceDeviationSeverity(RowIssueSeverity priceDeviationSeverity) {
+        this.priceDeviationSeverity = priceDeviationSeverity;
+    }
+
+    public BigDecimal getPriceDerivationTolerance() {
+        return priceDerivationTolerance;
+    }
+
+    public void setPriceDerivationTolerance(BigDecimal priceDerivationTolerance) {
+        this.priceDerivationTolerance = priceDerivationTolerance;
+    }
+
+    public int getPriceAvgShortWindow() {
+        return priceAvgShortWindow;
+    }
+
+    public void setPriceAvgShortWindow(int priceAvgShortWindow) {
+        this.priceAvgShortWindow = priceAvgShortWindow;
+    }
+
+    public int getPriceAvgLongWindow() {
+        return priceAvgLongWindow;
+    }
+
+    public void setPriceAvgLongWindow(int priceAvgLongWindow) {
+        this.priceAvgLongWindow = priceAvgLongWindow;
+    }
+
+    public PriceControlModel getPriceControlModel() {
+        return priceControlModel;
+    }
+
+    public void setPriceControlModel(PriceControlModel priceControlModel) {
+        this.priceControlModel = priceControlModel;
+    }
+
+    public int getCreationThresholdAbsolute() {
+        return creationThresholdAbsolute;
+    }
+
+    public void setCreationThresholdAbsolute(int creationThresholdAbsolute) {
+        this.creationThresholdAbsolute = creationThresholdAbsolute;
+    }
+
+    public BigDecimal getCreationThresholdSharePercent() {
+        return creationThresholdSharePercent;
+    }
+
+    public void setCreationThresholdSharePercent(BigDecimal creationThresholdSharePercent) {
+        this.creationThresholdSharePercent = creationThresholdSharePercent;
+    }
+
+    public int getMaxCriticalRecords() {
+        return maxCriticalRecords;
+    }
+
+    public void setMaxCriticalRecords(int maxCriticalRecords) {
+        this.maxCriticalRecords = maxCriticalRecords;
+    }
+
+    public Integer getMaxRejectedRecords() {
+        return maxRejectedRecords;
+    }
+
+    public void setMaxRejectedRecords(Integer maxRejectedRecords) {
+        this.maxRejectedRecords = maxRejectedRecords;
+    }
+
+    public BigDecimal getMaxRejectedSharePercent() {
+        return maxRejectedSharePercent;
+    }
+
+    public void setMaxRejectedSharePercent(BigDecimal maxRejectedSharePercent) {
+        this.maxRejectedSharePercent = maxRejectedSharePercent;
     }
 
     public ImportDefinitionRevision getBasedOnRevision() {

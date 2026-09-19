@@ -2,8 +2,9 @@
 
 -- Fase 3 (docs/design/fase3-rules-design.md par. 2): additief naast 001, 002 en 003, die ongewijzigd blijven.
 -- Bouwstap 3a levert enkel de sub-changesets die het issuemodel nodig heeft: 004-4, 004-11 (basisdeel) en
--- 004-12. De overige sub-changesets uit par. 2 (004-1..3, 004-5..10, 004-13, 004-14) worden door de
--- volgende bouwstappen additief aan dit bestand toegevoegd, met hun eigen id.
+-- 004-12. Bouwstap 3b voegt 004-1 (+ seed 004-1b), 004-2, 004-3, 004-10 en 004-11b toe. De overige
+-- sub-changesets uit par. 2 (004-5..9, 004-13, 004-14) worden door de volgende bouwstappen additief
+-- aan dit bestand toegevoegd, met hun eigen id.
 --
 -- Een reeds uitgevoerde changeset wordt nooit bijgewerkt (checksum): de resterende kolommen van 004-11
 -- (tellers en voortgangskolommen van de passes E1-E4) krijgen daarom in bouwstap 3b-3h een eigen id
@@ -101,3 +102,243 @@ create index idx_import_row_issue_group on import_row_issue (issue_group_id);
 --rollback alter table import_row_issue drop column issue_domain;
 --rollback alter table import_row_issue alter column delivery_file_id set not null;
 --rollback alter table import_row_issue alter column row_number set not null;
+
+-- =============================================================================================
+-- Bouwstap 3b: veldcatalogus, veldmapping, recordfilters en de bijhorende revisie-/batchkolommen
+-- (ontwerp fase 3 par. 2 sub-changesets 004-1, 004-2, 004-3, 004-10 en het 3b-deel van 004-11).
+-- De hierboven reeds uitgevoerde changesets 004-4, 004-11 en 004-12 blijven ongewijzigd.
+-- =============================================================================================
+
+--changeset catalogimport:004-1-import-field-catalog
+--comment Logische doelvelden die een importdefinitie mag vullen (ontwerp fase 3 par. 2 004-1, R-STR-04/R-STR-05/R-REF-08).
+
+-- Referentiedata, geen configuratie per revisie: welke doelvelden er bestaan, wie er eigenaar van is
+-- en welk gewicht ze in de identiteit hebben. Een mapping verwijst hiernaar; de revisie kan de
+-- eigenaar enkel wijzigen zolang owner_changeable dat toelaat (R-REF-08).
+--
+-- identity_class NONE betekent "speelt geen rol in de identiteit". Prijs en omschrijving staan
+-- bewust op NONE: die mogen nooit identiteitsbeslissend zijn (R-ID-08).
+create table import_field_catalog (
+    code                 varchar(60) not null,
+    name                 varchar(200) not null,
+    data_type            varchar(20) not null,
+    default_owner        varchar(30) not null,
+    identity_class       varchar(30) not null,
+    price_component_code varchar(20),
+    reference_type       varchar(30),
+    owner_changeable     boolean not null default true,
+    target_route         varchar(200),
+    sort_order           integer not null,
+    active               boolean not null default true,
+    constraint pk_import_field_catalog primary key (code),
+    constraint ck_import_field_catalog_data_type
+        check (data_type in ('TEXT', 'DECIMAL', 'INTEGER', 'DATE', 'DATETIME', 'BOOLEAN')),
+    constraint ck_import_field_catalog_owner
+        check (default_owner in ('CATALOG_SOURCE', 'PRICE_CONTROL', 'CRITICAL_REFERENCE', 'PRODIS_USER')),
+    constraint ck_import_field_catalog_identity_class
+        check (identity_class in ('STRONG', 'ARTICLE_REFERENCE', 'SUPPORTING', 'WEAK', 'NONE')),
+    constraint ck_import_field_catalog_price_component
+        check (price_component_code is null or default_owner = 'PRICE_CONTROL'),
+    -- Een kritieke referentie is per definitie eigendom van de referentiecontrole en die eigenaar is
+    -- niet wisselbaar: anders zou een revisie de EAN-controle stil kunnen uitschakelen (R-REF-08).
+    constraint ck_import_field_catalog_reference
+        check (reference_type is null or (default_owner = 'CRITICAL_REFERENCE' and owner_changeable = false))
+);
+
+--rollback drop table import_field_catalog;
+
+--changeset catalogimport:004-1b-import-field-catalog-seed
+--comment Seed van de veldcatalogus (ontwerp fase 3 par. 2 004-1). BRAND en UNIT zijn eigendom van de Prodis-gebruiker en niet door een import te overschrijven.
+
+insert into import_field_catalog (code, name, data_type, default_owner, identity_class,
+        price_component_code, reference_type, owner_changeable, target_route, sort_order, active) values
+    ('BASE_PRICE', 'Basisprijs', 'DECIMAL', 'PRICE_CONTROL', 'NONE', 'BASE_PRICE', null, true, 'offer.price.base', 10, true),
+    ('AKP_PCT', 'Aankoopprijs in procent van de basisprijs', 'DECIMAL', 'PRICE_CONTROL', 'NONE', 'AKP', null, true, 'offer.price.akp', 20, true),
+    ('VKP1_PCT', 'Verkoopprijs 1 in procent van de basisprijs', 'DECIMAL', 'PRICE_CONTROL', 'NONE', 'VKP1', null, true, 'offer.price.vkp1', 30, true),
+    ('VKP2_PCT', 'Verkoopprijs 2 in procent van de basisprijs', 'DECIMAL', 'PRICE_CONTROL', 'NONE', 'VKP2', null, true, 'offer.price.vkp2', 40, true),
+    ('VKP3_PCT', 'Verkoopprijs 3 in procent van de basisprijs', 'DECIMAL', 'PRICE_CONTROL', 'NONE', 'VKP3', null, true, 'offer.price.vkp3', 50, true),
+    ('VKP4_PCT', 'Verkoopprijs 4 in procent van de basisprijs', 'DECIMAL', 'PRICE_CONTROL', 'NONE', 'VKP4', null, true, 'offer.price.vkp4', 60, true),
+    ('VKP5_PCT', 'Verkoopprijs 5 in procent van de basisprijs', 'DECIMAL', 'PRICE_CONTROL', 'NONE', 'VKP5', null, true, 'offer.price.vkp5', 70, true),
+    ('VKP_GROSS_PCT', 'Brutoverkoopprijs in procent van de basisprijs', 'DECIMAL', 'PRICE_CONTROL', 'NONE', 'VKP_GROSS', null, true, 'offer.price.vkpGross', 80, true),
+    ('EAN', 'EAN-barcode', 'TEXT', 'CRITICAL_REFERENCE', 'ARTICLE_REFERENCE', null, 'EAN', false, 'article.reference.ean', 90, true),
+    ('PIM_ID', 'PIM-identiteit', 'TEXT', 'CRITICAL_REFERENCE', 'ARTICLE_REFERENCE', null, 'PIM_ID', false, 'article.reference.pimId', 100, true),
+    ('CAB_ID', 'CAB-identiteit', 'TEXT', 'CRITICAL_REFERENCE', 'ARTICLE_REFERENCE', null, 'CAB_ID', false, 'article.reference.cabId', 110, true),
+    ('E_MARK_ARTICLE_REFERENCE', 'E-merk met artikelreferentie', 'TEXT', 'CRITICAL_REFERENCE', 'ARTICLE_REFERENCE', null, 'E_MARK_ARTICLE_REFERENCE', false, 'article.reference.eMark', 120, true),
+    ('E_SUPPLIER', 'Externe leveranciersidentiteit', 'TEXT', 'CATALOG_SOURCE', 'SUPPORTING', null, null, true, 'offer.externalSupplier', 130, true),
+    ('SUPPLIER_BARCODE', 'Leveranciersbarcode', 'TEXT', 'CATALOG_SOURCE', 'SUPPORTING', null, null, true, 'offer.supplierBarcode', 140, true),
+    ('DESCRIPTION', 'Omschrijving', 'TEXT', 'CATALOG_SOURCE', 'NONE', null, null, true, 'article.description', 150, true),
+    ('BRAND', 'Merk', 'TEXT', 'PRODIS_USER', 'NONE', null, null, false, 'article.brand', 160, true),
+    ('UNIT', 'Eenheid', 'TEXT', 'PRODIS_USER', 'NONE', null, null, false, 'article.unit', 170, true);
+
+--rollback delete from import_field_catalog;
+
+--changeset catalogimport:004-2-import-field-mapping
+--comment Mapping van bronveld naar doelveld per bevroren revisie (ontwerp fase 3 par. 2 004-2, R-STR-04).
+
+-- source_reference draagt - net als identity_*_field op de revisie - ofwel een headernaam ofwel een
+-- 1-gebaseerde kolomindex, afhankelijk van structure_field_reference_kind.
+--
+-- expected_position is de kolompositie waarop dit veld bij het vastleggen van de revisie stond. Ze is
+-- optioneel en dient enkel voor de headerpositiecontrole (R-STR-02/R-STR-03): de headernaam blijft
+-- leidend, een verschoven kolom is een waarschuwing en geen stille hermapping.
+--
+-- Sjablonen/bookmarks (par. 14.16 van de businessanalyse, beslissingslog 18/09) kunnen later zonder
+-- migratie aansluiten: value_kind BOOKMARK en bookmark_name bestaan al; er komen dan enkel tabellen
+-- bij, deze tabel blijft ongewijzigd.
+create table import_field_mapping (
+    id                     bigint generated by default as identity,
+    definition_revision_id bigint not null,
+    sequence_number        integer not null,
+    target_field_code      varchar(60) not null,
+    value_kind             varchar(20) not null,
+    source_reference       varchar(200),
+    expected_position      integer,
+    fixed_value            varchar(500),
+    bookmark_name          varchar(60),
+    default_value          varchar(500),
+    data_type              varchar(20) not null,
+    required               boolean not null default false,
+    max_length             integer,
+    decimal_scale          integer,
+    zero_allowed           boolean not null default false,
+    negative_allowed       boolean not null default false,
+    transform_kind         varchar(30) not null default 'NONE',
+    transform_config       varchar(1000),
+    field_owner            varchar(30) not null,
+    identity_class         varchar(30) not null,
+    price_component_code   varchar(20),
+    reference_type         varchar(30),
+    active                 boolean not null default true,
+    created_at             timestamp with time zone not null,
+    created_by             varchar(100),
+    constraint pk_import_field_mapping primary key (id),
+    constraint uk_import_field_mapping_target unique (definition_revision_id, target_field_code),
+    constraint uk_import_field_mapping_sequence unique (definition_revision_id, sequence_number),
+    constraint fk_import_field_mapping_revision foreign key (definition_revision_id)
+        references import_definition_revision (id),
+    constraint fk_import_field_mapping_target foreign key (target_field_code)
+        references import_field_catalog (code),
+    constraint ck_import_field_mapping_value_kind
+        check (value_kind in ('SOURCE_FIELD', 'FIXED_VALUE', 'BOOKMARK', 'DERIVED')),
+    constraint ck_import_field_mapping_source
+        check (value_kind <> 'SOURCE_FIELD' or source_reference is not null),
+    constraint ck_import_field_mapping_fixed
+        check (value_kind <> 'FIXED_VALUE' or fixed_value is not null),
+    constraint ck_import_field_mapping_bookmark
+        check (value_kind <> 'BOOKMARK' or bookmark_name is not null),
+    constraint ck_import_field_mapping_data_type
+        check (data_type in ('TEXT', 'DECIMAL', 'INTEGER', 'DATE', 'DATETIME', 'BOOLEAN')),
+    constraint ck_import_field_mapping_owner
+        check (field_owner in ('CATALOG_SOURCE', 'PRICE_CONTROL', 'CRITICAL_REFERENCE', 'PRODIS_USER')),
+    constraint ck_import_field_mapping_identity_class
+        check (identity_class in ('STRONG', 'ARTICLE_REFERENCE', 'SUPPORTING', 'WEAK', 'NONE')),
+    constraint ck_import_field_mapping_price_component
+        check (price_component_code is null or field_owner = 'PRICE_CONTROL'),
+    constraint ck_import_field_mapping_reference
+        check (reference_type is null or field_owner = 'CRITICAL_REFERENCE')
+);
+
+create index idx_import_field_mapping_revision on import_field_mapping (definition_revision_id, sequence_number);
+
+--rollback drop table import_field_mapping;
+
+--changeset catalogimport:004-3-import-record-filter
+--comment Recordfilters die de importscope bepalen (ontwerp fase 3 par. 2 004-3, R-FLT-01..R-FLT-03).
+
+-- Het filter is onderdeel van de importscope, niet een schermfilter: het bepaalt waarop de
+-- creatiedrempel, de duplicaatcontrole en later het volledigheidsbewijs rekenen (par. 14.4).
+--
+-- null_behaviour bepaalt wat een ontbrekende of lege bronwaarde betekent; missing_column_behaviour
+-- wat een ontbrekende kolom betekent. Geen van beide mag ooit stil "het filter matcht niet" worden
+-- (R-FLT-03): de standaard is uitsluiten respectievelijk de levering blokkeren.
+--
+-- created_at/created_by staan niet in het ontwerp maar zijn hier toegevoegd omdat een filterwijziging
+-- de importscope wijzigt: zonder die twee kolommen is achteraf niet meer vast te stellen wanneer en
+-- door wie de scope van een levering veranderd is.
+create table import_record_filter (
+    id                       bigint generated by default as identity,
+    definition_revision_id   bigint not null,
+    sequence_number          integer not null,
+    filter_stage             varchar(20) not null default 'SOURCE_FIELD',
+    source_reference         varchar(200) not null,
+    operator                 varchar(20) not null,
+    compare_value            varchar(500) not null,
+    outcome                  varchar(20) not null,
+    case_sensitive           boolean not null default false,
+    trim_before_compare      boolean not null default true,
+    null_behaviour           varchar(20) not null default 'EXCLUDE',
+    missing_column_behaviour varchar(20) not null default 'BLOCK',
+    created_at               timestamp with time zone,
+    created_by               varchar(100),
+    constraint pk_import_record_filter primary key (id),
+    constraint uk_import_record_filter_sequence unique (definition_revision_id, sequence_number),
+    constraint fk_import_record_filter_revision foreign key (definition_revision_id)
+        references import_definition_revision (id),
+    constraint ck_import_record_filter_stage
+        check (filter_stage in ('SOURCE_FIELD', 'TARGET_FIELD')),
+    constraint ck_import_record_filter_operator
+        check (operator in ('EQUALS', 'NOT_EQUALS', 'BEGINS_WITH', 'ENDS_WITH', 'CONTAINS', 'NOT_CONTAINS')),
+    constraint ck_import_record_filter_outcome
+        check (outcome in ('INCLUDE', 'EXCLUDE', 'REJECT')),
+    constraint ck_import_record_filter_null_behaviour
+        check (null_behaviour in ('EXCLUDE', 'REJECT', 'COMPARE_AS_EMPTY')),
+    constraint ck_import_record_filter_missing_column
+        check (missing_column_behaviour in ('BLOCK', 'EXCLUDE', 'REJECT'))
+);
+
+--rollback drop table import_record_filter;
+
+--changeset catalogimport:004-10-import-definition-revision-rules
+--comment Prijs-, drempel- en valutabeleid per revisie (ontwerp fase 3 par. 2 004-10). Additief; de defaults zijn de normatieve waarden uit het ontwerp.
+
+-- De defaults gelden ook voor bestaande revisies: 15% afwijkingsgrens (R-PRI-10), tolerantie 0,01 op
+-- de prijsreconstructie (R-PRI-07), vensters van 50 en 200 dagwaarden (R-PRI-10), creatiedrempel
+-- 100 nieuwe aanbiedingen EN 1% van de importscope (R-THR-01; NIET 100%) en max_critical_records 0
+-- (R-THR-05: één kritiek record blokkeert de levering tenzij expliciet anders ingesteld).
+-- max_rejected_records en max_rejected_share_percent hebben bewust GEEN default: NULL betekent
+-- "niet geconfigureerd", niet "0".
+alter table import_definition_revision add column price_deviation_percent numeric(24,12) not null default 15;
+alter table import_definition_revision add column price_deviation_severity varchar(20) not null default 'WARNING';
+alter table import_definition_revision add column price_derivation_tolerance numeric(24,6) not null default 0.01;
+alter table import_definition_revision add column price_avg_short_window integer not null default 50;
+alter table import_definition_revision add column price_avg_long_window integer not null default 200;
+alter table import_definition_revision add column price_control_model varchar(20) not null default 'DEVIATION';
+alter table import_definition_revision add column creation_threshold_absolute integer not null default 100;
+alter table import_definition_revision add column creation_threshold_share_percent numeric(24,12) not null default 1;
+alter table import_definition_revision add column max_critical_records integer not null default 0;
+alter table import_definition_revision add column max_rejected_records integer;
+alter table import_definition_revision add column max_rejected_share_percent numeric(24,12);
+alter table import_definition_revision add column record_currency_field varchar(200);
+
+alter table import_definition_revision add constraint ck_import_definition_revision_price_model
+    check (price_control_model in ('DEVIATION', 'BOXPLOT'));
+alter table import_definition_revision add constraint ck_import_definition_revision_deviation_severity
+    check (price_deviation_severity in ('WARNING', 'ERROR'));
+
+--rollback alter table import_definition_revision drop constraint ck_import_definition_revision_deviation_severity;
+--rollback alter table import_definition_revision drop constraint ck_import_definition_revision_price_model;
+--rollback alter table import_definition_revision drop column record_currency_field;
+--rollback alter table import_definition_revision drop column max_rejected_share_percent;
+--rollback alter table import_definition_revision drop column max_rejected_records;
+--rollback alter table import_definition_revision drop column max_critical_records;
+--rollback alter table import_definition_revision drop column creation_threshold_share_percent;
+--rollback alter table import_definition_revision drop column creation_threshold_absolute;
+--rollback alter table import_definition_revision drop column price_control_model;
+--rollback alter table import_definition_revision drop column price_avg_long_window;
+--rollback alter table import_definition_revision drop column price_avg_short_window;
+--rollback alter table import_definition_revision drop column price_derivation_tolerance;
+--rollback alter table import_definition_revision drop column price_deviation_severity;
+--rollback alter table import_definition_revision drop column price_deviation_percent;
+
+--changeset catalogimport:004-11b-import-batch-filter-counters
+--comment De twee tellers die de recordfilterstap nodig heeft (ontwerp fase 3 par. 2 004-11, R-FLT-04).
+
+-- Nullable: NULL betekent onbekend (het bestand is niet volledig gelezen), nooit stil 0. Samen met de
+-- bestaande tellers moet gelden: raw = filtered_out + error_before_filter + rejected + valid.
+-- De overige 004-11-kolommen (incidenttellers, voortgang per pass, baseline_approved_by) volgen in
+-- bouwstap 3c-3h onder een eigen id; een uitgevoerde changeset wordt nooit bijgewerkt.
+alter table import_batch add column filtered_out_count bigint;
+alter table import_batch add column error_before_filter_count bigint;
+
+--rollback alter table import_batch drop column error_before_filter_count;
+--rollback alter table import_batch drop column filtered_out_count;
