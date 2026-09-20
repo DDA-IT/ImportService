@@ -544,6 +544,49 @@ class ScreeningSchemaTest {
     }
 
     /**
+     * Bouwstap 3h-4 (004-10d): de drempel op de records ter beoordeling is een percentage per revisie,
+     * {@code not null} met default 1 — een lege drempel zou de controle stilzwijgend uitschakelen. De
+     * kolom heeft dezelfde schaal als elk ander percentage in dit project ({@code numeric(24,12)},
+     * par. 3.4), zodat een drempel als 0,125% exact vergeleken kan worden en nooit langs een
+     * afronding wegvalt.
+     * <p>
+     * De absolute voorgangers {@code max_critical_records} en {@code max_rejected_records} blijven
+     * bestaan (hernoemen of verwijderen zou een uitgevoerde changeset breken) maar worden niet meer
+     * gelezen; {@code max_rejected_share_percent} blijft nullable = niet geconfigureerd.
+     */
+    @Test
+    void givesEveryRevisionAMaxCriticalSharePercentOfOneByDefault() {
+        Scenario s = scenario("CRITPCT");
+
+        assertThat(jdbc.queryForObject("select max_critical_share_percent "
+                        + "from import_definition_revision where id = ?", BigDecimal.class,
+                s.revision().getId())).isEqualByComparingTo(BigDecimal.ONE);
+        assertThat(revisions.findById(s.revision().getId()).orElseThrow().getMaxCriticalSharePercent())
+                .isEqualByComparingTo(BigDecimal.ONE);
+        assertThatThrownBy(() -> jdbc.update("update import_definition_revision "
+                        + "set max_critical_share_percent = null where id = ?", s.revision().getId()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        Map<String, Object> column = jdbc.queryForMap("select numeric_precision, numeric_scale, "
+                + "is_nullable from information_schema.columns "
+                + "where lower(table_name) = 'import_definition_revision' "
+                + "and lower(column_name) = 'max_critical_share_percent'");
+        assertThat(((Number) column.get("numeric_precision")).intValue()).isEqualTo(24);
+        assertThat(((Number) column.get("numeric_scale")).intValue()).isEqualTo(12);
+        assertThat(column.get("is_nullable")).isEqualTo("NO");
+
+        // Een drempel met decimalen wordt exact bewaard, nooit afgerond naar een geheel percentage.
+        jdbc.update("update import_definition_revision set max_critical_share_percent = 0.125 "
+                + "where id = ?", s.revision().getId());
+        assertThat(jdbc.queryForObject("select max_critical_share_percent "
+                        + "from import_definition_revision where id = ?", BigDecimal.class,
+                s.revision().getId())).isEqualByComparingTo(new BigDecimal("0.125"));
+        // De verwerpingsdrempel blijft bewust leeg: niet geconfigureerd is nooit overschreden.
+        assertThat(revisions.findById(s.revision().getId()).orElseThrow()
+                .getMaxRejectedSharePercent()).isNull();
+    }
+
+    /**
      * Bouwstap 3h-3 (004-11e3): het oordeel van het creatiebeleid staat op de batch en is nullable —
      * {@code null} is "nog niet beoordeeld" en nooit stil {@code AUTOMATIC}. De check laat exact de
      * drie bekende uitkomsten toe: een verzonnen vierde waarde is een programmeerfout en mag niet in

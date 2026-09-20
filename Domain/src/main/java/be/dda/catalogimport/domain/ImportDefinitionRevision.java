@@ -246,15 +246,50 @@ public class ImportDefinitionRevision {
     @Column(name = "creation_threshold_share_percent", nullable = false, precision = 24, scale = 12)
     private BigDecimal creationThresholdSharePercent = BigDecimal.ONE;
 
-    /** Aantal toegelaten kritieke records; default 0 ⇒ één kritiek record blokkeert de levering. */
+    /**
+     * Aantal toegelaten kritieke records.
+     *
+     * @deprecated Sinds bouwstap 3h-4 <b>niet meer in gebruik</b> (beslissingslog 20/09: elke drempel
+     *     is altijd een percentage). De kolom blijft bestaan — hernoemen of verwijderen zou een reeds
+     *     uitgevoerde changeset breken — maar geen enkele verwerking leest haar nog. Gebruik
+     *     {@link #getMaxCriticalSharePercent()}.
+     */
+    @Deprecated(since = "3h-4")
     @Column(name = "max_critical_records", nullable = false)
     private int maxCriticalRecords;
 
-    /** {@code null} betekent "niet geconfigureerd", nooit 0 (aanname A18). */
+    /**
+     * {@code null} betekent "niet geconfigureerd", nooit 0 (aanname A18).
+     *
+     * @deprecated Sinds bouwstap 3h-4 <b>niet meer in gebruik</b>, om dezelfde reden als
+     *     {@link #maxCriticalRecords}. Gebruik {@link #getMaxRejectedSharePercent()}.
+     */
+    @Deprecated(since = "3h-4")
     @Column(name = "max_rejected_records")
     private Integer maxRejectedRecords;
 
-    /** {@code null} betekent "niet geconfigureerd", nooit 0 (aanname A18). */
+    /**
+     * Het maximale aandeel <b>records ter beoordeling</b> van de records in scope; default 1 procent
+     * (beslissingslog 20/09, ontwerp par. 15.2, changeset 004-10d).
+     * <p>
+     * Records ter beoordeling = kritieke lijnen ({@code import_batch.critical_line_count}) plus
+     * vastgehouden identiteitsincidenten ({@code identity_incident_count}). Ligt hun aantal
+     * <b>boven</b> dit aandeel, dan stopt de hele levering ({@code BLOCKED} met
+     * {@code CRITICAL_RECORD_THRESHOLD_EXCEEDED}); eronder blijft het een review op leveringsniveau.
+     * De vergelijking gebeurt decimaal: {@code aantal × 100 > percentage × scope}; exact op de grens
+     * is <b>niet</b> overschreden.
+     * <p>
+     * Nooit {@code null}: de kolom is {@code not null} met default 1, want een lege drempel zou de
+     * controle stilzwijgend uitschakelen.
+     */
+    @Column(name = "max_critical_share_percent", nullable = false, precision = 24, scale = 12)
+    private BigDecimal maxCriticalSharePercent = BigDecimal.ONE;
+
+    /**
+     * Het maximale aandeel <b>verworpen regels</b> van de records in scope. {@code null} betekent
+     * "niet geconfigureerd" en dus <b>nooit</b> overschreden (aanname A18) — nooit 0, want 0 zou
+     * betekenen dat één verworpen regel de levering stopt.
+     */
     @Column(name = "max_rejected_share_percent", precision = 24, scale = 12)
     private BigDecimal maxRejectedSharePercent;
 
@@ -644,20 +679,37 @@ public class ImportDefinitionRevision {
         this.creationThresholdSharePercent = creationThresholdSharePercent;
     }
 
+    /** @deprecated niet meer in gebruik sinds 3h-4; zie {@link #maxCriticalRecords}. */
+    @Deprecated(since = "3h-4")
     public int getMaxCriticalRecords() {
         return maxCriticalRecords;
     }
 
+    /** @deprecated niet meer in gebruik sinds 3h-4; zie {@link #maxCriticalRecords}. */
+    @Deprecated(since = "3h-4")
     public void setMaxCriticalRecords(int maxCriticalRecords) {
         this.maxCriticalRecords = maxCriticalRecords;
     }
 
+    /** @deprecated niet meer in gebruik sinds 3h-4; zie {@link #maxRejectedRecords}. */
+    @Deprecated(since = "3h-4")
     public Integer getMaxRejectedRecords() {
         return maxRejectedRecords;
     }
 
+    /** @deprecated niet meer in gebruik sinds 3h-4; zie {@link #maxRejectedRecords}. */
+    @Deprecated(since = "3h-4")
     public void setMaxRejectedRecords(Integer maxRejectedRecords) {
         this.maxRejectedRecords = maxRejectedRecords;
+    }
+
+    /** Nooit {@code null}: zonder percentage zou de beoordelingsdrempel uitstaan (default 1). */
+    public BigDecimal getMaxCriticalSharePercent() {
+        return maxCriticalSharePercent;
+    }
+
+    public void setMaxCriticalSharePercent(BigDecimal maxCriticalSharePercent) {
+        this.maxCriticalSharePercent = maxCriticalSharePercent;
     }
 
     public BigDecimal getMaxRejectedSharePercent() {

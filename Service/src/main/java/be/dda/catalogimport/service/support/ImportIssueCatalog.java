@@ -108,6 +108,21 @@ public final class ImportIssueCatalog {
      * bestaande aanbiedingen gaan gewoon door.
      */
     public static final String BULK_CREATION_INCIDENT = "BULK_CREATION_INCIDENT";
+    /**
+     * Zoveel records die beoordeling vragen — kritieke lijnen plus vastgehouden
+     * identiteitsincidenten — dat hun aandeel boven {@code max_critical_share_percent} van de records
+     * in scope ligt (ontwerp fase 3 par. 15.2/15.3, bouwstap 3h-4). De levering is dan als geheel
+     * onbetrouwbaar: ze eindigt op {@code BLOCKED}, zonder één inhoudelijke mutatie. Eronder is
+     * hetzelfde verschijnsel géén blokkade maar een review op leveringsniveau.
+     */
+    public static final String CRITICAL_RECORD_THRESHOLD_EXCEEDED = "CRITICAL_RECORD_THRESHOLD_EXCEEDED";
+    /**
+     * Zoveel verworpen bronregels dat hun aandeel boven {@code max_rejected_share_percent} van de
+     * records in scope ligt (ontwerp fase 3 par. 15.2/15.3, bouwstap 3h-4). Die drempel is standaard
+     * <b>niet</b> geconfigureerd: verworpen regels verwerpen normaal enkel zichzelf, en pas wanneer
+     * een beheerder een grens zet, wordt het volume ervan een leveringsoordeel.
+     */
+    public static final String REJECTED_RECORD_THRESHOLD_EXCEEDED = "REJECTED_RECORD_THRESHOLD_EXCEEDED";
 
     /** Scheidingsteken tussen het voorvoegsel en het variabele deel van een dynamische code. */
     public static final char DYNAMIC_CODE_SEPARATOR = ':';
@@ -452,6 +467,20 @@ public final class ImportIssueCatalog {
         for (String code : new String[] {
                 INITIAL_LOAD_REQUIRES_APPROVAL,
                 BULK_CREATION_INCIDENT}) {
+            put(catalogue, code, RowIssueSeverity.BLOCKING, IssueDomain.DELIVERY_SOURCE,
+                    ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+        }
+
+        // Bouwstap 3h-4 (ontwerp par. 15.2/15.3): de twee leveringsdrempels. Anders dan het
+        // creatiebeleid houden deze twee de levering werkelijk tegen: ze zetten de batch op BLOCKED,
+        // zonder één inhoudelijke mutatie. Ernst BLOCKING is hier dus geen tussenstand maar het
+        // eindoordeel - par. 15.3 merkt beide codes uitdrukkelijk als blokkerend aan. Niveau DELIVERY
+        // met impactscope DELIVERY: het is een vaststelling over de levering als geheel, nooit over
+        // één record; de individuele meldingen die eraan ten grondslag liggen, blijven onverkort
+        // bestaan.
+        for (String code : new String[] {
+                CRITICAL_RECORD_THRESHOLD_EXCEEDED,
+                REJECTED_RECORD_THRESHOLD_EXCEEDED}) {
             put(catalogue, code, RowIssueSeverity.BLOCKING, IssueDomain.DELIVERY_SOURCE,
                     ControlLevel.DELIVERY, ImpactScope.DELIVERY);
         }

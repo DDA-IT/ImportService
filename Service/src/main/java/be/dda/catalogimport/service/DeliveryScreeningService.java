@@ -60,6 +60,7 @@ import be.dda.catalogimport.service.support.ReferenceControlEvaluator.ReferenceO
 import be.dda.catalogimport.service.support.ScreeningBlockedException;
 import be.dda.catalogimport.service.support.SourceStructureConfig;
 import be.dda.catalogimport.service.support.SourceStructureConfigFactory;
+import be.dda.catalogimport.service.support.ThresholdEvaluator;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -144,11 +145,19 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       een aparte {@code IDENTITY_REFERENCE_INCIDENT}-mutatie die op goedkeuring wacht. Dezelfde
  *       referentiewaarde bij twee aanbiedingen binnen één levering houdt <b>beide</b> regels vast —
  *       nooit "laatste wint".</li>
- *   <li><b>Tussenstand van bouwstap 3f.</b> Een levering met kritieke referentie-incidenten eindigt op
- *       {@code SCREENED} met {@code validation_result = BLOCKING}: de rest van de catalogus is
- *       bruikbaar, de betrokken aanbiedingen zijn vastgehouden. De drempel {@code max_critical_records}
- *       (default 0), die zo'n levering op eindstatus {@code BLOCKED} zet, hoort bij bouwstap 3h
- *       (ontwerp fase 3, par. 3.6); tot dan wordt die drempel niet geraden.</li>
+ *   <li><b>Een levering stopt pas wanneer ze als geheel onbetrouwbaar is</b> (bouwstap 3h-4, pass
+ *       E4b, ontwerp par. 15.2/15.3). Twee drempels per revisie, allebei een <b>percentage</b> van de
+ *       records in scope ({@code raw_record_count − filtered_out_count}) en nooit een vast aantal
+ *       (beslissingslog 20/09): {@code max_critical_share_percent} (default 1%) op de records die
+ *       beoordeling vragen — kritieke lijnen plus vastgehouden identiteitsincidenten — en
+ *       {@code max_rejected_share_percent} (standaard niet geconfigureerd, dus nooit overschreden) op
+ *       de verworpen regels. <b>Binnen</b> de drempel verandert er niets: de levering gaat door en
+ *       vraagt een review. <b>Boven</b> de drempel eindigt ze op {@code BLOCKED} met
+ *       {@code CRITICAL_RECORD_THRESHOLD_EXCEEDED} respectievelijk
+ *       {@code REJECTED_RECORD_THRESHOLD_EXCEEDED}, zonder één inhoudelijke mutatie, met precies één
+ *       marker. De reeds geschreven {@code IDENTITY_REFERENCE_INCIDENT}-mutaties (E2) blijven staan
+ *       als bewijs. Exact op de grens is niet overschreden; de absolute kolommen
+ *       {@code max_critical_records}/{@code max_rejected_records} worden niet meer gelezen.</li>
  *   <li><b>Nieuwe aanbiedingen worden niet zomaar aangemaakt</b> (bouwstap 3h-3, pass E4b, ontwerp
  *       par. 15.2, R-THR-01). Vóór de mutatiegeneratie wordt één vraag beantwoord en vastgelegd op
  *       {@code import_batch.creation_outcome}: mag deze levering zelf creëren? Een koppeling zonder
@@ -294,6 +303,8 @@ public class DeliveryScreeningService {
                            ImportMappingConfig mappingConfig, PriceControl priceControl,
                            BigDecimal bulkIncidentSharePercent,
                            BigDecimal creationThresholdSharePercent,
+                           BigDecimal maxCriticalSharePercent,
+                           BigDecimal maxRejectedSharePercent,
                            ScreeningBlockedException configFailure) {
 
         private MutationContext mutationContext() {
@@ -326,6 +337,15 @@ public class DeliveryScreeningService {
 
         private static Blockage duplicates(String code, long duplicateRowCount, String reason) {
             return new Blockage(code, reason, null, null, null, null, duplicateRowCount);
+        }
+
+        /**
+         * Een vaststelling over de levering als geheel, zonder regelnummer: een overschreden drempel
+         * (bouwstap 3h-4). De issuerij is dan al geschreven door de pass die de drempel vaststelde,
+         * met haar aantallen erin; {@code block(...)} schrijft er geen tweede.
+         */
+        private static Blockage delivery(String code, String reason) {
+            return new Blockage(code, reason, null, null, null, null, null);
         }
     }
 
@@ -555,6 +575,12 @@ public class DeliveryScreeningService {
         // is altijd een percentage (beslissingslog 20/09).
         BigDecimal creationSharePercent =
                 batch.getDefinitionRevision().getCreationThresholdSharePercent();
+        // Idem voor de twee leveringsdrempels van pass E4b (bouwstap 3h-4, par. 15.2): één keer per
+        // batch van de revisie gelezen, ook bij een hervatting, zodat E4b na een onderbreking exact
+        // hetzelfde oordeelt. De absolute kolommen max_critical_records/max_rejected_records worden
+        // bewust niet meer gelezen - elke drempel is altijd een percentage (beslissingslog 20/09).
+        BigDecimal maxCriticalSharePercent = batch.getDefinitionRevision().getMaxCriticalSharePercent();
+        BigDecimal maxRejectedSharePercent = batch.getDefinitionRevision().getMaxRejectedSharePercent();
         // De bibliotheekcode is scope, geen sleutelonderdeel (beslissingslog 18/09), maar wél de scope
         // waarbinnen een kritieke koppelreferentie uniek moet zijn (par. 14.23.3). Ze wordt hier, binnen
         // de openende transactie, exact één keer per batch van de (lazy) koppeling gelezen.
@@ -563,7 +589,7 @@ public class DeliveryScreeningService {
                 batch.getTaskRun() == null ? null : batch.getTaskRun().getId(), file.getArchiveReference(),
                 file.getByteSize(), file.getContentHash(), delivery.getExpectedRecordCount(),
                 delivery.getExpectedByteSize(), config, mappingConfig, priceControl, bulkSharePercent,
-                creationSharePercent, configFailure);
+                creationSharePercent, maxCriticalSharePercent, maxRejectedSharePercent, configFailure);
     }
 
     // --- Stap 2: volledigheidscontroles ------------------------------------------------------
@@ -845,8 +871,8 @@ public class DeliveryScreeningService {
     /**
      * De passes ná het stagen, in de volgorde van ontwerp par. 3.1/15.4: D (duplicaat/collisie) → D1
      * (dubbele kritieke referentie binnen de levering) → E1 (classificatie) → E2 (referentiecontrole)
-     * → E3 (prijscontrole) → E4 (groepering en bulkincidenten) → E4b (creatiebeleid) →
-     * E5 (mutatiegeneratie) → F (afronden).
+     * → E3 (prijscontrole) → E4 (groepering en bulkincidenten) → E4b (creatiebeleid én
+     * leveringsdrempels) → E5 (mutatiegeneratie) → F (afronden).
      * <p>
      * <b>Waarom classificatie en mutatie-insert gesplitst zijn</b> (ontwerp par. 3.1, "important
      * technical constraint"): de referentiecontrole bepaalt of een regel wordt vastgehouden en dus of
@@ -868,6 +894,12 @@ public class DeliveryScreeningService {
         controlPrices(context);
         aggregate(context);
         CreationOutcome creationOutcome = evaluateCreationPolicy(context);
+        Blockage exceeded = evaluateThresholds(context);
+        if (exceeded != null) {
+            // Boven een leveringsdrempel: geen enkele inhoudelijke mutatie meer. E5 draait dus niet
+            // en de levering eindigt op BLOCKED, met haar staging en haar meldingen als bewijs.
+            return transaction.execute(status -> block(context, exceeded, null));
+        }
         generateMutations(context, creationOutcome);
         return transaction.execute(status -> complete(context));
     }
@@ -989,6 +1021,127 @@ public class DeliveryScreeningService {
                 context.deliveryFileId(), null, code, null, String.valueOf(decision.candidates()),
                 decision.thresholdPercent().toPlainString(), CreationPolicyEvaluator.message(decision),
                 Instant.now())));
+    }
+
+    // --- Stap E4b (tweede deel): de leveringsdrempels (ontwerp fase 3 par. 15.2/15.3) -----------
+
+    /**
+     * Beoordeelt de twee drempels die de <b>volledige levering</b> kunnen stoppen, ná het
+     * creatiebeleid en <b>vóór</b> de mutatiegeneratie (E5):
+     * <ul>
+     *   <li><b>records ter beoordeling</b> = {@code critical_line_count + identity_incident_count}
+     *       tegen {@code max_critical_share_percent} van de records in scope. Blijft het aantal
+     *       binnen de drempel, dan verandert er hier niets: de levering gaat door en vraagt een
+     *       review. Erboven is de levering als geheel onbetrouwbaar ⇒ {@code BLOCKED} met
+     *       {@code CRITICAL_RECORD_THRESHOLD_EXCEEDED};</li>
+     *   <li><b>verworpen regels</b> tegen {@code max_rejected_share_percent}, dat standaard niet
+     *       geconfigureerd is en dan nooit overschreden wordt ⇒ {@code BLOCKED} met
+     *       {@code REJECTED_RECORD_THRESHOLD_EXCEEDED}.</li>
+     * </ul>
+     * Zijn beide overschreden, dan worden <b>beide</b> meldingen geschreven — allebei zijn ze waar en
+     * allebei moeten ze zichtbaar zijn — maar {@code blocked_code} draagt de kritieke drempel: die
+     * gaat over de betrouwbaarheid van de records die wél door de validatie kwamen, en weegt zwaarder
+     * dan het volume van wat sowieso al verworpen was (precedentie par. 15.3).
+     * <p>
+     * <b>Set-based, idempotent en hervatbaar.</b> Geen chunking en geen voortgangskolom: alles wordt
+     * uit de database herberekend en een melding wordt enkel geschreven wanneer die code er nog niet
+     * is. De meldingen worden bewust in een <b>eigen</b> transactie vastgelegd, vóór de afrondende
+     * blokkeertransactie: valt de verwerking daartussen weg, dan blijft de batch op {@code MUTATING}
+     * staan en levert {@link #continueMutating(long)} exact dezelfde blokkade op, zonder één melding
+     * te verdubbelen.
+     * <p>
+     * <b>Wat hier bewust niet gebeurt.</b> Geen enkele mutatiestatus en geen enkel
+     * {@code validation_result} wordt hier herzien: het eindoordeel volgt in bouwstap 3h-5 uit
+     * {@code DeliveryEffect} in plaats van uit de ernst. Een levering <i>binnen</i> de kritieke
+     * drempel gedraagt zich dus exact zoals vóór deze bouwstap.
+     *
+     * @return de reden om te blokkeren, of {@code null} wanneer de levering binnen beide drempels
+     *         blijft (of er geen oordeel mogelijk is)
+     */
+    private Blockage evaluateThresholds(Context context) {
+        ThresholdCounts counts = transaction.execute(status -> measureThresholdCounts(context));
+        ThresholdEvaluator.Judgement critical = ThresholdEvaluator.evaluateCritical(
+                ThresholdEvaluator.criticalRecordCount(counts.criticalLineCount(),
+                        counts.identityIncidentCount()),
+                counts.scope(), context.maxCriticalSharePercent());
+        ThresholdEvaluator.Judgement rejected = ThresholdEvaluator.evaluateRejected(
+                counts.rejectedRecordCount(), counts.scope(), context.maxRejectedSharePercent());
+        if (!critical.blocks() && !rejected.blocks()) {
+            return null;
+        }
+        transaction.executeWithoutResult(status -> {
+            if (critical.blocks()) {
+                recordThresholdIssue(context, critical, ThresholdEvaluator.criticalMessage(critical,
+                        counts.criticalLineCount(), counts.identityIncidentCount()));
+            }
+            if (rejected.blocks()) {
+                recordThresholdIssue(context, rejected, ThresholdEvaluator.rejectedMessage(rejected));
+            }
+        });
+        ThresholdEvaluator.Judgement leading = critical.blocks() ? critical : rejected;
+        String reason = critical.blocks()
+                ? ThresholdEvaluator.criticalMessage(critical, counts.criticalLineCount(),
+                        counts.identityIncidentCount())
+                : ThresholdEvaluator.rejectedMessage(rejected);
+        LOG.info("Batch {} blocked by a delivery threshold: {} ({} of {} records in scope, threshold {}%)",
+                context.batchId(), leading.issueCode(), leading.count(), leading.scope(),
+                leading.thresholdPercent() == null ? "-" : leading.thresholdPercent().toPlainString());
+        return Blockage.delivery(leading.issueCode(), reason);
+    }
+
+    /**
+     * De vier getallen waarop de drempels oordelen, alle vier uit de database en nooit uit het
+     * geheugen van deze doorloop: een hervatte batch moet identiek oordelen.
+     */
+    private record ThresholdCounts(Long criticalLineCount, Long identityIncidentCount,
+                                   Long rejectedRecordCount, Long scope) {
+    }
+
+    /**
+     * Meet de tellers en legt {@code identity_incident_count} alvast vast.
+     * <p>
+     * <b>Waarom die teller hier al geschreven wordt</b> en niet pas bij het afronden (stap F): een
+     * levering die op deze drempel strandt, bereikt F nooit. Zonder deze regel zou een geblokkeerde
+     * levering melden dat er N records beoordeling vroegen terwijl haar eigen teller leeg bleef. De
+     * waarde is een meting uit de staging — dezelfde telling die F uitvoert — en wordt overschreven,
+     * nooit opgeteld: tweemaal draaien levert exact hetzelfde op.
+     * <p>
+     * De classificatie is op dit punt volledig: D1 en E2 hebben elke vastgehouden regel al op
+     * {@code IDENTITY_INCIDENT} gezet.
+     */
+    private ThresholdCounts measureThresholdCounts(Context context) {
+        long identityIncidents = stage.countByClassification(context.batchId())
+                .getOrDefault(CandidateClassification.IDENTITY_INCIDENT.name(), 0L);
+        ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
+        batch.setIdentityIncidentCount(identityIncidents);
+        batches.saveAndFlush(batch);
+        // De records die werkelijk binnen de importscope vielen; een uitgefilterd record is nooit
+        // gecontroleerd en hoort dus niet in de noemer (R-FLT-02/R-FLT-04). Is het bestand niet
+        // volledig gelezen, dan blijft de scope onbekend (null) en wordt er niets geoordeeld.
+        Long scope = null;
+        if (batch.getRawRecordCount() != null) {
+            long filteredOut = batch.getFilteredOutCount() == null ? 0L : batch.getFilteredOutCount();
+            scope = Math.max(0L, batch.getRawRecordCount() - filteredOut);
+        }
+        return new ThresholdCounts(batch.getCriticalLineCount(), identityIncidents,
+                batch.getRejectedRecordCount(), scope);
+    }
+
+    /**
+     * Eén melding per batch per drempelcode, met de aantallen, het percentage en de scope erin
+     * (par. 15.12). Bestaat ze al — een eerdere doorloop van deze pass — dan komt er geen tweede bij.
+     */
+    private void recordThresholdIssue(Context context, ThresholdEvaluator.Judgement judgement,
+                                      String message) {
+        if (rowIssues.countByBatchIdAndIssueCode(context.batchId(), judgement.issueCode()) > 0) {
+            return;
+        }
+        rowIssues.insertBatch(List.of(ImportIssueCatalog.issue(context.batchId(),
+                context.deliveryFileId(), null, judgement.issueCode(), null,
+                String.valueOf(judgement.count()),
+                judgement.thresholdPercent() == null ? null
+                        : judgement.thresholdPercent().toPlainString(),
+                message, Instant.now())));
     }
 
     /**
@@ -1535,6 +1688,17 @@ public class DeliveryScreeningService {
      * Blokkeert de volledige levering: geen enkele inhoudelijke mutatie, wél één marker met
      * {@code outcome=BLOCKED}, in dezelfde transactie als de eindtransitie. Staging en problemen
      * blijven bewaard als bewijsmateriaal; enkel een technische fout ruimt ze op.
+     * <p>
+     * <b>Ook bereikbaar ná de detectiepassen</b> (bouwstap 3h-4): een overschreden leveringsdrempel
+     * blokkeert vanuit pass E4b, dus wanneer E4 al gedraaid heeft. Dat is veilig: E4 is idempotent
+     * (koppelen gebeurt enkel voor nog niet gekoppelde rijen, de voorbeelden worden herteld en een
+     * bulk- of cap-melding wordt enkel geschreven als ze nog niet bestaat), dus de tweede doorloop
+     * hieronder laat exact dezelfde groepen en meldingen achter als de eerste. Wat er ná E2 al staat,
+     * blijft staan: de {@code IDENTITY_REFERENCE_INCIDENT}-mutaties in {@code AWAITING_APPROVAL} zijn
+     * het bewijs dat die aanbiedingen vastgehouden zijn (par. 15.3). {@code content_mutation_count}
+     * wordt gemeten en is dan 0 — E5 heeft niet gedraaid — en {@code creation_outcome} blijft staan
+     * zoals E4b het vastlegde: een vastgelegd oordeel over creaties die nooit geschreven zijn, wordt
+     * niet achteraf uitgewist, want dan zou een hervatte verwerking opnieuw moeten raden.
      *
      * @param progress de stand van de stagingfase, of {@code null} wanneer die al vastligt op de batch
      */

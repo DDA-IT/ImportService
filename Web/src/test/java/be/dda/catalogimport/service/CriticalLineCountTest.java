@@ -54,6 +54,7 @@ import be.dda.catalogimport.service.support.RecordFilterEvaluator;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
@@ -617,6 +618,12 @@ class CriticalLineCountTest {
         revision.setRecordBasePriceField("PRIJS");
         revision.setRecordDescriptionField("OMSCHRIJVING");
         revision.setRecordCanonicalisationVersion(2);
+        // Bouwstap 3h-4: deze test gaat niet over de drempel op de records ter beoordeling. Met de
+        // productiedefault van 1% zou een kleine fixture met een enkele kritieke lijn of een
+        // vastgehouden identiteit nu geblokkeerd worden; het percentage wordt daarom PER TEST op 100
+        // gezet, zodat hier exact het gedrag van vóór bouwstap 3h-4 geldt. De productiedefault zelf
+        // blijft 1 procent - ThresholdBlockingTest bewijst die.
+        revision.setMaxCriticalSharePercent(new BigDecimal("100"));
         revision.setStatus(RevisionStatus.ACTIVE);
         beforeSave.accept(revision);
         ImportDefinitionRevision stored = revisions.saveAndFlush(revision);

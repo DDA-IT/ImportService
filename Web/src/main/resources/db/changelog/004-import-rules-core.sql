@@ -899,3 +899,29 @@ alter table import_batch add column creation_scope_count bigint;
 --rollback alter table import_batch drop column creation_scope_count;
 --rollback alter table import_batch drop constraint ck_import_batch_creation_outcome;
 --rollback alter table import_batch drop column creation_outcome;
+
+-- =============================================================================================
+-- Bouwstap 3h-4: de drempel op de records die beoordeling vragen (ontwerp fase 3 par. 15.2/15.5,
+-- beslissingslog 20/09 "drempels zijn altijd een percentage"). Boven dit aandeel stopt de hele
+-- levering; eronder is het een review. De reeds uitgevoerde changesets hierboven blijven ongewijzigd.
+-- =============================================================================================
+
+--changeset catalogimport:004-10d-import-definition-revision-critical-share
+--comment Maximaal aandeel records ter beoordeling per revisie (beslissingslog 20/09, ontwerp par. 15.2).
+
+-- Het aandeel van de records in scope (raw_record_count - filtered_out_count) dat beoordeling mag
+-- vragen: kritieke lijnen (critical_line_count) plus vastgehouden identiteitsincidenten
+-- (identity_incident_count). Ligt het aantal daarboven, dan is de levering als geheel onbetrouwbaar
+-- en wordt ze BLOCKED; eronder blijft het een review op leveringsniveau.
+--
+-- not null met default 1: een NULL-drempel zou de controle stilzwijgend uitschakelen, en dat is
+-- precies het soort onzichtbare versoepeling dat vermeden moet worden. Wie een leverancier meer
+-- ruimte wil geven, zet dit percentage per revisie hoger - een zichtbare, geauditeerde keuze.
+--
+-- De bestaande absolute kolommen max_critical_records en max_rejected_records worden NIET hernoemd
+-- en NIET verwijderd (dat zou een contractbreuk zijn op een reeds uitgevoerde changeset). Ze blijven
+-- staan en worden sinds deze stap door geen enkele code meer gelezen; max_rejected_share_percent
+-- (nullable = niet geconfigureerd = nooit overschreden) is hun percentage-opvolger.
+alter table import_definition_revision add column max_critical_share_percent numeric(24,12) not null default 1;
+
+--rollback alter table import_definition_revision drop column max_critical_share_percent;

@@ -635,6 +635,12 @@ class CreationThresholdTest {
         if (withEan) {
             revision.setRecordCanonicalisationVersion(2);
         }
+        // Bouwstap 3h-4: deze test gaat niet over de drempel op de records ter beoordeling. Met de
+        // productiedefault van 1% zou een kleine fixture met een enkele kritieke lijn of een
+        // vastgehouden identiteit nu geblokkeerd worden; het percentage wordt daarom PER TEST op 100
+        // gezet, zodat hier exact het gedrag van vóór bouwstap 3h-4 geldt. De productiedefault zelf
+        // blijft 1 procent - ThresholdBlockingTest bewijst die.
+        revision.setMaxCriticalSharePercent(new BigDecimal("100"));
         revision.setStatus(RevisionStatus.ACTIVE);
         ImportDefinitionRevision stored = revisions.saveAndFlush(revision);
         if (withEan) {

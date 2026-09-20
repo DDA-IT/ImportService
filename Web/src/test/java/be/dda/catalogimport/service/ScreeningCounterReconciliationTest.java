@@ -33,6 +33,7 @@ import be.dda.catalogimport.service.support.CsvRecordStreamer;
 import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import be.dda.catalogimport.service.support.RecordFilterEvaluator;
 import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
@@ -318,6 +319,12 @@ class ScreeningCounterReconciliationTest {
         revision.setStructureDelimiter(";");
         revision.setRecordBasePriceField("PRIJS");
         revision.setRecordDescriptionField("OMSCHRIJVING");
+        // Bouwstap 3h-4: deze test gaat niet over de drempel op de records ter beoordeling. Met de
+        // productiedefault van 1% zou een kleine fixture met een enkele kritieke lijn of een
+        // vastgehouden identiteit nu geblokkeerd worden; het percentage wordt daarom PER TEST op 100
+        // gezet, zodat hier exact het gedrag van vóór bouwstap 3h-4 geldt. De productiedefault zelf
+        // blijft 1 procent - ThresholdBlockingTest bewijst die.
+        revision.setMaxCriticalSharePercent(new BigDecimal("100"));
         revision.setStatus(RevisionStatus.ACTIVE);
         ImportDefinitionRevision stored = revisions.saveAndFlush(revision);
         filters.accept(stored);
