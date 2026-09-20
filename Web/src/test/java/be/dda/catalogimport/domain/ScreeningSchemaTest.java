@@ -1347,6 +1347,58 @@ class ScreeningSchemaTest {
     }
 
     /**
+     * R-ID-04 op databaseniveau: een aanbieding (source_state_id) draagt maximaal één actieve waarde
+     * per referentietype. Deze constraint werkt onafhankelijk van uk_catalog_reference_state_active
+     * (die waakt over uniciteit per bibliotheek) en dwingt af dat dezelfde aanbieding niet zelf
+     * dubbelzinnig wordt.
+     * <p>
+     * NULL-waarden (historische rijen met active_marker IS NULL) botsen niet, dus dezelfde
+     * aanbieding mag willekeurig veel historische waarden voor hetzelfde type hebben.
+     */
+    @Test
+    void allowsOnlyOneActiveReferenceValuePerOfferAndType() {
+        Scenario s = scenario("REFOFR");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+        Long first = sourceStateId(s, batch, "REFOFR-a");
+        Long second = sourceStateId(s, batch, "REFOFR-b");
+
+        // Een aanbieding met één actieve EAN-waarde is toegestaan.
+        assertThatCode(() -> insertReferenceState(s, first, "EAN", "1234567890123", true))
+                .doesNotThrowAnyException();
+
+        // Een tweede actieve waarde van DEZELFDE type op DEZELFDE aanbieding is NIET toegestaan.
+        assertThatThrownBy(() -> insertReferenceState(s, first, "EAN", "1234567890124", true))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        // Maar twee actieve waarden van VERSCHILLENDE types op DEZELFDE aanbieding zijn toegestaan.
+        assertThatCode(() -> insertReferenceState(s, first, "PIM_ID", "PIM-001", true))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> insertReferenceState(s, first, "CAB_ID", "CAB-001", true))
+                .doesNotThrowAnyException();
+
+        // Een tweede aanbieding kan een andere actieve waarde voor hetzelfde type hebben.
+        assertThatCode(() -> insertReferenceState(s, second, "EAN", "1234567890124", true))
+                .doesNotThrowAnyException();
+
+        // Meerdere HISTORISCHE rijen (active_marker NULL) voor dezelfde aanbieding + type
+        // mogen naast elkaar en naast de actieve rij bestaan.
+        assertThatCode(() -> insertReferenceState(s, first, "EAN", "1234567890123", null))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> insertReferenceState(s, first, "EAN", "1234567890123", null))
+                .doesNotThrowAnyException();
+        assertThat(jdbc.queryForObject("select count(*) from catalog_reference_state "
+                        + "where source_state_id = ? and reference_type = 'EAN'", Long.class, first))
+                .isEqualTo(3L);
+
+        // Dezelfde waarde kan historisch bij beide aanbiedingen staan.
+        assertThatCode(() -> insertReferenceState(s, second, "EAN", "1234567890124", null))
+                .doesNotThrowAnyException();
+        assertThat(jdbc.queryForObject("select count(*) from catalog_reference_state "
+                        + "where reference_type = 'EAN' and value_normalised = ? and active_marker is null",
+                Long.class, "1234567890124")).isEqualTo(1L);
+    }
+
+    /**
      * De checks van 004-9: "gemapt maar leeg" en "gemapt met waarde" zijn twee toestanden die nooit
      * door elkaar mogen lopen (R-REF-03), en een uitkomst die niet in de gesloten lijst staat, bestaat
      * niet.

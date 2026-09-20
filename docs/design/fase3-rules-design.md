@@ -760,3 +760,36 @@ Buiten scope (mens): PostgreSQL en performance; risicoquery `domain_mask like '%
   `import_mutation.issue_group_id` wordt nog niet gevuld. Bekend latent volgordeprobleem in
   `ReferenceIncidentTest.acceptBaselineWritesTheReferenceState...` (telt `catalog_reference_state` over alle
   bibliotheken, gedeelde H2).
+
+## 17. Aanvullingen uit stap 3h-1 t/m 3h-7 (geïmplementeerd, hoofdsessie akkoord)
+
+- **Kritiek-vlag (3h-1):** `import_field_mapping.criticality` + `import_revision_field_criticality`; naamruimte voor
+  `ImportMappingConfig.criticalityOf`: bronreferentie voor revisie-eigen velden, `targetFieldName()` voor gemapte
+  velden; onbekend/`null` ⇒ CRITICAL; botsing ⇒ strengste. `ImportFieldMapping.criticality` is intern nullable en
+  leidt de standaard af (referentie of prijscomponent ⇒ CRITICAL). `CONFIG_FIELD_CRITICALITY_INVALID`.
+- **Kritieke lijnen (3h-2):** `import_batch.critical_line_count` (004-11e2), ontdubbeld op regelnummer, niet gecapt.
+  Met recordfilters telt een structureel onleesbare regel wel als kritieke lijn maar niet in `rejected_record_count`
+  (die gaat naar `error_before_filter_count`).
+- **Creatiebeleid (3h-3):** `creation_outcome` (`AUTOMATIC|INITIAL_LOAD|THRESHOLD_EXCEEDED`), `creation_scope_count`
+  (004-11e3). Kandidaten = NEW plus IDENTITY_INCIDENT-rijen zonder bronstaatrij. In E5 telt "creatie" ook een
+  CHANGED-regel waarvan de bronstaatrij verdween. `MutationDao.insertContentMutations(..., creationStatusReason)`.
+- **Drempels (3h-4):** `max_critical_share_percent` (004-10d, default 1) en `max_rejected_share_percent` (default
+  null). `ThresholdEvaluator`: `NOT_APPLICABLE|UNDETERMINED|WITHIN|EXCEEDED`; onbekende tellers ⇒ geen oordeel; scope 0
+  met records ter beoordeling ⇒ fail-safe EXCEEDED. Blokkade via `block(...)`: BLOCKED, 0 inhoudelijke mutaties, 1
+  marker; E2-incidentmutaties blijven `AWAITING_APPROVAL`. Vaste aantallen (`max_critical_records`,
+  `max_rejected_records`, `creation_threshold_absolute`) zijn `@Deprecated` en niet meer in gebruik.
+- **Eindoordeel (3h-5):** `DeliveryEffect` per foutcode + `ValidationResultEvaluator` (beslissingstabel §15.3).
+  Passvolgorde definitief: E4 → drempels (kan blokkeren) → creatiebeleid (enkel bij doorgaan) → E5 → E5b
+  (`holdPlannedPriceUpdates`) → F. Een geblokkeerde levering heeft geen `creation_outcome`/creatiemelding.
+  Tellers `critical_issue_count`, `warning_count`, `awaiting_approval_count`, `creation_candidate_count` (004-11e4),
+  ongecapt en op de GEPERSISTEERDE ernst. 3g-invariant aangescherpt: een bulkmeldingsrij (`BULK_PRICE_INCIDENT`/
+  `BULK_IDENTITY_INCIDENT`) hangt aan de groep van de onderliggende foutcode en telt apart mee (anders stille 0 op een
+  kritieke vaststelling). `new_count`/`changed_count`/`unchanged_count` blijven `null` op een geblokkeerde batch.
+  Marker met vaste sleutelvolgorde (bestaande sleutels vooraan ongewijzigd), lengte < 1000.
+- **accept-baseline (3h-6):** `skipPlannedContentMutations` ⇒ `skipOpenContentMutations`; alleen `acceptedBy` +
+  `reason`; extra veld `approvedBy` wordt genegeerd (Spring-default); één bevoegde persoon kan een review afronden.
+  `AcceptBaselineReviewFlowTest`.
+- **Referentie-uniciteit (3h-7):** `uk_catalog_reference_state_offer_active` op `(source_state_id, reference_type,
+  active_marker)` (004-8b). 3h-8 vervalt (optie A zonder schakelaar).
+- **Bekende beperkingen:** `domain_mask like '%PRICE%'` scan binnen één batch; "≥1 issue met effect X" steunt op de
+  voorbeeldcap (per code minstens één rij); `import_mutation.issue_group_id` wordt nog niet gevuld; alleen H2 getest.

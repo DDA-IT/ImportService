@@ -961,3 +961,15 @@ alter table import_batch add column creation_candidate_count bigint;
 --rollback alter table import_batch drop column awaiting_approval_count;
 --rollback alter table import_batch drop column warning_count;
 --rollback alter table import_batch drop column critical_issue_count;
+
+--changeset catalogimport:004-8b-catalog-reference-state-offer-unique
+--comment Unieke constraint per aanbieding + referentietype + activestate (ontwerp fase 3 par. 15.5, 3h-7).
+
+-- R-ID-04: één aanbieding draagt zelf maximaal één actieve waarde per referentietype. Deze constraint
+-- dwingt dat af op databaseniveau en voorkomt dat een kritieke koppelreferentie dubbelzinnig wordt.
+-- NULL-waarden (historische rijen met active_marker IS NULL) botsen niet in de constraint, dus
+-- dezelfde aanbieding mag willekeurig veel historische waarden voor hetzelfde type hebben.
+alter table catalog_reference_state add constraint uk_catalog_reference_state_offer_active
+    unique (source_state_id, reference_type, active_marker);
+
+--rollback alter table catalog_reference_state drop constraint uk_catalog_reference_state_offer_active;
