@@ -2,17 +2,22 @@ package be.dda.catalogimport.service.support;
 
 import be.dda.catalogimport.dao.ImportFieldMappingRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
+import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
+import be.dda.catalogimport.domain.Criticality;
 import be.dda.catalogimport.domain.FieldDataType;
 import be.dda.catalogimport.domain.FieldOwner;
 import be.dda.catalogimport.domain.FieldValueKind;
 import be.dda.catalogimport.domain.FilterOperator;
 import be.dda.catalogimport.domain.FilterStage;
 import be.dda.catalogimport.domain.IdentityClass;
+import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
 import be.dda.catalogimport.domain.ImportFieldMapping;
 import be.dda.catalogimport.domain.ImportRecordFilter;
+import be.dda.catalogimport.domain.ImportRevisionFieldCriticality;
 import be.dda.catalogimport.domain.PriceControlModel;
+import be.dda.catalogimport.domain.RevisionCriticalityField;
 import be.dda.catalogimport.domain.RevisionOwnedField;
 import be.dda.catalogimport.service.support.ImportMappingConfig.FieldMapping;
 import be.dda.catalogimport.service.support.ImportMappingConfig.RecordFilter;
@@ -25,10 +30,14 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.ResolverStyle;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -71,6 +80,9 @@ import org.springframework.stereotype.Component;
  *   <li>Een prijscomponent is DECIMAL met hoogstens {@value PriceRules#AMOUNT_SCALE} decimalen en kent
  *       hoogstens één uitdrukkelijk geconfigureerde bovengrens ({@link #SETTING_MAX_PERCENTAGE},
  *       R-PRI-08).</li>
+ *   <li>De kritiek-vlag schendt de regels (een referentiemapping die niet kritiek is, een
+ *       identiteitsveld dat niet kritiek is, een onbekende veldsleutel of een dubbele overrule) ⇒
+ *       {@code CONFIG_FIELD_CRITICALITY_INVALID} (bouwstap 3h-1, par. 15.1).</li>
  * </ul>
  * Deze klasse leest de revisie en haar mappings uitsluitend via getters en geeft een momentopname
  * terug; ze wordt daarom binnen de openende transactie aangeroepen en het resultaat wordt daarbuiten
@@ -92,6 +104,13 @@ public class ImportMappingConfigFactory {
     public static final String CODE_FILTER_INVALID = "CONFIG_FILTER_INVALID";
     public static final String CODE_CANONICALISATION_VERSION_REQUIRED =
             "CONFIG_CANONICALISATION_VERSION_REQUIRED";
+    /**
+     * De kritiek-vlag van een mapping of van een revisie-eigen veld schendt de regels (bouwstap 3h-1,
+     * par. 15.1): een referentiemapping die niet kritiek is, een identiteitsveld dat niet kritiek is,
+     * een onbekende veldsleutel of een dubbele overrule. De databasechecks weren zulke rijen al; deze
+     * validatie is de tweede verdediging voor een configuratie die niet via de database binnenkwam.
+     */
+    public static final String CODE_FIELD_CRITICALITY_INVALID = "CONFIG_FIELD_CRITICALITY_INVALID";
     /**
      * Het prijscontrolemodel van de revisie wordt door deze build niet uitgevoerd (bouwstap 3e).
      * {@code BOXPLOT} is in het schema gedeclareerd maar bewust niet geïmplementeerd (ontwerp fase 3,
@@ -125,11 +144,25 @@ public class ImportMappingConfigFactory {
 
     private final ImportFieldMappingRepository mappings;
     private final ImportRecordFilterRepository filters;
+    private final ImportRevisionFieldCriticalityRepository fieldCriticalities;
 
+    @Autowired
     public ImportMappingConfigFactory(ImportFieldMappingRepository mappings,
-                                      ImportRecordFilterRepository filters) {
+                                      ImportRecordFilterRepository filters,
+                                      ImportRevisionFieldCriticalityRepository fieldCriticalities) {
         this.mappings = mappings;
         this.filters = filters;
+        this.fieldCriticalities = fieldCriticalities;
+    }
+
+    /**
+     * De fabriek zonder toegang tot de kritiek-overrules van de revisie-eigen velden: voor aanroepers
+     * die enkel een reeds geladen configuratie valideren
+     * ({@link #from(ImportDefinitionRevision, SourceStructureConfig, List, List)}).
+     */
+    public ImportMappingConfigFactory(ImportFieldMappingRepository mappings,
+                                      ImportRecordFilterRepository filters) {
+        this(mappings, filters, null);
     }
 
     /**
@@ -140,8 +173,11 @@ public class ImportMappingConfigFactory {
      */
     public ImportMappingConfig from(ImportDefinitionRevision revision, SourceStructureConfig structure) {
         Long revisionId = revision.getId();
+        // Stap B': mappings, filters en de kritiek-overrules van de revisie-eigen velden worden
+        // exact één keer per batch gelezen, vóór er één byte van het bronbestand gelezen is.
         return from(revision, structure, mappings.findByRevisionIdWithTargetField(revisionId),
-                filters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId));
+                filters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId),
+                fieldCriticalities.findByDefinitionRevisionId(revisionId));
     }
 
     /**
@@ -156,15 +192,126 @@ public class ImportMappingConfigFactory {
     public ImportMappingConfig from(ImportDefinitionRevision revision, SourceStructureConfig structure,
                                     List<ImportFieldMapping> mappingRows,
                                     List<ImportRecordFilter> filterRows) {
+        return from(revision, structure, mappingRows, filterRows, List.of());
+    }
+
+    /**
+     * Dezelfde validatie, inclusief de kritiek-overrules van de revisie-eigen velden (bouwstap 3h-1).
+     * Zonder overrule-rij geldt per revisie-eigen veld de standaard van de soort.
+     *
+     * @param criticalityRows de rijen uit {@code import_revision_field_criticality} van deze revisie
+     * @throws ScreeningBlockedException bij ontbrekende, tegenstrijdige of nog niet ondersteunde
+     *                                   configuratie, en bij een kritiek-vlag die de regels schendt
+     *                                   ({@link #CODE_FIELD_CRITICALITY_INVALID})
+     */
+    public ImportMappingConfig from(ImportDefinitionRevision revision, SourceStructureConfig structure,
+                                    List<ImportFieldMapping> mappingRows,
+                                    List<ImportRecordFilter> filterRows,
+                                    List<ImportRevisionFieldCriticality> criticalityRows) {
         List<ImportFieldMapping> active = mappingRows.stream()
                 .filter(ImportFieldMapping::isActive)
                 .toList();
         verifyPriceControlModel(revision);
+        Map<RevisionCriticalityField, Criticality> overrules = readCriticalityOverrules(criticalityRows);
         List<FieldMapping> fields = readFields(revision, structure, active);
         List<RecordFilter> recordFilters = readFilters(structure, filterRows);
         verifyIdentityClasses(revision, fields);
         verifyCanonicalisationVersion(revision, fields);
-        return new ImportMappingConfig(revision.getRecordCanonicalisationVersion(), fields, recordFilters);
+        Map<String, Criticality> criticalities = ImportMappingConfig.criticalityMap(
+                revisionOwnCriticality(structure, overrules), fields);
+        return new ImportMappingConfig(revision.getRecordCanonicalisationVersion(), fields, recordFilters,
+                criticalities);
+    }
+
+    // --- Kritiek-vlag (bouwstap 3h-1) -----------------------------------------------------------
+
+    /**
+     * Valideert de overrule-rijen van de revisie-eigen velden en zet ze om naar een map per veld.
+     * <p>
+     * Wat hier hard is: een onbekende {@code field_key}, een ontbrekende waarde, een dubbele rij voor
+     * hetzelfde veld en een identiteitsveld dat {@code NON_CRITICAL} zou zijn. De database weert dit al
+     * (pk en checks van changeset 004-15); dit is de tweede verdediging, want een configuratie die
+     * halverwege een miljoenenimport stil een identiteitsveld als niet-kritiek behandelt, is precies wat
+     * de review moet voorkomen.
+     */
+    private static Map<RevisionCriticalityField, Criticality> readCriticalityOverrules(
+            List<ImportRevisionFieldCriticality> rows) {
+        Map<RevisionCriticalityField, Criticality> overrules = new LinkedHashMap<>();
+        for (ImportRevisionFieldCriticality row : rows) {
+            String key = row.getFieldKey();
+            RevisionCriticalityField field = RevisionCriticalityField.byKey(key).orElse(null);
+            if (field == null) {
+                throw blocked(CODE_FIELD_CRITICALITY_INVALID, key, String.valueOf(row.getCriticality()),
+                        "Criticality is configured for '" + key + "', which is not a field of the revision "
+                                + "itself; the known fields are " + Arrays.toString(
+                                RevisionCriticalityField.values()));
+            }
+            if (row.getCriticality() == null) {
+                throw blocked(CODE_FIELD_CRITICALITY_INVALID, key, null,
+                        "Criticality of '" + key + "' has no value; use " + Criticality.CRITICAL + " or "
+                                + Criticality.NON_CRITICAL);
+            }
+            if (field.isIdentity() && row.getCriticality() == Criticality.NON_CRITICAL) {
+                throw blocked(CODE_FIELD_CRITICALITY_INVALID, key, String.valueOf(row.getCriticality()),
+                        "Field '" + key + "' is part of the offer identity and can never be "
+                                + Criticality.NON_CRITICAL + "; without an identity there is no offer to "
+                                + "review");
+            }
+            if (overrules.put(field, row.getCriticality()) != null) {
+                throw blocked(CODE_FIELD_CRITICALITY_INVALID, key, String.valueOf(row.getCriticality()),
+                        "Criticality of '" + key + "' is configured more than once for this revision; a "
+                                + "field has exactly one criticality");
+            }
+        }
+        return overrules;
+    }
+
+    /**
+     * De kritiek-vlag van elk revisie-eigen veld, per bronreferentie: dezelfde namen als
+     * {@code ImportValueException.getField()} voor die velden (de headernaam of kolomindex uit de
+     * bronstructuur). De kortingscode telt enkel mee bij een vierdelige identiteit — bij een
+     * driedelige wordt de kolom niet gelezen, dus kan er ook geen fout op vallen. Zonder overrule-rij
+     * geldt de standaard van de soort ({@link RevisionCriticalityField#defaultCriticality()}).
+     */
+    private static Map<String, Criticality> revisionOwnCriticality(
+            SourceStructureConfig structure, Map<RevisionCriticalityField, Criticality> overrules) {
+        Map<String, Criticality> own = new LinkedHashMap<>();
+        putOwn(own, structure.supplierField(), RevisionCriticalityField.SUPPLIER, overrules);
+        putOwn(own, structure.supplierGroupField(), RevisionCriticalityField.SUPPLIER_GROUP, overrules);
+        putOwn(own, structure.supplierReferenceField(), RevisionCriticalityField.SUPPLIER_REFERENCE,
+                overrules);
+        if (structure.identityProfileKind() == IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE) {
+            putOwn(own, structure.discountCodeField(), RevisionCriticalityField.DISCOUNT_CODE, overrules);
+        }
+        putOwn(own, structure.basePriceField(), RevisionCriticalityField.BASE_PRICE, overrules);
+        putOwn(own, structure.currencyField(), RevisionCriticalityField.CURRENCY, overrules);
+        putOwn(own, structure.descriptionField(), RevisionCriticalityField.DESCRIPTION, overrules);
+        return own;
+    }
+
+    /** Twee revisie-eigen velden op dezelfde bronkolom: de strengste vlag wint. */
+    private static void putOwn(Map<String, Criticality> own, String sourceReference,
+                               RevisionCriticalityField field,
+                               Map<RevisionCriticalityField, Criticality> overrules) {
+        if (sourceReference == null) {
+            return;
+        }
+        own.merge(sourceReference, overrules.getOrDefault(field, field.defaultCriticality()),
+                Criticality::strictest);
+    }
+
+    /**
+     * R-REF-08 / par. 15.1: een kritieke koppelreferentie kan nooit {@code NON_CRITICAL} zijn. De
+     * databasecheck {@code ck_import_field_mapping_reference_critical} weert het ook, maar een
+     * configuratie die niet uit de database komt (een toekomstige editor) mag hier niet doorheen.
+     */
+    private static void verifyMappingCriticality(ImportFieldMapping row, String code) {
+        if (row.getReferenceType() != null && row.getCriticality() != Criticality.CRITICAL) {
+            throw blocked(CODE_FIELD_CRITICALITY_INVALID, code, String.valueOf(row.getCriticality()),
+                    "Mapping for '" + code + "' carries reference type '" + row.getReferenceType()
+                            + "' and can never be " + Criticality.NON_CRITICAL + "; an unreliable "
+                            + "reference is exactly what the review must catch");
+        }
     }
 
     // --- Mappings ------------------------------------------------------------------------------
@@ -199,6 +346,7 @@ public class ImportMappingConfigFactory {
             verifyTypes(row, target, code);
             verifyOwner(row, target, code);
             verifyIdentityClass(row, target, code);
+            verifyMappingCriticality(row, code);
             // Stap B': de transformatie en de notatie worden hier exact één keer geparsed, vóór er één
             // byte gelezen is. Een ongeldige configuratie blokkeert dus de levering in plaats van een
             // miljoen identieke rijfouten op te leveren (R-REC-07, R-REC-05, R-REC-04).
@@ -605,7 +753,7 @@ public class ImportMappingConfigFactory {
                 row.isRequired(), row.getMaxLength(), row.getDecimalScale(), row.isZeroAllowed(),
                 row.isNegativeAllowed(), row.getTransformKind(), row.getTransformConfig(), transform,
                 valueFormat, row.getFieldOwner(), row.getIdentityClass(), row.getPriceComponentCode(),
-                row.getReferenceType(), maxPercentage);
+                row.getReferenceType(), maxPercentage, row.getCriticality());
     }
 
     // --- Recordfilters --------------------------------------------------------------------------

@@ -272,6 +272,9 @@ public final class ImportIssueCatalog {
                 ImportMappingConfigFactory.CODE_TRANSFORM_INVALID,
                 ImportMappingConfigFactory.CODE_FILTER_INVALID,
                 ImportMappingConfigFactory.CODE_CANONICALISATION_VERSION_REQUIRED,
+                // Bouwstap 3h-1: de kritiek-vlag van een mapping of revisie-eigen veld schendt de regels
+                // (par. 15.1). Nog zonder DeliveryEffect: dat komt in bouwstap 3h-5.
+                ImportMappingConfigFactory.CODE_FIELD_CRITICALITY_INVALID,
                 // Bouwstap 3e: een prijscontrolemodel dat deze build niet kent (BOXPLOT). Stil
                 // terugvallen op de afwijkingscontrole zou een beheerder laten denken dat er een
                 // boxplot-analyse draait.

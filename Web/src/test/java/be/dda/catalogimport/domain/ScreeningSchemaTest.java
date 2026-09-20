@@ -644,6 +644,97 @@ class ScreeningSchemaTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    // --- Fase 3h-1, changeset 004-2b: import_field_mapping.criticality -----------------------------
+
+    @Test
+    void addsTheCriticalityColumnWithNonCriticalAsDefaultAndTheDocumentedChecks() {
+        Map<String, Object> column = jdbc.queryForMap("select is_nullable, column_default, "
+                + "character_maximum_length from information_schema.columns "
+                + "where upper(table_name) = 'IMPORT_FIELD_MAPPING' and upper(column_name) = 'CRITICALITY'");
+        assertThat(column.get("is_nullable")).isEqualTo("NO");
+        assertThat(String.valueOf(column.get("column_default"))).contains("NON_CRITICAL");
+        assertThat(((Number) column.get("character_maximum_length")).intValue()).isEqualTo(20);
+        assertThat(constraintNames("IMPORT_FIELD_MAPPING")).contains("CK_IMPORT_FIELD_MAPPING_CRITICALITY",
+                "CK_IMPORT_FIELD_MAPPING_REFERENCE_CRITICAL");
+
+        Scenario s = scenario("CRITDEF");
+        Long revisionId = s.revision().getId();
+        // Zonder vermelding is een gewone gemapte kolom niet kritiek.
+        insertMapping(revisionId, 1, "E_SUPPLIER", "E_LEV");
+        assertThat(jdbc.queryForObject("select criticality from import_field_mapping "
+                + "where definition_revision_id = ? and target_field_code = 'E_SUPPLIER'", String.class,
+                revisionId)).isEqualTo("NON_CRITICAL");
+        // De waardeset is gesloten.
+        assertThatThrownBy(() -> jdbc.update("update import_field_mapping set criticality = 'MAYBE' "
+                + "where definition_revision_id = ?", revisionId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // Een prijscomponent is instelbaar: beide waarden zijn toegelaten.
+        assertThatCode(() -> jdbc.update("insert into import_field_mapping (definition_revision_id, "
+                + "sequence_number, target_field_code, value_kind, source_reference, data_type, field_owner, "
+                + "identity_class, price_component_code, criticality, created_at) values (?, 2, 'AKP_PCT', "
+                + "'SOURCE_FIELD', 'AKP', 'DECIMAL', 'PRICE_CONTROL', 'NONE', 'AKP', 'NON_CRITICAL', ?)",
+                revisionId, OffsetDateTime.now())).doesNotThrowAnyException();
+    }
+
+    @Test
+    void refusesANonCriticalCriticalReferenceMappingOnTheDatabase() {
+        Scenario s = scenario("CRITREF");
+        Long revisionId = s.revision().getId();
+        String insert = "insert into import_field_mapping (definition_revision_id, sequence_number, "
+                + "target_field_code, value_kind, source_reference, data_type, field_owner, identity_class, "
+                + "reference_type, criticality, created_at) values (?, ?, ?, 'SOURCE_FIELD', ?, 'TEXT', "
+                + "'CRITICAL_REFERENCE', 'ARTICLE_REFERENCE', ?, ?, ?)";
+
+        assertThatThrownBy(() -> jdbc.update(insert, revisionId, 1, "EAN", "EAN13", "EAN", "NON_CRITICAL",
+                OffsetDateTime.now())).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatCode(() -> jdbc.update(insert, revisionId, 1, "EAN", "EAN13", "EAN", "CRITICAL",
+                OffsetDateTime.now())).doesNotThrowAnyException();
+    }
+
+    // --- Fase 3h-1, changeset 004-15: import_revision_field_criticality ---------------------------
+
+    @Test
+    void createsTheRevisionFieldCriticalityTableWithItsKeysAndChecks() {
+        assertThat(constraintNames("IMPORT_REVISION_FIELD_CRITICALITY")).contains(
+                "PK_IMPORT_REVISION_FIELD_CRITICALITY", "FK_IMPORT_REVISION_FIELD_CRITICALITY_REVISION",
+                "CK_IMPORT_REVISION_FIELD_CRITICALITY_KEY", "CK_IMPORT_REVISION_FIELD_CRITICALITY_VALUE",
+                "CK_IMPORT_REVISION_FIELD_CRITICALITY_IDENTITY");
+        assertThat(jdbc.queryForList("select upper(column_name) from information_schema.columns "
+                + "where upper(table_name) = 'IMPORT_REVISION_FIELD_CRITICALITY'", String.class))
+                .contains("DEFINITION_REVISION_ID", "FIELD_KEY", "CRITICALITY", "CREATED_AT", "CREATED_BY");
+
+        Scenario s = scenario("REVCRIT");
+        Long revisionId = s.revision().getId();
+        String insert = "insert into import_revision_field_criticality (definition_revision_id, field_key, "
+                + "criticality, created_at) values (?, ?, ?, ?)";
+
+        // Elke toegelaten sleutel kan een overrule krijgen; identiteit enkel als CRITICAL.
+        for (String key : List.of("SUPPLIER", "SUPPLIER_GROUP", "SUPPLIER_REFERENCE", "DISCOUNT_CODE")) {
+            assertThatThrownBy(() -> jdbc.update(insert, revisionId, key, "NON_CRITICAL", OffsetDateTime.now()))
+                    .as(key).isInstanceOf(DataIntegrityViolationException.class);
+            assertThatCode(() -> jdbc.update(insert, revisionId, key, "CRITICAL", OffsetDateTime.now()))
+                    .as(key).doesNotThrowAnyException();
+        }
+        for (String key : List.of("BASE_PRICE", "CURRENCY", "DESCRIPTION")) {
+            assertThatCode(() -> jdbc.update(insert, revisionId, key, "NON_CRITICAL", OffsetDateTime.now()))
+                    .as(key).doesNotThrowAnyException();
+        }
+        // Gesloten sleutelset, gesloten waardeset, één rij per (revisie, veld), bestaande revisie.
+        assertThatThrownBy(() -> jdbc.update(insert, revisionId, "BRAND", "CRITICAL", OffsetDateTime.now()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(insert, revisionId, "CURRENCY", "MAYBE", OffsetDateTime.now()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(insert, revisionId, "CURRENCY", "CRITICAL", OffsetDateTime.now()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(insert, -1L, "CURRENCY", "CRITICAL", OffsetDateTime.now()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    private List<String> constraintNames(String tableName) {
+        return jdbc.queryForList("select upper(constraint_name) from information_schema.table_constraints "
+                + "where upper(table_name) = ?", String.class, tableName);
+    }
+
     // --- Fase 3b, changeset 004-3: import_record_filter -------------------------------------------
 
     @Test

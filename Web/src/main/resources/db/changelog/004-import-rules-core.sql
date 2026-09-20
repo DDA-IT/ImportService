@@ -786,3 +786,65 @@ alter table import_batch add column bulk_incident_count bigint;
 alter table import_definition_revision add column bulk_incident_share_percent numeric(24,12) not null default 1;
 
 --rollback alter table import_definition_revision drop column bulk_incident_share_percent;
+
+-- =============================================================================================
+-- Bouwstap 3h-1: kritiek-vlag per kolom (beslissingslog 20/09 "eindoordeel bij verworpen regels en
+-- kritieke kolommen", ontwerp fase 3 par. 15.1). Enkel de vlag als configuratie: er wordt in deze
+-- stap nog niets mee geteld of beslist. De reeds uitgevoerde changesets hierboven blijven ongewijzigd.
+-- =============================================================================================
+
+--changeset catalogimport:004-2b-import-field-mapping-criticality
+--comment Kritiek-vlag per gemapte kolom (beslissingslog 20/09, ontwerp fase 3 par. 15.1).
+
+-- De gebruiker bepaalt per kolom of een fout erop kritiek is (dan is een review nodig) of niet. De
+-- default is NON_CRITICAL: een gewone gemapte kolom is niet kritiek tenzij de beheerder dat zegt.
+--
+-- Volgorde is bewust: eerst de kolom, dan de backfill, dan pas de check op referentiemappings. Een
+-- bestaande referentie- of prijscomponentmapping draagt semantisch al een kritieke betekenis (R-REF-08,
+-- R-PRI-*) en wordt dus CRITICAL; had de check vóór de backfill gestaan, dan zou elke bestaande
+-- referentiemapping (default NON_CRITICAL) de constraint schenden.
+alter table import_field_mapping add column criticality varchar(20) not null default 'NON_CRITICAL';
+
+update import_field_mapping set criticality = 'CRITICAL'
+    where reference_type is not null or price_component_code is not null;
+
+alter table import_field_mapping add constraint ck_import_field_mapping_criticality
+    check (criticality in ('CRITICAL', 'NON_CRITICAL'));
+-- Een kritieke koppelreferentie (EAN, PIM-ID, CAB-ID) kan nooit niet-kritiek zijn: een onbetrouwbare
+-- koppeling is precies wat de review moet vangen.
+alter table import_field_mapping add constraint ck_import_field_mapping_reference_critical
+    check (reference_type is null or criticality = 'CRITICAL');
+
+--rollback alter table import_field_mapping drop constraint ck_import_field_mapping_reference_critical;
+--rollback alter table import_field_mapping drop constraint ck_import_field_mapping_criticality;
+--rollback alter table import_field_mapping drop column criticality;
+
+--changeset catalogimport:004-15-import-revision-field-criticality
+--comment Kritiek-vlag van de revisie-eigen velden, die geen mappingrij hebben (ontwerp fase 3 par. 15.1).
+
+-- Leverancier, leveranciersgroep, leveranciersreferentie, kortingscode, basisprijs, munt en omschrijving
+-- staan op de revisie zelf en hebben (R-STR-06) geen import_field_mapping-rij. Hun kritiek-vlag staat
+-- hier, als overrule van de standaard van de soort. Een ontbrekende rij betekent "de standaard":
+-- identiteit CRITICAL (niet instelbaar), BASE_PRICE en CURRENCY CRITICAL (instelbaar), DESCRIPTION
+-- NON_CRITICAL. Er is dus geen rij nodig voor het gewone geval.
+create table import_revision_field_criticality (
+    definition_revision_id bigint not null,
+    field_key              varchar(60) not null,
+    criticality            varchar(20) not null,
+    created_at             timestamp with time zone not null,
+    created_by             varchar(100),
+    constraint pk_import_revision_field_criticality primary key (definition_revision_id, field_key),
+    constraint fk_import_revision_field_criticality_revision foreign key (definition_revision_id)
+        references import_definition_revision (id),
+    constraint ck_import_revision_field_criticality_key
+        check (field_key in ('SUPPLIER', 'SUPPLIER_GROUP', 'SUPPLIER_REFERENCE', 'DISCOUNT_CODE',
+                             'BASE_PRICE', 'CURRENCY', 'DESCRIPTION')),
+    constraint ck_import_revision_field_criticality_value
+        check (criticality in ('CRITICAL', 'NON_CRITICAL')),
+    -- De identiteitsvelden zijn nooit niet-kritiek: zonder identiteit bestaat er geen aanbieding.
+    constraint ck_import_revision_field_criticality_identity
+        check (field_key not in ('SUPPLIER', 'SUPPLIER_GROUP', 'SUPPLIER_REFERENCE', 'DISCOUNT_CODE')
+               or criticality = 'CRITICAL')
+);
+
+--rollback drop table import_revision_field_criticality;

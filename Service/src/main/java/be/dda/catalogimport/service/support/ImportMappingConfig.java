@@ -1,5 +1,6 @@
 package be.dda.catalogimport.service.support;
 
+import be.dda.catalogimport.domain.Criticality;
 import be.dda.catalogimport.domain.FieldDataType;
 import be.dda.catalogimport.domain.FieldOwner;
 import be.dda.catalogimport.domain.FieldTransformKind;
@@ -16,7 +17,9 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * De gevalideerde veldmapping en recordfilters van één bevroren {@code ImportDefinitionRevision}
@@ -34,11 +37,18 @@ import java.util.List;
  * {@code CONFIG_CANONICALISATION_VERSION_REQUIRED}: zo kan er nooit een levering verwerkt worden
  * waarvan de vingerafdruk de gemapte velden niet dekt.
  *
+ * <b>Kritiek-vlag per kolom (bouwstap 3h-1).</b> De configuratie draagt ook, per veldnaam, of een fout
+ * op die kolom kritiek is ({@link #criticalityOf(String)}). De vlag wordt hier enkel geladen en
+ * bevraagbaar gemaakt; er wordt in deze bouwstap nergens mee geteld of beslist.
+ *
  * @param canonicalisationVersion de versie die de revisie declareert; bepaalt welke velden in de
  *                                vingerafdrukken meetellen
+ * @param criticalities           per veldnaam de kritiek-vlag: de bronreferenties van de revisie-eigen
+ *                                velden en de logische veldnaam van elke mapping, samengevoegd volgens
+ *                                {@link #criticalityMap(Map, List)}
  */
 public record ImportMappingConfig(int canonicalisationVersion, List<FieldMapping> fields,
-                                  List<RecordFilter> filters) {
+                                  List<RecordFilter> filters, Map<String, Criticality> criticalities) {
 
     /**
      * Eén gevalideerde doelveldmapping.
@@ -56,6 +66,8 @@ public record ImportMappingConfig(int canonicalisationVersion, List<FieldMapping
      *                           prijscomponent ({@code maxPercentage=} in {@code transform_config}), of
      *                           {@code null}. Er is bewust géén algemene kunstmatige bovengrens
      *                           (R-PRI-08): een verhouding van 900% kan legitiem zijn
+     * @param criticality        is een fout op deze kolom kritiek (par. 15.1)? Wordt nog nergens
+     *                           gebruikt om te tellen of te beslissen (bouwstap 3h-1)
      */
     public record FieldMapping(int sequenceNumber, String targetFieldCode, String targetFieldName,
                                FieldValueKind valueKind, String sourceReference, Integer expectedPosition,
@@ -67,7 +79,40 @@ public record ImportMappingConfig(int canonicalisationVersion, List<FieldMapping
                                FieldTransform transform, ValueFormat valueFormat,
                                FieldOwner fieldOwner, IdentityClass identityClass,
                                String priceComponentCode, String referenceType,
-                               BigDecimal maxPercentage) {
+                               BigDecimal maxPercentage, Criticality criticality) {
+
+        /**
+         * Ontbreekt de vlag, dan geldt de standaard van de soort (referentie- en prijscomponentmapping
+         * kritiek, al het andere niet), exact zoals de backfill van changeset 004-2b.
+         */
+        public FieldMapping {
+            if (criticality == null) {
+                criticality = priceComponentCode != null || referenceType != null
+                        ? Criticality.CRITICAL : Criticality.NON_CRITICAL;
+            }
+        }
+
+        /**
+         * De mapping zonder uitdrukkelijke kritiek-vlag (de vorm van vóór bouwstap 3h-1): de standaard
+         * van de soort geldt.
+         */
+        public FieldMapping(int sequenceNumber, String targetFieldCode, String targetFieldName,
+                            FieldValueKind valueKind, String sourceReference, Integer expectedPosition,
+                            String fixedValue, String bookmarkName, String defaultValue,
+                            FieldDataType dataType,
+                            boolean required, Integer maxLength, Integer decimalScale,
+                            boolean zeroAllowed, boolean negativeAllowed,
+                            FieldTransformKind transformKind, String transformConfig,
+                            FieldTransform transform, ValueFormat valueFormat,
+                            FieldOwner fieldOwner, IdentityClass identityClass,
+                            String priceComponentCode, String referenceType,
+                            BigDecimal maxPercentage) {
+            this(sequenceNumber, targetFieldCode, targetFieldName, valueKind, sourceReference,
+                    expectedPosition, fixedValue, bookmarkName, defaultValue, dataType, required, maxLength,
+                    decimalScale, zeroAllowed, negativeAllowed, transformKind, transformConfig, transform,
+                    valueFormat, fieldOwner, identityClass, priceComponentCode, referenceType,
+                    maxPercentage, null);
+        }
 
         /** Een veld dat de identiteit, de prijs of een kritieke referentie draagt. */
         public boolean isSemanticallyCritical() {
@@ -138,6 +183,60 @@ public record ImportMappingConfig(int canonicalisationVersion, List<FieldMapping
     public ImportMappingConfig {
         fields = List.copyOf(fields);
         filters = List.copyOf(filters);
+        criticalities = Map.copyOf(criticalities);
+    }
+
+    /**
+     * De configuratie zonder revisie-eigen velden in de kritiek-map: enkel de mappings tellen mee. Voor
+     * aanroepers die geen bronstructuur hebben (de vorm van vóór bouwstap 3h-1); de fabriek bouwt altijd
+     * de volledige map.
+     */
+    public ImportMappingConfig(int canonicalisationVersion, List<FieldMapping> fields,
+                               List<RecordFilter> filters) {
+        this(canonicalisationVersion, fields, filters, criticalityMap(Map.of(), fields));
+    }
+
+    /**
+     * Voegt de kritiek-vlaggen van de revisie-eigen velden (per bronreferentie) en van de mappings (per
+     * logische veldnaam) samen tot één map.
+     * <p>
+     * <b>Twee namespaces, één map.</b> Een issue op een revisie-eigen veld draagt de bronreferentie als
+     * veldnaam (bijvoorbeeld de headernaam {@code PRIJS}); een issue op een gemapt veld draagt de
+     * logische veldnaam uit de catalogus (bijvoorbeeld {@code Omschrijving}). Botsen beide op dezelfde
+     * sleutel, dan wint de strengste ({@link Criticality#CRITICAL}): een onduidelijke koppeling tussen
+     * fout en kolom mag nooit een kritieke fout als niet-kritiek laten tellen.
+     *
+     * @param revisionOwnFields per bronreferentie de vlag van een revisie-eigen veld
+     */
+    public static Map<String, Criticality> criticalityMap(Map<String, Criticality> revisionOwnFields,
+                                                          List<FieldMapping> fields) {
+        Map<String, Criticality> merged = new HashMap<>();
+        revisionOwnFields.forEach((name, criticality) -> {
+            if (name != null && criticality != null) {
+                merged.merge(name, criticality, Criticality::strictest);
+            }
+        });
+        for (FieldMapping field : fields) {
+            if (field.targetFieldName() != null) {
+                merged.merge(field.targetFieldName(), field.criticality(), Criticality::strictest);
+            }
+        }
+        return merged;
+    }
+
+    /**
+     * Is een fout op deze kolom kritiek? {@code fieldName} is de veldnaam zoals ze in een issue staat
+     * ({@code ImportValueException.getField()}): de bronreferentie van een revisie-eigen veld of de
+     * logische veldnaam van een mapping.
+     * <p>
+     * <b>Fail-safe:</b> een onbekende sleutel of {@code null} is {@link Criticality#CRITICAL}. Een fout
+     * die niet aan een bekende kolom te koppelen is, mag nooit als niet-kritiek doorgaan.
+     */
+    public Criticality criticalityOf(String fieldName) {
+        if (fieldName == null) {
+            return Criticality.CRITICAL;
+        }
+        return criticalities.getOrDefault(fieldName, Criticality.CRITICAL);
     }
 
     /** Een revisie zonder filters draait exact zoals in fase 2. */

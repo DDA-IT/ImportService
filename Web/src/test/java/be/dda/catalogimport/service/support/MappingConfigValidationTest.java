@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import be.dda.catalogimport.domain.Criticality;
 import be.dda.catalogimport.domain.FieldDataType;
 import be.dda.catalogimport.domain.FieldOwner;
 import be.dda.catalogimport.domain.FieldTransformKind;
@@ -18,6 +19,7 @@ import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
 import be.dda.catalogimport.domain.ImportFieldMapping;
 import be.dda.catalogimport.domain.ImportRecordFilter;
+import be.dda.catalogimport.domain.ImportRevisionFieldCriticality;
 import be.dda.catalogimport.service.support.SourceStructureConfig.FieldReferenceKind;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -442,7 +444,111 @@ class MappingConfigValidationTest {
                 .doesNotThrowAnyException();
     }
 
+    // --- Bouwstap 3h-1: kritiek-vlag per kolom (ontwerp fase 3, par. 15.1) ---------------------------
+    // De databasechecks weren deze rijen al (zie FieldCriticalityTest en ScreeningSchemaTest); hier
+    // wordt bewezen dat ook een configuratie die niet via de database binnenkwam geweigerd wordt.
+
+    @Test
+    void acceptsEveryAllowedCriticalityFlagAndExposesItThroughCriticalityOf() {
+        ImportDefinitionRevision revision = revisionWithCanonicalisationVersion(2);
+        // Een prijscomponent en een gewoon veld zijn instelbaar: beide kanten op.
+        ImportFieldMapping akp = priceMapping(revision, 1, priceField("AKP_PCT", "AKP", 20), "AKP");
+        akp.setCriticality(Criticality.NON_CRITICAL);
+        ImportFieldMapping supporting = mapping(revision, 2, supportingField(), "E_LEV");
+        supporting.setCriticality(Criticality.CRITICAL);
+
+        ImportMappingConfig config = factory.from(revision, structure(2), List.of(akp, supporting),
+                List.of(), List.of(
+                        new ImportRevisionFieldCriticality(null, "BASE_PRICE", Criticality.NON_CRITICAL),
+                        new ImportRevisionFieldCriticality(null, "DESCRIPTION", Criticality.CRITICAL),
+                        new ImportRevisionFieldCriticality(null, "SUPPLIER", Criticality.CRITICAL)));
+
+        assertThat(config.criticalityOf("AKP_PCT")).isEqualTo(Criticality.NON_CRITICAL);
+        assertThat(config.criticalityOf("Externe leveranciersidentiteit")).isEqualTo(Criticality.CRITICAL);
+        assertThat(config.criticalityOf("PRIJS")).isEqualTo(Criticality.NON_CRITICAL);
+        assertThat(config.criticalityOf("OMSCHRIJVING")).isEqualTo(Criticality.CRITICAL);
+        assertThat(config.criticalityOf("LEVERANCIER")).isEqualTo(Criticality.CRITICAL);
+    }
+
+    @Test
+    void refusesACriticalReferenceMappingThatIsNotCritical() {
+        ImportDefinitionRevision revision = revisionWithCanonicalisationVersion(2);
+        ImportFieldMapping ean = new ImportFieldMapping(revision, 1, referenceField(),
+                FieldValueKind.SOURCE_FIELD, FieldDataType.TEXT, FieldOwner.CRITICAL_REFERENCE,
+                IdentityClass.ARTICLE_REFERENCE);
+        ean.setSourceReference("EAN13");
+        ean.setReferenceType("EAN");
+
+        // Zonder uitdrukkelijke vlag geldt de standaard: een referentie is kritiek.
+        assertThat(factory.from(revision, structure(2), List.of(ean), List.of())
+                .criticalityOf("EAN-barcode")).isEqualTo(Criticality.CRITICAL);
+
+        ean.setCriticality(Criticality.NON_CRITICAL);
+        assertThatThrownBy(() -> factory.from(revision, structure(2), List.of(ean), List.of()))
+                .isInstanceOf(ScreeningBlockedException.class)
+                .satisfies(failure -> {
+                    ScreeningBlockedException blocked = (ScreeningBlockedException) failure;
+                    assertThat(blocked.getCode())
+                            .isEqualTo(ImportMappingConfigFactory.CODE_FIELD_CRITICALITY_INVALID);
+                    assertThat(blocked.getFieldName()).isEqualTo("EAN");
+                });
+    }
+
+    @Test
+    void refusesAnIdentityFieldThatIsNotCritical() {
+        ImportDefinitionRevision revision = revision();
+
+        for (String key : List.of("SUPPLIER", "SUPPLIER_GROUP", "SUPPLIER_REFERENCE", "DISCOUNT_CODE")) {
+            assertThatThrownBy(() -> factory.from(revision, structure(), List.of(), List.of(), List.of(
+                    new ImportRevisionFieldCriticality(null, key, Criticality.NON_CRITICAL))))
+                    .as(key)
+                    .isInstanceOf(ScreeningBlockedException.class)
+                    .satisfies(failure -> {
+                        ScreeningBlockedException blocked = (ScreeningBlockedException) failure;
+                        assertThat(blocked.getCode())
+                                .isEqualTo(ImportMappingConfigFactory.CODE_FIELD_CRITICALITY_INVALID);
+                        assertThat(blocked.getFieldName()).isEqualTo(key);
+                    });
+        }
+    }
+
+    @Test
+    void refusesAnOverruleForAnUnknownFieldKeyOrWithoutAValueOrTwice() {
+        ImportDefinitionRevision revision = revision();
+
+        assertBlocksCriticality(revision, new ImportRevisionFieldCriticality(null, "BRAND",
+                Criticality.NON_CRITICAL));
+        assertBlocksCriticality(revision, new ImportRevisionFieldCriticality(null, null,
+                Criticality.CRITICAL));
+        assertBlocksCriticality(revision, new ImportRevisionFieldCriticality(null, "BASE_PRICE", null));
+        // Twee rijen voor hetzelfde veld: welke geldt? Geen van beide wordt geraden.
+        assertBlocksCriticality(revision,
+                new ImportRevisionFieldCriticality(null, "BASE_PRICE", Criticality.NON_CRITICAL),
+                new ImportRevisionFieldCriticality(null, "BASE_PRICE", Criticality.CRITICAL));
+    }
+
+    /** Een identiteitsveld kan wél uitdrukkelijk kritiek gezet worden: dat herhaalt enkel de standaard. */
+    @Test
+    void acceptsAnIdentityOverruleThatRestatesTheDefault() {
+        ImportDefinitionRevision revision = revision();
+
+        assertThatCode(() -> factory.from(revision, structure(), List.of(), List.of(), List.of(
+                new ImportRevisionFieldCriticality(null, "SUPPLIER_GROUP", Criticality.CRITICAL))))
+                .doesNotThrowAnyException();
+        // De vorm zonder overrule-rijen (fase 3b-3g) geeft dezelfde configuratie.
+        assertThat(factory.from(revision, structure(), List.of(), List.of()).criticalityOf("OMSCHRIJVING"))
+                .isEqualTo(Criticality.NON_CRITICAL);
+    }
+
     // --- Helpers -----------------------------------------------------------------------------------
+
+    private void assertBlocksCriticality(ImportDefinitionRevision revision,
+                                         ImportRevisionFieldCriticality... rows) {
+        assertThatThrownBy(() -> factory.from(revision, structure(), List.of(), List.of(), List.of(rows)))
+                .isInstanceOf(ScreeningBlockedException.class)
+                .extracting(failure -> ((ScreeningBlockedException) failure).getCode())
+                .isEqualTo(ImportMappingConfigFactory.CODE_FIELD_CRITICALITY_INVALID);
+    }
 
     private void assertBlocks(String expectedCode, ImportDefinitionRevision revision,
                               List<ImportFieldMapping> mappings) {

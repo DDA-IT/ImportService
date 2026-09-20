@@ -127,6 +127,18 @@ public class ImportFieldMapping {
     @Column(name = "reference_type", length = 30)
     private String referenceType;
 
+    /**
+     * Is een fout op deze kolom kritiek (ontwerp fase 3, par. 15.1)? {@code null} betekent "niet
+     * uitdrukkelijk gezet": {@link #getCriticality()} leidt dan de standaard af (referentie- en
+     * prijscomponentmappings {@code CRITICAL}, al het andere {@code NON_CRITICAL}) en {@link #onPersist()}
+     * bewaart die. Dat is dezelfde regel als de backfill van changeset 004-2b, zodat een nieuwe
+     * referentiemapping de databasecheck {@code ck_import_field_mapping_reference_critical} nooit schendt
+     * zonder dat iemand ze uitdrukkelijk op {@code NON_CRITICAL} zette.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "criticality", nullable = false, length = 20)
+    private Criticality criticality;
+
     @Column(name = "active", nullable = false)
     private boolean active = true;
 
@@ -157,6 +169,7 @@ public class ImportFieldMapping {
         if (createdAt == null) {
             createdAt = Instant.now();
         }
+        criticality = getCriticality();
     }
 
     public Long getId() {
@@ -325,6 +338,22 @@ public class ImportFieldMapping {
 
     public void setReferenceType(String referenceType) {
         this.referenceType = referenceType;
+    }
+
+    /**
+     * De kritiek-vlag van deze kolom: de uitdrukkelijk gezette waarde, of anders de standaard
+     * ({@code CRITICAL} voor een referentie- of prijscomponentmapping, anders {@code NON_CRITICAL}).
+     */
+    public Criticality getCriticality() {
+        if (criticality != null) {
+            return criticality;
+        }
+        return referenceType != null || priceComponentCode != null
+                ? Criticality.CRITICAL : Criticality.NON_CRITICAL;
+    }
+
+    public void setCriticality(Criticality criticality) {
+        this.criticality = criticality;
     }
 
     public boolean isActive() {
