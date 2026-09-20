@@ -49,6 +49,10 @@ public class BatchQueryService {
      * {@code bulkIncidentCount} is additief toegevoegd in bouwstap 3g (R-THR-04): het aantal
      * foutgroepen dat als bulkincident aangemerkt is. De groepen zelf staan in
      * {@code GET /batches/{id}/issue-groups}.
+     * <p>
+     * {@code criticalLineCount} is additief toegevoegd in bouwstap 3h-2 (ontwerp fase 3 par. 15.1): het
+     * aantal verworpen bronregels met een fout op een kritieke kolom (ongecapt, ontdubbeld per regel).
+     * {@code null} betekent "niet vastgesteld" en is nooit stil 0; er hangt nog geen oordeel aan.
      */
     public record BatchDetail(long batchId, long deliveryId, long importLinkId, long definitionRevisionId,
                               Long taskRunId, int attemptNo, String status, String validationResult,
@@ -58,7 +62,8 @@ public class BatchQueryService {
                               Long filteredOutCount, Long errorBeforeFilterCount,
                               Long duplicateIdentityCount, Long newCount, Long changedCount,
                               Long unchangedCount, Long identityIncidentCount,
-                              Long contentMutationCount, Long bulkIncidentCount, String blockedCode,
+                              Long contentMutationCount, Long bulkIncidentCount, Long criticalLineCount,
+                              String blockedCode,
                               String blockedReason, String baselineAcceptedBy, Instant baselineAcceptedAt,
                               String baselineAcceptReason, Instant createdAt, String createdBy) {
 
@@ -74,7 +79,8 @@ public class BatchQueryService {
                     batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
                     batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
                     batch.getUnchangedCount(), batch.getIdentityIncidentCount(),
-                    batch.getContentMutationCount(), batch.getBulkIncidentCount(), batch.getBlockedCode(),
+                    batch.getContentMutationCount(), batch.getBulkIncidentCount(),
+                    batch.getCriticalLineCount(), batch.getBlockedCode(),
                     batch.getBlockedReason(), batch.getBaselineAcceptedBy(), batch.getBaselineAcceptedAt(),
                     batch.getBaselineAcceptReason(), batch.getCreatedAt(), batch.getCreatedBy());
         }

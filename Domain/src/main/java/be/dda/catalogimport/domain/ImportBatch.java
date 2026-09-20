@@ -176,6 +176,16 @@ public class ImportBatch {
     private Long bulkIncidentCount;
 
     /**
+     * Aantal kritieke lijnen (bouwstap 3h-2, ontwerp fase 3 par. 15.1): verworpen bronregels met minstens
+     * één ERROR op een kritieke kolom of een ERROR die niet aan een kolom toewijsbaar is. Ongecapt (nooit
+     * uit de bewaarde voorbeeldrijen) en strikt disjunct met {@link #identityIncidentCount}. {@code null}
+     * betekent "niet vastgesteld" (bestand niet volledig gelezen, of technisch mislukte batch), nooit
+     * stil 0; een levering zonder verworpen regels heeft een vastgestelde 0.
+     */
+    @Column(name = "critical_line_count")
+    private Long criticalLineCount;
+
+    /**
      * Het inhoudelijke eindoordeel, als aparte statusas naast {@link #status} (ontwerp fase 3,
      * afwijking D en R-THR-06). {@code null} zolang de screening niet afgerond is én bij een
      * technische fout ({@code FAILED}): er is dan niets vastgesteld, en dat wordt nooit stil
@@ -432,6 +442,15 @@ public class ImportBatch {
 
     public void setBulkIncidentCount(Long bulkIncidentCount) {
         this.bulkIncidentCount = bulkIncidentCount;
+    }
+
+    /** @return het aantal kritieke lijnen, of {@code null} als dat niet vastgesteld is */
+    public Long getCriticalLineCount() {
+        return criticalLineCount;
+    }
+
+    public void setCriticalLineCount(Long criticalLineCount) {
+        this.criticalLineCount = criticalLineCount;
     }
 
     public ValidationResult getValidationResult() {

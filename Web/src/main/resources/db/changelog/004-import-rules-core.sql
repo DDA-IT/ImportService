@@ -848,3 +848,19 @@ create table import_revision_field_criticality (
 );
 
 --rollback drop table import_revision_field_criticality;
+
+-- =============================================================================================
+-- Bouwstap 3h-2: het aantal kritieke lijnen (beslissingslog 20/09, ontwerp fase 3 par. 15.1). Enkel de
+-- teller: er wordt in deze stap nog niets mee beslist. De reeds uitgevoerde changesets hierboven
+-- blijven ongewijzigd; de overige 004-11e-tellers van par. 15.5 komen in latere stappen.
+-- =============================================================================================
+
+--changeset catalogimport:004-11e2-import-batch-critical-line-count
+--comment Aantal kritieke lijnen van deze batch: verworpen bronregels met een ERROR op een kritieke kolom (ontwerp fase 3 par. 15.1).
+
+-- Nullable zoals elke andere teller: NULL betekent "niet vastgesteld" (bestand niet volledig gelezen,
+-- of technisch mislukte batch), nooit stil 0. Een levering waarin niets verworpen is, krijgt een
+-- vastgesteld 0. De teller is ongecapt: hij komt nooit uit de bewaarde voorbeeldrijen.
+alter table import_batch add column critical_line_count bigint;
+
+--rollback alter table import_batch drop column critical_line_count;

@@ -65,6 +65,9 @@ public class CatalogImportBatchController {
      * <p>
      * Additief sinds bouwstap 3g: {@code bulkIncidentCount}, het aantal foutgroepen dat als
      * bulkincident aangemerkt is. De groepen zelf staan in {@code GET /batches/{id}/issue-groups}.
+     * <p>
+     * Additief sinds bouwstap 3h-2: {@code criticalLineCount}, het aantal verworpen bronregels met een
+     * fout op een kritieke kolom; {@code null} is "niet vastgesteld", nooit stil 0.
      */
     @GetMapping("/{batchId}")
     BatchDetail batch(@PathVariable("batchId") long batchId) {

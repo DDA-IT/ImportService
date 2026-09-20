@@ -509,6 +509,24 @@ class ScreeningSchemaTest {
     }
 
     /**
+     * Bouwstap 3h-2 (004-11e2): {@code critical_line_count} is nullable en blijft NULL tot de teller
+     * vastgesteld is — "niet vastgesteld" is nooit stil 0. De kolom is een teller, geen configuratie.
+     */
+    @Test
+    void leavesTheCriticalLineCountUnknownUntilItIsMeasured() {
+        Scenario s = scenario("CRITLINE");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+
+        assertThat(jdbc.queryForObject("select critical_line_count from import_batch where id = ?",
+                Long.class, batch.getId())).isNull();
+        assertThat(batches.findById(batch.getId()).orElseThrow().getCriticalLineCount()).isNull();
+        assertThat(jdbc.queryForObject("select is_nullable from information_schema.columns "
+                        + "where lower(table_name) = 'import_batch' "
+                        + "and lower(column_name) = 'critical_line_count'", String.class))
+                .isEqualTo("YES");
+    }
+
+    /**
      * Beslissing van de mens (20/09): drempels zijn altijd een percentage. De kolom is daarom
      * {@code not null} met default 1 — een NULL-drempel zou de bulkdetectie stilzwijgend
      * uitschakelen.

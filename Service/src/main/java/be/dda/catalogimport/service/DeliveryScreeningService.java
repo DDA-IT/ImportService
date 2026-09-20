@@ -35,6 +35,7 @@ import be.dda.catalogimport.domain.TaskRunStatus;
 import be.dda.catalogimport.domain.ValidationResult;
 import be.dda.catalogimport.service.support.CandidateNormaliser;
 import be.dda.catalogimport.service.support.CandidateNormaliser.NormalisedCandidate;
+import be.dda.catalogimport.service.support.CriticalLineCounter;
 import be.dda.catalogimport.service.support.CsvRecordStreamer;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.LineIssue;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.ParsedRow;
@@ -144,6 +145,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       bruikbaar, de betrokken aanbiedingen zijn vastgehouden. De drempel {@code max_critical_records}
  *       (default 0), die zo'n levering op eindstatus {@code BLOCKED} zet, hoort bij bouwstap 3h
  *       (ontwerp fase 3, par. 3.6); tot dan wordt die drempel niet geraden.</li>
+ *   <li><b>Kritieke lijnen worden geteld, nog niet beoordeeld</b> (bouwstap 3h-2, ontwerp par. 15.1).
+ *       Een verworpen bronregel met een ERROR op een kritieke kolom (of een niet aan een kolom
+ *       toewijsbare ERROR) telt in {@code import_batch.critical_line_count}, ontdubbeld per regel en
+ *       niet gecapt door de voorbeeldcap; zie {@link CriticalLineCounter}. De teller wordt samen met
+ *       {@code rejected_record_count} vastgelegd en beïnvloedt nog geen drempel, oordeel of
+ *       mutatiestatus.</li>
  *   <li>De screening schrijft <b>nooit</b> in {@code catalog_source_state}. Een ongewijzigde regel
  *       raakt de bronstaat niet aan en levert geen mutatie op. Het bijwerken van de bronstaat is een
  *       aparte, geauditeerde actie (beslissingslog 18/09, accept-baseline).</li>
@@ -233,6 +240,7 @@ public class DeliveryScreeningService {
                                    Long filteredOutCount, Long errorBeforeFilterCount,
                                    long stagedRowCount, Long duplicateIdentityCount, Long newCount,
                                    Long changedCount, Long unchangedCount, Long identityIncidentCount,
+                                   Long criticalLineCount,
                                    Long contentMutationCount, String blockedCode, String blockedReason) {
     }
 
@@ -311,6 +319,11 @@ public class DeliveryScreeningService {
         private final Map<String, Integer> recordedSamples = new HashMap<>();
         private long validCount;
         private long rejectedCount;
+        /**
+         * Het aantal kritieke lijnen (3h-2, ontwerp par. 15.1): ongecapt, ontdubbeld per regelnummer en
+         * onafhankelijk van de voorbeeldcap. Wordt samen met {@link #rejectedCount} vastgelegd.
+         */
+        private final CriticalLineCounter criticalLines = new CriticalLineCounter();
         private long filteredOutCount;
         private long errorBeforeFilterCount;
         private long stagedCount;
@@ -718,6 +731,9 @@ public class DeliveryScreeningService {
                 progress.rejectedCount++;
             }
         }
+        // Kritieke lijn (3h-2, par. 15.1): vóór de voorbeeldcap, zodat de teller ongecapt blijft. Het
+        // tellen zelf verandert niets aan de verwerking; de beoordeling komt in latere bouwstappen.
+        progress.criticalLines.record(context.mappingConfig(), rowNumber, severity, code, field);
         int recorded = progress.recordedSamples.getOrDefault(code, 0);
         if (recorded >= maxSampleRowsPerCode) {
             // Geen voorbeeldrij meer, maar de telling hierboven loopt door: het werkelijke aantal
@@ -1538,6 +1554,7 @@ public class DeliveryScreeningService {
             batch.setRawRecordCount(progress.rawRecordCount);
             batch.setValidRecordCount(progress.validCount);
             batch.setRejectedRecordCount(progress.rejectedCount);
+            batch.setCriticalLineCount(progress.criticalLines.count());
             batch.setFilteredOutCount(progress.filteredOutCount);
             batch.setErrorBeforeFilterCount(progress.errorBeforeFilterCount);
         }
@@ -1562,6 +1579,7 @@ public class DeliveryScreeningService {
                 batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
                 batch.getStagedRowCount(), batch.getDuplicateIdentityCount(), batch.getNewCount(),
                 batch.getChangedCount(), batch.getUnchangedCount(), batch.getIdentityIncidentCount(),
+                batch.getCriticalLineCount(),
                 batch.getContentMutationCount(), batch.getBlockedCode(), batch.getBlockedReason());
     }
 

@@ -73,12 +73,16 @@ public record DeliveryView(
      * (records die al vóór het filter onleesbaar waren) zijn additief toegevoegd in bouwstap 3b:
      * {@code raw = filteredOut + errorBeforeFilter + rejected + valid} (R-FLT-04). Zonder
      * geconfigureerde recordfilters staan ze op 0.
+     * <p>
+     * {@code criticalLineCount} (verworpen regels met een fout op een kritieke kolom) is additief
+     * toegevoegd in bouwstap 3h-2; {@code null} betekent onbekend.
      */
     public record BatchView(long batchId, String status, String validationResult, int attemptNo,
                             Long rawRecordCount, Long validRecordCount, Long rejectedRecordCount,
                             Long filteredOutCount, Long errorBeforeFilterCount,
                             Long duplicateIdentityCount, Long newCount, Long changedCount,
-                            Long unchangedCount, Long contentMutationCount, String blockedCode,
+                            Long unchangedCount, Long contentMutationCount, Long criticalLineCount,
+                            String blockedCode,
                             String blockedReason) {
 
         static BatchView of(ImportBatch batch) {
@@ -88,7 +92,8 @@ public record DeliveryView(
                     batch.getRawRecordCount(), batch.getValidRecordCount(), batch.getRejectedRecordCount(),
                     batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
                     batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
-                    batch.getUnchangedCount(), batch.getContentMutationCount(), batch.getBlockedCode(),
+                    batch.getUnchangedCount(), batch.getContentMutationCount(),
+                    batch.getCriticalLineCount(), batch.getBlockedCode(),
                     batch.getBlockedReason());
         }
     }
