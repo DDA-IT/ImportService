@@ -129,7 +129,16 @@ public class CatalogImportBatchController {
         return queries.getIssueGroups(batchId, page, size);
     }
 
-    /** Aanvaardt een gescreende batch als nulmeting van de bronstaat; enkel vanuit {@code SCREENED}. */
+    /**
+     * Aanvaardt een gescreende batch als nulmeting van de bronstaat; enkel vanuit {@code SCREENED}.
+     * <p>
+     * <b>Eén bevoegde persoon volstaat</b> (bewuste beslissing 20/09/2026): {@code acceptedBy} en
+     * {@code reason} zijn de enige velden, ook voor een batch met wachtende creaties, een
+     * bulkincident of {@code REVIEW_REQUIRED}. Er is geen {@code approvedBy} en geen 409
+     * {@code FOUR_EYES_APPROVAL_REQUIRED}. Een onbekend extra veld in de body (bv. {@code approvedBy})
+     * wordt door de standaard Jackson-configuratie genegeerd en nergens bewaard. Vier-ogen wordt pas
+     * met authenticatie (Fase 5) opnieuw beoordeeld.
+     */
     @PostMapping("/{batchId}/accept-baseline")
     BaselineAcceptance acceptBaseline(@PathVariable("batchId") long batchId,
                                       @RequestBody AcceptBaselineRequest request) {

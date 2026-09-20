@@ -478,7 +478,8 @@ public class MutationDao {
      * blijft {@code RECORDED}: die legt vast dat de screening plaatsvond en is geen uitvoerbare
      * mutatie. Mutaties in een andere status blijven ongemoeid, zodat herhalen niets verandert.
      * <p>
-     * <b>Openstaand is sinds bouwstap 3h-3 {@code PLANNED} én {@code AWAITING_APPROVAL}</b> (ontwerp
+     * <b>Openstaand is {@code PLANNED} én {@code AWAITING_APPROVAL}</b> (sinds bouwstap 3h-3; in 3h-6
+     * hernoemd van {@code skipPlannedContentMutations}, omdat die naam niet meer klopte; ontwerp
      * par. 15.4). Een eerste levering levert vanaf dan uitsluitend wachtende creaties op; zou
      * {@code AWAITING_APPROVAL} hier buiten vallen, dan zou {@code accept-baseline} de bronstaat wél
      * schrijven maar de bijhorende mutaties eeuwig open laten staan. De aanvaarding ís de menselijke
@@ -491,7 +492,7 @@ public class MutationDao {
      *
      * @return het aantal overgezette mutaties
      */
-    public int skipPlannedContentMutations(long batchId, String statusReason) {
+    public int skipOpenContentMutations(long batchId, String statusReason) {
         return jdbc.update("update import_mutation set status = 'SKIPPED', status_reason = ? "
                 + "where batch_id = ? and action_type in ('CREATE', 'UPDATE') "
                 + "  and status in ('PLANNED', 'AWAITING_APPROVAL')",

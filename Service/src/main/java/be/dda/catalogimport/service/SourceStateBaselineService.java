@@ -29,6 +29,15 @@ import org.springframework.transaction.support.TransactionTemplate;
  * identieke herlevering nul mutaties oplevert. Fase 5 vult haar aan of vervangt ze door de echte
  * publicatieroute ({@code state_origin = PUBLISHED}).
  * <p>
+ * <p>
+ * <b>Eén bevoegde persoon rondt de review af (bewuste beslissing 20/09/2026).</b> Ook een batch met
+ * wachtende creaties (initialisatie, overschreden creatiedrempel), een bulkincident of
+ * {@code validation_result = REVIEW_REQUIRED} wordt met één {@code acceptedBy} en één {@code reason}
+ * aanvaard. Er is geen tweede gebruiker ("vier-ogen"), geen {@code approvedBy} en geen 409
+ * {@code FOUR_EYES_APPROVAL_REQUIRED}; de drempels zelf zijn altijd percentages per revisie. Zolang
+ * {@code acceptedBy} een requestveld is en er geen authenticatie bestaat, zou een tweede naam niets
+ * bewijzen; vier-ogen wordt pas met authenticatie en autorisatie (Fase 5) opnieuw beoordeeld.
+ * <p>
  * <b>Businessgedrag.</b>
  * <ul>
  *   <li>Enkel vanuit {@code SCREENED} (anders 409 {@link #CODE_BATCH_NOT_ACCEPTABLE}); een tweede
@@ -280,7 +289,7 @@ public class SourceStateBaselineService {
         ImportBatch batch = batches.findByIdForUpdate(batchId)
                 .orElseThrow(() -> new NotFoundException("BATCH_NOT_FOUND", "Batch " + batchId + " not found"));
         requireScreened(batch);
-        int skipped = mutations.skipPlannedContentMutations(batchId, SKIPPED_REASON);
+        int skipped = mutations.skipOpenContentMutations(batchId, SKIPPED_REASON);
         batch.setStatus(ImportBatchStatus.BASELINE_ACCEPTED);
         batch.recordBaselineAcceptance(user, acceptedAt, reason);
         batches.saveAndFlush(batch);
