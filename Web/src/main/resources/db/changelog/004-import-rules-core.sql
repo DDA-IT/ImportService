@@ -925,3 +925,39 @@ alter table import_batch add column creation_scope_count bigint;
 alter table import_definition_revision add column max_critical_share_percent numeric(24,12) not null default 1;
 
 --rollback alter table import_definition_revision drop column max_critical_share_percent;
+
+-- =============================================================================================
+-- Bouwstap 3h-5: het eindoordeel (ontwerp fase 3 par. 15.3/15.5). De laatste 004-11e-tellers van
+-- par. 15.5, plus de teller van het creatiebeleid die de marker als bewijs nodig heeft. Alle vier
+-- additief; de reeds uitgevoerde changesets hierboven blijven ongewijzigd.
+-- =============================================================================================
+
+--changeset catalogimport:004-11e4-import-batch-judgement-counters
+--comment Ongecapte tellers voor het eindoordeel van een levering (ontwerp fase 3 par. 15.3).
+
+-- Alle vier nullable: NULL betekent "niet vastgesteld" (lopende of technisch mislukte batch), nooit
+-- stil 0. Een levering waarin niets vastgesteld is, krijgt een gemeten 0.
+--
+-- critical_issue_count / warning_count zijn ONGECAPT: ze tellen het werkelijke aantal voorvallen
+-- (import_issue_group.occurrence_count plus de niet-gegroepeerde issuerijen) en nooit het aantal
+-- bewaarde voorbeeldrijen. Bij 250 kritieke voorvallen en een voorbeeldcap van 200 staat hier 250.
+alter table import_batch add column critical_issue_count bigint;
+alter table import_batch add column warning_count bigint;
+
+-- Het aantal CREATE/UPDATE-mutaties dat op goedkeuring wacht (initialisatie, creatiedrempel,
+-- bulkprijsincident). Dezelfde afbakening als content_mutation_count: de IMPORT_MARKER en de
+-- IDENTITY_REFERENCE_INCIDENT-mutaties tellen niet mee - dat zijn geen voorgestelde wijzigingen aan
+-- een aanbieding. Overschrijvend gemeten in stap F, nooit opgeteld.
+alter table import_batch add column awaiting_approval_count bigint;
+
+-- De teller van het creatiebeleid naast de reeds bestaande noemer (creation_scope_count): het aantal
+-- regels dat na goedkeuring een nieuwe aanbieding zou worden, zoals pass E4b het gemeten heeft.
+-- Vastgelegd en niet achteraf herrekend: tussen het oordeel en de marker kan een andere batch een
+-- baseline aanvaarden, en dan zou de marker een ander getal tonen dan het getal waarop geoordeeld is.
+-- NULL = nog niet beoordeeld, nooit stil 0.
+alter table import_batch add column creation_candidate_count bigint;
+
+--rollback alter table import_batch drop column creation_candidate_count;
+--rollback alter table import_batch drop column awaiting_approval_count;
+--rollback alter table import_batch drop column warning_count;
+--rollback alter table import_batch drop column critical_issue_count;

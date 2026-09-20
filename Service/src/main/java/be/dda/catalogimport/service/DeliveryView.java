@@ -80,13 +80,21 @@ public record DeliveryView(
      * {@code creationOutcome} (het oordeel van het creatiebeleid) en {@code creationScopeCount} (het
      * aantal actieve aanbiedingen waartegen geoordeeld is) zijn additief toegevoegd in bouwstap 3h-3;
      * {@code null} betekent "nog niet beoordeeld", nooit stil {@code AUTOMATIC} of 0.
+     * <p>
+     * {@code criticalIssueCount} en {@code warningCount} (ongecapte aantallen vastgestelde
+     * voorvallen, uit de issuegroepen en nooit uit de bewaarde voorbeeldrijen),
+     * {@code awaitingApprovalCount} (de {@code CREATE}/{@code UPDATE}-mutaties die op goedkeuring
+     * wachten) en {@code creationCandidateCount} (de teller van het creatiebeleid, naast zijn noemer)
+     * zijn additief toegevoegd in bouwstap 3h-5; {@code null} betekent onbekend, nooit stil 0.
      */
     public record BatchView(long batchId, String status, String validationResult, int attemptNo,
                             Long rawRecordCount, Long validRecordCount, Long rejectedRecordCount,
                             Long filteredOutCount, Long errorBeforeFilterCount,
                             Long duplicateIdentityCount, Long newCount, Long changedCount,
                             Long unchangedCount, Long contentMutationCount, Long criticalLineCount,
+                            Long criticalIssueCount, Long warningCount, Long awaitingApprovalCount,
                             String creationOutcome, Long creationScopeCount,
+                            Long creationCandidateCount,
                             String blockedCode,
                             String blockedReason) {
 
@@ -98,9 +106,11 @@ public record DeliveryView(
                     batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
                     batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
                     batch.getUnchangedCount(), batch.getContentMutationCount(),
-                    batch.getCriticalLineCount(),
+                    batch.getCriticalLineCount(), batch.getCriticalIssueCount(),
+                    batch.getWarningCount(), batch.getAwaitingApprovalCount(),
                     batch.getCreationOutcome() == null ? null : batch.getCreationOutcome().name(),
-                    batch.getCreationScopeCount(), batch.getBlockedCode(),
+                    batch.getCreationScopeCount(), batch.getCreationCandidateCount(),
+                    batch.getBlockedCode(),
                     batch.getBlockedReason());
         }
     }

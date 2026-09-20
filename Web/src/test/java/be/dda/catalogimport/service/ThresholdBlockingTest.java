@@ -14,7 +14,6 @@ import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import be.dda.catalogimport.domain.CatalogImportTask;
-import be.dda.catalogimport.domain.CreationOutcome;
 import be.dda.catalogimport.domain.FieldValueKind;
 import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.ImportBatch;
@@ -75,14 +74,17 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
  *       marker op.</li>
  * </ul>
  *
- * <h2>Wat hier bewust NIET gebeurt</h2>
- * Een levering <b>binnen</b> de drempel gedraagt zich exact als vóór deze bouwstap: dezelfde
- * mutaties, dezelfde statussen, geen enkele extra melding. De herziening van {@code validation_result}
- * naar {@code REVIEW_REQUIRED} hoort bij bouwstap 3h-5 en wordt hier niet geraden.
+ * <h2>Volgorde binnen pass E4b (rechtgezet in bouwstap 3h-5)</h2>
+ * De <b>drempels gaan vóór het creatiebeleid</b>. Een geblokkeerde levering heeft nul inhoudelijke
+ * mutaties (par. 15.3), dus er valt geen enkele creatie te beoordelen: ze krijgt geen
+ * {@code creation_outcome} en geen {@code INITIAL_LOAD_REQUIRES_APPROVAL}- of
+ * {@code BULK_CREATION_INCIDENT}-melding. In bouwstap 3h-4 stond het creatiebeleid nog vóór de
+ * drempels en kreeg zo'n levering wél een oordeel over creaties die nooit geschreven werden; die
+ * assertie is hier bewust omgekeerd. Een hervatting komt langs hetzelfde pad en eindigt identiek.
  * <p>
- * De creatiedrempel (pass E4b, eerste deel) draait vóór deze drempels en legt haar oordeel dus óók
- * vast op een levering die daarna blokkeert. Dat is zichtbaar in de asserties en bewust: een
- * vastgelegd oordeel wordt nooit achteraf uitgewist.
+ * Een levering <b>binnen</b> de drempel gaat gewoon door met haar volledige mutatielijst; dát ze
+ * een review vraagt, volgt uit {@code validation_result} (bouwstap 3h-5,
+ * {@code ValidationResultTest}) en niet uit deze pass.
  * <p>
  * Elke test bouwt een eigen keten met unieke codes: de H2-database is gedeeld.
  */
@@ -215,8 +217,15 @@ class ThresholdBlockingTest {
 
         // De TaskRun is netjes afgerond: een blokkade is een uitkomst, geen technische storing.
         assertThat(taskRunStatus(delivered.batchId())).isEqualTo("COMPLETED");
-        // Het creatiebeleid draaide vóór deze drempel en zijn oordeel blijft vastgelegd staan.
-        assertThat(outcome.creationOutcome()).isEqualTo(CreationOutcome.INITIAL_LOAD);
+        // Bouwstap 3h-5: het creatiebeleid draait pas ná de drempels. Deze levering schrijft geen
+        // enkele inhoudelijke mutatie, dus er valt geen creatie te beoordelen: geen oordeel, geen
+        // melding erover. (In 3h-4 stond hier nog INITIAL_LOAD.)
+        assertThat(outcome.creationOutcome()).isNull();
+        assertThat(outcome.creationScopeCount()).isNull();
+        assertThat(outcome.creationCandidateCount()).isNull();
+        assertThat(issueCodes(delivered.batchId()))
+                .doesNotContain(ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL,
+                        ImportIssueCatalog.BULK_CREATION_INCIDENT);
     }
 
     /**
@@ -261,6 +270,63 @@ class ThresholdBlockingTest {
         assertThat(contentMutationCount(third.batchId())).isZero();
         assertThat(incidentMutationStatuses(third.batchId()))
                 .hasSize(2).containsOnly(MutationStatus.AWAITING_APPROVAL.name());
+    }
+
+    /**
+     * Wat een geblokkeerde levering <b>wel</b> en <b>niet</b> over zichzelf vastlegt (bouwstap 3h-5,
+     * bewuste keuze).
+     * <ul>
+     *   <li>{@code new_count}/{@code changed_count}/{@code unchanged_count} blijven {@code null}.
+     *       Pass E1 heeft de staging wel degelijk geclassificeerd, maar die classificatie is een
+     *       <b>voorstel voor een delta die nooit uitgevoerd wordt</b>: deze levering schrijft nul
+     *       mutaties. "197 nieuwe aanbiedingen" op een geblokkeerde batch zou lezen als werk dat
+     *       klaarstaat. Het bewijs gaat niet verloren — het staat per regel in
+     *       {@code import_candidate_stage}.</li>
+     *   <li>De tellers die wél een <b>vaststelling</b> zijn, worden geschreven: de kritieke lijnen en
+     *       de verworpen regels (stagingfase), de vastgehouden identiteiten (pass E4b), de ongecapte
+     *       aantallen uit pass E4, en {@code content_mutation_count = 0} — dat laatste is gemeten en
+     *       niet aangenomen.</li>
+     *   <li>De marker toont diezelfde stand, met {@code -} voor het creatiebeleid dat op dit pad
+     *       nooit draait.</li>
+     * </ul>
+     */
+    @Test
+    void keepingTheDeltaCountersEmptyOnABlockedDeliveryWhileEveryFindingIsKept() {
+        Fixture fixture = fixture("DELTA");
+        Delivered delivered = deliver(fixture, "REF-1", rows(200, 3));
+
+        ScreeningOutcome outcome = screening.screen(delivered.batchId());
+
+        assertThat(outcome.status()).isEqualTo(ImportBatchStatus.BLOCKED);
+        // Geen delta: niet vastgesteld, en dus nooit een stille 0 of een misleidend aantal.
+        assertThat(outcome.newCount()).isNull();
+        assertThat(outcome.changedCount()).isNull();
+        assertThat(outcome.unchangedCount()).isNull();
+        // De classificatie zelf is er wél en blijft bewaard als bewijs.
+        assertThat(jdbc.queryForObject("select count(*) from import_candidate_stage "
+                        + "where batch_id = ? and classification = 'NEW'", Long.class,
+                delivered.batchId())).isEqualTo(197L);
+        // De vaststellingen zijn allemaal gemeten.
+        assertThat(outcome.criticalLineCount()).isEqualTo(3L);
+        assertThat(outcome.rejectedRecordCount()).isEqualTo(3L);
+        assertThat(outcome.identityIncidentCount()).isZero();
+        assertThat(outcome.criticalIssueCount()).isZero();
+        assertThat(outcome.warningCount()).isZero();
+        assertThat(outcome.awaitingApprovalCount()).isZero();
+        assertThat(outcome.contentMutationCount()).isZero();
+
+        assertThat(markerSummaries(delivered.batchId()).get(0))
+                .contains("validationResult=BLOCKING")
+                .contains(";criticalRecords=3/1%")
+                .contains(";criticalLines=3")
+                .contains(";identityIncidents=0")
+                .contains(";rejected=3/-")
+                .contains(";criticalIssues=0")
+                .contains(";awaitingApproval=0")
+                .contains(";creationScope=-")
+                .contains(";creationCandidates=-")
+                .contains(";creationThreshold=1%")
+                .contains(";creationOutcome=-");
     }
 
     // --- De drempel op de verworpen regels -------------------------------------------------------
@@ -389,6 +455,10 @@ class ThresholdBlockingTest {
                 ImportIssueCatalog.REJECTED_RECORD_THRESHOLD_EXCEEDED)).isEqualTo(1L);
         assertThat(markerSummaries(delivered.batchId())).hasSize(1);
         assertThat(contentMutationCount(delivered.batchId())).isZero();
+        // Ook de hervatting komt nooit aan het creatiebeleid toe (bouwstap 3h-5).
+        assertThat(outcome.creationOutcome()).isNull();
+        assertThat(issueCodes(delivered.batchId()))
+                .doesNotContain(ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL);
     }
 
     /**

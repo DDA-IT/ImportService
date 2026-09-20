@@ -357,11 +357,11 @@ class IssueGroupingTest {
                 .anySatisfy(message -> assertThat(message).contains("DOWN").contains("BASE_PRICE"))
                 .anySatisfy(message -> assertThat(message).contains("UP"));
 
-        // Bewuste tussenstand van 3g: BULK_PRICE_INCIDENT is BLOCKING, dus de bestaande 3a-logica
-        // zet validation_result op BLOCKING. Ontwerp par. 3.6/15.3 wil daar REVIEW_REQUIRED; dat
-        // wordt door bouwstap 3h rechtgezet en hier bewust niet geraden.
+        // Bouwstap 3h-5 (par. 15.3): een bulkprijsincident heeft effect REVIEW, niet BLOCK. Het
+        // eindoordeel is dus REVIEW_REQUIRED - de levering gaat door en wordt beoordeeld (in 3g stond
+        // hier nog de tussenstand BLOCKING, afgeleid uit de ernst).
         assertThat(batches.findById(batchId).orElseThrow().getValidationResult())
-                .isEqualTo(ValidationResult.BLOCKING);
+                .isEqualTo(ValidationResult.REVIEW_REQUIRED);
         assertThat(batches.findById(batchId).orElseThrow().getStatus())
                 .isEqualTo(ImportBatchStatus.SCREENED);
     }
@@ -520,10 +520,10 @@ class IssueGroupingTest {
                 HEADER + "ACME;G1;R1;1,50;Boormachine\nACME;G1;R2;onleesbaar;Hamer\n");
 
         assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
-        // Tussenstand van bouwstap 3h-3: de eerste levering van een koppeling is een initialisatie en
-        // laat één (voorlopig BLOCKING) melding achter; 3h-5 maakt daar REVIEW_REQUIRED van. Aan de
-        // groepering verandert er niets: die melding hoort bij geen enkele groep.
-        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.BLOCKING);
+        // De eerste levering van een koppeling is een initialisatie: haar creaties wachten op
+        // goedkeuring en de levering vraagt een beoordeling (bouwstap 3h-5). Aan de groepering
+        // verandert er niets: die melding hoort bij geen enkele groep.
+        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.REVIEW_REQUIRED);
         assertThat(groups(outcome.batchId())).isEmpty();
         assertThat(batches.findById(outcome.batchId()).orElseThrow().getBulkIncidentCount()).isZero();
         assertThat(issueRowCount(outcome.batchId(), ImportIssueCatalog.ROW_ISSUE_RECORDING_CAPPED))

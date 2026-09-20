@@ -315,10 +315,10 @@ class PriceDeviationTest {
         ScreeningOutcome outcome = screening.screen(delivered.batchId());
 
         assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
-        // Tussenstand van bouwstap 3h-3: een eerste levering is een initialisatie, met één (voorlopig
-        // BLOCKING) melding daarover; ontwerp par. 15.3 maakt daar in 3h-5 REVIEW_REQUIRED van. Over
-        // de prijzen zelf wordt nog steeds niets gemeld - dat is wat deze test bewijst.
-        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.BLOCKING);
+        // Een eerste levering is een initialisatie: haar creaties wachten op goedkeuring en het
+        // eindoordeel is REVIEW_REQUIRED (bouwstap 3h-5, par. 15.3). Over de prijzen zelf wordt nog
+        // steeds niets gemeld - dat is wat deze test bewijst.
+        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.REVIEW_REQUIRED);
         assertThat(jdbc.queryForList("select issue_code from import_row_issue where batch_id = ?",
                 String.class, delivered.batchId()))
                 .containsExactly(ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL);
@@ -397,9 +397,10 @@ class PriceDeviationTest {
         assertThat(outcome.rejectedRecordCount()).isZero();
         assertThat(outcome.changedCount()).isEqualTo(1L);
         assertThat(outcome.contentMutationCount()).isEqualTo(1L);
-        // Vastgelegd zoals R-THR-06 vandaag berekend wordt (bouwstap 3a): ERROR verzwaart het
-        // eindoordeel niet. Dat is het openstaande punt dat vóór bouwstap 3h beslist moet worden.
-        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.VALID);
+        // Bouwstap 3h-5 (par. 15.3, beslissingslog 20/09): een fout of waarschuwing maakt de levering
+        // VALID_WITH_WARNINGS en nooit VALID - ook wanneer ze niets verwerpt. Een review vraagt ze
+        // niet: de afwijking hangt aan één record en heeft effect NONE op de levering.
+        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.VALID_WITH_WARNINGS);
     }
 
     // --- Model en hervatbaarheid ---------------------------------------------------------------

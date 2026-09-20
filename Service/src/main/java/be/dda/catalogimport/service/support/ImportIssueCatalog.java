@@ -15,7 +15,14 @@ import java.util.Set;
 
 /**
  * De foutcodecatalogus: per stabiele foutcode de ernst, het domein, het controleniveau, de
- * standaard impactscope en of de fout aanvaardbaar is (ontwerp fase 3, R-ISS-06 en par. 4).
+ * standaard impactscope, het effect op de levering en of de fout aanvaardbaar is (ontwerp fase 3,
+ * R-ISS-06, par. 4 en par. 15.3).
+ * <p>
+ * <b>Ernst en effect zijn twee assen</b> (bouwstap 3h-5). {@link RowIssueSeverity} zegt hoe zwaar
+ * één vaststelling is voor het record waarop ze slaat; {@link DeliveryEffect} zegt wat ze met het
+ * oordeel over de <b>levering</b> doet. Het effect wordt per code expliciet toegewezen en nooit uit
+ * de ernst afgeleid — een {@code BULK_PRICE_INCIDENT} is zwaar maar vraagt een beoordeling, terwijl
+ * een overschreden drempel de levering werkelijk stopt.
  * <p>
  * <b>Java is hier de bron van waarheid, bewust geen databasetabel.</b> De classificatie hoort bij de
  * code die de fout vaststelt: ze hoort mee met een release te wijzigen, ze mag niet per omgeving
@@ -132,6 +139,10 @@ public final class ImportIssueCatalog {
      *
      * @param defaultImpactScope     de reikwijdte die geldt tenzij de vaststellende regel het beter
      *                               weet
+     * @param deliveryEffect         wat deze code met het oordeel over de <b>levering</b> doet
+     *                               (bouwstap 3h-5, par. 15.3). Verplicht en per code expliciet: het
+     *                               wordt nooit uit {@link #severity()} afgeleid. Zie
+     *                               {@link DeliveryEffect}
      * @param acceptable             of deze fout aanvaard mág worden zonder de data te corrigeren; in
      *                               fase 3 staat dat overal op {@code false}: er wordt nooit iets
      *                               stilzwijgend doorgelaten
@@ -146,9 +157,17 @@ public final class ImportIssueCatalog {
      */
     public record IssueClassification(String code, RowIssueSeverity severity, IssueDomain domain,
                                       ControlLevel controlLevel, ImpactScope defaultImpactScope,
+                                      DeliveryEffect deliveryEffect,
                                       boolean acceptable, Set<RowIssueSeverity> configurableSeverities) {
 
         public IssueClassification {
+            if (deliveryEffect == null) {
+                // Geen standaard per ernst: een code zonder expliciet effect zou stilzwijgend als
+                // "raakt de levering niet" gelezen worden, en dat is precies de fout van de
+                // tussenstand die bouwstap 3h-5 rechtzet.
+                throw new IllegalStateException("Issue code '" + code + "' has no DeliveryEffect; every "
+                        + "code must state explicitly what it means for the delivery as a whole");
+            }
             configurableSeverities = configurableSeverities == null
                     ? Set.of() : Set.copyOf(configurableSeverities);
         }
@@ -174,6 +193,17 @@ public final class ImportIssueCatalog {
         return find(issueCode).orElseThrow(() -> new IllegalStateException("Issue code '" + issueCode
                 + "' is not present in ImportIssueCatalog; every issue code must be classified there "
                 + "(severity, domain, control level, impact scope) before it can be recorded"));
+    }
+
+    /**
+     * Wat deze code met het oordeel over de levering doet (bouwstap 3h-5, par. 15.3).
+     *
+     * @throws IllegalStateException bij een code die niet in de catalogus staat; er wordt nooit op
+     *                               {@link DeliveryEffect#NONE} teruggevallen, want dan zou een
+     *                               onbekende blokkade stilzwijgend als onschuldig gelden
+     */
+    public static DeliveryEffect effectOf(String issueCode) {
+        return classify(issueCode).deliveryEffect();
     }
 
     /** Zoekt de classificatie, ook voor een dynamische code als {@code HEADER_FIELD_MISSING:PRIJS}. */
@@ -308,8 +338,9 @@ public final class ImportIssueCatalog {
                 // terugvallen op de afwijkingscontrole zou een beheerder laten denken dat er een
                 // boxplot-analyse draait.
                 ImportMappingConfigFactory.CODE_PRICE_CONTROL_MODEL_UNSUPPORTED}) {
+            // Een onbruikbare configuratie maakt élk oordeel over deze levering onbetrouwbaar: BLOCK.
             put(catalogue, code, RowIssueSeverity.BLOCKING, IssueDomain.AUTHORISATION_CONFIG,
-                    ControlLevel.STRUCTURE, ImpactScope.DELIVERY);
+                    ControlLevel.STRUCTURE, ImpactScope.DELIVERY, DeliveryEffect.BLOCK);
         }
 
         // --- Niveau 2: het bestands-/datasetcontract --------------------------------------------
@@ -326,11 +357,14 @@ public final class ImportIssueCatalog {
                 // Bouwstap 3b: zonder de kolom waarop de importscope gedefinieerd is, valt niet vast te
                 // stellen welke records tot deze import horen (R-FLT-03).
                 RecordFilterEvaluator.CODE_FILTER_COLUMN_MISSING}) {
+            // Het bestandscontract klopt niet: de kolommen betekenen niet wat ze horen te betekenen,
+            // dus geen enkele regel eruit is te vertrouwen.
             put(catalogue, code, RowIssueSeverity.BLOCKING, IssueDomain.STRUCTURE_DATASET,
-                    ControlLevel.STRUCTURE, ImpactScope.DELIVERY);
+                    ControlLevel.STRUCTURE, ImpactScope.DELIVERY, DeliveryEffect.BLOCK);
         }
         put(catalogue, CsvRecordStreamer.CODE_SOURCE_BOM_REMOVED, RowIssueSeverity.WARNING,
-                IssueDomain.STRUCTURE_DATASET, ControlLevel.STRUCTURE, ImpactScope.DELIVERY);
+                IssueDomain.STRUCTURE_DATASET, ControlLevel.STRUCTURE, ImpactScope.DELIVERY,
+                DeliveryEffect.NONE);
         // Een verschoven of extra kolom is een waarschuwing: de kolom wordt op naam teruggevonden, de
         // levering gaat door, maar de beheerder moet weten dat de bron van vorm veranderd is
         // (R-STR-02/R-STR-03).
@@ -338,36 +372,47 @@ public final class ImportIssueCatalog {
                 CsvRecordStreamer.CODE_HEADER_FIELD_SHIFTED,
                 CsvRecordStreamer.CODE_HEADER_UNKNOWN_COLUMN}) {
             put(catalogue, code, RowIssueSeverity.WARNING, IssueDomain.STRUCTURE_DATASET,
-                    ControlLevel.STRUCTURE, ImpactScope.DELIVERY);
+                    ControlLevel.STRUCTURE, ImpactScope.DELIVERY, DeliveryEffect.NONE);
         }
 
         // --- Niveau 1: de levering als geheel ---------------------------------------------------
         put(catalogue, CsvRecordStreamer.CODE_SOURCE_FILE_EMPTY, RowIssueSeverity.BLOCKING,
-                IssueDomain.STRUCTURE_DATASET, ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                IssueDomain.STRUCTURE_DATASET, ControlLevel.DELIVERY, ImpactScope.DELIVERY,
+                DeliveryEffect.BLOCK);
         put(catalogue, SOURCE_NO_DATA_RECORDS, RowIssueSeverity.BLOCKING,
-                IssueDomain.STRUCTURE_DATASET, ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                IssueDomain.STRUCTURE_DATASET, ControlLevel.DELIVERY, ImpactScope.DELIVERY,
+                DeliveryEffect.BLOCK);
         put(catalogue, BYTE_SIZE_MISMATCH, RowIssueSeverity.BLOCKING, IssueDomain.DELIVERY_SOURCE,
-                ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                ControlLevel.DELIVERY, ImpactScope.DELIVERY, DeliveryEffect.BLOCK);
         put(catalogue, RECORD_COUNT_MISMATCH, RowIssueSeverity.BLOCKING, IssueDomain.DELIVERY_SOURCE,
-                ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                ControlLevel.DELIVERY, ImpactScope.DELIVERY, DeliveryEffect.BLOCK);
         put(catalogue, DUPLICATE_IDENTITY_IN_DELIVERY, RowIssueSeverity.BLOCKING,
-                IssueDomain.IDENTITY_REFERENCE, ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                IssueDomain.IDENTITY_REFERENCE, ControlLevel.DELIVERY, ImpactScope.DELIVERY,
+                DeliveryEffect.BLOCK);
         put(catalogue, IDENTITY_HASH_COLLISION, RowIssueSeverity.BLOCKING,
-                IssueDomain.IDENTITY_REFERENCE, ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                IssueDomain.IDENTITY_REFERENCE, ControlLevel.DELIVERY, ImpactScope.DELIVERY,
+                DeliveryEffect.BLOCK);
         put(catalogue, SCREENING_FAILED, RowIssueSeverity.BLOCKING, IssueDomain.PUBLICATION_TECHNICAL,
-                ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                ControlLevel.DELIVERY, ImpactScope.DELIVERY, DeliveryEffect.BLOCK);
         put(catalogue, SCREENING_INTERRUPTED, RowIssueSeverity.BLOCKING,
-                IssueDomain.PUBLICATION_TECHNICAL, ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                IssueDomain.PUBLICATION_TECHNICAL, ControlLevel.DELIVERY, ImpactScope.DELIVERY,
+                DeliveryEffect.BLOCK);
+        // Informatief: een voorbeeldcap zegt iets over de <b>logging</b>, niet over de levering
+        // (ontwerp fase 3, afwijking C). Het werkelijke aantal staat in de issuegroep.
         put(catalogue, ROW_ISSUE_RECORDING_CAPPED, RowIssueSeverity.INFO,
-                IssueDomain.PUBLICATION_TECHNICAL, ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                IssueDomain.PUBLICATION_TECHNICAL, ControlLevel.DELIVERY, ImpactScope.DELIVERY,
+                DeliveryEffect.NONE);
 
         // --- Niveau 3: één bronregel ------------------------------------------------------------
         for (String code : new String[] {
                 CsvRecordStreamer.CODE_ROW_COLUMN_COUNT_MISMATCH,
                 CsvRecordStreamer.CODE_ROW_TOO_LONG,
                 ImportValueRules.CODE_CSV_UNCLOSED_QUOTE}) {
+            // Eén onleesbare regel verwerpt zichzelf en niets anders (aanname A4). Of de levering
+            // erop beoordeeld moet worden, hangt af van de kritiek-vlag van de kolom en van het
+            // volume - dat oordeel komt uit critical_line_count en de drempels, niet uit de code.
             put(catalogue, code, RowIssueSeverity.ERROR, IssueDomain.STRUCTURE_DATASET,
-                    ControlLevel.RECORD, ImpactScope.RECORD);
+                    ControlLevel.RECORD, ImpactScope.RECORD, DeliveryEffect.NONE);
         }
         for (String code : new String[] {
                 ImportValueRules.CODE_VALUE_MISSING,
@@ -387,15 +432,17 @@ public final class ImportIssueCatalog {
                 // bestaan, dus het moet zichtbaar zijn en in rejected_record_count tellen.
                 RecordFilterEvaluator.CODE_FILTER_RECORD_REJECTED}) {
             put(catalogue, code, RowIssueSeverity.ERROR, IssueDomain.MAPPING_VALIDATION,
-                    ControlLevel.RECORD, ImpactScope.RECORD);
+                    ControlLevel.RECORD, ImpactScope.RECORD, DeliveryEffect.NONE);
         }
         put(catalogue, CandidateNormaliser.CODE_IDENTITY_COMPONENT_EMPTY, RowIssueSeverity.ERROR,
-                IssueDomain.IDENTITY_REFERENCE, ControlLevel.RECORD, ImpactScope.RECORD);
+                IssueDomain.IDENTITY_REFERENCE, ControlLevel.RECORD, ImpactScope.RECORD,
+                DeliveryEffect.NONE);
         // Bouwstap 3c, R-REC-03: een toegepaste standaardwaarde verwerpt niets en blokkeert niets,
         // maar ze is wél een afwijking van wat de leverancier stuurde. INFO houdt haar buiten
         // rejected_record_count en buiten validation_result, en zichtbaar in de probleemlijst.
         put(catalogue, FieldValueMapper.CODE_VALUE_DEFAULT_APPLIED, RowIssueSeverity.INFO,
-                IssueDomain.MAPPING_VALIDATION, ControlLevel.RECORD, ImpactScope.RECORD);
+                IssueDomain.MAPPING_VALIDATION, ControlLevel.RECORD, ImpactScope.RECORD,
+                DeliveryEffect.NONE);
         for (String code : new String[] {
                 ImportValueRules.CODE_PRICE_MISSING,
                 ImportValueRules.CODE_PRICE_UNREADABLE,
@@ -411,7 +458,7 @@ public final class ImportIssueCatalog {
                 PriceRules.CODE_PRICE_DERIVATION_MISMATCH,
                 PriceRules.CODE_PRICE_PERCENTAGE_OUT_OF_RANGE}) {
             put(catalogue, code, RowIssueSeverity.ERROR, IssueDomain.PRICE, ControlLevel.RECORD,
-                    ImpactScope.RECORD);
+                    ImpactScope.RECORD, DeliveryEffect.NONE);
         }
 
         // Bouwstap 3e, R-PRI-10: een prijs die meer dan de ingestelde grens afwijkt van haar
@@ -420,55 +467,69 @@ public final class ImportIssueCatalog {
         // (price_deviation_severity); ook dán wordt het record niet verworpen, het weegt enkel
         // zwaarder in de beoordeling. Zwaardere ernsten zijn niet configureerbaar: een afwijking is
         // een signaal, nooit op zichzelf een blokkade van de hele levering.
+        // Effect NONE, ook wanneer een revisie de ernst op ERROR zet: één afwijking is een signaal
+        // over één prijs. Pas wanneer er zoveel van zijn dat het een gebeurtenis wordt, komt er een
+        // BULK_PRICE_INCIDENT bij - en díe vraagt een review (R-PRI-14).
         put(catalogue, PriceDeviationEvaluator.CODE_PRICE_DEVIATION_EXCEEDED, RowIssueSeverity.WARNING,
-                IssueDomain.PRICE, ControlLevel.RECORD, ImpactScope.RECORD,
+                IssueDomain.PRICE, ControlLevel.RECORD, ImpactScope.RECORD, DeliveryEffect.NONE,
                 Set.of(RowIssueSeverity.ERROR));
         // R-PRI-11: één samenvattende melding per levering over de referenties die ontbraken, nooit
         // één per record. Informatief: er is niets mis met de levering, er is enkel (nog) niets om
         // mee te vergelijken.
         put(catalogue, PriceDeviationEvaluator.CODE_PRICE_REFERENCE_NOT_AVAILABLE, RowIssueSeverity.INFO,
-                IssueDomain.PRICE, ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                IssueDomain.PRICE, ControlLevel.DELIVERY, ImpactScope.DELIVERY, DeliveryEffect.NONE);
 
-        // Bouwstap 3f, R-REF-02..R-REF-07: kritieke koppelreferenties. Ernst CRITICAL op RECORD-niveau
-        // is bewust de enige combinatie waarin een recordprobleem het eindoordeel van de hele levering
-        // op BLOCKING zet: een onbetrouwbare identiteitskoppeling blokkeert "ongeacht volume"
-        // (R-REF-07) en mag nooit meeliften op een drempel. Het record zelf wordt vastgehouden
+        // Bouwstap 3f, R-REF-02..R-REF-07: kritieke koppelreferenties. Het record wordt vastgehouden
         // (R-REF-09), niet verworpen: het blijft geldig gelezen en telt in identity_incident_count.
+        //
+        // Effect REVIEW sinds bouwstap 3h-5 (par. 15.3, beslissingslog 20/09): zo'n incident vraagt
+        // een menselijke beoordeling van de levering, maar het stopt haar niet. De rest van de
+        // catalogus is bruikbaar en de betrokken aanbiedingen zijn al vastgehouden (mutatie BLOCKED +
+        // een IDENTITY_REFERENCE_INCIDENT-mutatie die op goedkeuring wacht). Vóór 3h-5 leidde de
+        // ernst CRITICAL hier tot validation_result = BLOCKING; dat was de 3f-tussenstand. Het volume
+        // wordt wél bewaakt: boven max_critical_share_percent blokkeert de levering alsnog, via
+        // CRITICAL_RECORD_THRESHOLD_EXCEEDED.
         for (String code : new String[] {
                 IDENTITY_REFERENCE_INCIDENT,
                 DUPLICATE_REFERENCE_IN_DELIVERY}) {
             put(catalogue, code, RowIssueSeverity.CRITICAL, IssueDomain.IDENTITY_REFERENCE,
-                    ControlLevel.RECORD, ImpactScope.RECORD);
+                    ControlLevel.RECORD, ImpactScope.RECORD, DeliveryEffect.REVIEW);
         }
         // R-ID-03: een nieuwe aanbieding voor hetzelfde artikel is geen fout maar een vaststelling.
         // De aanbieding wordt volgens het gewone creatiebeleid gemaakt; de bestaande
         // aanbiedingsidentiteit blijft onaangeroerd.
         put(catalogue, REFERENCE_LINK_PROPOSED, RowIssueSeverity.INFO, IssueDomain.IDENTITY_REFERENCE,
-                ControlLevel.RECORD, ImpactScope.RECORD);
+                ControlLevel.RECORD, ImpactScope.RECORD, DeliveryEffect.NONE);
 
         // Bouwstap 3g, R-THR-04: één samenvattende melding per bulkgroep, op leveringsniveau. Bewust
         // NAAST de individuele meldingen en nooit in de plaats ervan - de individuele audit blijft
         // (R-REF-07). De ernst volgt die van het onderliggende verschijnsel: een reeks
         // prijsafwijkingen is een blokkerende vaststelling over de levering (R-PRI-14), een reeks
         // identiteitsincidenten is kritiek en blokkeert ongeacht volume.
+        //
+        // Effect REVIEW sinds bouwstap 3h-5 (par. 15.3): een bulkincident is juist het geval waarvoor
+        // een beoordeling bestaat. De levering stopt er niet door - haar mutaties bestaan gewoon,
+        // waarvan de prijs-UPDATE's op goedkeuring wachten (pass E5b) - maar ze gaat nooit ongezien
+        // door. De ernst blijft ongewijzigd; enkel het effect op het oordeel is nieuw.
         put(catalogue, BULK_PRICE_INCIDENT, RowIssueSeverity.BLOCKING, IssueDomain.PRICE,
-                ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                ControlLevel.DELIVERY, ImpactScope.DELIVERY, DeliveryEffect.REVIEW);
         put(catalogue, BULK_IDENTITY_INCIDENT, RowIssueSeverity.CRITICAL,
-                IssueDomain.IDENTITY_REFERENCE, ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                IssueDomain.IDENTITY_REFERENCE, ControlLevel.DELIVERY, ImpactScope.DELIVERY,
+                DeliveryEffect.REVIEW);
 
         // Bouwstap 3h-3, R-THR-01 (ontwerp par. 15.2): het creatiebeleid. Beide zijn vaststellingen
         // over de levering als geheel - niet over één record - en ze houden geen enkele regel tegen:
         // de CREATE-mutaties bestaan gewoon, met status AWAITING_APPROVAL. Eén mens met het juiste
         // recht kan ze vrijgeven (beslissingslog 20/09: vier-ogen wordt nergens afgedwongen).
         //
-        // Ernst BLOCKING is hier nog een TUSSENSTAND: ze laat validation_result via de 3a-logica op
-        // BLOCKING uitkomen, terwijl ontwerp par. 15.3 REVIEW_REQUIRED voorschrijft. Bouwstap 3h-5
-        // vervangt die afleiding door DeliveryEffect; tot dan wordt het oordeel niet geraden.
+        // De ernst BLOCKING blijft ongewijzigd (ze weegt in de probleemlijst), maar het effect op het
+        // oordeel is sinds bouwstap 3h-5 REVIEW: een eerste levering of een bulkcreatie eindigt op
+        // SCREENED met REVIEW_REQUIRED, niet op BLOCKING. Dat was de tussenstand van 3h-3.
         for (String code : new String[] {
                 INITIAL_LOAD_REQUIRES_APPROVAL,
                 BULK_CREATION_INCIDENT}) {
             put(catalogue, code, RowIssueSeverity.BLOCKING, IssueDomain.DELIVERY_SOURCE,
-                    ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                    ControlLevel.DELIVERY, ImpactScope.DELIVERY, DeliveryEffect.REVIEW);
         }
 
         // Bouwstap 3h-4 (ontwerp par. 15.2/15.3): de twee leveringsdrempels. Anders dan het
@@ -482,7 +543,7 @@ public final class ImportIssueCatalog {
                 CRITICAL_RECORD_THRESHOLD_EXCEEDED,
                 REJECTED_RECORD_THRESHOLD_EXCEEDED}) {
             put(catalogue, code, RowIssueSeverity.BLOCKING, IssueDomain.DELIVERY_SOURCE,
-                    ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+                    ControlLevel.DELIVERY, ImpactScope.DELIVERY, DeliveryEffect.BLOCK);
         }
 
         return Collections.unmodifiableMap(catalogue);
@@ -490,18 +551,20 @@ public final class ImportIssueCatalog {
 
     private static void put(Map<String, IssueClassification> catalogue, String code,
                             RowIssueSeverity severity, IssueDomain domain, ControlLevel controlLevel,
-                            ImpactScope defaultImpactScope) {
-        put(catalogue, code, severity, domain, controlLevel, defaultImpactScope, Set.of());
+                            ImpactScope defaultImpactScope, DeliveryEffect deliveryEffect) {
+        put(catalogue, code, severity, domain, controlLevel, defaultImpactScope, deliveryEffect,
+                Set.of());
     }
 
     private static void put(Map<String, IssueClassification> catalogue, String code,
                             RowIssueSeverity severity, IssueDomain domain, ControlLevel controlLevel,
-                            ImpactScope defaultImpactScope,
+                            ImpactScope defaultImpactScope, DeliveryEffect deliveryEffect,
                             Set<RowIssueSeverity> configurableSeverities) {
         // Fase 3 kent geen enkele aanvaardbare fout: aanvaarden is een expliciete handeling met
-        // een behandelstatus, geen eigenschap van de foutcode.
+        // een behandelstatus, geen eigenschap van de foutcode. Het effect op de levering is een
+        // verplichte parameter en geen standaard: elke code kiest expliciet (par. 15.3).
         IssueClassification classification = new IssueClassification(code, severity, domain,
-                controlLevel, defaultImpactScope, false, configurableSeverities);
+                controlLevel, defaultImpactScope, deliveryEffect, false, configurableSeverities);
         if (catalogue.putIfAbsent(code, classification) != null) {
             throw new IllegalStateException("Issue code '" + code + "' is declared twice in ImportIssueCatalog");
         }

@@ -141,6 +141,10 @@ class ImportIssueCatalogTest {
             assertThat(classification.domain()).as("%s domain", code).isNotNull();
             assertThat(classification.controlLevel()).as("%s controlLevel", code).isNotNull();
             assertThat(classification.defaultImpactScope()).as("%s impactScope", code).isNotNull();
+            // Bouwstap 3h-5: élke code zegt expliciet wat ze met de levering doet. Er bestaat geen
+            // standaard per ernst - een nieuwe code zou dan stilzwijgend "raakt de levering niet"
+            // erven, precies de fout die deze bouwstap rechtzet.
+            assertThat(classification.deliveryEffect()).as("%s deliveryEffect", code).isNotNull();
             // Fase 3 laat niets stilzwijgend passeren: aanvaarden is een handeling, geen eigenschap.
             assertThat(classification.acceptable()).as("%s acceptable", code).isFalse();
         });
@@ -169,6 +173,127 @@ class ImportIssueCatalogTest {
                         .isIn(ImpactScope.DELIVERY, ImpactScope.DEFINITION, ImpactScope.LIBRARY);
             }
         });
+    }
+
+    /**
+     * Bouwstap 3h-5 (ontwerp fase 3 par. 15.3): de toewijzing van {@link DeliveryEffect} staat hier
+     * <b>vastgepind</b>. Ze bepaalt {@code validation_result} en dus of een levering geblokkeerd,
+     * beoordeeld of gewoon doorgelaten wordt; ze mag niet als bijvangst van een andere wijziging
+     * verschuiven.
+     * <p>
+     * {@code REVIEW} is een korte, gesloten lijst: de zes vaststellingen die een menselijke
+     * beoordeling vragen zonder de verwerking te stoppen. {@code BLOCK} zijn de codes waarmee de
+     * levering als geheel onbruikbaar is — precies de blokkeerredenen van de screening.
+     * {@code NONE} is al de rest, inclusief élke recordfout: of die een review vraagt, hangt van de
+     * kritiek-vlag van de kolom af (beslissingslog 20/09) en niet van de foutcode.
+     */
+    @Test
+    void pinsTheDeliveryEffectOfEveryCode() {
+        assertThat(codesWithEffect(DeliveryEffect.REVIEW)).containsExactlyInAnyOrder(
+                ImportIssueCatalog.IDENTITY_REFERENCE_INCIDENT,
+                ImportIssueCatalog.DUPLICATE_REFERENCE_IN_DELIVERY,
+                ImportIssueCatalog.BULK_IDENTITY_INCIDENT,
+                ImportIssueCatalog.BULK_PRICE_INCIDENT,
+                ImportIssueCatalog.BULK_CREATION_INCIDENT,
+                ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL);
+        assertThat(codesWithEffect(DeliveryEffect.BLOCK)).containsExactlyInAnyOrder(
+                // Configuratie van de revisie: blokkeert vóór er één byte gelezen is.
+                SourceStructureConfigFactory.CODE_FORMAT_UNSUPPORTED,
+                SourceStructureConfigFactory.CODE_CHARSET_UNKNOWN,
+                SourceStructureConfigFactory.CODE_DELIMITER_MISSING,
+                SourceStructureConfigFactory.CODE_DELIMITER_INVALID,
+                SourceStructureConfigFactory.CODE_QUOTE_INVALID,
+                SourceStructureConfigFactory.CODE_HEADER_LINE_INVALID,
+                SourceStructureConfigFactory.CODE_FIELD_REFERENCE_KIND_INVALID,
+                SourceStructureConfigFactory.CODE_HEADER_REFERENCE_INCONSISTENT,
+                SourceStructureConfigFactory.CODE_IDENTITY_FIELD_MISSING,
+                SourceStructureConfigFactory.CODE_PRICE_FIELD_MISSING,
+                SourceStructureConfigFactory.CODE_COLUMN_COUNT_INVALID,
+                SourceStructureConfigFactory.CODE_FIELD_REFERENCE_INVALID,
+                SourceStructureConfigFactory.CODE_CANONICALISATION_VERSION_UNSUPPORTED,
+                CandidateNormaliser.CODE_CONFIG_DISCOUNT_FIELD_MISSING,
+                CandidateNormaliser.CODE_CONFIG_FIELD_NOT_RESOLVED,
+                ImportMappingConfigFactory.CODE_MAPPING_TARGET_UNKNOWN,
+                ImportMappingConfigFactory.CODE_MAPPING_SOURCE_UNRESOLVED,
+                ImportMappingConfigFactory.CODE_MAPPING_DUPLICATE_TARGET,
+                ImportMappingConfigFactory.CODE_MAPPING_TYPE_INCOMPATIBLE,
+                ImportMappingConfigFactory.CODE_FIELD_MAPPING_DUPLICATES_REVISION,
+                ImportMappingConfigFactory.CODE_IDENTITY_CLASS_CONFLICT,
+                ImportMappingConfigFactory.CODE_OWNER_NOT_CHANGEABLE,
+                ImportMappingConfigFactory.CODE_PRICE_COMPONENT_DUPLICATE,
+                ImportMappingConfigFactory.CODE_TRANSFORM_INVALID,
+                ImportMappingConfigFactory.CODE_FILTER_INVALID,
+                ImportMappingConfigFactory.CODE_CANONICALISATION_VERSION_REQUIRED,
+                ImportMappingConfigFactory.CODE_FIELD_CRITICALITY_INVALID,
+                ImportMappingConfigFactory.CODE_PRICE_CONTROL_MODEL_UNSUPPORTED,
+                // Het bestands-/datasetcontract.
+                CsvRecordStreamer.CODE_COLUMN_INDEX_OUT_OF_RANGE,
+                CsvRecordStreamer.CODE_HEADER_LINE_MISSING,
+                CsvRecordStreamer.CODE_HEADER_FIELD_MISSING,
+                CsvRecordStreamer.CODE_HEADER_DUPLICATE_FIELD,
+                CsvRecordStreamer.CODE_HEADER_COLUMN_COUNT_MISMATCH,
+                CsvRecordStreamer.CODE_HEADER_FIELD_SEMANTIC_CHANGE,
+                CsvRecordStreamer.CODE_SOURCE_FILE_EMPTY,
+                RecordFilterEvaluator.CODE_FILTER_COLUMN_MISSING,
+                // De levering als geheel.
+                ImportIssueCatalog.SOURCE_NO_DATA_RECORDS,
+                ImportIssueCatalog.BYTE_SIZE_MISMATCH,
+                ImportIssueCatalog.RECORD_COUNT_MISMATCH,
+                ImportIssueCatalog.DUPLICATE_IDENTITY_IN_DELIVERY,
+                ImportIssueCatalog.IDENTITY_HASH_COLLISION,
+                ImportIssueCatalog.SCREENING_FAILED,
+                ImportIssueCatalog.SCREENING_INTERRUPTED,
+                ImportIssueCatalog.CRITICAL_RECORD_THRESHOLD_EXCEEDED,
+                ImportIssueCatalog.REJECTED_RECORD_THRESHOLD_EXCEEDED);
+        // Al het overige raakt het oordeel over de levering niet rechtstreeks.
+        assertThat(codesWithEffect(DeliveryEffect.NONE))
+                .contains(ImportIssueCatalog.ROW_ISSUE_RECORDING_CAPPED,
+                        ImportIssueCatalog.REFERENCE_LINK_PROPOSED,
+                        PriceDeviationEvaluator.CODE_PRICE_DEVIATION_EXCEEDED,
+                        PriceDeviationEvaluator.CODE_PRICE_REFERENCE_NOT_AVAILABLE,
+                        FieldValueMapper.CODE_VALUE_DEFAULT_APPLIED,
+                        RecordFilterEvaluator.CODE_FILTER_RECORD_REJECTED,
+                        ImportValueRules.CODE_PRICE_UNREADABLE,
+                        CandidateNormaliser.CODE_IDENTITY_COMPONENT_EMPTY)
+                .doesNotContain(ImportIssueCatalog.BULK_PRICE_INCIDENT,
+                        ImportIssueCatalog.CRITICAL_RECORD_THRESHOLD_EXCEEDED);
+    }
+
+    /**
+     * De ernst is met bouwstap 3h-5 <b>niet</b> gewijzigd: enkel het effect op het oordeel is een
+     * eigen as geworden. Deze test houdt dat uit elkaar — een zware ernst zegt niets over het effect
+     * en omgekeerd.
+     */
+    @Test
+    void keepsSeverityAndDeliveryEffectAsTwoIndependentAxes() {
+        // Zware ernst, toch enkel een beoordeling.
+        assertThat(ImportIssueCatalog.classify(ImportIssueCatalog.BULK_PRICE_INCIDENT).severity())
+                .isEqualTo(RowIssueSeverity.BLOCKING);
+        assertThat(ImportIssueCatalog.effectOf(ImportIssueCatalog.BULK_PRICE_INCIDENT))
+                .isEqualTo(DeliveryEffect.REVIEW);
+        assertThat(ImportIssueCatalog.classify(ImportIssueCatalog.IDENTITY_REFERENCE_INCIDENT)
+                .severity()).isEqualTo(RowIssueSeverity.CRITICAL);
+        assertThat(ImportIssueCatalog.effectOf(ImportIssueCatalog.IDENTITY_REFERENCE_INCIDENT))
+                .isEqualTo(DeliveryEffect.REVIEW);
+        // Dezelfde ernst, wél een blokkade.
+        assertThat(ImportIssueCatalog
+                .classify(ImportIssueCatalog.CRITICAL_RECORD_THRESHOLD_EXCEEDED).severity())
+                .isEqualTo(RowIssueSeverity.BLOCKING);
+        assertThat(ImportIssueCatalog.effectOf(ImportIssueCatalog.CRITICAL_RECORD_THRESHOLD_EXCEEDED))
+                .isEqualTo(DeliveryEffect.BLOCK);
+        // Een dynamische code erft het effect van haar voorvoegsel.
+        assertThat(ImportIssueCatalog.effectOf(CsvRecordStreamer.CODE_HEADER_FIELD_MISSING + ":PRIJS"))
+                .isEqualTo(DeliveryEffect.BLOCK);
+        // En een onbekende code valt nooit stil terug op "onschuldig".
+        assertThatThrownBy(() -> ImportIssueCatalog.effectOf("NOT_A_KNOWN_CODE"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    private static List<String> codesWithEffect(DeliveryEffect effect) {
+        return ImportIssueCatalog.all().values().stream()
+                .filter(classification -> classification.deliveryEffect() == effect)
+                .map(IssueClassification::code)
+                .toList();
     }
 
     @Test

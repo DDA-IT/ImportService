@@ -212,11 +212,10 @@ class ReferenceIncidentTest {
         ScreeningOutcome outcome = screening.screen(delivered.batchId());
 
         assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
-        // Tussenstand van bouwstap 3h-3: dit is de eerste levering van de koppeling, dus een
-        // initialisatie. De creaties wachten op goedkeuring en de (voorlopig BLOCKING) melding
-        // daarover zet het eindoordeel op BLOCKING; ontwerp par. 15.3 maakt daar in 3h-5
-        // REVIEW_REQUIRED van. Aan de referentiecontrole zelf verandert er niets.
-        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.BLOCKING);
+        // Dit is de eerste levering van de koppeling, dus een initialisatie: de creaties wachten op
+        // goedkeuring en het eindoordeel is REVIEW_REQUIRED (bouwstap 3h-5, par. 15.3). Aan de
+        // referentiecontrole zelf verandert er niets.
+        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.REVIEW_REQUIRED);
         assertThat(outcome.newCount()).isEqualTo(2L);
         assertThat(outcome.identityIncidentCount()).isZero();
         assertThat(outcome.contentMutationCount()).isEqualTo(2L);
@@ -252,9 +251,11 @@ class ReferenceIncidentTest {
         Delivered second = deliver(fixture, "REF-2", csv(HEADER, "ACME;G1;R1;1,50;Boormachine;E-9;C-1"));
         ScreeningOutcome outcome = screening.screen(second.batchId());
 
-        // De levering blijft bruikbaar; het oordeel is wél blokkerend (3f-tussenstand, par. 3.6).
+        // De levering blijft bruikbaar en vraagt een beoordeling: sinds bouwstap 3h-5 heeft een
+        // kritiek referentie-incident effect REVIEW en niet BLOCK (par. 15.3). Boven
+        // max_critical_share_percent blokkeert de levering alsnog - dat bewijst ThresholdBlockingTest.
         assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
-        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.BLOCKING);
+        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.REVIEW_REQUIRED);
         assertThat(outcome.identityIncidentCount()).isEqualTo(1L);
         assertThat(outcome.changedCount()).isZero();
         assertThat(outcome.newCount()).isZero();
@@ -414,9 +415,10 @@ class ReferenceIncidentTest {
 
         ScreeningOutcome outcome = screening.screen(delivered.batchId());
 
-        // Geen "laatste wint": beide regels zijn verdacht, de derde regel gaat gewoon door.
+        // Geen "laatste wint": beide regels zijn verdacht, de derde regel gaat gewoon door. Het
+        // oordeel is REVIEW_REQUIRED (bouwstap 3h-5): de levering wordt beoordeeld, niet gestopt.
         assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
-        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.BLOCKING);
+        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.REVIEW_REQUIRED);
         assertThat(outcome.identityIncidentCount()).isEqualTo(2L);
         assertThat(outcome.newCount()).isEqualTo(1L);
         reconciles(outcome);
@@ -518,8 +520,14 @@ class ReferenceIncidentTest {
         assertThat(activeReferenceOf(fixture.linkId(), "R2", "EAN")).isEqualTo("E-2");
         // ... en de vastgehouden regel niet: R1 houdt haar oude EAN en E-9 bestaat nergens.
         assertThat(activeReferenceOf(fixture.linkId(), "R1", "EAN")).isEqualTo("E-1");
+        // Afgebakend op de bibliotheek van deze keten: een kritieke koppelreferentie is uniek per
+        // bibliotheek (par. 14.23.3), dus dat is de reikwijdte waarin "bestaat nergens" iets betekent.
+        // Zonder die afbakening telde deze assertie over de gedeelde H2 van álle tests heen en werd ze
+        // rood zodra een andere test toevallig dezelfde waarde gebruikt - een bekend latent
+        // volgordeprobleem (ontwerp par. 16), hier rechtgezet in plaats van verzwakt.
         assertThat(jdbc.queryForObject("select count(*) from catalog_reference_state "
-                + "where value_normalised = 'E-9'", Long.class)).isZero();
+                + "where value_normalised = 'E-9' and library_code = ?", Long.class,
+                fixture.libraryCode())).isZero();
         // De geblokkeerde mutatie en het incident blijven staan; enkel PLANNED wordt SKIPPED.
         assertThat(statusOf(second.batchId(), "R1")).isEqualTo(MutationStatus.BLOCKED.name());
         assertThat(statusOf(second.batchId(), "R2")).isEqualTo(MutationStatus.SKIPPED.name());

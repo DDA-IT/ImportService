@@ -41,6 +41,7 @@ import be.dda.catalogimport.service.support.CreationPolicyEvaluator;
 import be.dda.catalogimport.service.support.CreationPolicyEvaluator.Decision;
 import be.dda.catalogimport.service.support.CriticalLineCounter;
 import be.dda.catalogimport.service.support.CsvRecordStreamer;
+import be.dda.catalogimport.service.support.DeliveryEffect;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.LineIssue;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.ParsedRow;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.ReadSummary;
@@ -61,6 +62,7 @@ import be.dda.catalogimport.service.support.ScreeningBlockedException;
 import be.dda.catalogimport.service.support.SourceStructureConfig;
 import be.dda.catalogimport.service.support.SourceStructureConfigFactory;
 import be.dda.catalogimport.service.support.ThresholdEvaluator;
+import be.dda.catalogimport.service.support.ValidationResultEvaluator;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -112,13 +114,24 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       {@code BULK_IDENTITY_INCIDENT} (R-REF-07) <i>naast</i> de individuele meldingen, die
  *       onverkort blijven bestaan. Een gewone foutgroep krijgt geen extra foutcode, enkel
  *       {@code is_bulk_incident} op de groep.</li>
- *   <li><b>Tussenstand van bouwstap 3g.</b> {@code validation_result} wordt hier nog steeds uit de
- *       ernst van de issuerijen afgeleid (3a-logica). Een {@code BULK_PRICE_INCIDENT} (BLOCKING) of
- *       {@code BULK_IDENTITY_INCIDENT} (CRITICAL) zet het eindoordeel daardoor op
- *       {@code BLOCKING}, terwijl ontwerp par. 3.6/15.3 daarvoor {@code REVIEW_REQUIRED}
- *       voorschrijft. Dat is een bewuste tussenstand: de herziening van {@code validation_result}
- *       (en van de mutatiestatussen) hoort bij bouwstap 3h en wordt hier niet geraden. De
- *       batchstatus zelf verandert niet: een bulkincident blokkeert de verwerking niet.</li>
+ *   <li><b>Het eindoordeel volgt uit het effect per foutcode, niet uit de ernst</b> (bouwstap 3h-5,
+ *       ontwerp par. 15.3). {@code validation_result} is de statusas naast {@code status} en wordt
+ *       in stap F berekend uit {@code DeliveryEffect} ({@code NONE}/{@code REVIEW}/{@code BLOCK}, per
+ *       code expliciet toegewezen in {@link ImportIssueCatalog}) plus de tellers:
+ *       {@code BLOCKING} bij een geblokkeerde levering of een blokkerende code;
+ *       {@code REVIEW_REQUIRED} bij records die beoordeling vragen (kritieke lijnen +
+ *       identiteitsincidenten), een beoordelingscode (bulkincident, initialisatie, creatiedrempel,
+ *       kritiek referentie-incident) of wachtende mutaties; {@code VALID_WITH_WARNINGS} bij een fout
+ *       of waarschuwing; anders {@code VALID}. Een verworpen regel op een niet-kritieke kolom is dus
+ *       nooit {@code VALID}, en één kritieke lijn is genoeg voor een review — ook ver onder de
+ *       drempel (beslissingslog 20/09). Een technisch mislukte batch krijgt geen oordeel
+ *       ({@code null}).</li>
+ *   <li><b>Een bulkprijsincident laat geen prijswijziging ongezien doorgaan</b> (pass E5b,
+ *       bouwstap 3h-5, R-PRI-14). Draagt de levering een {@code BULK_PRICE_INCIDENT}, dan gaat élke
+ *       geplande {@code UPDATE} met een prijsdeel in haar domeinmasker naar
+ *       {@code AWAITING_APPROVAL}. Bewust over-inclusief: welke regels precies in het incident zaten
+ *       is boven de voorbeeldcap niet meer te achterhalen, en een halve bulktransformatie doorlaten
+ *       is erger dan een goedkeuring te veel vragen. Bedragen worden nooit gewijzigd.</li>
  *   <li><b>Recordfilters bepalen de importscope</b> (fase 3, R-FLT-01..R-FLT-04). Ze draaien
  *       onmiddellijk na het parsen en vóór identiteit, prijs en referenties; een record dat buiten de
  *       scope valt krijgt geen enkele verdere controle en telt in {@code filtered_out_count} — dat is
@@ -169,23 +182,19 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       {@code BULK_CREATION_INCIDENT}; een {@code UPDATE} blijft {@code PLANNED}. Precedentie:
  *       {@code BLOCKED} (identiteitsincident) wint altijd, dan {@code AWAITING_APPROVAL}, dan
  *       {@code PLANNED}. De drempel is altijd een percentage en nooit een vast aantal
- *       (beslissingslog 20/09); exact op de grens is niet overschreden.</li>
- *   <li><b>Tussenstand van bouwstap 3h-3.</b> {@code INITIAL_LOAD_REQUIRES_APPROVAL} en
- *       {@code BULK_CREATION_INCIDENT} zijn voorlopig van ernst {@code BLOCKING}, waardoor de
- *       3a-logica {@code validation_result = BLOCKING} oplevert terwijl ontwerp par. 15.3 daarvoor
- *       {@code REVIEW_REQUIRED} voorschrijft. Dat is een <b>bewuste</b> tussenstand: het eindoordeel
- *       wordt in bouwstap 3h-5 uit {@code DeliveryEffect} afgeleid in plaats van uit de ernst. De
- *       batchstatus zelf verandert niet — een wachtende creatie blokkeert de verwerking niet en de
- *       levering eindigt gewoon op {@code SCREENED} met haar volledige mutatielijst. Gevolg dat u
- *       nu al ziet: de <b>eerste</b> levering van een koppeling levert N {@code CREATE}-mutaties in
- *       {@code AWAITING_APPROVAL} op in plaats van in {@code PLANNED}. {@code accept-baseline}
- *       aanvaardt die mutaties wel (par. 15.4): die actie ís de goedkeuring.</li>
- *   <li><b>Kritieke lijnen worden geteld, nog niet beoordeeld</b> (bouwstap 3h-2, ontwerp par. 15.1).
+ *       (beslissingslog 20/09); exact op de grens is niet overschreden. Het creatiebeleid draait pas
+ *       <b>nadat</b> de leveringsdrempels de levering hebben doorgelaten (bouwstap 3h-5): een
+ *       geblokkeerde levering heeft nul inhoudelijke mutaties en krijgt dus geen
+ *       {@code creation_outcome} en geen creatiemelding. De <b>eerste</b> levering van een koppeling
+ *       eindigt op {@code SCREENED} met {@code REVIEW_REQUIRED} en N {@code CREATE}-mutaties in
+ *       {@code AWAITING_APPROVAL}; {@code accept-baseline} aanvaardt die mutaties wel (par. 15.4):
+ *       die actie ís de goedkeuring.</li>
+ *   <li><b>Kritieke lijnen bepalen mee het eindoordeel</b> (bouwstap 3h-2/3h-5, ontwerp par. 15.1).
  *       Een verworpen bronregel met een ERROR op een kritieke kolom (of een niet aan een kolom
  *       toewijsbare ERROR) telt in {@code import_batch.critical_line_count}, ontdubbeld per regel en
- *       niet gecapt door de voorbeeldcap; zie {@link CriticalLineCounter}. De teller wordt samen met
- *       {@code rejected_record_count} vastgelegd en beïnvloedt nog geen drempel, oordeel of
- *       mutatiestatus.</li>
+ *       niet gecapt door de voorbeeldcap; zie {@link CriticalLineCounter}. Eén zo'n regel is genoeg
+ *       om de levering een review te laten vragen; een fout op een niet-kritieke kolom is dat niet.
+ *       De gebruiker bepaalt zelf per kolom wat kritiek is (beslissingslog 20/09).</li>
  *   <li>De screening schrijft <b>nooit</b> in {@code catalog_source_state}. Een ongewijzigde regel
  *       raakt de bronstaat niet aan en levert geen mutatie op. Het bijwerken van de bronstaat is een
  *       aparte, geauditeerde actie (beslissingslog 18/09, accept-baseline).</li>
@@ -259,6 +268,13 @@ public class DeliveryScreeningService {
     /** Fase 2 kent geen volledigheidscontract; {@code completeness_proven} is altijd false (A6). */
     public static final String COMPLETENESS_REASON = "PHASE2_NO_COMPLETENESS_CONTRACT";
 
+    /**
+     * De waarde van een markersleutel die niet vastgesteld of niet geconfigureerd is (par. 15.4).
+     * Bewust niet {@code 0}: een marker die bij een onbekende teller een nul toont, laat een lezer
+     * denken dat er gemeten is.
+     */
+    public static final String MARKER_UNKNOWN = "-";
+
     /** {@code import_batch.blocked_code} is varchar(60), {@code blocked_reason} varchar(500). */
     private static final int MAX_BLOCKED_CODE_LENGTH = 60;
     private static final int MAX_BLOCKED_REASON_LENGTH = 500;
@@ -275,8 +291,9 @@ public class DeliveryScreeningService {
                                    Long filteredOutCount, Long errorBeforeFilterCount,
                                    long stagedRowCount, Long duplicateIdentityCount, Long newCount,
                                    Long changedCount, Long unchangedCount, Long identityIncidentCount,
-                                   Long criticalLineCount, CreationOutcome creationOutcome,
-                                   Long creationScopeCount,
+                                   Long criticalLineCount, Long criticalIssueCount, Long warningCount,
+                                   Long awaitingApprovalCount, CreationOutcome creationOutcome,
+                                   Long creationScopeCount, Long creationCandidateCount,
                                    Long contentMutationCount, String blockedCode, String blockedReason) {
     }
 
@@ -871,8 +888,15 @@ public class DeliveryScreeningService {
     /**
      * De passes ná het stagen, in de volgorde van ontwerp par. 3.1/15.4: D (duplicaat/collisie) → D1
      * (dubbele kritieke referentie binnen de levering) → E1 (classificatie) → E2 (referentiecontrole)
-     * → E3 (prijscontrole) → E4 (groepering en bulkincidenten) → E4b (creatiebeleid én
-     * leveringsdrempels) → E5 (mutatiegeneratie) → F (afronden).
+     * → E3 (prijscontrole) → E4 (groepering en bulkincidenten) → E4b (eerst de leveringsdrempels, dan
+     * — enkel als de levering doorgaat — het creatiebeleid) → E5 (mutatiegeneratie) → E5b
+     * (bulkprijsincident ⇒ wachtende prijsupdates) → F (afronden).
+     * <p>
+     * <b>Drempels vóór creatiebeleid</b> (rechtgezet in bouwstap 3h-5). Een levering die op een
+     * drempel strandt, heeft nul inhoudelijke mutaties: er valt dan geen enkele creatie te
+     * beoordelen, dus ze krijgt geen {@code creation_outcome} en geen melding over een initialisatie
+     * of een bulkcreatie. In bouwstap 3h-4 stond het creatiebeleid nog vóór de drempels, waardoor een
+     * geblokkeerde levering een oordeel kreeg over creaties die nooit geschreven werden.
      * <p>
      * <b>Waarom classificatie en mutatie-insert gesplitst zijn</b> (ontwerp par. 3.1, "important
      * technical constraint"): de referentiecontrole bepaalt of een regel wordt vastgehouden en dus of
@@ -893,14 +917,19 @@ public class DeliveryScreeningService {
         controlReferences(context);
         controlPrices(context);
         aggregate(context);
-        CreationOutcome creationOutcome = evaluateCreationPolicy(context);
         Blockage exceeded = evaluateThresholds(context);
         if (exceeded != null) {
             // Boven een leveringsdrempel: geen enkele inhoudelijke mutatie meer. E5 draait dus niet
             // en de levering eindigt op BLOCKED, met haar staging en haar meldingen als bewijs.
             return transaction.execute(status -> block(context, exceeded, null));
         }
+        // Pas ná de drempels, en enkel wanneer de levering doorgaat (bouwstap 3h-5): een geblokkeerde
+        // levering genereert nul inhoudelijke mutaties, dus er valt geen enkele creatie te beoordelen.
+        // Wél beoordelen zou haar een creatie-oordeel en een INITIAL_LOAD_REQUIRES_APPROVAL- of
+        // BULK_CREATION_INCIDENT-melding geven over creaties die nooit bestaan hebben.
+        CreationOutcome creationOutcome = evaluateCreationPolicy(context);
         generateMutations(context, creationOutcome);
+        holdPriceUpdatesOnBulkIncident(context);
         return transaction.execute(status -> complete(context));
     }
 
@@ -995,6 +1024,10 @@ public class DeliveryScreeningService {
             ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
             batch.setCreationOutcome(decision.outcome());
             batch.setCreationScopeCount(decision.scope());
+            // Teller én noemer worden vastgelegd (bouwstap 3h-5): de marker toont het getal waarop
+            // werkelijk geoordeeld is. Zou het later herrekend worden, dan kon een intussen aanvaarde
+            // baseline van een andere batch een ander aantal opleveren dan het oordeel verklaart.
+            batch.setCreationCandidateCount(decision.candidates());
             batches.saveAndFlush(batch);
             recordCreationIssue(context, decision);
         });
@@ -1023,11 +1056,38 @@ public class DeliveryScreeningService {
                 Instant.now())));
     }
 
+    // --- Stap E5b: bulkprijsincident ⇒ wachtende prijsupdates (par. 15.3, R-PRI-14) -------------
+
+    /**
+     * Draagt deze levering een {@code BULK_PRICE_INCIDENT}, dan wacht élke geplande prijswijziging op
+     * goedkeuring (bouwstap 3h-5). Eén set-based {@code update} ná de mutatiegeneratie — en niet
+     * erin, want het domeinmasker waarop gefilterd wordt bestaat pas zodra E5 gedraaid heeft.
+     * <p>
+     * <b>Waarom over-inclusief.</b> De filter is {@code domain_mask like '%PRICE%'}: ook een update
+     * die zelf niet in het incident zat. De precieze verzameling bestaat niet meer — boven de
+     * voorbeeldcap zijn de individuele meldingen niet bewaard — en een halve bulktransformatie
+     * doorlaten is erger dan een goedkeuring te veel vragen. Een {@code BLOCKED} mutatie blijft
+     * {@code BLOCKED} (precedentie par. 15.3) en een creatie blijft buiten schot.
+     * <p>
+     * <b>Idempotent.</b> Alleen {@code PLANNED} wordt geraakt, dus een hervatte verwerking die deze
+     * pass opnieuw doorloopt, verandert niets meer en verdubbelt niets.
+     */
+    private void holdPriceUpdatesOnBulkIncident(Context context) {
+        if (rowIssues.countByBatchIdAndIssueCode(context.batchId(),
+                ImportIssueCatalog.BULK_PRICE_INCIDENT) == 0) {
+            return;
+        }
+        int held = transaction.execute(status -> mutations.holdPlannedPriceUpdates(context.batchId(),
+                ImportIssueCatalog.BULK_PRICE_INCIDENT));
+        LOG.info("Batch {} has a bulk price incident: {} planned price updates now await approval",
+                context.batchId(), held);
+    }
+
     // --- Stap E4b (tweede deel): de leveringsdrempels (ontwerp fase 3 par. 15.2/15.3) -----------
 
     /**
-     * Beoordeelt de twee drempels die de <b>volledige levering</b> kunnen stoppen, ná het
-     * creatiebeleid en <b>vóór</b> de mutatiegeneratie (E5):
+     * Beoordeelt de twee drempels die de <b>volledige levering</b> kunnen stoppen, ná de
+     * aggregatiepass (E4) en <b>vóór</b> het creatiebeleid en de mutatiegeneratie (E5):
      * <ul>
      *   <li><b>records ter beoordeling</b> = {@code critical_line_count + identity_incident_count}
      *       tegen {@code max_critical_share_percent} van de records in scope. Blijft het aantal
@@ -1050,10 +1110,9 @@ public class DeliveryScreeningService {
      * staan en levert {@link #continueMutating(long)} exact dezelfde blokkade op, zonder één melding
      * te verdubbelen.
      * <p>
-     * <b>Wat hier bewust niet gebeurt.</b> Geen enkele mutatiestatus en geen enkel
-     * {@code validation_result} wordt hier herzien: het eindoordeel volgt in bouwstap 3h-5 uit
-     * {@code DeliveryEffect} in plaats van uit de ernst. Een levering <i>binnen</i> de kritieke
-     * drempel gedraagt zich dus exact zoals vóór deze bouwstap.
+     * <b>Wat hier bewust niet gebeurt.</b> Geen enkele mutatiestatus wordt hier herzien. Een levering
+     * <i>binnen</i> de kritieke drempel gaat gewoon door; dát ze een review vraagt, volgt uit het
+     * eindoordeel (stap F, {@code ValidationResultEvaluator}) en niet uit deze pass.
      *
      * @return de reden om te blokkeren, of {@code null} wanneer de levering binnen beide drempels
      *         blijft (of er geen oordeel mogelijk is)
@@ -1649,39 +1708,65 @@ public class DeliveryScreeningService {
         batch.setContentMutationCount(mutations.countContentMutations(context.batchId()));
         // Pass E4 is hiervoor al gedraaid; hier wordt enkel geteld wat ze vastgesteld heeft.
         batch.setBulkIncidentCount(issueGroups.countBulkIncidents(context.batchId()));
-        ValidationResult validationResult = determineValidationResult(context.batchId(), false);
+        measureJudgementCounters(context, batch);
+        ValidationResult validationResult = determineValidationResult(context.batchId(), false, batch);
         batch.setValidationResult(validationResult);
         batch.setStatus(ImportBatchStatus.SCREENED);
         batch.setFinishedAt(Instant.now());
         batches.saveAndFlush(batch);
-        writeMarker(context, "outcome=SCREENED", validationResult);
+        writeMarker(context, "outcome=SCREENED", batch);
         finishTaskRun(context, TaskRunStatus.COMPLETED);
         return outcome(batch);
     }
 
     /**
-     * Het inhoudelijke eindoordeel naast de status (R-THR-06), voor zover in deze bouwstap te
-     * berekenen: {@code BLOCKING} bij een geblokkeerde levering of minstens één kritiek/blokkerend
-     * probleem, anders {@code VALID_WITH_WARNINGS} bij minstens één waarschuwing, anders
-     * {@code VALID}. {@code REVIEW_REQUIRED} (bulkincidenten en wachtende creaties) komt in bouwstap
-     * 3h-5, wanneer het oordeel uit {@code DeliveryEffect} per foutcode volgt in plaats van uit de
-     * ernst; tot dan wordt die waarde nooit gezet in plaats van geraden. Gevolg van bouwstap 3h-3: een
-     * initialisatie of een overschreden creatiedrempel levert hier voorlopig {@code BLOCKING} op,
-     * terwijl de batch gewoon {@code SCREENED} is en enkel haar creaties op goedkeuring wachten.
+     * De drie tellers waarop het eindoordeel en de marker steunen (bouwstap 3h-5), alle drie
+     * <b>metingen</b> en nooit schattingen; ze worden overschreven, nooit opgeteld.
+     * <ul>
+     *   <li>{@code critical_issue_count} en {@code warning_count} komen <b>ongecapt</b> uit de
+     *       issuegroepen plus de niet-gegroepeerde rijen (zie
+     *       {@link IssueGroupDao#countOccurrencesBySeverity}); tellen op de bewaarde voorbeeldrijen
+     *       zou bij 250 voorvallen "200" opleveren;</li>
+     *   <li>{@code awaiting_approval_count} is het aantal {@code CREATE}/{@code UPDATE}-mutaties in
+     *       {@code AWAITING_APPROVAL}, gemeten ná E5 en E5b zodat het de eindtoestand weergeeft.</li>
+     * </ul>
+     * Ook een geblokkeerde levering krijgt ze: pass E4 draait ook op het blokkeerpad, dus haar
+     * aantallen bestaan, en 0 wachtende mutaties is daar een vaststelling (E5 heeft niet gedraaid).
+     */
+    private void measureJudgementCounters(Context context, ImportBatch batch) {
+        batch.setCriticalIssueCount(issueGroups.countOccurrencesBySeverity(context.batchId(),
+                RowIssueSeverity.CRITICAL));
+        batch.setWarningCount(issueGroups.countOccurrencesBySeverity(context.batchId(),
+                RowIssueSeverity.WARNING));
+        batch.setAwaitingApprovalCount(
+                mutations.countAwaitingApprovalContentMutations(context.batchId()));
+    }
+
+    /**
+     * Het inhoudelijke eindoordeel naast de status (ontwerp fase 3 par. 15.3, bouwstap 3h-5). Het
+     * volgt sinds deze bouwstap uit het <b>effect per foutcode</b> ({@link ImportIssueCatalog},
+     * {@code DeliveryEffect}) en uit de tellers, niet meer uit de ernst van de issuerijen:
+     * {@code BLOCKING} bij een geblokkeerde levering of een blokkerende code, {@code REVIEW_REQUIRED}
+     * bij records die beoordeling vragen, een beoordelingscode of wachtende mutaties,
+     * {@code VALID_WITH_WARNINGS} bij een fout of waarschuwing, anders {@code VALID}. De volledige
+     * tabel en de motivering staan in {@link ValidationResultEvaluator}.
+     * <p>
+     * "Minstens één issue met effect X" is het <b>bestaan</b> van zo'n foutcode in deze batch: de
+     * voorbeeldcap laat per code altijd minstens één rij staan, dus dat bestaan is betrouwbaar ook
+     * wanneer de aantallen gecapt zijn.
      * <p>
      * Leest met JdbcTemplate wat in deze transactie met JdbcTemplate geschreven is — nooit via JPA.
      */
-    private ValidationResult determineValidationResult(long batchId, boolean blocked) {
-        Map<RowIssueSeverity, Long> counts = rowIssues.countsBySeverity(batchId);
-        boolean blockingIssue = counts.entrySet().stream()
-                .anyMatch(entry -> entry.getKey().isBlockingForBatch() && entry.getValue() > 0);
-        if (blocked || blockingIssue) {
-            return ValidationResult.BLOCKING;
-        }
-        if (counts.getOrDefault(RowIssueSeverity.WARNING, 0L) > 0) {
-            return ValidationResult.VALID_WITH_WARNINGS;
-        }
-        return ValidationResult.VALID;
+    private ValidationResult determineValidationResult(long batchId, boolean blocked,
+                                                       ImportBatch batch) {
+        List<DeliveryEffect> effects = rowIssues.countByIssueCode(batchId).keySet().stream()
+                .map(ImportIssueCatalog::effectOf)
+                .toList();
+        return ValidationResultEvaluator.evaluate(blocked, effects,
+                rowIssues.countsBySeverity(batchId),
+                ThresholdEvaluator.criticalRecordCount(batch.getCriticalLineCount(),
+                        batch.getIdentityIncidentCount()),
+                batch.getAwaitingApprovalCount());
     }
 
     /**
@@ -1696,9 +1781,23 @@ public class DeliveryScreeningService {
      * hieronder laat exact dezelfde groepen en meldingen achter als de eerste. Wat er ná E2 al staat,
      * blijft staan: de {@code IDENTITY_REFERENCE_INCIDENT}-mutaties in {@code AWAITING_APPROVAL} zijn
      * het bewijs dat die aanbiedingen vastgehouden zijn (par. 15.3). {@code content_mutation_count}
-     * wordt gemeten en is dan 0 — E5 heeft niet gedraaid — en {@code creation_outcome} blijft staan
-     * zoals E4b het vastlegde: een vastgelegd oordeel over creaties die nooit geschreven zijn, wordt
-     * niet achteraf uitgewist, want dan zou een hervatte verwerking opnieuw moeten raden.
+     * en {@code awaiting_approval_count} worden gemeten en zijn dan 0 — E5 en E5b hebben niet
+     * gedraaid — en {@code creation_outcome} blijft leeg: sinds bouwstap 3h-5 draait het
+     * creatiebeleid pas ná de drempels, dus een geblokkeerde levering krijgt geen oordeel over
+     * creaties die nooit bestaan hebben, en ook geen {@code INITIAL_LOAD_REQUIRES_APPROVAL}- of
+     * {@code BULK_CREATION_INCIDENT}-melding. Een hervatte verwerking komt langs hetzelfde pad en
+     * eindigt dus identiek. De ongecapte tellers ({@code critical_issue_count},
+     * {@code warning_count}) worden hier wél gemeten: pass E4 draait ook op dit pad, dus haar
+     * aantallen bestaan.
+     * <p>
+     * <b>{@code new_count}/{@code changed_count}/{@code unchanged_count} blijven bewust leeg.</b> Pass
+     * E1 heeft de staging mogelijk al geclassificeerd, maar die classificatie is een voorstel voor een
+     * delta die op dit pad <b>nooit</b> uitgevoerd wordt: er is geen enkele inhoudelijke mutatie.
+     * "197 nieuwe aanbiedingen" op een geblokkeerde batch zou lezen als werk dat klaarstaat, terwijl
+     * {@code content_mutation_count} er 0 naast zet. De vaststelling gaat niet verloren: ze staat per
+     * regel in {@code import_candidate_stage}. Wat wél geschreven wordt, zijn de tellers die een
+     * <i>vaststelling</i> zijn en geen voorstel: de kritieke lijnen, de verworpen regels, de
+     * vastgehouden identiteiten en de aantallen van pass E4.
      *
      * @param progress de stand van de stagingfase, of {@code null} wanneer die al vastligt op de batch
      */
@@ -1723,14 +1822,15 @@ public class DeliveryScreeningService {
         batch.setBulkIncidentCount(aggregate(context).bulkIncidentCount());
         // Nul is hier geen aanname maar een vaststelling: een geblokkeerde levering genereert niets.
         batch.setContentMutationCount(mutations.countContentMutations(context.batchId()));
-        ValidationResult validationResult = determineValidationResult(context.batchId(), true);
+        measureJudgementCounters(context, batch);
+        ValidationResult validationResult = determineValidationResult(context.batchId(), true, batch);
         batch.setValidationResult(validationResult);
         batch.setBlockedCode(truncate(blockage.code(), MAX_BLOCKED_CODE_LENGTH));
         batch.setBlockedReason(truncate(blockage.code() + ": " + blockage.reason(), MAX_BLOCKED_REASON_LENGTH));
         batch.setStatus(ImportBatchStatus.BLOCKED);
         batch.setFinishedAt(Instant.now());
         batches.saveAndFlush(batch);
-        writeMarker(context, "outcome=BLOCKED;blockedCode=" + blockage.code(), validationResult);
+        writeMarker(context, "outcome=BLOCKED;blockedCode=" + blockage.code(), batch);
         finishTaskRun(context, TaskRunStatus.COMPLETED);
         LOG.info("Batch {} blocked: {} ({})", context.batchId(), blockage.code(), blockage.reason());
         return outcome(batch);
@@ -1789,14 +1889,69 @@ public class DeliveryScreeningService {
 
     /**
      * Design par. 4: exact één marker per afgeronde screening. De samenvatting legt vast dat de
-     * volledigheid in fase 2 niet bewezen is en welk bestand gescreend werd, zodat een latere
-     * reconciliatie niet van de (wijzigbare) leveringsrijen hoeft af te hangen.
+     * volledigheid in fase 2 niet bewezen is, welk bestand gescreend werd, welk oordeel eruit volgde
+     * en op welke aantallen dat oordeel steunt — zodat een latere reconciliatie niet van de
+     * (wijzigbare) batch- of leveringsrijen hoeft af te hangen.
+     * <p>
+     * <b>Vaste sleutelvolgorde, altijd volledig</b> (ontwerp par. 15.4, bouwstap 3h-5):
+     * {@code outcome}, {@code completenessProven}, {@code completenessReason}, {@code fileSha256},
+     * {@code validationResult}, {@code criticalRecords}, {@code criticalLines},
+     * {@code identityIncidents}, {@code rejected}, {@code warnings}, {@code criticalIssues},
+     * {@code bulkIncidents}, {@code awaitingApproval}, {@code creationScope},
+     * {@code creationCandidates}, {@code creationThreshold}, {@code creationOutcome}. Elke sleutel
+     * staat er altijd, ook bij een geblokkeerde levering; wat daar niet bekend is, krijgt
+     * {@code -}.
+     * <p>
+     * <b>{@code -} betekent "niet geconfigureerd" of "niet vastgesteld", nooit 0.</b> Een marker die
+     * bij een onbekende teller een 0 toont, laat een lezer denken dat er gemeten is. De bestaande
+     * sleutels ({@code outcome}, {@code blockedCode}, {@code completenessProven},
+     * {@code completenessReason}, {@code fileSha256}, {@code validationResult}) houden hun vorm en
+     * hun plaats: de nieuwe sleutels komen erachter, zodat bestaande lezers niets verliezen.
+     * <p>
+     * De volledige tekst blijft ruim onder de {@value MutationDao#MAX_RESULT_SUMMARY_LENGTH} tekens
+     * van {@code import_mutation.result_summary}; een test bewijst dat voor het langste realistische
+     * scenario. Afkappen zou stil een aantal verminken.
+     *
+     * @param batch de zojuist bijgewerkte batchrij; alle tellers zijn er al op gezet
      */
-    private void writeMarker(Context context, String outcome, ValidationResult validationResult) {
-        mutations.insertMarker(context.mutationContext(),
-                outcome + ";completenessProven=false;completenessReason=" + COMPLETENESS_REASON
-                        + ";fileSha256=" + context.fileSha256()
-                        + ";validationResult=" + validationResult.name(), Instant.now());
+    private void writeMarker(Context context, String outcome, ImportBatch batch) {
+        StringBuilder summary = new StringBuilder(outcome)
+                .append(";completenessProven=false;completenessReason=").append(COMPLETENESS_REASON)
+                .append(";fileSha256=").append(context.fileSha256())
+                .append(";validationResult=").append(value(batch.getValidationResult()))
+                .append(";criticalRecords=")
+                .append(value(ThresholdEvaluator.criticalRecordCount(batch.getCriticalLineCount(),
+                        batch.getIdentityIncidentCount())))
+                .append('/').append(percent(context.maxCriticalSharePercent()))
+                .append(";criticalLines=").append(value(batch.getCriticalLineCount()))
+                .append(";identityIncidents=").append(value(batch.getIdentityIncidentCount()))
+                .append(";rejected=").append(value(batch.getRejectedRecordCount()))
+                .append('/').append(percent(context.maxRejectedSharePercent()))
+                .append(";warnings=").append(value(batch.getWarningCount()))
+                .append(";criticalIssues=").append(value(batch.getCriticalIssueCount()))
+                .append(";bulkIncidents=").append(value(batch.getBulkIncidentCount()))
+                .append(";awaitingApproval=").append(value(batch.getAwaitingApprovalCount()))
+                .append(";creationScope=").append(value(batch.getCreationScopeCount()))
+                .append(";creationCandidates=").append(value(batch.getCreationCandidateCount()))
+                .append(";creationThreshold=").append(percent(context.creationThresholdSharePercent()))
+                .append(";creationOutcome=").append(value(batch.getCreationOutcome()));
+        mutations.insertMarker(context.mutationContext(), summary.toString(), Instant.now());
+    }
+
+    /** Niet vastgesteld is {@code -}, nooit 0 en nooit een lege plek. */
+    private static String value(Object value) {
+        return value == null ? MARKER_UNKNOWN
+                : (value instanceof Enum<?> constant ? constant.name() : String.valueOf(value));
+    }
+
+    /**
+     * Een drempel in de marker: {@code 1%} of {@code -} wanneer ze niet geconfigureerd is. De
+     * nullen achter de komma van {@code numeric(24,12)} gaan eraf — {@code 1.000000000000%} is
+     * dezelfde drempel en kost enkel ruimte — maar er wordt nooit afgerond.
+     */
+    private static String percent(BigDecimal thresholdPercent) {
+        return thresholdPercent == null ? MARKER_UNKNOWN
+                : thresholdPercent.stripTrailingZeros().toPlainString() + "%";
     }
 
     /**
@@ -1869,7 +2024,9 @@ public class DeliveryScreeningService {
                 batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
                 batch.getStagedRowCount(), batch.getDuplicateIdentityCount(), batch.getNewCount(),
                 batch.getChangedCount(), batch.getUnchangedCount(), batch.getIdentityIncidentCount(),
-                batch.getCriticalLineCount(), batch.getCreationOutcome(), batch.getCreationScopeCount(),
+                batch.getCriticalLineCount(), batch.getCriticalIssueCount(), batch.getWarningCount(),
+                batch.getAwaitingApprovalCount(), batch.getCreationOutcome(),
+                batch.getCreationScopeCount(), batch.getCreationCandidateCount(),
                 batch.getContentMutationCount(), batch.getBlockedCode(), batch.getBlockedReason());
     }
 

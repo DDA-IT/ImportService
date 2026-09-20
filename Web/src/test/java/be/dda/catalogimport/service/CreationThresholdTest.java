@@ -476,22 +476,37 @@ class CreationThresholdTest {
         Delivered delivered = deliver(fixture, "REF-1", newRows(2));
         seedSourceState(fixture, delivered, 10);
 
-        // Vóór de screening is er niets beoordeeld: null, nooit stil AUTOMATIC of 0.
+        // Vóór de screening is er niets beoordeeld: null, nooit stil AUTOMATIC of 0. Dat geldt ook
+        // voor de tellers die bouwstap 3h-5 additief toevoegde.
         mockMvc.perform(get("/api/catalog-import/batches/{id}", delivered.batchId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.creationOutcome").value((Object) null))
-                .andExpect(jsonPath("$.creationScopeCount").value((Object) null));
+                .andExpect(jsonPath("$.creationScopeCount").value((Object) null))
+                .andExpect(jsonPath("$.creationCandidateCount").value((Object) null))
+                .andExpect(jsonPath("$.criticalIssueCount").value((Object) null))
+                .andExpect(jsonPath("$.warningCount").value((Object) null))
+                .andExpect(jsonPath("$.awaitingApprovalCount").value((Object) null));
 
         screening.screen(delivered.batchId());
 
         mockMvc.perform(get("/api/catalog-import/batches/{id}", delivered.batchId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.creationOutcome").value("THRESHOLD_EXCEEDED"))
-                .andExpect(jsonPath("$.creationScopeCount").value(10));
+                .andExpect(jsonPath("$.creationScopeCount").value(10))
+                // Bouwstap 3h-5: de teller naast de noemer, en de tellers van het eindoordeel.
+                .andExpect(jsonPath("$.creationCandidateCount").value(2))
+                .andExpect(jsonPath("$.criticalIssueCount").value(0))
+                .andExpect(jsonPath("$.warningCount").value(0))
+                .andExpect(jsonPath("$.awaitingApprovalCount").value(2))
+                .andExpect(jsonPath("$.validationResult").value("REVIEW_REQUIRED"));
         mockMvc.perform(get("/api/catalog-import/deliveries/{id}", delivered.deliveryId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.batch.creationOutcome").value("THRESHOLD_EXCEEDED"))
-                .andExpect(jsonPath("$.batch.creationScopeCount").value(10));
+                .andExpect(jsonPath("$.batch.creationScopeCount").value(10))
+                .andExpect(jsonPath("$.batch.creationCandidateCount").value(2))
+                .andExpect(jsonPath("$.batch.criticalIssueCount").value(0))
+                .andExpect(jsonPath("$.batch.warningCount").value(0))
+                .andExpect(jsonPath("$.batch.awaitingApprovalCount").value(2));
     }
 
     // --- Helpers ---------------------------------------------------------------------------------------

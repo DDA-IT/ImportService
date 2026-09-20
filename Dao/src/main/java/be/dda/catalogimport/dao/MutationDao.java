@@ -511,6 +511,51 @@ public class MutationDao {
         return count == null ? 0L : count;
     }
 
+    /**
+     * Het aantal inhoudelijke mutaties dat op goedkeuring wacht (bouwstap 3h-5): een initialisatie,
+     * een overschreden creatiedrempel of een bulkprijsincident. Exact dezelfde afbakening als
+     * {@link #countContentMutations(long)} — {@code CREATE} en {@code UPDATE} — zodat de twee
+     * tellers vergelijkbaar zijn. De {@code IDENTITY_REFERENCE_INCIDENT}-mutaties wachten óók op
+     * goedkeuring maar tellen hier bewust niet mee: ze zijn een vaststelling over een identiteit en
+     * geen voorgestelde wijziging aan een aanbieding; hun aantal staat in
+     * {@code import_batch.identity_incident_count}.
+     */
+    public long countAwaitingApprovalContentMutations(long batchId) {
+        Long count = jdbc.queryForObject("select count(*) from import_mutation "
+                + "where batch_id = ? and action_type in ('CREATE', 'UPDATE') "
+                + "  and status = 'AWAITING_APPROVAL'", Long.class, batchId);
+        return count == null ? 0L : count;
+    }
+
+    /**
+     * Pass E5b (bouwstap 3h-5, ontwerp par. 15.3): zet elke geplande <b>prijswijziging</b> van deze
+     * batch op {@code AWAITING_APPROVAL} omdat de levering een bulkprijsincident draagt (R-PRI-14).
+     * Eén {@code update} over de hele batch, nooit een rij per keer.
+     * <p>
+     * <b>Bewust over-inclusief.</b> De filter is {@code domain_mask like '%PRICE%'}: élke update
+     * waarin een prijsdeel wijzigt, ook wanneer die ene regel zelf niet in het incident zat. De
+     * precieze verzameling is niet uit de meldingen te halen — boven de voorbeeldcap bestaan die
+     * rijen niet meer — en een deelverzameling zou betekenen dat een deel van een bulktransformatie
+     * ongezien doorgaat. Te veel laten wachten is hier het veilige antwoord; goedkeuren is één
+     * handeling, een verkeerd doorgelaten prijs is een verkeerde factuur.
+     * <p>
+     * <b>Idempotent en hervatbaar.</b> Alleen {@code PLANNED} wordt geraakt: een tweede doorloop
+     * vindt niets meer, een {@code BLOCKED} mutatie (vastgehouden identiteitsincident) blijft
+     * {@code BLOCKED} — de precedentie {@code BLOCKED > AWAITING_APPROVAL > PLANNED} staat hard in de
+     * {@code where} — en een {@code CREATE} raakt hier niet betrokken, want die heeft geen
+     * "vorige prijs" om van af te wijken.
+     *
+     * @param statusReason de reden op de wachtende mutaties, doorgaans
+     *                     {@code BULK_PRICE_INCIDENT}; bindparameter, nooit in de statementtekst
+     * @return het aantal mutaties dat nu op goedkeuring wacht
+     */
+    public int holdPlannedPriceUpdates(long batchId, String statusReason) {
+        return jdbc.update("update import_mutation set status = 'AWAITING_APPROVAL', "
+                + "status_reason = ? where batch_id = ? and action_type = 'UPDATE' "
+                + "  and status = 'PLANNED' and domain_mask like '%" + PRICE_MASK + "%'",
+                statusReason, batchId);
+    }
+
     private static String truncate(String value, int maxLength) {
         if (value == null) {
             return null;

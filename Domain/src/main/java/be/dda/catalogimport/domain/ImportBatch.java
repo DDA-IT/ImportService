@@ -186,6 +186,29 @@ public class ImportBatch {
     private Long criticalLineCount;
 
     /**
+     * Aantal vastgestelde voorvallen van ernst {@link RowIssueSeverity#CRITICAL} (bouwstap 3h-5,
+     * ontwerp fase 3 par. 15.3). <b>Ongecapt</b>: het werkelijke aantal uit
+     * {@code import_issue_group.occurrence_count} plus de niet-gegroepeerde issuerijen, nooit het
+     * aantal bewaarde voorbeeldrijen — bij 250 voorvallen en een voorbeeldcap van 200 staat hier 250.
+     * {@code null} betekent "niet vastgesteld", nooit stil 0.
+     */
+    @Column(name = "critical_issue_count")
+    private Long criticalIssueCount;
+
+    /** Idem voor ernst {@link RowIssueSeverity#WARNING}; ongecapt, {@code null} = niet vastgesteld. */
+    @Column(name = "warning_count")
+    private Long warningCount;
+
+    /**
+     * Aantal {@code CREATE}/{@code UPDATE}-mutaties van deze batch dat op goedkeuring wacht
+     * (bouwstap 3h-5): een initialisatie, een overschreden creatiedrempel of een bulkprijsincident.
+     * Dezelfde afbakening als {@link #contentMutationCount}: de {@code IMPORT_MARKER} en de
+     * {@code IDENTITY_REFERENCE_INCIDENT}-mutaties tellen niet mee. {@code null} = niet vastgesteld.
+     */
+    @Column(name = "awaiting_approval_count")
+    private Long awaitingApprovalCount;
+
+    /**
      * Het oordeel van het creatiebeleid (bouwstap 3h-3, ontwerp fase 3 par. 15.2), vastgelegd door
      * pass E4b <b>vóór</b> de mutatiegeneratie. {@code null} betekent "nog niet beoordeeld" — nooit
      * stil {@link CreationOutcome#AUTOMATIC}. Eenmaal gezet wordt het nooit herberekend: een hervatte
@@ -204,6 +227,16 @@ public class ImportBatch {
      */
     @Column(name = "creation_scope_count")
     private Long creationScopeCount;
+
+    /**
+     * De teller waarover het creatiebeleid geoordeeld heeft: het aantal regels van deze batch dat na
+     * goedkeuring een nieuwe aanbieding zou worden, zoals pass E4b het gemeten heeft (bouwstap 3h-5).
+     * Vastgelegd naast {@link #creationScopeCount} en daarna nooit herrekend: tussen het oordeel en de
+     * marker kan een andere batch een baseline aanvaarden, en dan zou een herberekening een ander
+     * getal tonen dan het getal waarop geoordeeld is. {@code null} = niet beoordeeld, nooit stil 0.
+     */
+    @Column(name = "creation_candidate_count")
+    private Long creationCandidateCount;
 
     /**
      * Het inhoudelijke eindoordeel, als aparte statusas naast {@link #status} (ontwerp fase 3,
@@ -473,6 +506,33 @@ public class ImportBatch {
         this.criticalLineCount = criticalLineCount;
     }
 
+    /** @return het ongecapte aantal kritieke voorvallen, of {@code null} als dat niet vastgesteld is */
+    public Long getCriticalIssueCount() {
+        return criticalIssueCount;
+    }
+
+    public void setCriticalIssueCount(Long criticalIssueCount) {
+        this.criticalIssueCount = criticalIssueCount;
+    }
+
+    /** @return het ongecapte aantal waarschuwingen, of {@code null} als dat niet vastgesteld is */
+    public Long getWarningCount() {
+        return warningCount;
+    }
+
+    public void setWarningCount(Long warningCount) {
+        this.warningCount = warningCount;
+    }
+
+    /** @return het aantal wachtende inhoudelijke mutaties, of {@code null} als dat niet gemeten is */
+    public Long getAwaitingApprovalCount() {
+        return awaitingApprovalCount;
+    }
+
+    public void setAwaitingApprovalCount(Long awaitingApprovalCount) {
+        this.awaitingApprovalCount = awaitingApprovalCount;
+    }
+
     /** @return het oordeel van het creatiebeleid, of {@code null} als dat niet beoordeeld is */
     public CreationOutcome getCreationOutcome() {
         return creationOutcome;
@@ -489,6 +549,15 @@ public class ImportBatch {
 
     public void setCreationScopeCount(Long creationScopeCount) {
         this.creationScopeCount = creationScopeCount;
+    }
+
+    /** @return de beoordeelde creatiekandidaten, of {@code null} als er niet beoordeeld is */
+    public Long getCreationCandidateCount() {
+        return creationCandidateCount;
+    }
+
+    public void setCreationCandidateCount(Long creationCandidateCount) {
+        this.creationCandidateCount = creationCandidateCount;
     }
 
     public ValidationResult getValidationResult() {

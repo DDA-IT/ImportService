@@ -615,6 +615,35 @@ class ScreeningSchemaTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /**
+     * Bouwstap 3h-5 (004-11e4): de tellers van het eindoordeel zijn alle vier nullable. {@code null}
+     * is "niet vastgesteld" en nooit stil 0 — een batch die nooit afgerond is, mag niet lijken op een
+     * batch waarin niets gevonden werd. {@code creation_candidate_count} staat naast de reeds
+     * bestaande {@code creation_scope_count}: zonder de teller is de noemer niet te duiden.
+     */
+    @Test
+    void leavesTheJudgementCountersUnknownUntilTheyAreMeasured() {
+        Scenario s = scenario("JUDGCNT");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+
+        Map<String, Object> row = jdbc.queryForMap("select critical_issue_count, warning_count, "
+                + "awaiting_approval_count, creation_candidate_count from import_batch where id = ?",
+                batch.getId());
+        assertThat(row).containsOnlyKeys("CRITICAL_ISSUE_COUNT", "WARNING_COUNT",
+                "AWAITING_APPROVAL_COUNT", "CREATION_CANDIDATE_COUNT");
+        assertThat(row.values()).containsOnlyNulls();
+        ImportBatch stored = batches.findById(batch.getId()).orElseThrow();
+        assertThat(stored.getCriticalIssueCount()).isNull();
+        assertThat(stored.getWarningCount()).isNull();
+        assertThat(stored.getAwaitingApprovalCount()).isNull();
+        assertThat(stored.getCreationCandidateCount()).isNull();
+        assertThat(jdbc.queryForList("select column_name from information_schema.columns "
+                        + "where lower(table_name) = 'import_batch' and is_nullable = 'NO' "
+                        + "and lower(column_name) in ('critical_issue_count', 'warning_count', "
+                        + "'awaiting_approval_count', 'creation_candidate_count')", String.class))
+                .isEmpty();
+    }
+
     private void insertIssueGroup(Long batchId, String issueCode, String signature, long occurrences,
                                   int samples) {
         jdbc.update("insert into import_issue_group (batch_id, issue_code, signature, severity, "

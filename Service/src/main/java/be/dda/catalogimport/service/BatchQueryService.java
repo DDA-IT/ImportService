@@ -58,7 +58,16 @@ public class BatchQueryService {
      * (ontwerp fase 3 par. 15.2): het oordeel van het creatiebeleid
      * ({@code AUTOMATIC|INITIAL_LOAD|THRESHOLD_EXCEEDED}) en de omvang waartegen geoordeeld is (het
      * aantal actieve aanbiedingen van de koppeling). Beide zijn {@code null} zolang pass E4b niet
-     * gedraaid heeft — nooit stil {@code AUTOMATIC} of 0.
+     * gedraaid heeft — nooit stil {@code AUTOMATIC} of 0. Een geblokkeerde levering houdt ze leeg:
+     * zonder inhoudelijke mutaties valt er geen creatie te beoordelen (bouwstap 3h-5).
+     * <p>
+     * {@code criticalIssueCount}, {@code warningCount}, {@code awaitingApprovalCount} en
+     * {@code creationCandidateCount} zijn additief toegevoegd in bouwstap 3h-5 (ontwerp fase 3
+     * par. 15.3). De eerste twee zijn <b>ongecapte</b> aantallen vastgestelde voorvallen (uit de
+     * issuegroepen, niet uit de bewaarde voorbeeldrijen); de derde telt de {@code CREATE}/
+     * {@code UPDATE}-mutaties die op goedkeuring wachten; de vierde is de teller waarop het
+     * creatiebeleid geoordeeld heeft, naast de reeds bestaande noemer {@code creationScopeCount}.
+     * Alle vier {@code null} wanneer ze niet vastgesteld zijn, nooit stil 0.
      */
     public record BatchDetail(long batchId, long deliveryId, long importLinkId, long definitionRevisionId,
                               Long taskRunId, int attemptNo, String status, String validationResult,
@@ -69,7 +78,9 @@ public class BatchQueryService {
                               Long duplicateIdentityCount, Long newCount, Long changedCount,
                               Long unchangedCount, Long identityIncidentCount,
                               Long contentMutationCount, Long bulkIncidentCount, Long criticalLineCount,
+                              Long criticalIssueCount, Long warningCount, Long awaitingApprovalCount,
                               String creationOutcome, Long creationScopeCount,
+                              Long creationCandidateCount,
                               String blockedCode,
                               String blockedReason, String baselineAcceptedBy, Instant baselineAcceptedAt,
                               String baselineAcceptReason, Instant createdAt, String createdBy) {
@@ -87,9 +98,11 @@ public class BatchQueryService {
                     batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
                     batch.getUnchangedCount(), batch.getIdentityIncidentCount(),
                     batch.getContentMutationCount(), batch.getBulkIncidentCount(),
-                    batch.getCriticalLineCount(),
+                    batch.getCriticalLineCount(), batch.getCriticalIssueCount(),
+                    batch.getWarningCount(), batch.getAwaitingApprovalCount(),
                     batch.getCreationOutcome() == null ? null : batch.getCreationOutcome().name(),
-                    batch.getCreationScopeCount(), batch.getBlockedCode(),
+                    batch.getCreationScopeCount(), batch.getCreationCandidateCount(),
+                    batch.getBlockedCode(),
                     batch.getBlockedReason(), batch.getBaselineAcceptedBy(), batch.getBaselineAcceptedAt(),
                     batch.getBaselineAcceptReason(), batch.getCreatedAt(), batch.getCreatedBy());
         }

@@ -321,6 +321,43 @@ public class IssueGroupDao {
     }
 
     /**
+     * Het <b>ongecapte</b> aantal vastgestelde voorvallen van één ernst binnen deze batch (bouwstap
+     * 3h-5, ontwerp par. 15.3): de basis voor {@code import_batch.critical_issue_count} en
+     * {@code warning_count}.
+     *
+     * <h2>Waarom dit niet gewoon een {@code count(*)} op de issuerijen is</h2>
+     * Per foutcode worden hoogstens {@code max-sample-rows-per-code} voorbeeldrijen bewaard
+     * (R-ISS-03). Tellen op die rijen zou bij 250 kritieke voorvallen "200" opleveren: een getal dat
+     * er precies uitziet als een meting en volledig fout is. Het werkelijke aantal staat in
+     * {@code import_issue_group.occurrence_count}. De telling is daarom:
+     * <pre>
+     * som(occurrence_count van de groepen met deze ernst)
+     *   + aantal issuerijen met deze ernst die <b>niet</b> door zo'n groep gedekt zijn
+     * </pre>
+     * "Gedekt" is exact hetzelfde criterium als {@link #refreshSampleCounts(long)} gebruikt: de rij
+     * hangt aan een groep <b>met dezelfde foutcode</b>. Dat onderscheid is nodig, geen detail: een
+     * samenvattende bulkmelding ({@code BULK_PRICE_INCIDENT}, {@code BULK_IDENTITY_INCIDENT}) wordt
+     * door {@link #linkIssueRowsToGroup(long, long, String, String)} aan de groep van de
+     * <i>onderliggende</i> code gehangen. Zo'n rij draagt dus wél een {@code issue_group_id} terwijl
+     * geen enkele groep haar eigen foutcode draagt; zou ze enkel op {@code issue_group_id is null}
+     * uitgesloten worden, dan telde een bulk-identiteitsincident als nul kritieke voorvallen.
+     *
+     * @return het werkelijke aantal, nooit het aantal bewaarde voorbeelden; 0 wanneer er niets
+     *         vastgesteld is (dat is een meting, geen aanname)
+     */
+    public long countOccurrencesBySeverity(long batchId, RowIssueSeverity severity) {
+        Long grouped = jdbc.queryForObject("select coalesce(sum(occurrence_count), 0) "
+                + "from import_issue_group where batch_id = ? and severity = ?",
+                Long.class, batchId, severity.name());
+        Long ungrouped = jdbc.queryForObject("select count(*) from import_row_issue issue "
+                + "where issue.batch_id = ? and issue.severity = ? "
+                + "  and not exists (select 1 from import_issue_group g "
+                + "    where g.id = issue.issue_group_id and g.issue_code = issue.issue_code)",
+                Long.class, batchId, severity.name());
+        return (grouped == null ? 0L : grouped) + (ungrouped == null ? 0L : ungrouped);
+    }
+
+    /**
      * Verwijdert de groepen van één batch. Uitsluitend voor een technisch mislukte of onderbroken
      * poging, samen met de issuerijen zelf; een geblokkeerde batch behoudt haar samenvatting als
      * bewijsmateriaal.
