@@ -385,6 +385,18 @@ public class SourceStateDao {
         return count == null ? 0L : count;
     }
 
+    /**
+     * De bestaande omvang van deze koppeling: het aantal <b>actieve</b> aanvaarde aanbiedingen. Dat is
+     * de noemer van de creatiedrempel (ontwerp fase 3 par. 15.2): het aandeel nieuwe aanbiedingen wordt
+     * gemeten tegen wat er al is, niet tegen de omvang van de levering. Een op non-actief gezette rij
+     * telt niet mee — anders zou een opgeruimde koppeling nooit meer als initialisatie herkend worden.
+     */
+    public long countActiveByImportLinkId(long importLinkId) {
+        Long count = jdbc.queryForObject("select count(*) from catalog_source_state "
+                + "where import_link_id = ? and active = true", Long.class, importLinkId);
+        return count == null ? 0L : count;
+    }
+
     private static OffsetDateTime utc(Instant instant) {
         return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
     }

@@ -147,19 +147,35 @@ public class MutationDao {
      * classificatie: een vastgehouden regel draagt haar oorspronkelijke {@code NEW}/{@code CHANGED}
      * niet meer.
      *
+     * <b>Wachtende creaties</b> (bouwstap 3h-3, ontwerp par. 15.2/15.3). Vraagt het creatiebeleid van
+     * deze batch een goedkeuring — een initialisatie of een overschreden creatiedrempel — dan krijgt
+     * élke {@code CREATE} status {@code AWAITING_APPROVAL} met de meegegeven reden. Een {@code UPDATE}
+     * blijft {@code PLANNED}: een bestaande aanbieding bijwerken is geen creatie. De precedentie is
+     * hard: {@code BLOCKED} (identiteitsincident) wint altijd van {@code AWAITING_APPROVAL}, en dat
+     * wint van {@code PLANNED}. Zonder reden ({@code null}) is het gedrag exact dat van vóór 3h-3.
+     * <p>
+     * De voorwaarde voor "dit is een creatie" is <b>dezelfde</b> uitdrukking als die van
+     * {@code action_type = 'CREATE'} en niet enkel {@code classification = 'NEW'}: een regel die als
+     * {@code CHANGED} geclassificeerd werd maar waarvan de bronstaatrij intussen verdwenen is, wordt
+     * hier alsnog een creatie en mag dan niet buiten het creatiebeleid vallen.
+     *
      * @param componentCodes de prijscomponenten van deze batch, gesorteerd; leeg ⇒ exact het
      *                       fase 2-masker
      */
     private static String insertContentMutations(List<String> componentCodes) {
+        String isCreation = "(stage.classification = 'NEW' or state.id is null)";
         return "insert into import_mutation ("
                 + CONTENT_MUTATION_COLUMNS + ") select "
                 + "cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), cast(? as bigint), "
-                + "case when stage.classification = 'NEW' or state.id is null then 'CREATE' else 'UPDATE' end, "
+                + "case when " + isCreation + " then 'CREATE' else 'UPDATE' end, "
                 + "'OFFER', "
                 + "case when stage.classification = '" + IDENTITY_INCIDENT_CLASSIFICATION + "' "
-                + "     then 'BLOCKED' else 'PLANNED' end, "
+                + "     then 'BLOCKED' "
+                + "     when cast(? as varchar(200)) is not null and " + isCreation
+                + "     then 'AWAITING_APPROVAL' else 'PLANNED' end, "
                 + "case when stage.classification = '" + IDENTITY_INCIDENT_CLASSIFICATION + "' "
                 + "     then cast('" + BLOCKED_BY_IDENTITY_REFERENCE_INCIDENT + "' as varchar(200)) "
+                + "     when " + isCreation + " then cast(? as varchar(200)) "
                 + "     else cast(null as varchar(200)) end, "
                 + "stage.identity_supplier, stage.identity_supplier_group, stage.identity_supplier_reference, "
                 + "stage.identity_discount_code, stage.identity_discount_state, stage.identity_hash, "
@@ -356,11 +372,19 @@ public class MutationDao {
     /**
      * Zie {@link #insertContentMutations(List)}.
      *
-     * @param componentCodes de prijscomponenten die in deze batch voorkomen, gesorteerd
-     *                       ({@link CandidatePriceDao#componentCodes(long)}); een lege lijst levert
-     *                       exact het fase 2-gedrag op
+     * @param componentCodes       de prijscomponenten die in deze batch voorkomen, gesorteerd
+     *                             ({@link CandidatePriceDao#componentCodes(long)}); een lege lijst
+     *                             levert exact het fase 2-gedrag op
+     * @param creationStatusReason de reden waarom de creaties van deze batch op goedkeuring moeten
+     *                             wachten ({@code INITIAL_LOAD_REQUIRES_APPROVAL} of
+     *                             {@code BULK_CREATION_INCIDENT}), of {@code null} wanneer het
+     *                             creatiebeleid automatisch is. De aanroeper leest die reden uit
+     *                             {@code import_batch.creation_outcome}, dat vóór de eerste chunk
+     *                             vastligt: zo levert een hervatte generatie exact dezelfde statussen
+     *                             op, ook als de bronstaat intussen gewijzigd is (bouwstap 3h-3)
      */
     public int insertContentMutations(MutationContext context, List<String> componentCodes,
+                                      String creationStatusReason,
                                       long fromExclusive, long toInclusive, Instant createdAt) {
         return jdbc.update(insertContentMutations(componentCodes), statement -> {
             statement.setLong(1, context.batchId());
@@ -372,13 +396,37 @@ public class MutationDao {
             } else {
                 statement.setLong(5, context.taskRunId());
             }
-            statement.setLong(6, context.deliveryFileId());
-            statement.setObject(7, OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC));
-            statement.setLong(8, context.importLinkId());
-            statement.setLong(9, context.batchId());
-            statement.setLong(10, fromExclusive);
-            statement.setLong(11, toInclusive);
+            // Twee keer dezelfde waarde: één keer om de status te bepalen, één keer als reden. Een
+            // bindparameter en nooit in de statementtekst - de reden komt van de aanroeper.
+            statement.setString(6, creationStatusReason);
+            statement.setString(7, creationStatusReason);
+            statement.setLong(8, context.deliveryFileId());
+            statement.setObject(9, OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC));
+            statement.setLong(10, context.importLinkId());
+            statement.setLong(11, context.batchId());
+            statement.setLong(12, fromExclusive);
+            statement.setLong(13, toInclusive);
         });
+    }
+
+    /**
+     * Het aantal regels van deze batch dat na goedkeuring een <b>nieuwe</b> aanbieding zou worden — de
+     * teller van de creatiedrempel (ontwerp fase 3 par. 15.2).
+     * <p>
+     * Bewust niet {@code import_batch.new_count}: een regel die door de referentiecontrole (E2)
+     * vastgehouden is, draagt geen {@code NEW} meer maar wordt na goedkeuring van het incident alsnog
+     * een creatie. Zo'n regel telt hier dus mee zodra ze geen bronstaatrij heeft. Dat is bewust
+     * conservatief: liever een creatiebeleid dat één keer te veel om goedkeuring vraagt dan een
+     * bulkcreatie die ongezien doorgaat.
+     */
+    public long countCreationCandidates(long batchId, long importLinkId) {
+        Long count = jdbc.queryForObject("select count(*) from import_candidate_stage stage "
+                + "left join catalog_source_state state "
+                + "  on state.import_link_id = ? and state.identity_hash = stage.identity_hash "
+                + "where stage.batch_id = ? and (stage.classification = 'NEW' "
+                + "  or (stage.classification = '" + IDENTITY_INCIDENT_CLASSIFICATION + "' "
+                + "      and state.id is null))", Long.class, importLinkId, batchId);
+        return count == null ? 0L : count;
     }
 
     // --- Marker en tellers ---------------------------------------------------------------------
@@ -425,19 +473,28 @@ public class MutationDao {
     }
 
     /**
-     * Zet de nog geplande inhoudelijke mutaties van een batch op {@code SKIPPED} met de opgegeven reden
-     * (accept-baseline: de bronstaat is aanvaard zonder publicatie). De {@code IMPORT_MARKER} blijft
-     * {@code RECORDED}: die legt vast dat de screening plaatsvond en is geen uitvoerbare mutatie.
-     * Mutaties in een andere status blijven ongemoeid, zodat herhalen niets verandert.
+     * Zet de nog openstaande inhoudelijke mutaties van een batch op {@code SKIPPED} met de opgegeven
+     * reden (accept-baseline: de bronstaat is aanvaard zonder publicatie). De {@code IMPORT_MARKER}
+     * blijft {@code RECORDED}: die legt vast dat de screening plaatsvond en is geen uitvoerbare
+     * mutatie. Mutaties in een andere status blijven ongemoeid, zodat herhalen niets verandert.
+     * <p>
+     * <b>Openstaand is sinds bouwstap 3h-3 {@code PLANNED} én {@code AWAITING_APPROVAL}</b> (ontwerp
+     * par. 15.4). Een eerste levering levert vanaf dan uitsluitend wachtende creaties op; zou
+     * {@code AWAITING_APPROVAL} hier buiten vallen, dan zou {@code accept-baseline} de bronstaat wél
+     * schrijven maar de bijhorende mutaties eeuwig open laten staan. De aanvaarding ís de menselijke
+     * goedkeuring van die creaties (beslissingslog 20/09: één bevoegde persoon volstaat).
+     * <p>
+     * <b>Wat nooit meegaat:</b> {@code BLOCKED} (een vastgehouden kritiek referentie-incident) en de
+     * {@code IDENTITY_REFERENCE_INCIDENT}-mutaties zelf — die hebben een ander {@code action_type} en
+     * vallen dus buiten de filter. Een aanvaarding van de nulmeting is geen goedkeuring van een
+     * identiteitswijziging (R-REF-09).
      *
      * @return het aantal overgezette mutaties
      */
     public int skipPlannedContentMutations(long batchId, String statusReason) {
-        // Enkel CREATE/UPDATE en enkel PLANNED: een geblokkeerde mutatie (kritiek referentie-incident)
-        // en een incident dat op goedkeuring wacht, blijven onaangeroerd. Een aanvaarding van de
-        // nulmeting mag een vastgehouden identiteitswijziging nooit stilzwijgend afsluiten.
         return jdbc.update("update import_mutation set status = 'SKIPPED', status_reason = ? "
-                + "where batch_id = ? and action_type in ('CREATE', 'UPDATE') and status = 'PLANNED'",
+                + "where batch_id = ? and action_type in ('CREATE', 'UPDATE') "
+                + "  and status in ('PLANNED', 'AWAITING_APPROVAL')",
                 statusReason, batchId);
     }
 

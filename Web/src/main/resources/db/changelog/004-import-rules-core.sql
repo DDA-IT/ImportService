@@ -864,3 +864,38 @@ create table import_revision_field_criticality (
 alter table import_batch add column critical_line_count bigint;
 
 --rollback alter table import_batch drop column critical_line_count;
+
+-- =============================================================================================
+-- Bouwstap 3h-3: de creatiedrempel en de initialisatie (ontwerp fase 3 par. 15.2/15.5). Het oordeel
+-- van pass E4b wordt op de batch vastgelegd, zodat een hervatte mutatiegeneratie exact dezelfde
+-- mutatiestatussen oplevert — ook wanneer de bronstaat intussen door een andere aanvaarding
+-- gewijzigd is. De overige 004-11e-kolommen van par. 15.5 komen in bouwstap 3h-4/3h-5.
+-- =============================================================================================
+
+--changeset catalogimport:004-11e3-import-batch-creation-outcome
+--comment Uitkomst en scope van het creatiebeleid van deze batch (ontwerp fase 3 par. 15.2, beslissingslog 20/09).
+
+-- Nullable: NULL betekent "nog niet beoordeeld" (pass E4b heeft nog niet gedraaid, of de levering
+-- strandde ervoor), nooit stil AUTOMATIC. Het oordeel wordt vastgelegd VOOR de mutatiegeneratie en
+-- daarna nooit meer herberekend: de mutatiestatussen van een hervatte batch moeten identiek zijn aan
+-- die van een batch die in één keer doorliep, ook als de bronstaat intussen veranderde.
+--
+-- INITIAL_LOAD      = de koppeling had nog geen enkele actieve aanbieding; deze levering bouwt de
+--                     bronstaat op en elke creatie wacht op goedkeuring.
+-- THRESHOLD_EXCEEDED= het aandeel creaties ligt boven creation_threshold_share_percent van de
+--                     bestaande omvang; elke creatie wacht op goedkeuring.
+-- AUTOMATIC         = binnen de drempel (of geen enkele creatie); het gedrag blijft ongewijzigd.
+alter table import_batch add column creation_outcome varchar(30);
+
+alter table import_batch add constraint ck_import_batch_creation_outcome
+    check (creation_outcome is null
+           or creation_outcome in ('AUTOMATIC', 'INITIAL_LOAD', 'THRESHOLD_EXCEEDED'));
+
+-- De noemer waartegen geoordeeld is: het aantal actieve catalog_source_state-rijen van de koppeling
+-- op het moment van het oordeel. Vastgelegd omdat die noemer daarna kan wijzigen; zonder haar is
+-- achteraf niet meer te verantwoorden waarom een levering wel of niet boven de drempel lag.
+alter table import_batch add column creation_scope_count bigint;
+
+--rollback alter table import_batch drop column creation_scope_count;
+--rollback alter table import_batch drop constraint ck_import_batch_creation_outcome;
+--rollback alter table import_batch drop column creation_outcome;

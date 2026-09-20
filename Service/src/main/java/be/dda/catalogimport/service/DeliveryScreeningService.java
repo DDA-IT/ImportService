@@ -22,8 +22,10 @@ import be.dda.catalogimport.dao.ReferenceControlDao.MatchUpdate;
 import be.dda.catalogimport.dao.ReferenceControlDao.ReferenceCandidate;
 import be.dda.catalogimport.dao.RowIssueDao;
 import be.dda.catalogimport.dao.RowIssueDao.IssueRow;
+import be.dda.catalogimport.dao.SourceStateDao;
 import be.dda.catalogimport.dao.TaskRunRepository;
 import be.dda.catalogimport.domain.CandidateClassification;
+import be.dda.catalogimport.domain.CreationOutcome;
 import be.dda.catalogimport.domain.Delivery;
 import be.dda.catalogimport.domain.DeliveryFile;
 import be.dda.catalogimport.domain.ImportBatch;
@@ -35,6 +37,8 @@ import be.dda.catalogimport.domain.TaskRunStatus;
 import be.dda.catalogimport.domain.ValidationResult;
 import be.dda.catalogimport.service.support.CandidateNormaliser;
 import be.dda.catalogimport.service.support.CandidateNormaliser.NormalisedCandidate;
+import be.dda.catalogimport.service.support.CreationPolicyEvaluator;
+import be.dda.catalogimport.service.support.CreationPolicyEvaluator.Decision;
 import be.dda.catalogimport.service.support.CriticalLineCounter;
 import be.dda.catalogimport.service.support.CsvRecordStreamer;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.LineIssue;
@@ -145,6 +149,28 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       bruikbaar, de betrokken aanbiedingen zijn vastgehouden. De drempel {@code max_critical_records}
  *       (default 0), die zo'n levering op eindstatus {@code BLOCKED} zet, hoort bij bouwstap 3h
  *       (ontwerp fase 3, par. 3.6); tot dan wordt die drempel niet geraden.</li>
+ *   <li><b>Nieuwe aanbiedingen worden niet zomaar aangemaakt</b> (bouwstap 3h-3, pass E4b, ontwerp
+ *       par. 15.2, R-THR-01). Vóór de mutatiegeneratie wordt één vraag beantwoord en vastgelegd op
+ *       {@code import_batch.creation_outcome}: mag deze levering zelf creëren? Een koppeling zonder
+ *       enkele actieve aanbieding is een <b>initialisatie</b> ({@code INITIAL_LOAD}); ligt het aantal
+ *       creaties boven {@code creation_threshold_share_percent} van de bestaande omvang, dan is het
+ *       een <b>bulkcreatie</b> ({@code THRESHOLD_EXCEEDED}); anders {@code AUTOMATIC} en verandert er
+ *       niets. In de eerste twee gevallen krijgt élke {@code CREATE} status
+ *       {@code AWAITING_APPROVAL} met reden {@code INITIAL_LOAD_REQUIRES_APPROVAL} respectievelijk
+ *       {@code BULK_CREATION_INCIDENT}; een {@code UPDATE} blijft {@code PLANNED}. Precedentie:
+ *       {@code BLOCKED} (identiteitsincident) wint altijd, dan {@code AWAITING_APPROVAL}, dan
+ *       {@code PLANNED}. De drempel is altijd een percentage en nooit een vast aantal
+ *       (beslissingslog 20/09); exact op de grens is niet overschreden.</li>
+ *   <li><b>Tussenstand van bouwstap 3h-3.</b> {@code INITIAL_LOAD_REQUIRES_APPROVAL} en
+ *       {@code BULK_CREATION_INCIDENT} zijn voorlopig van ernst {@code BLOCKING}, waardoor de
+ *       3a-logica {@code validation_result = BLOCKING} oplevert terwijl ontwerp par. 15.3 daarvoor
+ *       {@code REVIEW_REQUIRED} voorschrijft. Dat is een <b>bewuste</b> tussenstand: het eindoordeel
+ *       wordt in bouwstap 3h-5 uit {@code DeliveryEffect} afgeleid in plaats van uit de ernst. De
+ *       batchstatus zelf verandert niet — een wachtende creatie blokkeert de verwerking niet en de
+ *       levering eindigt gewoon op {@code SCREENED} met haar volledige mutatielijst. Gevolg dat u
+ *       nu al ziet: de <b>eerste</b> levering van een koppeling levert N {@code CREATE}-mutaties in
+ *       {@code AWAITING_APPROVAL} op in plaats van in {@code PLANNED}. {@code accept-baseline}
+ *       aanvaardt die mutaties wel (par. 15.4): die actie ís de goedkeuring.</li>
  *   <li><b>Kritieke lijnen worden geteld, nog niet beoordeeld</b> (bouwstap 3h-2, ontwerp par. 15.1).
  *       Een verworpen bronregel met een ERROR op een kritieke kolom (of een niet aan een kolom
  *       toewijsbare ERROR) telt in {@code import_batch.critical_line_count}, ontdubbeld per regel en
@@ -240,7 +266,8 @@ public class DeliveryScreeningService {
                                    Long filteredOutCount, Long errorBeforeFilterCount,
                                    long stagedRowCount, Long duplicateIdentityCount, Long newCount,
                                    Long changedCount, Long unchangedCount, Long identityIncidentCount,
-                                   Long criticalLineCount,
+                                   Long criticalLineCount, CreationOutcome creationOutcome,
+                                   Long creationScopeCount,
                                    Long contentMutationCount, String blockedCode, String blockedReason) {
     }
 
@@ -266,6 +293,7 @@ public class DeliveryScreeningService {
                            Long expectedByteSize, SourceStructureConfig config,
                            ImportMappingConfig mappingConfig, PriceControl priceControl,
                            BigDecimal bulkIncidentSharePercent,
+                           BigDecimal creationThresholdSharePercent,
                            ScreeningBlockedException configFailure) {
 
         private MutationContext mutationContext() {
@@ -344,6 +372,8 @@ public class DeliveryScreeningService {
     private final CandidateReferenceDao candidateReferences;
     private final PriceDeviationDao deviations;
     private final ReferenceControlDao referenceControl;
+    /** Enkel om de bestaande omvang van de koppeling te tellen (pass E4b); schrijft hier nooit. */
+    private final SourceStateDao sourceState;
     private final RowIssueDao rowIssues;
     private final IssueGroupDao issueGroups;
     private final IssueAggregationService aggregation;
@@ -360,6 +390,7 @@ public class DeliveryScreeningService {
                                     CandidatePriceDao candidatePrices,
                                     CandidateReferenceDao candidateReferences,
                                     PriceDeviationDao deviations, ReferenceControlDao referenceControl,
+                                    SourceStateDao sourceState,
                                     RowIssueDao rowIssues, IssueGroupDao issueGroups,
                                     IssueAggregationService aggregation,
                                     MutationDao mutations, PlatformTransactionManager transactionManager,
@@ -379,6 +410,7 @@ public class DeliveryScreeningService {
         this.candidateReferences = candidateReferences;
         this.deviations = deviations;
         this.referenceControl = referenceControl;
+        this.sourceState = sourceState;
         this.rowIssues = rowIssues;
         this.issueGroups = issueGroups;
         this.aggregation = aggregation;
@@ -518,6 +550,11 @@ public class DeliveryScreeningService {
         // transactie, exact één keer per batch gelezen - nooit per groep en nooit per chunk. Ook een
         // hervatte batch leest het opnieuw, zodat pass E4 na een onderbreking hetzelfde oordeelt.
         BigDecimal bulkSharePercent = batch.getDefinitionRevision().getBulkIncidentSharePercent();
+        // Idem voor de creatiedrempel (pass E4b, par. 15.2): één keer per batch van de revisie gelezen.
+        // De absolute kolom creation_threshold_absolute wordt bewust niet meer gebruikt - elke drempel
+        // is altijd een percentage (beslissingslog 20/09).
+        BigDecimal creationSharePercent =
+                batch.getDefinitionRevision().getCreationThresholdSharePercent();
         // De bibliotheekcode is scope, geen sleutelonderdeel (beslissingslog 18/09), maar wél de scope
         // waarbinnen een kritieke koppelreferentie uniek moet zijn (par. 14.23.3). Ze wordt hier, binnen
         // de openende transactie, exact één keer per batch van de (lazy) koppeling gelezen.
@@ -526,7 +563,7 @@ public class DeliveryScreeningService {
                 batch.getTaskRun() == null ? null : batch.getTaskRun().getId(), file.getArchiveReference(),
                 file.getByteSize(), file.getContentHash(), delivery.getExpectedRecordCount(),
                 delivery.getExpectedByteSize(), config, mappingConfig, priceControl, bulkSharePercent,
-                configFailure);
+                creationSharePercent, configFailure);
     }
 
     // --- Stap 2: volledigheidscontroles ------------------------------------------------------
@@ -806,9 +843,10 @@ public class DeliveryScreeningService {
     // --- Stap 4: identiteitscontrole, delta en mutatiegeneratie -------------------------------
 
     /**
-     * De passes ná het stagen, in de volgorde van ontwerp par. 3.1: D (duplicaat/collisie) → D1
+     * De passes ná het stagen, in de volgorde van ontwerp par. 3.1/15.4: D (duplicaat/collisie) → D1
      * (dubbele kritieke referentie binnen de levering) → E1 (classificatie) → E2 (referentiecontrole)
-     * → E3 (prijscontrole) → E5 (mutatiegeneratie) → F (afronden).
+     * → E3 (prijscontrole) → E4 (groepering en bulkincidenten) → E4b (creatiebeleid) →
+     * E5 (mutatiegeneratie) → F (afronden).
      * <p>
      * <b>Waarom classificatie en mutatie-insert gesplitst zijn</b> (ontwerp par. 3.1, "important
      * technical constraint"): de referentiecontrole bepaalt of een regel wordt vastgehouden en dus of
@@ -829,7 +867,8 @@ public class DeliveryScreeningService {
         controlReferences(context);
         controlPrices(context);
         aggregate(context);
-        generateMutations(context);
+        CreationOutcome creationOutcome = evaluateCreationPolicy(context);
+        generateMutations(context, creationOutcome);
         return transaction.execute(status -> complete(context));
     }
 
@@ -875,9 +914,81 @@ public class DeliveryScreeningService {
                             context.priceControl().shortWindow(), context.priceControl().longWindow());
             // De kandidaten die een gemapte kritieke referentie dragen (R-REF-07).
             case IDENTITY -> candidateReferences.countCandidatesWithReferences(context.batchId());
-            // De creatiedrempel hoort bij bouwstap 3h; hier wordt niets geraden.
+            // De creatiedrempel is geen issuegroep: ze wordt in pass E4b op de batch zelf berekend
+            // (par. 15.2) en er bestaat dus nooit een groep van deze soort om een noemer voor te
+            // leveren. Null is hier "niet van toepassing", geen geraden noemer.
             case CREATION -> null;
         };
+    }
+
+    // --- Stap E4b: het creatiebeleid (ontwerp fase 3 par. 15.2, R-THR-01) ----------------------
+
+    /**
+     * Beoordeelt of de nieuwe aanbiedingen van deze levering zonder menselijke tussenkomst aangemaakt
+     * mogen worden, en legt dat oordeel vast op de batch — <b>vóór</b> de mutatiegeneratie (E5).
+     * <p>
+     * <b>Waarom vóór E5 en waarom persistent.</b> De mutatiestatus van elke creatie hangt van dit ene
+     * oordeel af. Zou E5 het per chunk opnieuw berekenen, dan zou een levering die halverwege
+     * onderbroken wordt terwijl een andere batch intussen een baseline aanvaardt, de eerste helft van
+     * haar creaties op {@code AWAITING_APPROVAL} en de tweede helft op {@code PLANNED} zetten. Het
+     * oordeel staat daarom in {@code import_batch.creation_outcome} en wordt nooit herberekend zodra
+     * het er is: een hervatte batch leest het gewoon terug.
+     * <p>
+     * <b>Set-based en idempotent.</b> Twee tellingen, geen chunking, geen voortgangskolom. De
+     * melding wordt enkel geschreven als ze er nog niet is, en tellers worden overschreven, nooit
+     * opgeteld. Tweemaal draaien levert exact dezelfde toestand op.
+     * <p>
+     * <b>De teller is bewust niet {@code new_count}</b>: een regel die door de referentiecontrole (E2)
+     * vastgehouden is, draagt geen {@code NEW} meer, maar wordt na goedkeuring van dat incident alsnog
+     * een creatie. Zo'n regel telt mee zodra ze geen bronstaatrij heeft — conservatief, want een
+     * bulkcreatie die ongezien doorgaat is erger dan een goedkeuring te veel.
+     *
+     * @return het geldende oordeel; nooit {@code null}
+     */
+    private CreationOutcome evaluateCreationPolicy(Context context) {
+        CreationOutcome recorded = transaction.execute(status ->
+                batches.findById(context.batchId()).orElseThrow().getCreationOutcome());
+        if (recorded != null) {
+            // Al beoordeeld (deze batch wordt hervat): niets herrekenen, anders zouden de statussen van
+            // de tweede helft van de levering van een intussen gewijzigde bronstaat afhangen.
+            return recorded;
+        }
+        long scope = sourceState.countActiveByImportLinkId(context.importLinkId());
+        long candidates = mutations.countCreationCandidates(context.batchId(), context.importLinkId());
+        Decision decision = CreationPolicyEvaluator.evaluate(scope, candidates,
+                context.creationThresholdSharePercent());
+        // Oordeel, noemer en melding in dezelfde transactie: er bestaat nooit een vastgelegd oordeel
+        // zonder zijn melding, en nooit een melding zonder het oordeel dat haar verklaart.
+        transaction.executeWithoutResult(status -> {
+            ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
+            batch.setCreationOutcome(decision.outcome());
+            batch.setCreationScopeCount(decision.scope());
+            batches.saveAndFlush(batch);
+            recordCreationIssue(context, decision);
+        });
+        LOG.info("Batch {} creation policy: {} ({} candidates against {} active offers, threshold {}%)",
+                context.batchId(), decision.outcome(), decision.candidates(), decision.scope(),
+                decision.thresholdPercent().toPlainString());
+        return decision.outcome();
+    }
+
+    /**
+     * Eén melding per batch per foutcode over het creatiebeleid, met de aantallen erin (par. 15.12).
+     * Bestaat ze al — een eerdere doorloop van deze pass — dan komt er geen tweede bij.
+     * <p>
+     * Een initialisatie levert <b>uitsluitend</b> {@code INITIAL_LOAD_REQUIRES_APPROVAL} op en nooit
+     * óók {@code BULK_CREATION_INCIDENT}: zonder bestaande omvang bestaat er geen percentage om te
+     * overschrijden.
+     */
+    private void recordCreationIssue(Context context, Decision decision) {
+        String code = decision.issueCode();
+        if (code == null || rowIssues.countByBatchIdAndIssueCode(context.batchId(), code) > 0) {
+            return;
+        }
+        rowIssues.insertBatch(List.of(ImportIssueCatalog.issue(context.batchId(),
+                context.deliveryFileId(), null, code, null, String.valueOf(decision.candidates()),
+                decision.thresholdPercent().toPlainString(), CreationPolicyEvaluator.message(decision),
+                Instant.now())));
     }
 
     /**
@@ -1323,12 +1434,24 @@ public class DeliveryScreeningService {
      * een chunkgrens waarvan de mutaties gecommit zijn.
      * <p>
      * <b>De classificatie zit hier niet meer in</b> (fase 2 deed beide in dezelfde chunktransactie):
-     * ze is een eigen pass geworden (E1), omdat de referentiecontrole — en in bouwstap 3h de drempels —
-     * bepaalt of een mutatie {@code PLANNED} of {@code BLOCKED} wordt. Dat oordeel moet volledig zijn
-     * vóór de eerste mutatie geschreven wordt.
+     * ze is een eigen pass geworden (E1), omdat de referentiecontrole en het creatiebeleid (E4b)
+     * bepalen of een mutatie {@code PLANNED}, {@code AWAITING_APPROVAL} of {@code BLOCKED} wordt. Dat
+     * oordeel moet volledig zijn vóór de eerste mutatie geschreven wordt.
+     *
+     * @param creationOutcome het vastgelegde oordeel van pass E4b; het bepaalt of élke creatie van
+     *                        deze batch op goedkeuring wacht. Het wordt hier meegegeven en niet per
+     *                        chunk opnieuw bepaald, zodat een hervatte generatie dezelfde statussen
+     *                        oplevert
      */
-    private void generateMutations(Context context) {
+    private void generateMutations(Context context, CreationOutcome creationOutcome) {
         MutationContext mutationContext = context.mutationContext();
+        // De reden op elke wachtende creatie: de foutcode van het oordeel, of null bij AUTOMATIC -
+        // dan blijft het gedrag exact dat van vóór bouwstap 3h-3.
+        String creationStatusReason = switch (creationOutcome) {
+            case AUTOMATIC -> null;
+            case INITIAL_LOAD -> ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL;
+            case THRESHOLD_EXCEEDED -> ImportIssueCatalog.BULK_CREATION_INCIDENT;
+        };
         // Exact één keer per batch, niet per chunk: welke prijscomponenten deze levering draagt, bepaalt
         // het domeinmasker van élke mutatie (R-PRI-09). Uit de staging en niet uit de configuratie,
         // zodat een hervatte batch hetzelfde masker oplevert als een batch in één keer.
@@ -1340,8 +1463,8 @@ public class DeliveryScreeningService {
             long chunkFrom = from;
             long chunkTo = boundary;
             transaction.executeWithoutResult(status -> {
-                mutations.insertContentMutations(mutationContext, componentCodes, chunkFrom, chunkTo,
-                        Instant.now());
+                mutations.insertContentMutations(mutationContext, componentCodes, creationStatusReason,
+                        chunkFrom, chunkTo, Instant.now());
                 ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
                 batch.setMutationProgressRowNumber(chunkTo);
                 batches.saveAndFlush(batch);
@@ -1387,8 +1510,11 @@ public class DeliveryScreeningService {
      * Het inhoudelijke eindoordeel naast de status (R-THR-06), voor zover in deze bouwstap te
      * berekenen: {@code BLOCKING} bij een geblokkeerde levering of minstens één kritiek/blokkerend
      * probleem, anders {@code VALID_WITH_WARNINGS} bij minstens één waarschuwing, anders
-     * {@code VALID}. {@code REVIEW_REQUIRED} (bulkincidenten en wachtende creaties) komt met de
-     * drempels in bouwstap 3h; tot dan wordt die waarde nooit gezet in plaats van geraden.
+     * {@code VALID}. {@code REVIEW_REQUIRED} (bulkincidenten en wachtende creaties) komt in bouwstap
+     * 3h-5, wanneer het oordeel uit {@code DeliveryEffect} per foutcode volgt in plaats van uit de
+     * ernst; tot dan wordt die waarde nooit gezet in plaats van geraden. Gevolg van bouwstap 3h-3: een
+     * initialisatie of een overschreden creatiedrempel levert hier voorlopig {@code BLOCKING} op,
+     * terwijl de batch gewoon {@code SCREENED} is en enkel haar creaties op goedkeuring wachten.
      * <p>
      * Leest met JdbcTemplate wat in deze transactie met JdbcTemplate geschreven is — nooit via JPA.
      */
@@ -1579,7 +1705,7 @@ public class DeliveryScreeningService {
                 batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
                 batch.getStagedRowCount(), batch.getDuplicateIdentityCount(), batch.getNewCount(),
                 batch.getChangedCount(), batch.getUnchangedCount(), batch.getIdentityIncidentCount(),
-                batch.getCriticalLineCount(),
+                batch.getCriticalLineCount(), batch.getCreationOutcome(), batch.getCreationScopeCount(),
                 batch.getContentMutationCount(), batch.getBlockedCode(), batch.getBlockedReason());
     }
 

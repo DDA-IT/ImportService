@@ -38,9 +38,11 @@ import be.dda.catalogimport.domain.SourceOrganisationType;
 import be.dda.catalogimport.domain.TaskTriggerType;
 import be.dda.catalogimport.domain.ValidationResult;
 import be.dda.catalogimport.service.DeliveryScreeningService.ScreeningOutcome;
+import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
@@ -210,12 +212,19 @@ class ReferenceIncidentTest {
         ScreeningOutcome outcome = screening.screen(delivered.batchId());
 
         assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
-        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.VALID);
+        // Tussenstand van bouwstap 3h-3: dit is de eerste levering van de koppeling, dus een
+        // initialisatie. De creaties wachten op goedkeuring en de (voorlopig BLOCKING) melding
+        // daarover zet het eindoordeel op BLOCKING; ontwerp par. 15.3 maakt daar in 3h-5
+        // REVIEW_REQUIRED van. Aan de referentiecontrole zelf verandert er niets.
+        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.BLOCKING);
         assertThat(outcome.newCount()).isEqualTo(2L);
         assertThat(outcome.identityIncidentCount()).isZero();
         assertThat(outcome.contentMutationCount()).isEqualTo(2L);
-        assertThat(contentMutations(delivered.batchId()))
-                .allSatisfy(row -> assertThat(row.get("status")).isEqualTo("PLANNED"));
+        assertThat(contentMutations(delivered.batchId())).allSatisfy(row -> {
+            assertThat(row.get("status")).isEqualTo(MutationStatus.AWAITING_APPROVAL.name());
+            assertThat(row.get("status_reason"))
+                    .isEqualTo(ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL);
+        });
         // Geen enkele referentierij, en de referentievingerafdruk blijft die van versie 1: null.
         assertThat(jdbc.queryForObject("select count(*) from import_candidate_reference "
                 + "where batch_id = ?", Long.class, delivered.batchId())).isZero();
@@ -421,9 +430,12 @@ class ReferenceIncidentTest {
         // Een duplicaat binnen de levering levert geen migratie-incident op: er is geen voor/na-waarde.
         assertThat(incidentMutations(delivered.batchId())).isEmpty();
         assertThat(contentMutations(delivered.batchId())).hasSize(3);
+        // Precedentie (bouwstap 3h-3, par. 15.3): een vastgehouden identiteit blijft BLOCKED, ook al
+        // is dit een initialisatie. De derde regel is wél een creatie en wacht dus op goedkeuring.
         assertThat(statusOf(delivered.batchId(), "R1")).isEqualTo(MutationStatus.BLOCKED.name());
         assertThat(statusOf(delivered.batchId(), "R2")).isEqualTo(MutationStatus.BLOCKED.name());
-        assertThat(statusOf(delivered.batchId(), "R3")).isEqualTo(MutationStatus.PLANNED.name());
+        assertThat(statusOf(delivered.batchId(), "R3"))
+                .isEqualTo(MutationStatus.AWAITING_APPROVAL.name());
 
         baseline.acceptBaseline(delivered.batchId(), USER, "aanvaarding met een dubbele referentie");
         assertThat(sourceStateReferences(fixture.linkId())).containsExactly("R3");
@@ -444,6 +456,9 @@ class ReferenceIncidentTest {
         screening.screen(first.batchId());
         baseline.acceptBaseline(first.batchId(), USER, "nulmeting");
         Long existingState = sourceStateIdOf(fixture.linkId(), "R1");
+        // Eén nieuwe aanbieding naast één bestaande is 100% van de omvang; deze test gaat over de
+        // voorgestelde artikelkoppeling en niet over de creatiedrempel (bouwstap 3h-3).
+        allowAutomaticCreation(fixture);
 
         // Een andere leveranciersreferentie voor hetzelfde artikel, met dezelfde EAN.
         Delivered second = deliver(fixture, "REF-2", csv(EAN_HEADER, "ACME;G1;R9;1,75;Boormachine;E-1"));
@@ -610,7 +625,7 @@ class ReferenceIncidentTest {
                 "ACME;G1;R1;1,50;Boormachine;E-8;C-1",
                 "ACME;G1;R2;2,25;Schroevendraaier;E-9;C-2"));
         Mockito.doThrow(new UncheckedIOException(new IOException("simulated failure after E2")))
-                .when(mutationDao).insertContentMutations(any(), any(), anyLong(), anyLong(), any());
+                .when(mutationDao).insertContentMutations(any(), any(), any(), anyLong(), anyLong(), any());
 
         assertThatThrownBy(() -> screening.screen(second.batchId()))
                 .isInstanceOf(UncheckedIOException.class);
@@ -790,6 +805,19 @@ class ReferenceIncidentTest {
         CatalogImportTask task = tasks.saveAndFlush(
                 new CatalogImportTask(link, unique + "-taak", TaskTriggerType.MANUAL));
         return new Fixture(task.getId(), link.getId(), stored.getId(), libraryCode);
+    }
+
+    /**
+     * Zet de creatiedrempel van deze revisie hoog genoeg om een kleine koppeling automatisch te laten
+     * creëren (bouwstap 3h-3, ontwerp par. 15.2). Elke drempel is sinds het beslissingslog van 20/09
+     * altijd een percentage van de bestaande omvang: naast één aanvaarde aanbieding is één nieuwe
+     * aanbieding al 100%. Wie een kleine koppeling toch automatisch wil laten creëren, zet dat
+     * percentage per revisie hoger — precies wat deze tests hier doen.
+     */
+    private void allowAutomaticCreation(Fixture fixture) {
+        ImportDefinitionRevision revision = revisions.findById(fixture.revisionId()).orElseThrow();
+        revision.setCreationThresholdSharePercent(new BigDecimal("1000"));
+        revisions.saveAndFlush(revision);
     }
 
     /** De mapping gebruikt de geseede catalogusvelden; de test verzint geen eigen referentietypes. */

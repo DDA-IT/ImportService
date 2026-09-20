@@ -68,6 +68,8 @@ class ValidationResultTest {
     @Autowired
     private DeliveryScreeningService screening;
     @Autowired
+    private SourceStateBaselineService baseline;
+    @Autowired
     private BatchQueryService queries;
     @Autowired
     private SourceOrganisationRepository sourceOrganisations;
@@ -86,7 +88,11 @@ class ValidationResultTest {
 
     @Test
     void aCleanDeliveryIsValid() {
-        long batchId = upload("VRVALID", HEADER + VALID_ROWS);
+        // Een koppeling met een aanvaarde nulmeting. Sinds bouwstap 3h-3 is de állereerste levering
+        // van een koppeling een initialisatie: haar creaties wachten op goedkeuring en dat is (tot de
+        // herziening van 3h-5) een blokkerende vaststelling. Het eindoordeel van een gewone, schone
+        // levering bestaat dus pas vanaf de tweede levering.
+        long batchId = uploadAfterBaseline("VRVALID", HEADER + VALID_ROWS, HEADER + VALID_ROWS);
 
         ScreeningOutcome outcome = screening.screen(batchId);
 
@@ -106,8 +112,10 @@ class ValidationResultTest {
     /** Een verwijderde BOM is een waarschuwing: de levering blijft bruikbaar, maar niet onopgemerkt. */
     @Test
     void aWarningMakesTheDeliveryValidWithWarnings() {
-        String csv = "﻿" + HEADER + VALID_ROWS;
-        long batchId = upload("VRWARN", csv);
+        // Zelfde reden als hierboven: pas na de aanvaarde nulmeting is een levering "enkel een
+        // waarschuwing" en niet ook een initialisatie.
+        long batchId = uploadAfterBaseline("VRWARN", HEADER + VALID_ROWS,
+                "﻿" + HEADER + VALID_ROWS);
 
         ScreeningOutcome outcome = screening.screen(batchId);
 
@@ -153,7 +161,27 @@ class ValidationResultTest {
                 + "and action_type = 'IMPORT_MARKER'", String.class, batchId);
     }
 
+    /**
+     * Levert eerst een nulmeting aan, aanvaardt die, en levert dan de te beoordelen inhoud op
+     * dezelfde koppeling. Zo heeft de koppeling een bronstaat en is de tweede levering geen
+     * initialisatie meer (bouwstap 3h-3, ontwerp par. 15.2).
+     *
+     * @return de batch van de tweede levering, nog niet gescreend
+     */
+    private long uploadAfterBaseline(String prefix, String baselineContent, String content) {
+        long taskId = chain(prefix);
+        long baselineBatch = deliver(taskId, prefix + "-BASE", baselineContent);
+        screening.screen(baselineBatch);
+        baseline.acceptBaseline(baselineBatch, "tester@example.test", "nulmeting");
+        return deliver(taskId, prefix + "-NEXT", content);
+    }
+
     private long upload(String prefix, String content) {
+        return deliver(chain(prefix), prefix + "-1", content);
+    }
+
+    /** Eén eigen keten (bron, definitie, revisie, koppeling, taak) met unieke codes. */
+    private long chain(String prefix) {
         String unique = "VR" + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
@@ -179,8 +207,11 @@ class ValidationResultTest {
                 new ImportLink(unique + "-LINK", unique + " koppeling", definition, supplier, "PSARF050"));
         CatalogImportTask task = tasks.saveAndFlush(
                 new CatalogImportTask(link, unique + "-taak", TaskTriggerType.MANUAL));
+        return task.getId();
+    }
 
-        return intake.intake(task.getId(), unique, "tester@example.test", null, null, "levering.csv",
+    private long deliver(long taskId, String reference, String content) {
+        return intake.intake(taskId, reference, "tester@example.test", null, null, "levering.csv",
                 new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)))
                 .delivery().batch().batchId();
     }

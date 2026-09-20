@@ -35,6 +35,7 @@ import be.dda.catalogimport.domain.TaskTriggerType;
 import be.dda.catalogimport.service.DeliveryScreeningService.ScreeningOutcome;
 import be.dda.catalogimport.service.support.CandidateNormaliser;
 import be.dda.catalogimport.service.support.CsvRecordStreamer;
+import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import be.dda.catalogimport.service.support.ImportValueRules;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -171,7 +172,12 @@ class DeliveryStagingTest {
         assertThat(batch.getBlockedCode()).isNull();
         assertThat(deliveries.findById(screened.deliveryId()).orElseThrow().getActualRecordCount())
                 .isEqualTo(3L);
-        assertThat(rowIssues.countByBatchId(screened.batchId())).isZero();
+        // Geen enkel regelprobleem. Sinds bouwstap 3h-3 laat elke eerste levering van een koppeling
+        // wél één melding op leveringsniveau achter: de initialisatie waardoor de creaties op
+        // goedkeuring wachten (ontwerp fase 3 par. 15.2).
+        assertThat(rowIssues.findByBatchId(screened.batchId(), PageRequest.of(0, 10)).getContent())
+                .extracting(ImportRowIssue::getIssueCode)
+                .containsExactly(ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL);
         assertThat(runs.findById(screened.taskRunId()).orElseThrow().getStatus())
                 .isEqualTo(TaskRunStatus.COMPLETED);
     }
@@ -251,8 +257,10 @@ class DeliveryStagingTest {
         assertThat(jdbc.queryForObject("select count(*) from import_candidate_stage where batch_id = ? "
                 + "and base_price = 0", Long.class, screened.batchId())).isZero();
 
+        // Enkel de regelproblemen; de melding over de initialisatie (bouwstap 3h-3) hoort bij de
+        // levering als geheel en draagt dus geen regelnummer.
         List<ImportRowIssue> issues = rowIssues.findByBatchId(screened.batchId(), PageRequest.of(0, 10))
-                .getContent();
+                .getContent().stream().filter(issue -> issue.getRowNumber() != null).toList();
         assertThat(issues).hasSize(2);
         assertThat(issues).extracting(ImportRowIssue::getIssueCode)
                 .containsExactlyInAnyOrder(ImportValueRules.CODE_PRICE_UNREADABLE,
@@ -263,7 +271,7 @@ class DeliveryStagingTest {
             assertThat(issue.getSeverity()).isEqualTo(RowIssueSeverity.ERROR);
         });
         assertThat(jdbc.queryForObject("select count(*) from import_row_issue where batch_id = ? "
-                        + "and delivery_file_id = ?", Long.class,
+                        + "and delivery_file_id = ? and row_number is not null", Long.class,
                 screened.batchId(), screened.deliveryFileId())).isEqualTo(2L);
         assertThat(issues).filteredOn(issue -> issue.getRowNumber() == 3L).singleElement()
                 .satisfies(issue -> assertThat(issue.getSourceValue()).isEqualTo("12,3x"));
@@ -279,7 +287,9 @@ class DeliveryStagingTest {
         ScreeningOutcome outcome = screening.screen(screened.batchId());
 
         assertThat(outcome.validRecordCount()).isEqualTo(1L);
+        // Enkel de regelproblemen; de initialisatiemelding van bouwstap 3h-3 hoort bij de levering.
         assertThat(rowIssues.findByBatchId(screened.batchId(), PageRequest.of(0, 10)).getContent())
+                .filteredOn(issue -> issue.getRowNumber() != null)
                 .singleElement().satisfies(issue -> {
                     assertThat(issue.getIssueCode())
                             .isEqualTo(CandidateNormaliser.CODE_IDENTITY_COMPONENT_EMPTY);

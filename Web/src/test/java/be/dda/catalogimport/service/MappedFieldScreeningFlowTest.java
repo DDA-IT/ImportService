@@ -29,6 +29,7 @@ import be.dda.catalogimport.domain.SourceOrganisationType;
 import be.dda.catalogimport.domain.TaskTriggerType;
 import be.dda.catalogimport.service.DeliveryScreeningService.ScreeningOutcome;
 import be.dda.catalogimport.service.support.FieldValueMapper;
+import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import be.dda.catalogimport.service.support.ImportValueRules;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -237,8 +238,16 @@ class MappedFieldScreeningFlowTest {
         return (header + String.join("\n", rows) + "\n").getBytes(StandardCharsets.UTF_8);
     }
 
+    /**
+     * De vastgestelde problemen <b>zonder</b> de melding van het creatiebeleid. Sinds bouwstap 3h-3
+     * laat elke eerste levering van een koppeling één {@code INITIAL_LOAD_REQUIRES_APPROVAL} op
+     * leveringsniveau achter (ontwerp par. 15.2); die staat los van wat deze test bewijst.
+     */
     private List<ImportRowIssue> issues(Delivered delivered) {
-        return rowIssues.findByBatchId(delivered.batchId(), PageRequest.of(0, 100)).getContent();
+        return rowIssues.findByBatchId(delivered.batchId(), PageRequest.of(0, 100)).getContent().stream()
+                .filter(issue -> !ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL
+                        .equals(issue.getIssueCode()))
+                .toList();
     }
 
     private List<String> stagedReferences(Delivered delivered) {

@@ -189,7 +189,10 @@ class PriceComponentScreeningFlowTest {
         Map<String, String> issues = issueCodesByReference(delivered.batchId());
         assertThat(issues.get("3")).isEqualTo(ImportValueRules.CODE_PRICE_UNREADABLE);
         assertThat(issues.get("4")).isEqualTo(PriceRules.CODE_PRICE_ZERO_NOT_ALLOWED);
+        // Enkel de regelproblemen: sinds bouwstap 3h-3 laat de eerste levering van een koppeling ook
+        // één melding op leveringsniveau achter (INITIAL_LOAD_REQUIRES_APPROVAL, ontwerp par. 15.2).
         assertThat(rowIssues.findByBatchId(delivered.batchId(), PageRequest.of(0, 10)).getContent())
+                .filteredOn(issue -> issue.getRowNumber() != null)
                 .hasSize(2)
                 .allSatisfy(issue -> assertThat(issue.getSeverity()).isEqualTo(RowIssueSeverity.ERROR));
         // De melding draagt de logische veldnaam uit de catalogus en de bronwaarde (par. 15.12).

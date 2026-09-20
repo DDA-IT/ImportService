@@ -458,7 +458,7 @@ class BatchBaselineHttpTest {
                 throw new UncheckedIOException(new IOException("simulated crash after the first chunk"));
             }
             return invocation.callRealMethod();
-        }).when(mutations).insertContentMutations(any(), any(), anyLong(), anyLong(), any());
+        }).when(mutations).insertContentMutations(any(), any(), any(), anyLong(), anyLong(), any());
 
         // De upload antwoordt met de tussenstand: de batch is hervatbaar, niet FAILED.
         Uploaded interrupted = upload(f, "REF-1", csv(false, FIVE_ROWS));
@@ -580,7 +580,11 @@ class BatchBaselineHttpTest {
                 .andExpect(jsonPath("$.totalElements").value(5))
                 .andExpect(jsonPath("$.content[0].actionType").value("CREATE"))
                 .andExpect(jsonPath("$.content[0].targetDomain").value("OFFER"))
-                .andExpect(jsonPath("$.content[0].status").value("PLANNED"))
+                // Eerste levering van de koppeling: sinds bouwstap 3h-3 een initialisatie, dus wachten
+                // de creaties op goedkeuring (ontwerp par. 15.2) in plaats van PLANNED te zijn.
+                .andExpect(jsonPath("$.content[0].status").value("AWAITING_APPROVAL"))
+                .andExpect(jsonPath("$.content[0].statusReason")
+                        .value("INITIAL_LOAD_REQUIRES_APPROVAL"))
                 .andExpect(jsonPath("$.content[0].identitySupplier").value("ACME"))
                 .andExpect(jsonPath("$.content[0].afterBasePrice").value(1.5))
                 .andExpect(jsonPath("$.content[0].idempotencyKey").exists())
@@ -622,24 +626,31 @@ class BatchBaselineHttpTest {
                 "ACME;G1;R4;4,00;Zaag"));
         assertThat(first.status()).isEqualTo("SCREENED");
 
+        // Twee regelproblemen plus, sinds bouwstap 3h-3, één melding op leveringsniveau: deze eerste
+        // levering van de koppeling is een initialisatie (ontwerp par. 15.2). De lijst wordt op
+        // regelnummer gesorteerd en een leveringsmelding heeft er geen; waar die in de volgorde belandt
+        // hangt van de database af (H2 zet NULL vooraan, PostgreSQL achteraan). De assertie zoekt haar
+        // daarom op foutcode in plaats van op positie.
         mockMvc.perform(get("/api/catalog-import/batches/{id}/issues", first.batchId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalElements").value(2))
-                .andExpect(jsonPath("$.content[0].rowNumber").value(3))
-                .andExpect(jsonPath("$.content[0].issueCode").value("PRICE_UNREADABLE"))
-                .andExpect(jsonPath("$.content[0].fieldName").value("PRIJS"))
-                .andExpect(jsonPath("$.content[0].sourceValue").value("12,3x"))
-                .andExpect(jsonPath("$.content[0].severity").value("ERROR"))
-                .andExpect(jsonPath("$.content[0].message").exists())
-                .andExpect(jsonPath("$.content[1].rowNumber").value(4))
-                .andExpect(jsonPath("$.content[1].issueCode").value("PRICE_MISSING"));
+                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.content[?(@.issueCode=='PRICE_UNREADABLE')].rowNumber").value(3))
+                .andExpect(jsonPath("$.content[?(@.issueCode=='PRICE_UNREADABLE')].fieldName")
+                        .value("PRIJS"))
+                .andExpect(jsonPath("$.content[?(@.issueCode=='PRICE_UNREADABLE')].sourceValue")
+                        .value("12,3x"))
+                .andExpect(jsonPath("$.content[?(@.issueCode=='PRICE_UNREADABLE')].severity")
+                        .value("ERROR"))
+                .andExpect(jsonPath("$.content[?(@.issueCode=='PRICE_UNREADABLE')].message").exists())
+                .andExpect(jsonPath("$.content[?(@.issueCode=='PRICE_MISSING')].rowNumber").value(4))
+                .andExpect(jsonPath("$.content[?(@.issueCode=='INITIAL_LOAD_REQUIRES_APPROVAL')]"
+                        + ".rowNumber").value(org.hamcrest.Matchers.contains((Object) null)));
         mockMvc.perform(get("/api/catalog-import/batches/{id}/issues", first.batchId())
-                        .param("size", "1").param("page", "1"))
+                        .param("size", "1").param("page", "2"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalElements").value(2))
-                .andExpect(jsonPath("$.totalPages").value(2))
-                .andExpect(jsonPath("$.content.length()").value(1))
-                .andExpect(jsonPath("$.content[0].rowNumber").value(4));
+                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.totalPages").value(3))
+                .andExpect(jsonPath("$.content.length()").value(1));
         mockMvc.perform(get("/api/catalog-import/batches/{id}/issues", first.batchId()).param("size", "0"))
                 .andExpect(status().isBadRequest());
     }

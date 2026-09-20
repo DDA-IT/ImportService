@@ -29,6 +29,7 @@ import be.dda.catalogimport.domain.ValidationResult;
 import be.dda.catalogimport.service.DeliveryScreeningService.ScreeningOutcome;
 import be.dda.catalogimport.service.support.CandidateNormaliser;
 import be.dda.catalogimport.service.support.CsvRecordStreamer;
+import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import be.dda.catalogimport.service.support.ImportValueRules;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -294,7 +295,10 @@ class ControlHierarchyTest {
 
         assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
         assertThat(outcome.rejectedRecordCount()).isEqualTo(1L);
-        assertThat(issues(uploaded)).singleElement().satisfies(issue -> {
+        // Enkel de recordproblemen: sinds bouwstap 3h-3 laat de eerste levering van een koppeling ook
+        // één melding op leveringsniveau achter (INITIAL_LOAD_REQUIRES_APPROVAL, ontwerp par. 15.2).
+        assertThat(issues(uploaded)).filteredOn(issue -> issue.getControlLevel() == ControlLevel.RECORD)
+                .singleElement().satisfies(issue -> {
             assertThat(issue.getIssueCode()).isEqualTo(CandidateNormaliser.CODE_IDENTITY_COMPONENT_EMPTY);
             assertThat(issue.getSeverity()).isEqualTo(RowIssueSeverity.ERROR);
             assertThat(issue.getIssueDomain()).isEqualTo(IssueDomain.IDENTITY_REFERENCE);
@@ -302,7 +306,11 @@ class ControlHierarchyTest {
             assertThat(issue.getImpactScope()).isEqualTo(ImpactScope.RECORD);
             assertThat(issue.getRowNumber()).isEqualTo(3L);
         });
-        assertThat(countAtLevel(uploaded, ControlLevel.DELIVERY)).isZero();
+        // Op leveringsniveau staat enkel de initialisatiemelding; de verworpen regel verklaart de
+        // levering nooit onbruikbaar.
+        assertThat(issues(uploaded)).filteredOn(issue -> issue.getControlLevel() == ControlLevel.DELIVERY)
+                .extracting(ImportRowIssue::getIssueCode)
+                .containsExactly(ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL);
     }
 
     /**

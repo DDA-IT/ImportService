@@ -30,6 +30,7 @@ import be.dda.catalogimport.domain.SourceOrganisationType;
 import be.dda.catalogimport.domain.TaskTriggerType;
 import be.dda.catalogimport.service.DeliveryScreeningService.ScreeningOutcome;
 import be.dda.catalogimport.service.support.CsvRecordStreamer;
+import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import be.dda.catalogimport.service.support.RecordFilterEvaluator;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -271,8 +272,17 @@ class ScreeningCounterReconciliationTest {
         recordFilters.saveAndFlush(filter);
     }
 
+    /**
+     * De vastgestelde problemen <b>zonder</b> de melding van het creatiebeleid. Sinds bouwstap 3h-3
+     * laat elke eerste levering van een koppeling één {@code INITIAL_LOAD_REQUIRES_APPROVAL} op
+     * leveringsniveau achter (ontwerp par. 15.2); die telt in geen enkele recordbak mee en raakt de
+     * reconciliatie die deze test bewijst dus niet.
+     */
     private List<ImportRowIssue> issues(Uploaded uploaded) {
-        return rowIssues.findByBatchId(uploaded.batchId(), PageRequest.of(0, 100)).getContent();
+        return rowIssues.findByBatchId(uploaded.batchId(), PageRequest.of(0, 100)).getContent().stream()
+                .filter(issue -> !ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL
+                        .equals(issue.getIssueCode()))
+                .toList();
     }
 
     private List<String> stagedReferences(Uploaded uploaded) {

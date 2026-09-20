@@ -186,6 +186,26 @@ public class ImportBatch {
     private Long criticalLineCount;
 
     /**
+     * Het oordeel van het creatiebeleid (bouwstap 3h-3, ontwerp fase 3 par. 15.2), vastgelegd door
+     * pass E4b <b>vóór</b> de mutatiegeneratie. {@code null} betekent "nog niet beoordeeld" — nooit
+     * stil {@link CreationOutcome#AUTOMATIC}. Eenmaal gezet wordt het nooit herberekend: een hervatte
+     * mutatiegeneratie moet dezelfde mutatiestatussen opleveren, ook als de bronstaat intussen
+     * gewijzigd is.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "creation_outcome", length = 30)
+    private CreationOutcome creationOutcome;
+
+    /**
+     * De noemer waartegen het creatiebeleid geoordeeld heeft: het aantal <b>actieve</b>
+     * {@code catalog_source_state}-rijen van de koppeling op het moment van het oordeel. Vastgelegd
+     * omdat die noemer daarna kan wijzigen; zonder haar is achteraf niet te verantwoorden waarom een
+     * levering wel of niet boven de drempel lag. {@code null} = niet beoordeeld, nooit stil 0.
+     */
+    @Column(name = "creation_scope_count")
+    private Long creationScopeCount;
+
+    /**
      * Het inhoudelijke eindoordeel, als aparte statusas naast {@link #status} (ontwerp fase 3,
      * afwijking D en R-THR-06). {@code null} zolang de screening niet afgerond is én bij een
      * technische fout ({@code FAILED}): er is dan niets vastgesteld, en dat wordt nooit stil
@@ -451,6 +471,24 @@ public class ImportBatch {
 
     public void setCriticalLineCount(Long criticalLineCount) {
         this.criticalLineCount = criticalLineCount;
+    }
+
+    /** @return het oordeel van het creatiebeleid, of {@code null} als dat niet beoordeeld is */
+    public CreationOutcome getCreationOutcome() {
+        return creationOutcome;
+    }
+
+    public void setCreationOutcome(CreationOutcome creationOutcome) {
+        this.creationOutcome = creationOutcome;
+    }
+
+    /** @return de beoordeelde omvang van de koppeling, of {@code null} als die niet beoordeeld is */
+    public Long getCreationScopeCount() {
+        return creationScopeCount;
+    }
+
+    public void setCreationScopeCount(Long creationScopeCount) {
+        this.creationScopeCount = creationScopeCount;
     }
 
     public ValidationResult getValidationResult() {

@@ -543,6 +543,35 @@ class ScreeningSchemaTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /**
+     * Bouwstap 3h-3 (004-11e3): het oordeel van het creatiebeleid staat op de batch en is nullable —
+     * {@code null} is "nog niet beoordeeld" en nooit stil {@code AUTOMATIC}. De check laat exact de
+     * drie bekende uitkomsten toe: een verzonnen vierde waarde is een programmeerfout en mag niet in
+     * de database geraken, want ze zou later als "geen goedkeuring nodig" gelezen worden.
+     */
+    @Test
+    void leavesTheCreationOutcomeUnknownUntilThePolicyIsEvaluatedAndOnlyAllowsTheThreeKnownValues() {
+        Scenario s = scenario("CREOUT");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+
+        assertThat(jdbc.queryForObject("select creation_outcome from import_batch where id = ?",
+                String.class, batch.getId())).isNull();
+        assertThat(jdbc.queryForObject("select creation_scope_count from import_batch where id = ?",
+                Long.class, batch.getId())).isNull();
+        assertThat(batches.findById(batch.getId()).orElseThrow().getCreationOutcome()).isNull();
+        assertThat(batches.findById(batch.getId()).orElseThrow().getCreationScopeCount()).isNull();
+
+        for (CreationOutcome outcome : CreationOutcome.values()) {
+            jdbc.update("update import_batch set creation_outcome = ?, creation_scope_count = ? "
+                    + "where id = ?", outcome.name(), 7L, batch.getId());
+            assertThat(batches.findById(batch.getId()).orElseThrow().getCreationOutcome())
+                    .isEqualTo(outcome);
+        }
+        assertThatThrownBy(() -> jdbc.update("update import_batch set creation_outcome = 'ALWAYS' "
+                        + "where id = ?", batch.getId()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
     private void insertIssueGroup(Long batchId, String issueCode, String signature, long occurrences,
                                   int samples) {
         jdbc.update("insert into import_issue_group (batch_id, issue_code, signature, severity, "

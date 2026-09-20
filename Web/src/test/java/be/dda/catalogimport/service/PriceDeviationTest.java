@@ -33,6 +33,7 @@ import be.dda.catalogimport.domain.SourceOrganisationType;
 import be.dda.catalogimport.domain.TaskTriggerType;
 import be.dda.catalogimport.domain.ValidationResult;
 import be.dda.catalogimport.service.DeliveryScreeningService.ScreeningOutcome;
+import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import be.dda.catalogimport.service.support.ImportMappingConfigFactory;
 import be.dda.catalogimport.service.support.PriceDeviationEvaluator;
 import java.io.ByteArrayInputStream;
@@ -314,9 +315,13 @@ class PriceDeviationTest {
         ScreeningOutcome outcome = screening.screen(delivered.batchId());
 
         assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
-        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.VALID);
-        assertThat(jdbc.queryForObject("select count(*) from import_row_issue where batch_id = ?",
-                Long.class, delivered.batchId())).isZero();
+        // Tussenstand van bouwstap 3h-3: een eerste levering is een initialisatie, met één (voorlopig
+        // BLOCKING) melding daarover; ontwerp par. 15.3 maakt daar in 3h-5 REVIEW_REQUIRED van. Over
+        // de prijzen zelf wordt nog steeds niets gemeld - dat is wat deze test bewijst.
+        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.BLOCKING);
+        assertThat(jdbc.queryForList("select issue_code from import_row_issue where batch_id = ?",
+                String.class, delivered.batchId()))
+                .containsExactly(ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL);
         // De pass heeft zelfs geen chunk gelezen: zonder bronstaat valt er niets te vergelijken.
         Mockito.verify(deviations, Mockito.never())
                 .findCandidates(anyLong(), anyLong(), anyInt(), anyInt(), anyLong(), anyLong());

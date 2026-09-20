@@ -26,6 +26,7 @@ import be.dda.catalogimport.domain.ImportDefinition;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportLink;
 import be.dda.catalogimport.domain.ImportRowIssue;
+import be.dda.catalogimport.domain.MutationStatus;
 import be.dda.catalogimport.domain.RevisionStatus;
 import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.domain.SourceOrganisationType;
@@ -33,6 +34,7 @@ import be.dda.catalogimport.domain.TaskRunStatus;
 import be.dda.catalogimport.domain.TaskTriggerType;
 import be.dda.catalogimport.service.DeliveryScreeningService.ScreeningOutcome;
 import be.dda.catalogimport.service.support.CsvRecordStreamer;
+import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import be.dda.catalogimport.service.support.ImportValueRules;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -154,7 +156,12 @@ class DeliveryScreeningFlowTest {
         assertThat(content).allSatisfy(row -> {
             assertThat(row.actionType()).isEqualTo("CREATE");
             assertThat(row.targetDomain()).isEqualTo("OFFER");
-            assertThat(row.status()).isEqualTo("PLANNED");
+            // Sinds bouwstap 3h-3 (ontwerp par. 15.2) is de eerste levering van een koppeling een
+            // initialisatie: de mutaties bestaan volledig, maar wachten op goedkeuring in plaats van
+            // PLANNED te zijn. accept-baseline zet ze daarna alsnog op SKIPPED.
+            assertThat(row.status()).isEqualTo(MutationStatus.AWAITING_APPROVAL.name());
+            assertThat(row.statusReason())
+                    .isEqualTo(ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL);
             assertThat(row.identitySupplier()).isEqualTo("ACME");
             assertThat(row.identityHash()).isNotNull();
             // Een nieuwe aanbieding heeft geen voorgeschiedenis; niets wordt stil op 0 gezet.
@@ -449,10 +456,11 @@ class DeliveryScreeningFlowTest {
         Delivered delivered = deliver(fixture, "REF-1", csv(FIVE_ROWS));
         screening.screen(delivered.batchId());
 
-        // Geen prijscomponenten op deze revisie: het domeinmasker blijft exact dat van fase 2.
+        // Geen prijscomponenten op deze revisie: het domeinmasker blijft exact dat van fase 2. De
+        // creatiereden (bouwstap 3h-3) doet hier niet ter zake: geen enkele rij wordt nog geschreven.
         int repeated = mutations.insertContentMutations(new MutationDao.MutationContext(delivered.batchId(),
                 delivered.deliveryId(), fixture.linkId(), fixture.revisionId(), delivered.taskRunId(),
-                delivered.deliveryFileId()), List.of(), 0L, 999L, Instant.now());
+                delivered.deliveryFileId()), List.of(), null, 0L, 999L, Instant.now());
 
         assertThat(repeated).isZero();
         assertThat(contentMutations(delivered.batchId())).hasSize(5);
@@ -468,7 +476,7 @@ class DeliveryScreeningFlowTest {
                 throw new UncheckedIOException(new IOException("simulated failure halfway the generation"));
             }
             return invocation.callRealMethod();
-        }).when(mutations).insertContentMutations(any(), any(), anyLong(), anyLong(), any());
+        }).when(mutations).insertContentMutations(any(), any(), any(), anyLong(), anyLong(), any());
 
         assertThatThrownBy(() -> screening.screen(delivered.batchId()))
                 .isInstanceOf(UncheckedIOException.class);
@@ -613,7 +621,7 @@ class DeliveryScreeningFlowTest {
                         + "identity_supplier_group, identity_supplier_reference, identity_hash, "
                         + "before_combined_fingerprint, after_combined_fingerprint, domain_mask, "
                         + "before_base_price, after_base_price, source_state_id, delivery_file_id, "
-                        + "source_row_number, result_summary, idempotency_key, task_run_id "
+                        + "source_row_number, result_summary, idempotency_key, task_run_id, status_reason "
                         + "from import_mutation where batch_id = ? and " + filter + " order by id",
                 (resultSet, index) -> new MutationRow(resultSet.getString(1), resultSet.getString(2),
                         resultSet.getString(3), resultSet.getString(4), resultSet.getString(5),
@@ -621,7 +629,8 @@ class DeliveryScreeningFlowTest {
                         resultSet.getBytes(9), resultSet.getString(10), resultSet.getBigDecimal(11),
                         resultSet.getBigDecimal(12), (Long) resultSet.getObject(13),
                         (Long) resultSet.getObject(14), (Long) resultSet.getObject(15),
-                        resultSet.getString(16), resultSet.getString(17), (Long) resultSet.getObject(18)),
+                        resultSet.getString(16), resultSet.getString(17), (Long) resultSet.getObject(18),
+                        resultSet.getString(19)),
                 batchId);
     }
 
@@ -631,7 +640,7 @@ class DeliveryScreeningFlowTest {
                                byte[] afterCombinedFingerprint, String domainMask, BigDecimal beforeBasePrice,
                                BigDecimal afterBasePrice, Long sourceStateId, Long deliveryFileId,
                                Long sourceRowNumber, String resultSummary, String idempotencyKey,
-                               Long taskRunId) {
+                               Long taskRunId, String statusReason) {
     }
 
     private Delivered deliver(Fixture fixture, String reference, byte[] content) {

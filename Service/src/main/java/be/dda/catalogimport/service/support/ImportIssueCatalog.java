@@ -94,6 +94,20 @@ public final class ImportIssueCatalog {
      * individueel incident blijft daarnaast onverkort bestaan (individuele audit).
      */
     public static final String BULK_IDENTITY_INCIDENT = "BULK_IDENTITY_INCIDENT";
+    /**
+     * Deze levering is de <b>eerste</b> van haar importkoppeling: er bestond nog geen enkele actieve
+     * aanbieding (ontwerp fase 3 par. 15.2). Alle creaties wachten op goedkeuring. Bewust de enige
+     * melding in dat geval: zonder bestaande omvang bestaat er geen percentage en dus ook geen
+     * {@link #BULK_CREATION_INCIDENT}.
+     */
+    public static final String INITIAL_LOAD_REQUIRES_APPROVAL = "INITIAL_LOAD_REQUIRES_APPROVAL";
+    /**
+     * Zoveel nieuwe aanbiedingen in één levering dat het aandeel boven
+     * {@code creation_threshold_share_percent} van de bestaande omvang van de koppeling ligt
+     * (R-THR-01, ontwerp fase 3 par. 15.2). Alle creaties wachten op goedkeuring; wijzigingen van
+     * bestaande aanbiedingen gaan gewoon door.
+     */
+    public static final String BULK_CREATION_INCIDENT = "BULK_CREATION_INCIDENT";
 
     /** Scheidingsteken tussen het voorvoegsel en het variabele deel van een dynamische code. */
     public static final char DYNAMIC_CODE_SEPARATOR = ':';
@@ -426,6 +440,21 @@ public final class ImportIssueCatalog {
                 ControlLevel.DELIVERY, ImpactScope.DELIVERY);
         put(catalogue, BULK_IDENTITY_INCIDENT, RowIssueSeverity.CRITICAL,
                 IssueDomain.IDENTITY_REFERENCE, ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+
+        // Bouwstap 3h-3, R-THR-01 (ontwerp par. 15.2): het creatiebeleid. Beide zijn vaststellingen
+        // over de levering als geheel - niet over één record - en ze houden geen enkele regel tegen:
+        // de CREATE-mutaties bestaan gewoon, met status AWAITING_APPROVAL. Eén mens met het juiste
+        // recht kan ze vrijgeven (beslissingslog 20/09: vier-ogen wordt nergens afgedwongen).
+        //
+        // Ernst BLOCKING is hier nog een TUSSENSTAND: ze laat validation_result via de 3a-logica op
+        // BLOCKING uitkomen, terwijl ontwerp par. 15.3 REVIEW_REQUIRED voorschrijft. Bouwstap 3h-5
+        // vervangt die afleiding door DeliveryEffect; tot dan wordt het oordeel niet geraden.
+        for (String code : new String[] {
+                INITIAL_LOAD_REQUIRES_APPROVAL,
+                BULK_CREATION_INCIDENT}) {
+            put(catalogue, code, RowIssueSeverity.BLOCKING, IssueDomain.DELIVERY_SOURCE,
+                    ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+        }
 
         return Collections.unmodifiableMap(catalogue);
     }

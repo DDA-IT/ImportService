@@ -520,7 +520,10 @@ class IssueGroupingTest {
                 HEADER + "ACME;G1;R1;1,50;Boormachine\nACME;G1;R2;onleesbaar;Hamer\n");
 
         assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
-        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.VALID);
+        // Tussenstand van bouwstap 3h-3: de eerste levering van een koppeling is een initialisatie en
+        // laat één (voorlopig BLOCKING) melding achter; 3h-5 maakt daar REVIEW_REQUIRED van. Aan de
+        // groepering verandert er niets: die melding hoort bij geen enkele groep.
+        assertThat(outcome.validationResult()).isEqualTo(ValidationResult.BLOCKING);
         assertThat(groups(outcome.batchId())).isEmpty();
         assertThat(batches.findById(outcome.batchId()).orElseThrow().getBulkIncidentCount()).isZero();
         assertThat(issueRowCount(outcome.batchId(), ImportIssueCatalog.ROW_ISSUE_RECORDING_CAPPED))

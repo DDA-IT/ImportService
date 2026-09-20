@@ -71,6 +71,15 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li>De inhoudelijke mutaties van de batch worden {@code SKIPPED} met reden
  *       {@link #SKIPPED_REASON}; de {@code IMPORT_MARKER} blijft {@code RECORDED}. De batch gaat naar
  *       {@code BASELINE_ACCEPTED} (terminaal).</li>
+ *   <li><b>Ook de wachtende creaties gaan mee</b> (bouwstap 3h-3, ontwerp par. 15.4). Sinds het
+ *       creatiebeleid bestaat, levert de eerste levering van een koppeling uitsluitend
+ *       {@code CREATE}-mutaties in {@code AWAITING_APPROVAL} op ({@code INITIAL_LOAD}); een levering
+ *       boven de creatiedrempel idem ({@code BULK_CREATION_INCIDENT}). Die mutaties worden hier
+ *       evengoed {@code SKIPPED}: deze geauditeerde aanvaarding — één bevoegde persoon met een
+ *       verplichte reden, beslissingslog 20/09 — <b>is</b> de goedkeuring ervan. Zouden ze blijven
+ *       staan, dan zou de bronstaat wel geschreven zijn en de mutatielijst eeuwig open blijven.
+ *       {@code BLOCKED}-mutaties en de {@code IDENTITY_REFERENCE_INCIDENT}-mutaties blijven
+ *       onaangeroerd.</li>
  *   <li>Audit is persistent: {@code accepted_by}/{@code accepted_at} op elke geschreven bronstaatrij,
  *       en wie/wanneer/waarom op de batch (changeset 003).</li>
  *   <li>Een batch die gescreend werd tegen een inmiddels gewijzigde bronstaat (bv. een andere batch van

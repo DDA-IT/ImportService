@@ -76,12 +76,17 @@ public record DeliveryView(
      * <p>
      * {@code criticalLineCount} (verworpen regels met een fout op een kritieke kolom) is additief
      * toegevoegd in bouwstap 3h-2; {@code null} betekent onbekend.
+     * <p>
+     * {@code creationOutcome} (het oordeel van het creatiebeleid) en {@code creationScopeCount} (het
+     * aantal actieve aanbiedingen waartegen geoordeeld is) zijn additief toegevoegd in bouwstap 3h-3;
+     * {@code null} betekent "nog niet beoordeeld", nooit stil {@code AUTOMATIC} of 0.
      */
     public record BatchView(long batchId, String status, String validationResult, int attemptNo,
                             Long rawRecordCount, Long validRecordCount, Long rejectedRecordCount,
                             Long filteredOutCount, Long errorBeforeFilterCount,
                             Long duplicateIdentityCount, Long newCount, Long changedCount,
                             Long unchangedCount, Long contentMutationCount, Long criticalLineCount,
+                            String creationOutcome, Long creationScopeCount,
                             String blockedCode,
                             String blockedReason) {
 
@@ -93,7 +98,9 @@ public record DeliveryView(
                     batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
                     batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
                     batch.getUnchangedCount(), batch.getContentMutationCount(),
-                    batch.getCriticalLineCount(), batch.getBlockedCode(),
+                    batch.getCriticalLineCount(),
+                    batch.getCreationOutcome() == null ? null : batch.getCreationOutcome().name(),
+                    batch.getCreationScopeCount(), batch.getBlockedCode(),
                     batch.getBlockedReason());
         }
     }

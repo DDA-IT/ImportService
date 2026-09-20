@@ -46,6 +46,7 @@ import be.dda.catalogimport.service.support.CandidateNormaliser;
 import be.dda.catalogimport.service.support.CriticalLineCounter;
 import be.dda.catalogimport.service.support.CsvRecordStreamer;
 import be.dda.catalogimport.service.support.FieldValueMapper;
+import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import be.dda.catalogimport.service.support.ImportMappingConfig;
 import be.dda.catalogimport.service.support.ImportValueRules;
 import be.dda.catalogimport.service.support.PriceDeviationEvaluator;
@@ -268,8 +269,11 @@ class CriticalLineCountTest {
 
         ScreeningOutcome outcome = screen(fixture("IDENT"), "REF-1", csv);
 
+        // Naast de regelfouten staat er sinds bouwstap 3h-3 één melding over de initialisatie: de
+        // koppeling had nog geen enkele aanvaarde aanbieding, dus de creaties wachten op goedkeuring.
         assertThat(issueCodes(outcome.batchId())).containsOnly(
-                CandidateNormaliser.CODE_IDENTITY_COMPONENT_EMPTY);
+                CandidateNormaliser.CODE_IDENTITY_COMPONENT_EMPTY,
+                ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL);
         assertThat(outcome.rejectedRecordCount()).isEqualTo(2L);
         assertThat(outcome.criticalLineCount()).isEqualTo(2L);
     }
@@ -300,7 +304,10 @@ class CriticalLineCountTest {
         ScreeningOutcome rejectedOnly = screen(fixture, "REF-1", csv);
 
         assertThat(issueCodes(rejectedOnly.batchId()))
-                .containsOnly(RecordFilterEvaluator.CODE_FILTER_RECORD_REJECTED);
+                .containsOnly(RecordFilterEvaluator.CODE_FILTER_RECORD_REJECTED,
+                        // Eerste levering van de koppeling (bouwstap 3h-3); verandert niets aan de
+                        // telling van de kritieke lijnen.
+                        ImportIssueCatalog.INITIAL_LOAD_REQUIRES_APPROVAL);
         assertThat(rejectedOnly.rejectedRecordCount()).isEqualTo(2L);
         assertThat(rejectedOnly.criticalLineCount()).isZero();
 
@@ -331,7 +338,9 @@ class CriticalLineCountTest {
         ScreeningOutcome outcome = screen(fixture, "REF-1", csv);
 
         assertThat(issueCodes(outcome.batchId())).contains(CsvRecordStreamer.CODE_HEADER_FIELD_SHIFTED);
-        assertThat(severities(outcome.batchId())).containsOnly(RowIssueSeverity.WARNING.name());
+        // Enkel de meldingen met een regelnummer: de initialisatiemelding van bouwstap 3h-3 hoort bij
+        // de levering als geheel en is (tussenstand 3h-3) van ernst BLOCKING.
+        assertThat(rowSeverities(outcome.batchId())).containsOnly(RowIssueSeverity.WARNING.name());
         assertThat(outcome.rejectedRecordCount()).isZero();
         assertThat(outcome.criticalLineCount()).isZero();
     }
@@ -475,7 +484,7 @@ class CriticalLineCountTest {
                 throw new UncheckedIOException(new IOException("simulated crash halfway the generation"));
             }
             return invocation.callRealMethod();
-        }).when(mutations).insertContentMutations(any(), any(), anyLong(), anyLong(), any());
+        }).when(mutations).insertContentMutations(any(), any(), any(), anyLong(), anyLong(), any());
 
         try {
             screening.screen(delivered.batchId());
@@ -556,9 +565,10 @@ class CriticalLineCountTest {
                 + "and issue_code = ?", String.class, batchId, issueCode);
     }
 
-    private List<String> severities(long batchId) {
-        return jdbc.queryForList("select distinct severity from import_row_issue where batch_id = ?",
-                String.class, batchId);
+    /** De ernst van de meldingen die aan een bronregel hangen; leveringsmeldingen tellen niet mee. */
+    private List<String> rowSeverities(long batchId) {
+        return jdbc.queryForList("select distinct severity from import_row_issue where batch_id = ? "
+                + "and row_number is not null", String.class, batchId);
     }
 
     private ScreeningOutcome screen(Fixture fixture, String reference, String csv) {

@@ -68,6 +68,11 @@ public class CatalogImportBatchController {
      * <p>
      * Additief sinds bouwstap 3h-2: {@code criticalLineCount}, het aantal verworpen bronregels met een
      * fout op een kritieke kolom; {@code null} is "niet vastgesteld", nooit stil 0.
+     * <p>
+     * Additief sinds bouwstap 3h-3: {@code creationOutcome}
+     * ({@code AUTOMATIC|INITIAL_LOAD|THRESHOLD_EXCEEDED}) en {@code creationScopeCount}, het aantal
+     * actieve aanbiedingen van de koppeling waartegen het creatiebeleid geoordeeld heeft. Beide zijn
+     * {@code null} zolang dat oordeel er niet is.
      */
     @GetMapping("/{batchId}")
     BatchDetail batch(@PathVariable("batchId") long batchId) {
