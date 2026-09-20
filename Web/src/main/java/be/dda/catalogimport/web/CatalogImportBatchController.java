@@ -3,6 +3,7 @@ package be.dda.catalogimport.web;
 import be.dda.catalogimport.domain.MutationActionType;
 import be.dda.catalogimport.service.BatchQueryService;
 import be.dda.catalogimport.service.BatchQueryService.BatchDetail;
+import be.dda.catalogimport.service.BatchQueryService.IssueGroupRow;
 import be.dda.catalogimport.service.BatchQueryService.IssueRow;
 import be.dda.catalogimport.service.BatchQueryService.MutationRow;
 import be.dda.catalogimport.service.DeliveryScreeningService;
@@ -61,6 +62,9 @@ public class CatalogImportBatchController {
      * waren). Samen met de bestaande tellers geldt
      * {@code raw = filteredOut + errorBeforeFilter + rejected + valid}; zonder geconfigureerde
      * recordfilters staan beide op 0 en blijven de fase 2-waarden ongewijzigd.
+     * <p>
+     * Additief sinds bouwstap 3g: {@code bulkIncidentCount}, het aantal foutgroepen dat als
+     * bulkincident aangemerkt is. De groepen zelf staan in {@code GET /batches/{id}/issue-groups}.
      */
     @GetMapping("/{batchId}")
     BatchDetail batch(@PathVariable("batchId") long batchId) {
@@ -85,12 +89,36 @@ public class CatalogImportBatchController {
      * {@code severity} kan naast {@code ERROR}/{@code WARNING} ook {@code CRITICAL},
      * {@code BLOCKING} of {@code INFO} zijn. {@code issueDomain}, {@code controlLevel},
      * {@code impactScope}, {@code handlingStatus} en {@code expectedValue} zijn additief.
+     * <p>
+     * Additief sinds bouwstap 3g: elke rij toont haar {@code issueGroupId} en de lijst kan met
+     * {@code issueGroupId} tot één foutgroep beperkt worden. Let op: de getoonde rijen zijn
+     * <b>voorbeelden</b> — per foutcode worden er hoogstens
+     * {@code catalogimport.screening.max-sample-rows-per-code} bewaard. Het werkelijke aantal staat
+     * uitsluitend in {@code GET /batches/{id}/issue-groups}; een telling over deze lijst is dus
+     * systematisch te laag.
      */
     @GetMapping("/{batchId}/issues")
     PageResult<IssueRow> issues(@PathVariable("batchId") long batchId,
+                                @RequestParam(value = "issueGroupId", required = false) Long issueGroupId,
                                 @RequestParam(value = "page", required = false) Integer page,
                                 @RequestParam(value = "size", required = false) Integer size) {
-        return queries.getIssues(batchId, page, size);
+        return queries.getIssues(batchId, issueGroupId, page, size);
+    }
+
+    /**
+     * De foutgroepen van een batch: gelijksoortige vaststellingen samengevat, met het
+     * <b>werkelijke</b> aantal ({@code occurrenceCount}), het aantal bewaarde voorbeeldrijen
+     * ({@code recordedSampleCount}), de gecontroleerde scope, het aandeel daarin en of de groep een
+     * bulkincident is (bouwstap 3g, R-THR-04).
+     * <p>
+     * Gepagineerd zoals de andere lijsten: {@code page} 0-gebaseerd, {@code size} standaard 50 en
+     * begrensd tot 200.
+     */
+    @GetMapping("/{batchId}/issue-groups")
+    PageResult<IssueGroupRow> issueGroups(@PathVariable("batchId") long batchId,
+                                          @RequestParam(value = "page", required = false) Integer page,
+                                          @RequestParam(value = "size", required = false) Integer size) {
+        return queries.getIssueGroups(batchId, page, size);
     }
 
     /** Aanvaardt een gescreende batch als nulmeting van de bronstaat; enkel vanuit {@code SCREENED}. */

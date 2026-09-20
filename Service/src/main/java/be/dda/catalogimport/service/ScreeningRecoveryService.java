@@ -2,6 +2,7 @@ package be.dda.catalogimport.service;
 
 import be.dda.catalogimport.dao.CandidateStageDao;
 import be.dda.catalogimport.dao.ImportBatchRepository;
+import be.dda.catalogimport.dao.IssueGroupDao;
 import be.dda.catalogimport.dao.RowIssueDao;
 import be.dda.catalogimport.dao.TaskRunRepository;
 import be.dda.catalogimport.domain.ImportBatch;
@@ -61,11 +62,13 @@ public class ScreeningRecoveryService {
     private final TaskRunRepository runs;
     private final CandidateStageDao stage;
     private final RowIssueDao rowIssues;
+    private final IssueGroupDao issueGroups;
     private final TransactionTemplate transaction;
     private final boolean enabled;
 
     public ScreeningRecoveryService(ImportBatchRepository batches, TaskRunRepository runs,
                                     CandidateStageDao stage, RowIssueDao rowIssues,
+                                    IssueGroupDao issueGroups,
                                     PlatformTransactionManager transactionManager,
                                     @Value("${catalogimport.screening.recovery-on-startup:true}")
                                     boolean enabled) {
@@ -73,6 +76,7 @@ public class ScreeningRecoveryService {
         this.runs = runs;
         this.stage = stage;
         this.rowIssues = rowIssues;
+        this.issueGroups = issueGroups;
         this.transaction = new TransactionTemplate(transactionManager);
         this.enabled = enabled;
     }
@@ -124,6 +128,9 @@ public class ScreeningRecoveryService {
         }
         stage.deleteByBatchId(batchId);
         rowIssues.deleteByBatchId(batchId);
+        // Ná de issuerijen (foreign key): een samenvatting van verdwenen problemen zou een verzonnen
+        // aantal zijn.
+        issueGroups.deleteByBatchId(batchId);
         batch.setStagedRowCount(0);
         batch.setBlockedCode(CODE_SCREENING_INTERRUPTED);
         batch.setBlockedReason(truncate(CODE_SCREENING_INTERRUPTED

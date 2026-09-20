@@ -496,10 +496,13 @@ class PriceDeviationTest {
         // Geen 201e voorbeeldrij ...
         assertThat(issues(second.batchId(), PriceDeviationEvaluator.CODE_PRICE_DEVIATION_EXCEEDED))
                 .hasSize(cap);
-        // ... maar het werkelijke aantal van deze doorloop blijft gemeld.
+        // ... maar het werkelijke aantal blijft gemeld. Aangepast in bouwstap 3g: de cap-melding komt
+        // niet meer van de prijspass zelf (die telde enkel haar eigen doorloop en kon na een
+        // hervatting een tweede deelmelding geven) maar van de aggregatiepass E4, met het volledige
+        // aantal uit de issuegroep. Eén melding per batch en foutcode.
         assertThat(issues(second.batchId(), "ROW_ISSUE_RECORDING_CAPPED")).singleElement()
                 .satisfies(notice -> assertThat((String) notice.get("message"))
-                        .contains("priceDeviationSamples: '" + cap + "'")
+                        .contains("rowIssueSamples: '" + cap + "'")
                         .contains(PriceDeviationEvaluator.CODE_PRICE_DEVIATION_EXCEEDED + "=1"));
     }
 

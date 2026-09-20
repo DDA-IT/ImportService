@@ -108,6 +108,18 @@ public class CandidateReferenceDao {
         return countByBatchId(batchId) > 0;
     }
 
+    /**
+     * Het aantal kandidaatregels dat minstens één <b>gemapte</b> kritieke referentie draagt: de
+     * scope waartegen een bulkidentiteitsincident gemeten wordt (R-REF-07/R-THR-04). Ook een regel
+     * die de referentie leeg levert telt mee — "gemapt maar leeg" is een uitspraak van de
+     * leverancier en kan zelf tot een incident leiden (R-REF-03).
+     */
+    public long countCandidatesWithReferences(long batchId) {
+        Long count = jdbc.queryForObject("select count(distinct row_number) "
+                + "from import_candidate_reference where batch_id = ?", Long.class, batchId);
+        return count == null ? 0L : count;
+    }
+
     public long countByBatchId(long batchId) {
         Long count = jdbc.queryForObject(
                 "select count(*) from import_candidate_reference where batch_id = ?", Long.class, batchId);

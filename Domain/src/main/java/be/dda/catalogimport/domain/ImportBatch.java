@@ -167,6 +167,15 @@ public class ImportBatch {
     private Long contentMutationCount;
 
     /**
+     * Aantal {@code import_issue_group}-rijen van deze batch dat als bulkincident aangemerkt is
+     * (R-THR-04): honderd of meer gelijksoortige vaststellingen, of meer dan 1% van de gecontroleerde
+     * scope. {@code null} betekent "niet vastgesteld" (lopende of technisch mislukte batch), nooit
+     * stil 0.
+     */
+    @Column(name = "bulk_incident_count")
+    private Long bulkIncidentCount;
+
+    /**
      * Het inhoudelijke eindoordeel, als aparte statusas naast {@link #status} (ontwerp fase 3,
      * afwijking D en R-THR-06). {@code null} zolang de screening niet afgerond is én bij een
      * technische fout ({@code FAILED}): er is dan niets vastgesteld, en dat wordt nooit stil
@@ -414,6 +423,15 @@ public class ImportBatch {
 
     public void setContentMutationCount(Long contentMutationCount) {
         this.contentMutationCount = contentMutationCount;
+    }
+
+    /** @return het aantal bulkincidenten, of {@code null} als dat niet vastgesteld is */
+    public Long getBulkIncidentCount() {
+        return bulkIncidentCount;
+    }
+
+    public void setBulkIncidentCount(Long bulkIncidentCount) {
+        this.bulkIncidentCount = bulkIncidentCount;
     }
 
     public ValidationResult getValidationResult() {

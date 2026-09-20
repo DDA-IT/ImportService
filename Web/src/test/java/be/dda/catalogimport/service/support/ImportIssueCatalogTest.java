@@ -242,7 +242,7 @@ class ImportIssueCatalogTest {
     void refusesAnIssueRowWithoutAClassification() {
         assertThatThrownBy(() -> new IssueRow(1L, null, null, "PRICE_UNREADABLE", null, null,
                 IssueDomain.PRICE, ControlLevel.RECORD, ImpactScope.RECORD, IssueHandlingStatus.DETECTED,
-                null, null, "no severity", Instant.now()))
+                null, null, "no severity", null, Instant.now()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("severity");
     }

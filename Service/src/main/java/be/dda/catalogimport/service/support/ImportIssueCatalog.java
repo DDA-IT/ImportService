@@ -81,6 +81,19 @@ public final class ImportIssueCatalog {
      * bestaande aanbiedingsidentiteit wordt nooit vervangen.
      */
     public static final String REFERENCE_LINK_PROPOSED = "REFERENCE_LINK_PROPOSED";
+    /**
+     * Zoveel gelijksoortige prijsafwijkingen (zelfde component, zelfde richting) binnen één levering
+     * dat het geen reeks losse vaststellingen meer is maar één gebeurtenis (R-PRI-14). Eén melding
+     * per groep; de individuele meldingen blijven bestaan, met hun voorbeeldcap.
+     */
+    public static final String BULK_PRICE_INCIDENT = "BULK_PRICE_INCIDENT";
+    /**
+     * Zoveel gelijksoortige incidenten op kritieke koppelreferenties (zelfde type, zelfde soort
+     * incident) dat het om één gebeurtenis gaat — typisch een bulktransformatie bij de leverancier
+     * (R-REF-07). Kritiek, want een onbetrouwbare koppeling blokkeert ongeacht volume; élk
+     * individueel incident blijft daarnaast onverkort bestaan (individuele audit).
+     */
+    public static final String BULK_IDENTITY_INCIDENT = "BULK_IDENTITY_INCIDENT";
 
     /** Scheidingsteken tussen het voorvoegsel en het variabele deel van een dynamische code. */
     public static final char DYNAMIC_CODE_SEPARATOR = ':';
@@ -186,6 +199,29 @@ public final class ImportIssueCatalog {
                                  String fieldName, String sourceValue, String expectedValue,
                                  String message, RowIssueSeverity configuredSeverity,
                                  Instant createdAt) {
+        // Een probleem dat aan een bronregel hangt, kan zich op elke volgende regel herhalen en
+        // krijgt daarom een groepeerbare signatuur (bouwstap 3g). Een probleem zonder regelnummer
+        // raakt de levering als geheel en komt per definitie hoogstens één keer voor: dat hoort bij
+        // geen enkele groep en krijgt bewust geen signatuur.
+        return issue(batchId, deliveryFileId, rowNumber, issueCode, fieldName, sourceValue,
+                expectedValue, message,
+                rowNumber == null ? null : IssueSignature.generic(fieldName), configuredSeverity,
+                createdAt);
+    }
+
+    /**
+     * Dezelfde schrijfroute, met een <b>expliciete</b> foutsignatuur. Nodig voor de vaststellingen
+     * waarvan de signatuur niet uit de issuerij af te leiden is: een prijsafwijking groepeert op
+     * component én richting (R-PRI-14) en een referentie-incident op type én soort (R-REF-07) —
+     * gegevens die niet allemaal als kolom op de rij staan. Zo hoeft pass E4 die regels niet nog
+     * eens in SQL na te rekenen.
+     *
+     * @param signature de signatuur, of {@code null} voor een probleem dat bij geen groep hoort
+     */
+    public static IssueRow issue(long batchId, Long deliveryFileId, Long rowNumber, String issueCode,
+                                 String fieldName, String sourceValue, String expectedValue,
+                                 String message, IssueSignature.Signature signature,
+                                 RowIssueSeverity configuredSeverity, Instant createdAt) {
         IssueClassification classification = classify(issueCode);
         RowIssueSeverity severity = classification.severity();
         if (configuredSeverity != null) {
@@ -200,7 +236,7 @@ public final class ImportIssueCatalog {
         return new IssueRow(batchId, deliveryFileId, rowNumber, issueCode, fieldName,
                 severity, classification.domain(), classification.controlLevel(),
                 classification.defaultImpactScope(), IssueHandlingStatus.DETECTED, sourceValue,
-                expectedValue, message, createdAt);
+                expectedValue, message, signature == null ? null : signature.value(), createdAt);
     }
 
     private static Map<String, IssueClassification> buildCatalogue() {
@@ -377,6 +413,16 @@ public final class ImportIssueCatalog {
         // aanbiedingsidentiteit blijft onaangeroerd.
         put(catalogue, REFERENCE_LINK_PROPOSED, RowIssueSeverity.INFO, IssueDomain.IDENTITY_REFERENCE,
                 ControlLevel.RECORD, ImpactScope.RECORD);
+
+        // Bouwstap 3g, R-THR-04: één samenvattende melding per bulkgroep, op leveringsniveau. Bewust
+        // NAAST de individuele meldingen en nooit in de plaats ervan - de individuele audit blijft
+        // (R-REF-07). De ernst volgt die van het onderliggende verschijnsel: een reeks
+        // prijsafwijkingen is een blokkerende vaststelling over de levering (R-PRI-14), een reeks
+        // identiteitsincidenten is kritiek en blokkeert ongeacht volume.
+        put(catalogue, BULK_PRICE_INCIDENT, RowIssueSeverity.BLOCKING, IssueDomain.PRICE,
+                ControlLevel.DELIVERY, ImpactScope.DELIVERY);
+        put(catalogue, BULK_IDENTITY_INCIDENT, RowIssueSeverity.CRITICAL,
+                IssueDomain.IDENTITY_REFERENCE, ControlLevel.DELIVERY, ImpactScope.DELIVERY);
 
         return Collections.unmodifiableMap(catalogue);
     }

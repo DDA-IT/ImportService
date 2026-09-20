@@ -55,11 +55,13 @@ public class RowIssueDao {
     public static final int MAX_EXPECTED_VALUE_LENGTH = 200;
     /** {@code message} is varchar(500). */
     public static final int MAX_MESSAGE_LENGTH = 500;
+    /** {@code signature} is varchar(300); zie {@code IssueSignature} in de Service-laag. */
+    public static final int MAX_SIGNATURE_LENGTH = 300;
 
     private static final String INSERT = "insert into import_row_issue ("
             + "batch_id, delivery_file_id, row_number, issue_code, field_name, severity, issue_domain, "
             + "control_level, impact_scope, handling_status, source_value, expected_value, message, "
-            + "created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            + "signature, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     /**
      * Eén te bewaren probleem.
@@ -68,6 +70,11 @@ public class RowIssueDao {
      * @param rowNumber      {@code null} bij een probleem op leverings- of structuurniveau; nooit 0
      *                       als plaatsvervanger
      * @param expectedValue  wat er verwacht werd, náást {@code sourceValue}; nooit stil toegepast
+     * @param signature      de foutsignatuur waarop pass E4 groepeert (bouwstap 3g), of {@code null}
+     *                       voor een probleem dat per definitie hoogstens één keer voorkomt. De
+     *                       signatuur wordt hier vastgelegd en niet later herleid: ze bevat gegevens
+     *                       (prijscomponent, richting, soort referentie-incident) die niet allemaal
+     *                       op de rij staan
      */
     public record IssueRow(
             long batchId,
@@ -83,6 +90,7 @@ public class RowIssueDao {
             String sourceValue,
             String expectedValue,
             String message,
+            String signature,
             Instant createdAt) {
 
         public IssueRow {
@@ -163,6 +171,19 @@ public class RowIssueDao {
     }
 
     /**
+     * Aantal reeds bewaarde problemen met deze foutcode <b>en</b> deze signatuur. Gebruikt om een
+     * samenvattende melding (zoals {@code ROW_ISSUE_RECORDING_CAPPED} per foutcode) precies één keer
+     * te schrijven, ook wanneer de verwerking hervat is.
+     */
+    public long countByBatchIdAndSignature(long batchId, String issueCode, String signature) {
+        Long count = jdbc.queryForObject(
+                "select count(*) from import_row_issue where batch_id = ? and issue_code = ? "
+                        + "and signature = ?", Long.class, batchId,
+                truncate(issueCode, MAX_ISSUE_CODE_LENGTH), truncate(signature, MAX_SIGNATURE_LENGTH));
+        return count == null ? 0L : count;
+    }
+
+    /**
      * Aantallen per ernst; de basis voor {@code import_batch.validation_result} (R-THR-06). Eén
      * query in plaats van een telling per ernst, zodat het oordeel op één momentopname berust.
      */
@@ -202,7 +223,8 @@ public class RowIssueDao {
         setNullable(statement, 11, truncate(row.sourceValue(), MAX_SOURCE_VALUE_LENGTH));
         setNullable(statement, 12, truncate(row.expectedValue(), MAX_EXPECTED_VALUE_LENGTH));
         statement.setString(13, truncate(row.message(), MAX_MESSAGE_LENGTH));
-        statement.setObject(14, OffsetDateTime.ofInstant(row.createdAt(), ZoneOffset.UTC));
+        setNullable(statement, 14, truncate(row.signature(), MAX_SIGNATURE_LENGTH));
+        statement.setObject(15, OffsetDateTime.ofInstant(row.createdAt(), ZoneOffset.UTC));
     }
 
     private static void setNullable(PreparedStatement statement, int index, String value) throws SQLException {

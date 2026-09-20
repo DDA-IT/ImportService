@@ -598,3 +598,165 @@ Te laten beslissen door een Denker (of de mens) vóór 3h.
    is: bevestigen vóór de eerste echte baseline.
 3. Geen unieke constraint op `(source_state_id, reference_type, active_marker)`: schematisch kan een aanbieding
    twee actieve waarden voor één type hebben (evaluator behandelt dat als AMBIGUOUS).
+
+## 15. Stap 3h — drempels, kritieke kolommen en eindoordeel (denker-zwaar 2026-09-20, met beslissingen van de mens)
+
+Dit hoofdstuk VERVANGT R-THR-01..08 en de eindstatustabel §3.6, en past 3g (E4a) en 3h aan. Bindende beslissingen
+in `decisions.md` van 2026-09-20: kritiek-per-kolom (review), drempels altijd percentage, vier-ogen nooit,
+eerste referentievastlegging = optie A zonder schakelaar.
+
+### 15.1 Kritiek-vlag per kolom
+- `import_field_mapping.criticality varchar(20) not null default 'NON_CRITICAL'` (enum `Criticality {CRITICAL,
+  NON_CRITICAL}`; checks: waarde in set; `reference_type is null or criticality='CRITICAL'`). Backfill:
+  referentie- en prijscomponentmappings ⇒ CRITICAL. Changeset `004-2b`.
+- Revisie-eigen velden (geen mapping-rij): nieuwe tabel `import_revision_field_criticality`
+  (`definition_revision_id fk`, `field_key varchar(60)` in `SUPPLIER,SUPPLIER_GROUP,SUPPLIER_REFERENCE,
+  DISCOUNT_CODE,BASE_PRICE,CURRENCY,DESCRIPTION`, `criticality`, `created_at/by`; pk `(revision, field_key)`;
+  check: identiteitsvelden nooit NON_CRITICAL). Changeset `004-15`. Ontbrekende rij = standaard van de soort:
+  identiteit CRITICAL (niet instelbaar), BASE_PRICE/CURRENCY CRITICAL (instelbaar), DESCRIPTION NON_CRITICAL,
+  prijscomponent CRITICAL (instelbaar), referentie CRITICAL (niet instelbaar), overige gemapte velden NON_CRITICAL.
+- **Kritieke lijn** = een verworpen bronregel in scope met ≥1 issue van ernst ERROR op een kritieke kolom, of niet
+  aan een kolom toewijsbaar (`ROW_COLUMN_COUNT_MISMATCH`, `ROW_TOO_LONG`, `CSV_UNCLOSED_QUOTE`,
+  `IDENTITY_COMPONENT_EMPTY` ⇒ onherleidbaar = kritiek). Nooit kritiek: WARNING/INFO, `FILTER_RECORD_REJECTED`
+  (beheerder verklaarde REJECT), `PRICE_DEVIATION_EXCEEDED` (verwerpt niets). Een kritieke lijn staat nooit in de
+  stage en heeft dus geen mutatie; de review gebeurt op leveringsniveau. Strikt disjunct met vastgehouden
+  identiteitsincidenten (3f).
+- Telling in `DeliveryScreeningService.addIssue(...)`: `import_batch.critical_line_count`, ontdubbeld op
+  regelnummer, NIET gecapt (nooit uit de bewaarde voorbeeldrijen). Koppeling issue→kolom via
+  `ImportMappingConfig.criticalityOf(fieldName)` (map van bronreferenties én logische veldnamen, onbekend ⇒
+  CRITICAL, botsing ⇒ strengste). Nieuwe code `CONFIG_FIELD_CRITICALITY_INVALID` (BLOCKING/AUTHORISATION_CONFIG/STRUCTURE).
+
+### 15.2 Drempels (altijd percentage; vervangt R-THR-01/03/05)
+Per revisie: `creation_threshold_share_percent` (default 1), `max_critical_share_percent` (nieuw, default 1),
+`max_rejected_share_percent` (default null), `bulk_incident_share_percent` (nieuw, default 1); de absolute kolommen
+(`creation_threshold_absolute`, `max_critical_records`, `max_rejected_records`) blijven maar worden niet meer
+gebruikt (changeset `004-10c`: additieve nieuwe kolommen; geen backfill nodig). Alle vergelijkingen decimaal:
+`aantal × 100 > percentage × scope`; exact op de grens is NIET overschreden; nooit float.
+- Scope voor kritiek/verworpen/bulk = records in scope van de levering = `raw_record_count − filtered_out_count`;
+  scope voor de creatiedrempel = actieve `catalog_source_state`-rijen van de `import_link`.
+- `critical_record_count = critical_line_count + identity_incident_count`.
+  `>0` en niet boven `max_critical_share_percent` ⇒ SCREENED + `REVIEW_REQUIRED`; boven ⇒ BLOCKED +
+  `CRITICAL_RECORD_THRESHOLD_EXCEEDED`. `max_rejected_share_percent` (indien niet null) boven ⇒ BLOCKED +
+  `REJECTED_RECORD_THRESHOLD_EXCEEDED`.
+- Creatie: `creationCandidates = NEW + IDENTITY_INCIDENT-rijen zonder bronstaat`. scope 0 en kandidaten>0 ⇒
+  INITIAL_LOAD (`INITIAL_LOAD_REQUIRES_APPROVAL`, alleen deze code, nooit ook `BULK_CREATION_INCIDENT`);
+  kandidaten 0 ⇒ AUTOMATIC; `kandidaten × 100 > creation_threshold_share_percent × scope` ⇒ THRESHOLD_EXCEEDED
+  (`BULK_CREATION_INCIDENT`); anders AUTOMATIC. Persisteren vóór E5: `import_batch.creation_outcome`
+  (`AUTOMATIC|INITIAL_LOAD|THRESHOLD_EXCEEDED`) + `creation_scope_count`, zodat een hervatte E5 identiek is.
+  Gevolg voor kleine koppelingen (1% van 10 = 0,1): per leverancier het percentage hoger zetten.
+- Bulkincident (3g): issuegroep vanaf 10 gelijke signaturen (technisch); bulk = `occurrence_count × 100 >
+  bulk_incident_share_percent × scope_record_count` (geen vast aantal meer).
+
+### 15.3 `validation_result`, eindstatus, mutatiestatussen (vervangt R-THR-06/07 en §3.6)
+`validation_result` wordt niet meer uit de ernst afgeleid maar uit `DeliveryEffect {NONE, REVIEW, BLOCK}` per
+foutcode in `ImportIssueCatalog.IssueClassification` (ernst blijft ongewijzigd). BLOCK: alle `CONFIG_*`, header-/
+structuurcodes, `SOURCE_FILE_EMPTY`, `SOURCE_NO_DATA_RECORDS`, `BYTE_SIZE_MISMATCH`, `RECORD_COUNT_MISMATCH`,
+`DUPLICATE_IDENTITY_IN_DELIVERY`, `IDENTITY_HASH_COLLISION`, `FILTER_COLUMN_MISSING`, `SCREENING_FAILED`,
+`SCREENING_INTERRUPTED`, `CRITICAL_RECORD_THRESHOLD_EXCEEDED`, `REJECTED_RECORD_THRESHOLD_EXCEEDED`,
+`CONFIG_FIELD_CRITICALITY_INVALID`. REVIEW: `IDENTITY_REFERENCE_INCIDENT`, `DUPLICATE_REFERENCE_IN_DELIVERY`,
+`BULK_IDENTITY_INCIDENT`, `BULK_PRICE_INCIDENT`, `BULK_CREATION_INCIDENT`, `INITIAL_LOAD_REQUIRES_APPROVAL`
+(BLOCKING/DELIVERY_SOURCE/DELIVERY). Al het overige NONE. Elke code moet een expliciet `DeliveryEffect` hebben
+(test). `RowIssueSeverity.isBlockingForBatch()` blijft bestaan maar bepaalt `validation_result` niet meer.
+
+    validation_result = BLOCKING            als blocked of ≥1 issue met effect BLOCK
+                      = REVIEW_REQUIRED     anders, als critical_record_count>0 of ≥1 issue met effect REVIEW
+                                            of awaiting_approval_count>0
+                      = VALID_WITH_WARNINGS anders, als ≥1 issue met ernst ERROR of WARNING
+                      = VALID               anders
+
+Tellers ongecapt (uit `import_issue_group.occurrence_count` + niet-gegroepeerde rijen; vereist dat 3g op elke
+bewaarde voorbeeldrij die bij een groep hoort `issue_group_id` invult — de 3h-bouwer verifieert dit eerst en meldt
+afwijking): `critical_line_count`, `identity_incident_count`, `critical_issue_count`, `warning_count`,
+`bulk_incident_count`, `awaiting_approval_count` (enkel CREATE/UPDATE in AWAITING_APPROVAL).
+Eindstatus: verworpen regels alleen op niet-kritieke kolommen binnen drempels ⇒ SCREENED/VALID_WITH_WARNINGS;
+kritieke lijn of kritiek referentie-incident binnen drempel ⇒ SCREENED/REVIEW_REQUIRED (vervangt de 3f-tussenstand
+BLOCKING); initialisatie ⇒ alle CREATE `AWAITING_APPROVAL` (reden `INITIAL_LOAD_REQUIRES_APPROVAL`); creatiedrempel
+⇒ alle CREATE `AWAITING_APPROVAL` (reden `BULK_CREATION_INCIDENT`), UPDATE blijft PLANNED; `BULK_PRICE_INCIDENT` ⇒
+elke PLANNED UPDATE met `PRICE` in `domain_mask` ⇒ AWAITING_APPROVAL (over-inclusief, bewust: de precieze set is
+door de cap niet uit issues te halen); drempel overschreden of structuur-/contract-/configfout/duplicaat/collisie ⇒
+BLOCKED + BLOCKING, 0 inhoudelijke mutaties, 1 marker; technische stagingfout ⇒ FAILED, `validation_result` null.
+Precedentie: BLOCKED > AWAITING_APPROVAL > PLANNED; initialisatie wint van creatiedrempel; drempels in E4b vóór
+E5; een geblokkeerde batch behoudt zijn incidentmutaties (AWAITING_APPROVAL) als bewijs.
+
+### 15.4 Passvolgorde, marker, accept-baseline (geen vier-ogen)
+`C → D → D1 → E1 → E2 → E3 → E4a (3g: groepering/bulk) → E4b (3h: drempels, aparte methode `evaluateThresholds`) →
+E5 → E5b (bulkprijs ⇒ AWAITING_APPROVAL) → F`. E4b is set-based, geen voortgangskolom, idempotent (issue enkel
+als de code er nog niet is; tellers overschrijven, nooit optellen; alles uit de db herberekend).
+Marker `result_summary` (varchar(1000)) met vaste sleutelvolgorde: `outcome`, `completenessProven`,
+`completenessReason`, `fileSha256`, `validationResult`, `criticalRecords=<n>/<pct>`, `criticalLines`,
+`identityIncidents`, `rejected=<n>/<pct of ->`, `warnings`, `criticalIssues`, `bulkIncidents`, `awaitingApproval`,
+`creationScope`, `creationCandidates`, `creationThreshold=<pct>`, `creationOutcome`; `-` = niet geconfigureerd
+(nooit 0); lengte-test < 1000.
+`accept-baseline` (GEEN `approvedBy`, GEEN 409 `FOUR_EYES_APPROVAL_REQUIRED`): enkel `acceptedBy` + `reason` zoals
+nu; `skipPlannedContentMutations` wordt `skipOpenContentMutations` en zet `CREATE/UPDATE` in `PLANNED` én
+`AWAITING_APPROVAL` op `SKIPPED`; `BLOCKED` (identiteitsincident) en `IDENTITY_REFERENCE_INCIDENT`-mutaties
+blijven onaangeroerd; bronstaat en referenties voor vastgehouden rijen nooit geschreven (3f).
+Impact op bestaand gedrag/tests: eerste levering geeft N `AWAITING_APPROVAL`-CREATEs + `REVIEW_REQUIRED`;
+kritiek referentie-incident ⇒ `REVIEW_REQUIRED` i.p.v. BLOCKING; te wijzigen tests: `DeliveryScreeningFlowTest`,
+`BatchBaselineHttpTest`, `ValidationResultTest`, `ReferenceIncidentTest`, `PriceDeviationTest`,
+`PriceComponentScreeningFlowTest`, `MappedFieldScreeningFlowTest`, `ScreeningSchemaTest`,
+`ScreeningCounterReconciliationTest`, `ImportIssueCatalogTest`.
+
+### 15.5 Changesets 3h (additief aan `004-import-rules-core.sql`; uitgevoerde nooit wijzigen)
+`004-2b` (criticality), `004-15` (revisie-veld-kritiek), `004-10c` (`bulk_incident_share_percent`, gebouwd door 3g) en `004-10d` (`max_critical_share_percent`, 3h-4), `004-11e` (`import_batch`: `critical_line_count`,
+`critical_issue_count`, `warning_count`, `awaiting_approval_count`, `creation_scope_count`, `creation_outcome`
++ check; `bulk_incident_count` alleen als 3g die niet al toevoegde — eerst de changelog lezen), `004-8b`
+(`unique (source_state_id, reference_type, active_marker)` op `catalog_reference_state`; NULL-historiek botst niet).
+Foutcodes nieuw: `CRITICAL_RECORD_THRESHOLD_EXCEEDED`, `REJECTED_RECORD_THRESHOLD_EXCEEDED`,
+`INITIAL_LOAD_REQUIRES_APPROVAL`, `CONFIG_FIELD_CRITICALITY_INVALID`.
+
+### 15.6 Bouwstappen 3h (strikt sequentieel; één commit per stap; rapportage aan de mens na 3h-7)
+- 3h-1 bouwer-gemiddeld: 004-2b + 004-15, `Criticality`, mapping/config, `criticalityOf`,
+  `CONFIG_FIELD_CRITICALITY_INVALID`; geen gedragswijziging.
+- 3h-2 bouwer-gemiddeld: `critical_line_count` in de staging (+ deel 004-11e), `FieldCriticalityTest`,
+  `CriticalLineCountTest`.
+- 3h-3 bouwer-zwaar: E4b creatiedrempel/initialisatie (`creation_outcome`), E5 `AWAITING_APPROVAL`, Fase 2-tests
+  aanpassen, `CreationThresholdTest` (scope 10.000 + 1% grens: 100 = niet overschreden, 101 = wel; scope 0 =
+  initialisatie).
+- 3h-4 bouwer-zwaar: percentagedrempels critical/rejected (004-10c), blokkadepaden, `ThresholdBlockingTest`.
+- 3h-5 bouwer-zwaar: `DeliveryEffect`, nieuwe `validation_result`-evaluator, ongecapte tellers, bulkprijs ⇒
+  AWAITING_APPROVAL, markerinhoud; `ValidationResultTest`.
+- 3h-6 bouwer-gemiddeld: `skipOpenContentMutations`, accept-baseline zonder vier-ogen; tests.
+- 3h-7 bouwer-licht: 004-8b unieke constraint + test.
+(3h-8 "eerste vastlegging vereist goedkeuring" vervalt: besluit optie A zonder schakelaar.)
+Testplan per regel (G/O/D/X/B): kritiek-vlag (standaarden, db-checks), kritieke lijn (onherleidbaar telt, dubbele
+ERROR op één regel = 1, `FILTER_RECORD_REJECTED` niet, 250 bij cap 200 ⇒ teller 250), drempels (exact op grens niet
+overschreden, `null`-drempel nooit overschreden), creatie (scope 0, 0 kandidaten, exact 1%), `validation_result`
+volledige tabel (kritieke lijn + waarschuwing ⇒ REVIEW_REQUIRED), marker (lengte, `-`), hervatting E4b.
+Buiten scope (mens): PostgreSQL en performance; risicoquery `domain_mask like '%PRICE%'` binnen één batch.
+
+> Important business rule discovered
+> Met percentage-only drempels (1%) kan een kleine koppeling nooit automatisch creëren (1% van 10 = 0,1);
+> per leverancier het percentage verhogen. Vier-ogen wordt bewust nergens afgedwongen (herroeping 2026-09-20).
+
+## 16. Aanvullingen uit stap 3g (geïmplementeerd, hoofdsessie akkoord)
+
+- Pass E4 (`IssueAggregationService`) draait tussen E3 en E5 en ook op het blokkeerpad: koppelt issuerijen aan hun
+  groep, hertelt de voorbeelden, past de drempels toe, schrijft bulkmeldingen en precies één
+  `ROW_ISSUE_RECORDING_CAPPED` per batch+foutcode (idempotent via `signature = 'CODE=<foutcode>'`; de passen
+  schrijven die melding niet meer zelf).
+- `import_issue_group.occurrence_count` = het WERKELIJKE totaal (elke detectiepass telt elk voorval per foutsignatuur
+  op in dezelfde transactie als haar issuerijen); `recorded_sample_count` = herteld uit de gekoppelde rijen. Elke
+  bewaarde voorbeeldrij die bij een groep hoort draagt `issue_group_id` (invariant voor 3h: `occurrence_count` +
+  aantal niet-gegroepeerde rijen per foutcode = werkelijk totaal; getest).
+- Bulkincident uitsluitend via percentage: `occurrence × 100 > bulk_incident_share_percent × scope_record_count`;
+  exact op de grens niet overschreden. Groep vanaf 10 gelijke signaturen (technische drempel, vast aantal).
+  Zonder bruikbare scope (onbekend of 0): geen bulk, wel groep met het werkelijke aantal.
+- Scope: GENERIC = `raw_record_count − filtered_out_count`; PRICE = aantal uitgevoerde prijsvergelijkingen;
+  IDENTITY = `count(distinct row_number)` in `import_candidate_reference`.
+- Signaturen (kolom `import_row_issue.signature`, 004-12b): GENERIC `FIELD=<logisch veld>`; PRICE
+  `COMPONENT=<code>|DIRECTION=UP|DOWN` (richting = eerste overschreden referentie); IDENTITY
+  `TYPE=<referentietype>|KIND=CHANGED|REMOVED|REUSED|AMBIGUOUS|DUPLICATE`. `dominant_factor`/`pattern_description`
+  blijven NULL (A20).
+- `BULK_PRICE_INCIDENT` (BLOCKING/PRICE/DELIVERY) en `BULK_IDENTITY_INCIDENT` (CRITICAL/IDENTITY_REFERENCE/DELIVERY)
+  komen NAAST de individuele meldingen (R-REF-07); GENERIC-groepen boven de grens krijgen enkel
+  `is_bulk_incident=true`. Groepen onder de drempel worden verwijderd, behalve als voorbeeldrijen weggelaten zijn
+  (`occurrence_count > recorded_sample_count`). Duplicate identiteiten krijgen nu ook groep + cap-melding.
+- Changesets: 004-12b (`signature` + index), 004-11e-import-batch-bulk-incident-count (`bulk_incident_count`),
+  004-10c (`bulk_incident_share_percent numeric(24,12) not null default 1`). Nieuw endpoint
+  `GET /batches/{id}/issue-groups`; `issueGroupId` op `/issues` (+ filter); `bulkIncidentCount` op `/batches/{id}`.
+- Tussenstand voor 3h: `BULK_PRICE_INCIDENT` (BLOCKING) en `BULK_IDENTITY_INCIDENT` (CRITICAL) laten via de 3a-logica
+  `validation_result=BLOCKING` ontstaan (batch blijft SCREENED); 3h-5 vervangt dit door `DeliveryEffect` (REVIEW).
+  `import_mutation.issue_group_id` wordt nog niet gevuld. Bekend latent volgordeprobleem in
+  `ReferenceIncidentTest.acceptBaselineWritesTheReferenceState...` (telt `catalog_reference_state` over alle
+  bibliotheken, gedeelde H2).

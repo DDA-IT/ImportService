@@ -1,5 +1,6 @@
 package be.dda.catalogimport.service.support;
 
+import be.dda.catalogimport.domain.DeviationDirection;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -131,6 +132,25 @@ public final class PriceDeviationEvaluator {
     public record Result(String componentCode, String fieldName, BigDecimal newAmount,
                          BigDecimal limitPercent, List<ReferenceOutcome> references, boolean exceeded,
                          String message, String expectedValue) {
+
+        /**
+         * De richting van de overschrijding: ligt het geleverde bedrag boven of onder de referentie
+         * die de grens overschrijdt? Bepaald op de <b>eerste overschreden</b> referentie — precies
+         * die referentie die ook vooraan in de melding staat, zodat melding en groepering hetzelfde
+         * verschijnsel beschrijven.
+         * <p>
+         * De richting hoort bij de signatuur van een bulkprijsincident (R-PRI-14): honderd
+         * stijgingen zijn een prijsverhoging, honderd dalingen eerder een verkeerd geplaatste
+         * decimaal. Ze samen tellen zou juist de aanwijzing wegpoetsen.
+         *
+         * @return {@code null} wanneer er geen overschrijding is; er valt dan niets te groeperen
+         */
+        public DeviationDirection direction() {
+            return references.stream().filter(ReferenceOutcome::exceeded).findFirst()
+                    .map(outcome -> outcome.deviationPercent().signum() < 0
+                            ? DeviationDirection.DOWN : DeviationDirection.UP)
+                    .orElse(null);
+        }
     }
 
     private PriceDeviationEvaluator() {

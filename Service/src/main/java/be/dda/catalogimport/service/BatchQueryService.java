@@ -3,12 +3,15 @@ package be.dda.catalogimport.service;
 import be.dda.catalogimport.dao.ImportBatchRepository;
 import be.dda.catalogimport.dao.ImportMutationRepository;
 import be.dda.catalogimport.dao.ImportRowIssueRepository;
+import be.dda.catalogimport.dao.IssueGroupDao;
+import be.dda.catalogimport.dao.IssueGroupDao.GroupRow;
 import be.dda.catalogimport.domain.ImportBatch;
 import be.dda.catalogimport.domain.ImportMutation;
 import be.dda.catalogimport.domain.ImportRowIssue;
 import be.dda.catalogimport.domain.MutationActionType;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -42,6 +45,10 @@ public class BatchQueryService {
      * 3b (R-FLT-04). Samen met de bestaande tellers geldt
      * {@code raw = filteredOut + errorBeforeFilter + rejected + valid}. Zonder geconfigureerde
      * recordfilters staan beide op 0; {@code null} betekent zoals altijd "onbekend".
+     * <p>
+     * {@code bulkIncidentCount} is additief toegevoegd in bouwstap 3g (R-THR-04): het aantal
+     * foutgroepen dat als bulkincident aangemerkt is. De groepen zelf staan in
+     * {@code GET /batches/{id}/issue-groups}.
      */
     public record BatchDetail(long batchId, long deliveryId, long importLinkId, long definitionRevisionId,
                               Long taskRunId, int attemptNo, String status, String validationResult,
@@ -51,7 +58,7 @@ public class BatchQueryService {
                               Long filteredOutCount, Long errorBeforeFilterCount,
                               Long duplicateIdentityCount, Long newCount, Long changedCount,
                               Long unchangedCount, Long identityIncidentCount,
-                              Long contentMutationCount, String blockedCode,
+                              Long contentMutationCount, Long bulkIncidentCount, String blockedCode,
                               String blockedReason, String baselineAcceptedBy, Instant baselineAcceptedAt,
                               String baselineAcceptReason, Instant createdAt, String createdBy) {
 
@@ -67,7 +74,7 @@ public class BatchQueryService {
                     batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
                     batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
                     batch.getUnchangedCount(), batch.getIdentityIncidentCount(),
-                    batch.getContentMutationCount(), batch.getBlockedCode(),
+                    batch.getContentMutationCount(), batch.getBulkIncidentCount(), batch.getBlockedCode(),
                     batch.getBlockedReason(), batch.getBaselineAcceptedBy(), batch.getBaselineAcceptedAt(),
                     batch.getBaselineAcceptReason(), batch.getCreatedAt(), batch.getCreatedBy());
         }
@@ -112,29 +119,70 @@ public class BatchQueryService {
      * naast {@code ERROR}/{@code WARNING} ook {@code CRITICAL}, {@code BLOCKING} of {@code INFO}
      * zijn. {@code issueDomain}, {@code controlLevel}, {@code impactScope} en {@code handlingStatus}
      * zijn additief toegevoegd.
+     * <p>
+     * {@code issueGroupId} is additief toegevoegd in bouwstap 3g: de samenvatting waartoe dit
+     * probleem behoort, of {@code null} wanneer het los staat (minder dan tien gelijksoortige
+     * vaststellingen, of een probleem dat per definitie hoogstens één keer voorkomt).
      */
     public record IssueRow(long id, Long rowNumber, String issueCode, String fieldName, String severity,
                            String issueDomain, String controlLevel, String impactScope,
                            String handlingStatus, String sourceValue, String expectedValue,
-                           String message, Instant createdAt) {
+                           String message, Long issueGroupId, Instant createdAt) {
 
         private static IssueRow of(ImportRowIssue issue) {
             return new IssueRow(issue.getId(), issue.getRowNumber(), issue.getIssueCode(), issue.getFieldName(),
                     issue.getSeverity().name(), issue.getIssueDomain().name(), issue.getControlLevel().name(),
                     issue.getImpactScope().name(), issue.getHandlingStatus().name(), issue.getSourceValue(),
-                    issue.getExpectedValue(), issue.getMessage(), issue.getCreatedAt());
+                    issue.getExpectedValue(), issue.getMessage(), issue.getIssueGroupId(),
+                    issue.getCreatedAt());
+        }
+    }
+
+    /**
+     * Eén samenvatting van gelijksoortige problemen binnen deze batch (bouwstap 3g, R-THR-04).
+     * <p>
+     * <b>{@code occurrenceCount} is het werkelijke aantal</b>, niet het aantal bewaarde
+     * voorbeeldrijen: dat laatste staat in {@code recordedSampleCount}. Bij een miljoen identieke
+     * fouten worden er hoogstens {@code max-sample-rows-per-code} voorbeelden bewaard, maar het
+     * totaal blijft hier staan.
+     * <p>
+     * {@code sharePercent} is het aandeel in {@code scopeRecordCount}, de hoeveelheid die voor dit
+     * soort incident werkelijk gecontroleerd is. Beide zijn {@code null} wanneer die scope onbekend
+     * is; er wordt nooit een noemer geraden. {@code dominantFactor} en {@code patternDescription}
+     * blijven in fase 3 leeg: patroonherkenning van bulktransformaties is bewust uitgesteld.
+     */
+    public record IssueGroupRow(long id, String issueCode, String signature, String severity,
+                                String issueDomain, String controlLevel, String impactScope,
+                                String incidentKind, long occurrenceCount, int recordedSampleCount,
+                                Long scopeRecordCount, BigDecimal sharePercent, boolean bulkIncident,
+                                String priceComponentCode, String deviationDirection,
+                                BigDecimal dominantFactor, String referenceType,
+                                String patternDescription, Long firstRowNumber,
+                                Instant firstDetectedAt, Instant lastDetectedAt,
+                                String handlingStatus) {
+
+        private static IssueGroupRow of(GroupRow group) {
+            return new IssueGroupRow(group.id(), group.issueCode(), group.signature(), group.severity(),
+                    group.issueDomain(), group.controlLevel(), group.impactScope(),
+                    group.incidentKind(), group.occurrenceCount(), group.recordedSampleCount(),
+                    group.scopeRecordCount(), group.sharePercent(), group.bulkIncident(),
+                    group.priceComponentCode(), group.deviationDirection(), group.dominantFactor(),
+                    group.referenceType(), group.patternDescription(), group.firstRowNumber(),
+                    group.firstDetectedAt(), group.lastDetectedAt(), group.handlingStatus());
         }
     }
 
     private final ImportBatchRepository batches;
     private final ImportMutationRepository mutations;
     private final ImportRowIssueRepository issues;
+    private final IssueGroupDao issueGroups;
 
     public BatchQueryService(ImportBatchRepository batches, ImportMutationRepository mutations,
-                             ImportRowIssueRepository issues) {
+                             ImportRowIssueRepository issues, IssueGroupDao issueGroups) {
         this.batches = batches;
         this.mutations = mutations;
         this.issues = issues;
+        this.issueGroups = issueGroups;
     }
 
     /** @throws NotFoundException onbekende batch ({@code BATCH_NOT_FOUND}) */
@@ -160,15 +208,45 @@ public class BatchQueryService {
     }
 
     /**
-     * De regelproblemen van een batch, oplopend op bronregelnummer.
+     * De regelproblemen van een batch, oplopend op bronregelnummer, optioneel beperkt tot één
+     * foutgroep.
+     *
+     * @param issueGroupId enkel de voorbeeldrijen van deze groep; {@code null} voor alle problemen.
+     *                     Een onbekende groep levert een lege pagina op en geen fout: de groep kan
+     *                     bestaan hebben en bij een hertelling onder de groeperingsdrempel gevallen
+     *                     zijn
+     * @throws NotFoundException        onbekende batch
+     * @throws IllegalArgumentException ongeldige paginering
+     */
+    public PageResult<IssueRow> getIssues(long batchId, Long issueGroupId, Integer page, Integer size) {
+        requireBatch(batchId);
+        PageRequest pageRequest = pageRequest(page, size, Sort.by("rowNumber", "id"));
+        return PageResult.of(issueGroupId == null
+                        ? issues.findByBatchId(batchId, pageRequest)
+                        : issues.findByBatchIdAndIssueGroupId(batchId, issueGroupId, pageRequest),
+                IssueRow::of);
+    }
+
+    /**
+     * De foutgroepen van een batch, oplopend op id (= volgorde waarin ze ontstonden).
+     * <p>
+     * Deze lijst is bewust de plek waar de <b>werkelijke</b> aantallen staan: de probleemlijst zelf
+     * bevat per foutcode hoogstens een beperkt aantal voorbeeldrijen (R-ISS-03), dus een telling
+     * daarover zou systematisch te laag uitkomen.
      *
      * @throws NotFoundException        onbekende batch
      * @throws IllegalArgumentException ongeldige paginering
      */
-    public PageResult<IssueRow> getIssues(long batchId, Integer page, Integer size) {
+    public PageResult<IssueGroupRow> getIssueGroups(long batchId, Integer page, Integer size) {
         requireBatch(batchId);
-        return PageResult.of(issues.findByBatchId(batchId, pageRequest(page, size, Sort.by("rowNumber", "id"))),
-                IssueRow::of);
+        PageRequest pageRequest = pageRequest(page, size, Sort.by("id"));
+        long total = issueGroups.countByBatchId(batchId);
+        List<IssueGroupRow> content = issueGroups
+                .findPage(batchId, (int) pageRequest.getOffset(), pageRequest.getPageSize()).stream()
+                .map(IssueGroupRow::of).toList();
+        int totalPages = (int) ((total + pageRequest.getPageSize() - 1) / pageRequest.getPageSize());
+        return new PageResult<>(content, pageRequest.getPageNumber(), pageRequest.getPageSize(), total,
+                totalPages);
     }
 
     private void requireBatch(long batchId) {

@@ -234,6 +234,28 @@ public class ReferenceControlDao {
     }
 
     /**
+     * Hetzelfde aantal, maar uitgesplitst per referentietype: de basis voor de issuegroepen van pass
+     * E4 (R-REF-07). Een dubbele EAN en een dubbele CAB-ID zijn twee verschillende verschijnselen en
+     * worden nooit als één groep geteld.
+     */
+    public List<TypeCount> countDuplicateReferenceRowsByType(long batchId) {
+        return jdbc.query("select ref.reference_type, count(*), min(ref.row_number) "
+                        + "from import_candidate_reference ref "
+                        + "join (" + DUPLICATE_GROUPS + ") dup "
+                        + "  on dup.reference_type = ref.reference_type "
+                        + " and dup.value_normalised = ref.value_normalised "
+                        + "where ref.batch_id = ? and ref.is_empty = false "
+                        + "group by ref.reference_type order by ref.reference_type",
+                (resultSet, index) -> new TypeCount(resultSet.getString(1), resultSet.getLong(2),
+                        nullableLong(resultSet, 3)),
+                batchId, batchId);
+    }
+
+    /** Een aantal betrokken regels per referentietype, met het laagste betrokken regelnummer. */
+    public record TypeCount(String referenceType, long rowCount, Long firstRowNumber) {
+    }
+
+    /**
      * De betrokken regels, oplopend op regelnummer en begrensd tot {@code limit} (de voorbeeldcap per
      * foutcode): bij duizenden dubbele referenties mogen er geen duizenden issuerijen ontstaan. Het
      * volledige aantal blijft via {@link #countDuplicateReferenceRows(long)} en

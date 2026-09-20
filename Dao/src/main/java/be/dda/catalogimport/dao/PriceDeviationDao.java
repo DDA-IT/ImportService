@@ -217,6 +217,23 @@ public class PriceDeviationDao {
                         resultSet.getBigDecimal(5), resultSet.getBigDecimal(6)));
     }
 
+    /**
+     * Het aantal werkelijk uitgevoerde prijsvergelijkingen over de <b>volledige</b> batch: de scope
+     * waartegen een bulkprijsincident gemeten wordt (R-PRI-14/R-THR-04). Dezelfde selectie als
+     * {@link #findCandidates}, dus exact de vergelijkingen die de controle ook beoordeeld heeft —
+     * een nieuwe aanbieding zonder referentie en een ongewijzigd bedrag horen niet in de noemer.
+     * <p>
+     * Uit de database geteld en niet in het geheugen bijgehouden: zo klopt de scope ook wanneer de
+     * prijscontrolepass in twee doorlopen afgewerkt is.
+     */
+    public long countComparisons(long batchId, long importLinkId, int shortWindow, int longWindow) {
+        Long count = jdbc.query("select count(*) from (" + CANDIDATES + ") scope",
+                statement -> bind(statement, batchId, importLinkId, shortWindow, longWindow,
+                        0L, Long.MAX_VALUE),
+                resultSet -> resultSet.next() ? resultSet.getLong(1) : 0L);
+        return count == null ? 0L : count;
+    }
+
     /** Zie {@link MissingReferenceCounts}; telt over de volledige batch, niet over één chunk. */
     public MissingReferenceCounts countMissingReferences(long batchId, long importLinkId,
                                                          int shortWindow, int longWindow) {

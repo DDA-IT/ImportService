@@ -258,6 +258,22 @@ public class ImportDefinitionRevision {
     @Column(name = "max_rejected_share_percent", precision = 24, scale = 12)
     private BigDecimal maxRejectedSharePercent;
 
+    /**
+     * Vanaf welk <b>aandeel</b> van de gecontroleerde scope een reeks gelijksoortige vaststellingen
+     * één bulkincident wordt; default 1 procent (beslissingslog 20/09, ontwerp par. 15.2).
+     * <p>
+     * <b>Altijd een percentage, nooit een vast aantal.</b> Een vaste grens van honderd records maakt
+     * een koppeling met tweehonderd artikelen onbruikbaar (de helft van de catalogus mag afwijken
+     * zonder dat er iets opvalt) en een koppeling met een miljoen artikelen overgevoelig. Wie een
+     * kleine leverancier anders wil behandelen, zet het percentage voor die revisie hoger — dat is
+     * een zichtbare, geauditeerde keuze in plaats van een verborgen constante in de code.
+     * <p>
+     * De vergelijking gebeurt decimaal: {@code aantal × 100 > percentage × scope}; exact op de grens
+     * is niet overschreden.
+     */
+    @Column(name = "bulk_incident_share_percent", nullable = false, precision = 24, scale = 12)
+    private BigDecimal bulkIncidentSharePercent = BigDecimal.ONE;
+
     // --- Herkomst en audit --------------------------------------------------------------------
 
     /** Revisie waaruit deze revisie gekopieerd is (§14.14 "Gebaseerd op"). */
@@ -650,6 +666,15 @@ public class ImportDefinitionRevision {
 
     public void setMaxRejectedSharePercent(BigDecimal maxRejectedSharePercent) {
         this.maxRejectedSharePercent = maxRejectedSharePercent;
+    }
+
+    /** Nooit {@code null}: zonder percentage zou er geen bulkregel zijn (default 1). */
+    public BigDecimal getBulkIncidentSharePercent() {
+        return bulkIncidentSharePercent;
+    }
+
+    public void setBulkIncidentSharePercent(BigDecimal bulkIncidentSharePercent) {
+        this.bulkIncidentSharePercent = bulkIncidentSharePercent;
     }
 
     public ImportDefinitionRevision getBasedOnRevision() {

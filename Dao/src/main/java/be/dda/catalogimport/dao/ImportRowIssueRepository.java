@@ -9,5 +9,8 @@ public interface ImportRowIssueRepository extends JpaRepository<ImportRowIssue, 
 
     Page<ImportRowIssue> findByBatchId(Long batchId, Pageable pageable);
 
+    /** De bewaarde voorbeeldrijen van één foutgroep (bouwstap 3g). */
+    Page<ImportRowIssue> findByBatchIdAndIssueGroupId(Long batchId, Long issueGroupId, Pageable pageable);
+
     long countByBatchId(Long batchId);
 }

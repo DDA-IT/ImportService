@@ -369,7 +369,15 @@ class DeliveryStagingTest {
         // Alle betrokken regels worden geteld, ook al worden er maar vijf problemen bewaard.
         assertThat(outcome.duplicateIdentityCount()).isEqualTo(8L);
         assertThat(outcome.blockedReason()).contains("8 lines");
-        assertThat(rowIssues.countByBatchId(screened.batchId())).isEqualTo(5);
+        // Aangepast in bouwstap 3g (ontwerp par. 9 kondigde dit aan: "uniforme telling komt in 3g"):
+        // vijf voorbeeldrijen plus één cap-melding met het werkelijke aantal. Die melding hing er
+        // eerder niet aan, waardoor het totaal enkel in duplicate_identity_count stond en niet in de
+        // probleemlijst die de gebruiker leest.
+        assertThat(rowIssues.countByBatchId(screened.batchId())).isEqualTo(6);
+        assertThat(jdbc.queryForObject("select message from import_row_issue where batch_id = ? "
+                        + "and issue_code = ?", String.class, screened.batchId(),
+                DeliveryScreeningService.CODE_ROW_ISSUE_RECORDING_CAPPED))
+                .contains(DeliveryScreeningService.CODE_DUPLICATE_IDENTITY_IN_DELIVERY + "=8");
         assertThat(outcome.contentMutationCount()).isZero();
     }
 

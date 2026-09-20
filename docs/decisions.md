@@ -228,3 +228,57 @@ zich verhoudt tot `max_critical_records` (design R-THR-05: default 0 ⇒ leverin
 niet "blokkeren"; (c) hoe `validation_result` en mutatiestatussen (AWAITING_APPROVAL) daarop reageren.
 
 **Bron:** mens / `docs/design/fase3-rules-design.md` §9, §13
+
+---
+
+## 2026-09-20 — Fase 3: eerste vastlegging van een kritieke referentie op een bestaande aanbieding
+
+**Vraag:** §14.23.3 zegt dat ook een nieuwe referentie (EAN/PIM/CAB) op een bestaand artikel standaard de
+kritieke beoordelingsroute volgt; ontwerp R-REF-06 laat de eerste vastlegging toe. Wat geldt?
+
+**Beslissing:** Optie A, ZONDER schakelaar: de eerste vastlegging van een referentie op een bestaande aanbieding
+is geen incident zolang de waarde niet al bij een andere aanbieding in dezelfde bibliotheek actief is (zoals
+3f al implementeert). Komt het massaal voor (bv. referentiekolom voor het eerst aangezet), dan vangt de bulkregel
+(100 records of 1% van de scope, R-THR-04) het op als één `BULK_IDENTITY_INCIDENT` ⇒ review + vier-ogen.
+Er komt GEEN per-revisie schakelaar `reference_first_binding_requires_approval` (stap 3h-8 vervalt); strenger
+maken kan later additief.
+
+**Bron:** mens / `business-analyse-leveranciersbibliotheken.md` §14.23.3, §16.2; design `fase3-rules-design.md` §14
+
+---
+
+## 2026-09-20 — Fase 3: drempels zijn altijd een percentage (geen vaste aantallen)
+
+**Vraag:** Het ontwerp kende vaste aantallen (100 nieuwe aanbiedingen, 100 records ter beoordeling,
+`max_rejected_records`, bulkincident vanaf 100). Kleine koppelingen worden daar onbruikbaar door.
+
+**Beslissing (mens):** Alle drempels zijn instelbare parameters per revisie/leverancier en ALTIJD een percentage
+van de omvang ("altijd een percentage-koppeling"), nooit een vast aantal. Concreet: (a) creatiedrempel =
+`creation_threshold_share_percent` (default 1); (b) records ter beoordeling (kritieke lijnen + vastgehouden
+identiteitsincidenten) = nieuw `max_critical_share_percent` (default 1) — boven dit percentage van de records in
+scope stopt de hele levering (`BLOCKED`), daaronder is het `REVIEW_REQUIRED`; (c) verworpen regels =
+`max_rejected_share_percent` (default niet geconfigureerd = `null`); (d) bulkincident = nieuw
+`bulk_incident_share_percent` (default 1). De kolommen `creation_threshold_absolute`, `max_critical_records` en
+`max_rejected_records` blijven bestaan (geen hernoeming/verwijdering) maar worden NIET meer gebruikt. Vergelijking
+altijd decimaal: `aantal × 100 > percentage × scope`, exact op de grens is niet overschreden. Het minimum van 10
+gelijke fouten om een issuegroep te vormen is een technische groeperingsdrempel (geen leveringsdrempel) en blijft.
+Bij een kleine koppeling zet de beheerder het percentage per leverancier hoger.
+
+**Bron:** mens / `docs/design/fase3-rules-design.md` §1.7, §15
+
+---
+
+## 2026-09-20 — Fase 3: vier-ogen (twee verschillende gebruikers) is NOOIT vereist
+
+**Vraag:** Het beslissingsblok van 2026-09-19 vereiste een tweede naam (`approvedBy`) bij accept-baseline voor een
+bulkincident, wachtende creaties of een initialisatie (§16.1, §14.23.7, §16.8).
+
+**Beslissing (mens):** "2 gebruikers moet nooit": een goedkeuring door twee verschillende gebruikers wordt
+nergens afgedwongen. Dit HERROEPT het beslissingsblok "Fase 3: vier-ogen bij accept-baseline zonder
+authenticatie" (2026-09-19) en wijkt bewust af van businessanalyse §16.8 en §14.23.7. Gevolg: `approvedBy`,
+`baseline_approved_by` en de 409 `FOUR_EYES_APPROVAL_REQUIRED` komen er niet. Een review blijft bestaan als
+status (`REVIEW_REQUIRED`, mutaties `AWAITING_APPROVAL`), maar één bevoegde persoon (`acceptedBy` + verplichte
+reden, niet `system`) kan die afronden. Risico dat de mens bewust neemt: één persoon kan een bulkcreatie of een
+initialisatie goedkeuren zonder tweede controle. Strenger maken kan later additief.
+
+**Bron:** mens / afwijking van `business-analyse-leveranciersbibliotheken.md` §16.1, §16.8, §14.23.7

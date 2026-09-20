@@ -728,3 +728,61 @@ alter table import_mutation add constraint ck_import_mutation_marker check (
 --rollback alter table import_mutation drop column before_reference_value;
 --rollback alter table import_mutation drop column reference_type;
 --rollback alter table import_mutation alter column action_type set data type varchar(20);
+
+-- =============================================================================================
+-- Bouwstap 3g: groepering van gelijksoortige problemen en bulkincidenten (ontwerp fase 3 par. 2
+-- sub-changeset 004-4 - de tabel bestaat al sinds 3a en wordt nu gevuld -, par. 3.1 pass E4,
+-- R-THR-04, R-ISS-03, R-PRI-14, R-REF-07). De reeds uitgevoerde changesets hierboven blijven
+-- ongewijzigd; enkel additieve kolommen komen erbij.
+-- =============================================================================================
+
+--changeset catalogimport:004-12b-import-row-issue-signature
+--comment De foutsignatuur van een issuerij, zodat pass E4 set-based kan groeperen (ontwerp fase 3 par. 3.2, R-THR-04).
+
+-- Waarom deze kolom bestaat: de groepering moet set-based gebeuren (miljoenen rijen, geen
+-- groepering in het geheugen). Voor een gewone foutgroep zou (issue_code, field_name) volstaan,
+-- maar voor een prijs- of identiteitsincident bestaat de signatuur uit gegevens die NIET op de
+-- issuerij staan (prijscomponent + richting, referentietype + soort incident). Die in SQL
+-- herberekenen zou de financiële en de identiteitsregel een tweede keer implementeren. De
+-- signatuur wordt daarom vastgelegd op het moment van vaststellen, net als ernst en domein
+-- (R-ISS-02), en pass E4 doet nog uitsluitend een join.
+--
+-- Nullable: een probleem dat per definitie hoogstens één keer voorkomt (een blokkade van de
+-- volledige levering) hoort bij geen enkele groep. NULL is daar "hoort nergens bij", nooit "nog
+-- niet bepaald".
+alter table import_row_issue add column signature varchar(300);
+
+create index idx_import_row_issue_signature on import_row_issue (batch_id, issue_code, signature);
+
+--rollback drop index idx_import_row_issue_signature;
+--rollback alter table import_row_issue drop column signature;
+
+--changeset catalogimport:004-11e-import-batch-bulk-incident-count
+--comment Aantal vastgestelde bulkincidenten van deze batch (ontwerp fase 3 par. 2 004-11, R-THR-04).
+
+-- Nullable zoals elke andere teller: NULL betekent "niet vastgesteld" (lopende of technisch
+-- mislukte batch), nooit stil 0. De overige 004-11-tellers (critical_issue_count, warning_count,
+-- awaiting_approval_count) horen bij bouwstap 3h en komen daar onder hun eigen id.
+alter table import_batch add column bulk_incident_count bigint;
+
+--rollback alter table import_batch drop column bulk_incident_count;
+
+--changeset catalogimport:004-10c-import-definition-revision-bulk-share
+--comment Bulkincident als percentage van de gecontroleerde scope, per revisie (beslissingslog 20/09, ontwerp par. 15.2).
+
+-- Beslissing van de mens (20/09): elke drempel is ALTIJD een percentage van de omvang en nooit een
+-- vast aantal. Een vaste grens van honderd records maakt een koppeling met tweehonderd artikelen
+-- onbruikbaar en een koppeling met een miljoen artikelen overgevoelig. Wie een kleine leverancier
+-- anders wil behandelen, zet dit percentage hoger: een zichtbare, geauditeerde keuze per revisie in
+-- plaats van een verborgen constante in de code.
+--
+-- De bestaande absolute kolommen (creation_threshold_absolute, max_critical_records,
+-- max_rejected_records) worden NIET hernoemd en NIET verwijderd: dat zou een contractbreuk zijn op
+-- een reeds uitgevoerde changeset. Ze blijven staan en worden niet meer gebruikt.
+--
+-- not null met default 1: zonder percentage zou er geen bulkregel bestaan, en een NULL-drempel die
+-- stilzwijgend "nooit bulk" betekent, is precies het soort onzichtbare uitschakeling dat vermeden
+-- moet worden.
+alter table import_definition_revision add column bulk_incident_share_percent numeric(24,12) not null default 1;
+
+--rollback alter table import_definition_revision drop column bulk_incident_share_percent;

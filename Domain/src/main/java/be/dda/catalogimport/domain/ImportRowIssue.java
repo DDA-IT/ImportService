@@ -84,13 +84,29 @@ public class ImportRowIssue {
     private ImpactScope impactScope = ImpactScope.RECORD;
 
     /**
-     * De groep waarin dit probleem samengevat is, of {@code null} zolang het los staat. Groeperen
-     * gebeurt pas in bouwstap 3g; de kolom en haar tabel bestaan hier al zodat die stap geen
-     * migratie van bestaande issuerijen nodig heeft. Bewust een losse sleutel en geen
-     * {@code @ManyToOne}: {@code import_issue_group} wordt set-based geschreven.
+     * De groep waarin dit probleem samengevat is, of {@code null} wanneer het los staat: minder dan
+     * tien gelijksoortige vaststellingen, of een probleem dat per definitie hoogstens één keer
+     * voorkomt. Bewust een losse sleutel en geen {@code @ManyToOne}: {@code import_issue_group}
+     * wordt set-based geschreven en gelezen.
+     * <p>
+     * <b>Het aantal van de groep is niet het aantal van deze rijen.</b> Per foutcode worden er
+     * hoogstens {@code max-sample-rows-per-code} voorbeeldrijen bewaard (R-ISS-03); het werkelijke
+     * aantal staat in {@code import_issue_group.occurrence_count}.
      */
     @Column(name = "issue_group_id")
     private Long issueGroupId;
+
+    /**
+     * De foutsignatuur waarop pass E4 groepeert: wat deze vaststelling gelijksoortig maakt aan een
+     * andere (foutcode + veld, of prijscomponent + richting, of referentietype + soort incident).
+     * {@code null} voor een probleem dat bij geen enkele groep hoort.
+     * <p>
+     * Ze wordt vastgelegd op het moment van vaststellen en niet later herleid: een deel ervan
+     * (richting van een prijsafwijking, soort referentie-incident) staat nergens anders als kolom,
+     * en het in SQL herberekenen zou de prijs- en identiteitsregel een tweede keer implementeren.
+     */
+    @Column(name = "signature", length = 300)
+    private String signature;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "handling_status", nullable = false, length = 30)
@@ -200,6 +216,11 @@ public class ImportRowIssue {
 
     public Long getIssueGroupId() {
         return issueGroupId;
+    }
+
+    /** @return de foutsignatuur, of {@code null} wanneer dit probleem bij geen groep hoort */
+    public String getSignature() {
+        return signature;
     }
 
     public IssueHandlingStatus getHandlingStatus() {

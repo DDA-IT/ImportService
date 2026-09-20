@@ -9,6 +9,7 @@ import be.dda.catalogimport.dao.CandidateStageDao.DuplicateRow;
 import be.dda.catalogimport.dao.CandidateStageDao.StageRow;
 import be.dda.catalogimport.dao.DeliveryFileRepository;
 import be.dda.catalogimport.dao.ImportBatchRepository;
+import be.dda.catalogimport.dao.IssueGroupDao;
 import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.dao.MutationDao.MutationContext;
 import be.dda.catalogimport.dao.PriceDeviationDao;
@@ -27,6 +28,7 @@ import be.dda.catalogimport.domain.Delivery;
 import be.dda.catalogimport.domain.DeliveryFile;
 import be.dda.catalogimport.domain.ImportBatch;
 import be.dda.catalogimport.domain.ImportBatchStatus;
+import be.dda.catalogimport.domain.IssueIncidentKind;
 import be.dda.catalogimport.domain.RowIssueSeverity;
 import be.dda.catalogimport.domain.TaskRun;
 import be.dda.catalogimport.domain.TaskRunStatus;
@@ -40,6 +42,8 @@ import be.dda.catalogimport.service.support.CsvRecordStreamer.ReadSummary;
 import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import be.dda.catalogimport.service.support.ImportMappingConfig;
 import be.dda.catalogimport.service.support.ImportMappingConfigFactory;
+import be.dda.catalogimport.service.support.IssueSignature;
+import be.dda.catalogimport.service.support.IssueTally;
 import be.dda.catalogimport.service.support.PriceDeviationEvaluator;
 import be.dda.catalogimport.service.support.PriceDeviationEvaluator.Reference;
 import be.dda.catalogimport.service.support.PriceDeviationEvaluator.ReferenceKind;
@@ -62,8 +66,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
-import java.util.TreeMap;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -91,9 +93,26 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li><b>Veel identieke regelfouten blokkeren niet.</b> Per foutcode worden hoogstens
  *       {@code catalogimport.screening.max-sample-rows-per-code} voorbeeldrijen bewaard (de laagste
  *       regelnummers, want er wordt in leesvolgorde gestreamd); de volledige aantallen per code
- *       blijven bewaard in één {@code ROW_ISSUE_RECORDING_CAPPED}-melding. Dat vervangt de
+ *       blijven bewaard in {@code import_issue_group} en in één
+ *       {@code ROW_ISSUE_RECORDING_CAPPED}-melding per foutcode. Dat vervangt de
  *       fase 2-blokkade {@code TOO_MANY_ROW_ISSUES}, die een technische logginglimiet was en geen
  *       businessoordeel (ontwerp fase 3, afwijking C).</li>
+ *   <li><b>Gelijksoortige vaststellingen worden samengevat</b> (fase 3g, pass E4, R-THR-04). Vanaf
+ *       tien gelijke foutsignaturen ontstaat er één {@code import_issue_group} met het
+ *       <b>werkelijke</b> aantal — niet het aantal bewaarde voorbeeldrijen. Overschrijdt dat aantal
+ *       het percentage {@code bulk_incident_share_percent} van de gecontroleerde scope (default 1%,
+ *       beslissingslog 20/09: elke drempel is altijd een percentage, nooit een vast aantal), dan is
+ *       het een <b>bulkincident</b>: één {@code BULK_PRICE_INCIDENT} (R-PRI-14) of één
+ *       {@code BULK_IDENTITY_INCIDENT} (R-REF-07) <i>naast</i> de individuele meldingen, die
+ *       onverkort blijven bestaan. Een gewone foutgroep krijgt geen extra foutcode, enkel
+ *       {@code is_bulk_incident} op de groep.</li>
+ *   <li><b>Tussenstand van bouwstap 3g.</b> {@code validation_result} wordt hier nog steeds uit de
+ *       ernst van de issuerijen afgeleid (3a-logica). Een {@code BULK_PRICE_INCIDENT} (BLOCKING) of
+ *       {@code BULK_IDENTITY_INCIDENT} (CRITICAL) zet het eindoordeel daardoor op
+ *       {@code BLOCKING}, terwijl ontwerp par. 3.6/15.3 daarvoor {@code REVIEW_REQUIRED}
+ *       voorschrijft. Dat is een bewuste tussenstand: de herziening van {@code validation_result}
+ *       (en van de mutatiestatussen) hoort bij bouwstap 3h en wordt hier niet geraden. De
+ *       batchstatus zelf verandert niet: een bulkincident blokkeert de verwerking niet.</li>
  *   <li><b>Recordfilters bepalen de importscope</b> (fase 3, R-FLT-01..R-FLT-04). Ze draaien
  *       onmiddellijk na het parsen en vóór identiteit, prijs en referenties; een record dat buiten de
  *       scope valt krijgt geen enkele verdere controle en telt in {@code filtered_out_count} — dat is
@@ -188,6 +207,13 @@ public class DeliveryScreeningService {
     /** Standaardaantal bewaarde voorbeeldrijen per foutcode (ontwerp fase 3, R-ISS-03). */
     public static final int DEFAULT_MAX_SAMPLE_ROWS_PER_CODE = 200;
 
+    /**
+     * Het soort referentie-incident in de signatuur van een dubbele referentiewaarde binnen één
+     * levering (D1). Geen {@code ReferenceMatchResult}: D1 stelt geen match vast, ze stelt vast dat
+     * er niets vast te stellen valt.
+     */
+    private static final String DUPLICATE_INCIDENT_KIND = "DUPLICATE";
+
     /** Fase 2 kent geen volledigheidscontract; {@code completeness_proven} is altijd false (A6). */
     public static final String COMPLETENESS_REASON = "PHASE2_NO_COMPLETENESS_CONTRACT";
 
@@ -231,6 +257,7 @@ public class DeliveryScreeningService {
                            long fileByteSize, String fileSha256, Long expectedRecordCount,
                            Long expectedByteSize, SourceStructureConfig config,
                            ImportMappingConfig mappingConfig, PriceControl priceControl,
+                           BigDecimal bulkIncidentSharePercent,
                            ScreeningBlockedException configFailure) {
 
         private MutationContext mutationContext() {
@@ -274,8 +301,12 @@ public class DeliveryScreeningService {
         /** De kritieke koppelreferenties van dezelfde microbatch, in dezelfde transactie. */
         private final List<ReferenceRow> pendingReferences = new ArrayList<>();
         private final List<IssueRow> pendingIssues = new ArrayList<>();
-        /** Volledige aantallen per foutcode — ook boven de voorbeeldcap (R-ISS-03). */
-        private final Map<String, Long> issueCounts = new TreeMap<>();
+        /**
+         * Volledige aantallen per foutsignatuur (foutcode + logisch veld), de basis voor de
+         * issuegroepen van pass E4. Deze telling loopt door boven de voorbeeldcap: zij is de enige
+         * plek waar het werkelijke aantal van een verworpen regel nog bestaat.
+         */
+        private final IssueTally tally = new IssueTally();
         /** Aantal reeds bewaarde voorbeeldrijen per foutcode. */
         private final Map<String, Integer> recordedSamples = new HashMap<>();
         private long validCount;
@@ -283,8 +314,6 @@ public class DeliveryScreeningService {
         private long filteredOutCount;
         private long errorBeforeFilterCount;
         private long stagedCount;
-        private boolean sampleCapReached;
-        private boolean capNoticeRecorded;
         private Long rawRecordCount;
     }
 
@@ -303,6 +332,8 @@ public class DeliveryScreeningService {
     private final PriceDeviationDao deviations;
     private final ReferenceControlDao referenceControl;
     private final RowIssueDao rowIssues;
+    private final IssueGroupDao issueGroups;
+    private final IssueAggregationService aggregation;
     private final MutationDao mutations;
     private final TransactionTemplate transaction;
     private final int stageBatchSize;
@@ -316,7 +347,8 @@ public class DeliveryScreeningService {
                                     CandidatePriceDao candidatePrices,
                                     CandidateReferenceDao candidateReferences,
                                     PriceDeviationDao deviations, ReferenceControlDao referenceControl,
-                                    RowIssueDao rowIssues,
+                                    RowIssueDao rowIssues, IssueGroupDao issueGroups,
+                                    IssueAggregationService aggregation,
                                     MutationDao mutations, PlatformTransactionManager transactionManager,
                                     @Value("${catalogimport.screening.stage-batch-size:2000}") int stageBatchSize,
                                     @Value("${catalogimport.screening.max-sample-rows-per-code:"
@@ -335,6 +367,8 @@ public class DeliveryScreeningService {
         this.deviations = deviations;
         this.referenceControl = referenceControl;
         this.rowIssues = rowIssues;
+        this.issueGroups = issueGroups;
+        this.aggregation = aggregation;
         this.mutations = mutations;
         this.transaction = new TransactionTemplate(transactionManager);
         this.stageBatchSize = stageBatchSize > 0 ? stageBatchSize : CandidateStageDao.DEFAULT_BATCH_SIZE;
@@ -365,12 +399,10 @@ public class DeliveryScreeningService {
             verifyExpectedByteSize(context);
             ReadSummary summary = readAndStage(context, progress);
             progress.rawRecordCount = summary.rawRecordCount();
-            recordSampleCapNotice(context, progress);
             flush(context, progress);
             verifyRecordCount(context, progress);
             transaction.executeWithoutResult(status -> toMutating(context, progress));
         } catch (ScreeningBlockedException blocked) {
-            recordSampleCapNotice(context, progress);
             flushBeforeBlocking(context, progress);
             return transaction.execute(status -> block(context, Blockage.of(blocked), progress));
         } catch (RuntimeException | Error technical) {
@@ -469,6 +501,10 @@ public class DeliveryScreeningService {
                                    SourceStructureConfig config, ImportMappingConfig mappingConfig,
                                    PriceControl priceControl,
                                    ScreeningBlockedException configFailure) {
+        // Het bulkpercentage komt van dezelfde (lazy) revisie en wordt hier, binnen de openende
+        // transactie, exact één keer per batch gelezen - nooit per groep en nooit per chunk. Ook een
+        // hervatte batch leest het opnieuw, zodat pass E4 na een onderbreking hetzelfde oordeelt.
+        BigDecimal bulkSharePercent = batch.getDefinitionRevision().getBulkIncidentSharePercent();
         // De bibliotheekcode is scope, geen sleutelonderdeel (beslissingslog 18/09), maar wél de scope
         // waarbinnen een kritieke koppelreferentie uniek moet zijn (par. 14.23.3). Ze wordt hier, binnen
         // de openende transactie, exact één keer per batch van de (lazy) koppeling gelezen.
@@ -476,7 +512,8 @@ public class DeliveryScreeningService {
                 batch.getImportLink().getLibraryCode(), batch.getDefinitionRevision().getId(),
                 batch.getTaskRun() == null ? null : batch.getTaskRun().getId(), file.getArchiveReference(),
                 file.getByteSize(), file.getContentHash(), delivery.getExpectedRecordCount(),
-                delivery.getExpectedByteSize(), config, mappingConfig, priceControl, configFailure);
+                delivery.getExpectedByteSize(), config, mappingConfig, priceControl, bulkSharePercent,
+                configFailure);
     }
 
     // --- Stap 2: volledigheidscontroles ------------------------------------------------------
@@ -671,7 +708,9 @@ public class DeliveryScreeningService {
     private void addIssue(Context context, Progress progress, long rowNumber, String code, String field,
                           String sourceValue, String message, boolean beforeFilter) {
         RowIssueSeverity severity = ImportIssueCatalog.classify(code).severity();
-        progress.issueCounts.merge(code, 1L, Long::sum);
+        // Élk voorval telt, ook het voorval waarvan geen voorbeeldrij bewaard wordt: het aantal in de
+        // issuegroep is het werkelijke aantal en nooit het aantal bewaarde voorbeelden (R-ISS-03).
+        progress.tally.add(code, IssueSignature.generic(field), null, rowNumber, Instant.now());
         if (severity == RowIssueSeverity.ERROR) {
             if (beforeFilter && context.hasRecordFilters()) {
                 progress.errorBeforeFilterCount++;
@@ -681,7 +720,8 @@ public class DeliveryScreeningService {
         }
         int recorded = progress.recordedSamples.getOrDefault(code, 0);
         if (recorded >= maxSampleRowsPerCode) {
-            progress.sampleCapReached = true;
+            // Geen voorbeeldrij meer, maar de telling hierboven loopt door: het werkelijke aantal
+            // belandt in de issuegroep en de cap-melding komt uit pass E4.
             return;
         }
         progress.recordedSamples.put(code, recorded + 1);
@@ -690,24 +730,6 @@ public class DeliveryScreeningService {
         if (progress.pendingIssues.size() >= stageBatchSize) {
             flush(context, progress);
         }
-    }
-
-    /**
-     * Eén informatieve melding wanneer er voorbeeldrijen weggelaten zijn, met de <b>volledige</b>
-     * aantallen per foutcode. Zo blijft na een bestand met een miljoen identieke fouten nog steeds
-     * zichtbaar hoeveel het er werkelijk waren, zonder een miljoen rijen te bewaren. Dit blokkeert de
-     * levering niet (ontwerp fase 3, afwijking C).
-     */
-    private void recordSampleCapNotice(Context context, Progress progress) {
-        if (!progress.sampleCapReached || progress.capNoticeRecorded) {
-            return;
-        }
-        progress.capNoticeRecorded = true;
-        progress.pendingIssues.add(ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(),
-                null, CODE_ROW_ISSUE_RECORDING_CAPPED, null, null, null,
-                "rowIssueSamples: '" + maxSampleRowsPerCode + "' is the maximum number of example rows kept "
-                        + "per issue code; occurrences per code: " + describe(progress.issueCounts),
-                Instant.now()));
     }
 
     /**
@@ -759,6 +781,7 @@ public class DeliveryScreeningService {
     private void toMutating(Context context, Progress progress) {
         ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
         applyCounts(batch, progress);
+        persistStagingTallies(context, progress);
         batch.getDelivery().setActualRecordCount(progress.rawRecordCount);
         batch.setStatus(ImportBatchStatus.MUTATING);
         batches.saveAndFlush(batch);
@@ -789,8 +812,68 @@ public class DeliveryScreeningService {
         classifyCandidates(context);
         controlReferences(context);
         controlPrices(context);
+        aggregate(context);
         generateMutations(context);
         return transaction.execute(status -> complete(context));
+    }
+
+    // --- Stap E4: groeperen en bulkincidenten (ontwerp fase 3 par. 3.1, R-THR-04) ---------------
+
+    /**
+     * Vat de vastgestelde problemen samen per foutsignatuur en merkt bulkincidenten aan. Deze pass
+     * draait <b>na</b> alle detectiepassen — anders zou ze op halve aantallen oordelen — en
+     * <b>vóór</b> de mutatiegeneratie, zoals ontwerp par. 3.1 voorschrijft. Ze wijzigt geen enkele
+     * mutatie en geen enkele classificatie: het gedrag van E5 blijft exact zoals het was.
+     * <p>
+     * De scope per incidentsoort wordt hier bepaald, want alleen deze service kent de koppeling en
+     * het prijsbeleid. Elke bron wordt hoogstens één keer bevraagd, en alleen wanneer er werkelijk
+     * een groep van die soort bestaat: een levering zonder prijs- of referentiegroepen kost dus geen
+     * enkele extra query.
+     */
+    private IssueAggregationService.Aggregation aggregate(Context context) {
+        return aggregation.aggregate(context.batchId(), context.deliveryFileId(),
+                kind -> scopeFor(context, kind), context.bulkIncidentSharePercent(),
+                maxSampleRowsPerCode);
+    }
+
+    /**
+     * De hoeveelheid die voor deze incidentsoort werkelijk gecontroleerd is — de noemer van de
+     * 1%-regel (R-THR-04). {@code null} betekent "onbekend"; er wordt dan geen aandeel berekend en
+     * nooit een noemer geraden.
+     */
+    private Long scopeFor(Context context, IssueIncidentKind kind) {
+        return switch (kind) {
+            // De records die binnen de importscope vielen: een uitgefilterd record is nooit
+            // gecontroleerd en hoort dus niet in de noemer (R-FLT-02/R-FLT-04).
+            case GENERIC -> transaction.execute(status -> {
+                ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
+                if (batch.getRawRecordCount() == null) {
+                    return null;
+                }
+                long filteredOut = batch.getFilteredOutCount() == null ? 0L : batch.getFilteredOutCount();
+                return Math.max(0L, batch.getRawRecordCount() - filteredOut);
+            });
+            // De werkelijk uitgevoerde prijsvergelijkingen (R-PRI-14).
+            case PRICE -> context.priceControl() == null ? null
+                    : deviations.countComparisons(context.batchId(), context.importLinkId(),
+                            context.priceControl().shortWindow(), context.priceControl().longWindow());
+            // De kandidaten die een gemapte kritieke referentie dragen (R-REF-07).
+            case IDENTITY -> candidateReferences.countCandidatesWithReferences(context.batchId());
+            // De creatiedrempel hoort bij bouwstap 3h; hier wordt niets geraden.
+            case CREATION -> null;
+        };
+    }
+
+    /**
+     * Legt de aantallen per foutsignatuur van de stagingfase vast, in dezelfde transactie als de
+     * tellers van de batch. Dit is het enige moment waarop het werkelijke aantal van een verworpen
+     * bronregel nog bestaat: zo'n regel wordt niet gestaged, en per foutcode zijn er hoogstens
+     * {@code maxSampleRowsPerCode} voorbeeldrijen bewaard.
+     */
+    private void persistStagingTallies(Context context, Progress progress) {
+        if (!progress.tally.isEmpty()) {
+            issueGroups.accumulate(context.batchId(), progress.tally.drain());
+        }
     }
 
     // --- Stap D1: dezelfde kritieke referentie bij twee aanbiedingen in één levering -----------
@@ -835,16 +918,22 @@ public class DeliveryScreeningService {
                         row.valueNormalised(), row.referenceType(),
                         fieldName + ": '" + row.valueNormalised() + "' identifies more than one offer "
                                 + "in this delivery; every line involved is held because a repeated "
-                                + "critical reference is never resolved by keeping the last line", now));
+                                + "critical reference is never resolved by keeping the last line",
+                        IssueSignature.identity(row.referenceType(), DUPLICATE_INCIDENT_KIND), null,
+                        now));
             }
             rowIssues.insertBatch(issues);
-            if (duplicates > budget) {
-                rowIssues.insertBatch(List.of(ImportIssueCatalog.issue(context.batchId(),
-                        context.deliveryFileId(), null, CODE_ROW_ISSUE_RECORDING_CAPPED, null, null, null,
-                        "duplicateReferenceSamples: '" + maxSampleRowsPerCode + "' is the maximum number "
-                                + "of example rows kept per issue code; occurrences: "
-                                + CODE_DUPLICATE_REFERENCE_IN_DELIVERY + "=" + duplicates, now)));
+            // Het werkelijke aantal per referentietype, set-based geteld - niet het aantal bewaarde
+            // voorbeeldrijen. Eén melding over de voorbeeldcap volgt in pass E4, uniform voor alle
+            // passen (R-ISS-03).
+            IssueTally tally = new IssueTally();
+            for (ReferenceControlDao.TypeCount count
+                    : referenceControl.countDuplicateReferenceRowsByType(context.batchId())) {
+                tally.add(CODE_DUPLICATE_REFERENCE_IN_DELIVERY,
+                        IssueSignature.identity(count.referenceType(), DUPLICATE_INCIDENT_KIND), null,
+                        count.rowCount(), count.firstRowNumber(), now);
             }
+            issueGroups.accumulate(context.batchId(), tally.drain());
         });
     }
 
@@ -923,16 +1012,6 @@ public class DeliveryScreeningService {
             });
             from = chunkTo;
         }
-        if (pass.capped) {
-            transaction.executeWithoutResult(status -> rowIssues.insertBatch(List.of(
-                    ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(), null,
-                            CODE_ROW_ISSUE_RECORDING_CAPPED, null, null, null,
-                            "referenceIncidentSamples: '" + maxSampleRowsPerCode + "' is the maximum "
-                                    + "number of example rows kept per issue code; occurrences counted "
-                                    + "in this reference control run: " + CODE_IDENTITY_REFERENCE_INCIDENT
-                                    + "=" + pass.incidents + ", " + CODE_REFERENCE_LINK_PROPOSED + "="
-                                    + pass.proposed, Instant.now()))));
-        }
     }
 
     private void evaluateReferenceChunk(Context context, Map<String, String> fieldNames,
@@ -963,6 +1042,9 @@ public class DeliveryScreeningService {
                 MutationDao.IDENTITY_INCIDENT_CLASSIFICATION);
         referenceControl.insertIncidentMutations(context.mutationContext(), incidents, now);
         rowIssues.insertBatch(issues);
+        // De aantallen van deze chunk, in dezelfde transactie als haar hervatpunt: een hervatte pass
+        // telt daardoor nooit een incident dubbel.
+        issueGroups.accumulate(context.batchId(), pass.tally.drain());
     }
 
     private void evaluateRecord(Context context, Map<String, String> fieldNames,
@@ -987,15 +1069,20 @@ public class DeliveryScreeningService {
                 incidents.add(new IncidentMutation(rowNumber, incident.referenceType(),
                         incident.result().name(), incident.beforeValue(), incident.afterValue(),
                         message));
-                pass.incidents++;
+                // Élk incident telt in zijn groep, ook boven de voorbeeldcap: de groepering op
+                // type + soort incident is precies wat een bulktransformatie zichtbaar maakt
+                // (R-REF-07).
+                IssueSignature.Signature signature = IssueSignature.identity(incident.referenceType(),
+                        incident.result().name());
+                pass.tally.add(CODE_IDENTITY_REFERENCE_INCIDENT, signature, null, rowNumber, now);
                 if (pass.recordedIncidents >= maxSampleRowsPerCode) {
-                    pass.capped = true;
                     continue;
                 }
                 pass.recordedIncidents++;
                 issues.add(ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(),
                         rowNumber, CODE_IDENTITY_REFERENCE_INCIDENT, fieldName,
-                        incident.afterValue(), incident.result().name(), message, now));
+                        incident.afterValue(), incident.result().name(), message, signature, null,
+                        now));
             }
             return;
         }
@@ -1005,12 +1092,6 @@ public class DeliveryScreeningService {
         // R-ID-03: geen incident maar een vaststelling - deze nieuwe aanbieding hoort bij hetzelfde
         // artikel als een bestaande. De aanbieding wordt gewoon aangemaakt en de bestaande
         // aanbiedingsidentiteit blijft onaangeroerd.
-        pass.proposed++;
-        if (pass.recordedProposed >= maxSampleRowsPerCode) {
-            pass.capped = true;
-            return;
-        }
-        pass.recordedProposed++;
         ReferenceOutcome matching = outcome.references().stream()
                 .filter(reference -> outcome.proposedSourceStateId()
                         .equals(reference.matchedSourceStateId()))
@@ -1018,6 +1099,12 @@ public class DeliveryScreeningService {
         String fieldName = matching == null ? null
                 : fieldNames.getOrDefault(matching.referenceType(), matching.referenceType());
         String value = matching == null ? null : matching.afterValue();
+        pass.tally.add(CODE_REFERENCE_LINK_PROPOSED, IssueSignature.generic(fieldName), null,
+                rowNumber, now);
+        if (pass.recordedProposed >= maxSampleRowsPerCode) {
+            return;
+        }
+        pass.recordedProposed++;
         issues.add(ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(), rowNumber,
                 CODE_REFERENCE_LINK_PROPOSED, fieldName, value,
                 String.valueOf(outcome.proposedSourceStateId()),
@@ -1033,10 +1120,13 @@ public class DeliveryScreeningService {
         /** Reeds bewaarde voorbeeldrijen per code, inclusief die van een eerdere doorloop. */
         private long recordedIncidents;
         private long recordedProposed;
-        /** Vastgestelde aantallen in deze doorloop, ook boven de voorbeeldcap. */
-        private long incidents;
-        private long proposed;
-        private boolean capped;
+        /**
+         * De werkelijke aantallen per signatuur van de lopende chunk. Ze worden per chunk
+         * weggeschreven, samen met het hervatpunt: het totaal over de hele batch staat in
+         * {@code import_issue_group} en niet in dit object, zodat een hervatte pass niet met een
+         * deelaantal eindigt.
+         */
+        private final IssueTally tally = new IssueTally();
 
         private ReferencePassProgress(long recordedIncidents, long recordedProposed) {
             this.recordedIncidents = recordedIncidents;
@@ -1086,10 +1176,7 @@ public class DeliveryScreeningService {
             });
             from = chunkTo;
         }
-        transaction.executeWithoutResult(status -> {
-            recordMissingReferenceSummary(context, control);
-            recordPriceSampleCapNotice(context, pass);
-        });
+        transaction.executeWithoutResult(status -> recordMissingReferenceSummary(context, control));
     }
 
     private void evaluateChunk(Context context, PriceControl control, Map<String, String> fieldNames,
@@ -1114,20 +1201,27 @@ public class DeliveryScreeningService {
             if (!result.exceeded()) {
                 continue;
             }
-            pass.exceeded++;
+            // De groepering van R-PRI-14: zelfde component én zelfde richting. Élke overschrijding
+            // telt mee, ook boven de voorbeeldcap - anders zou een bulkincident afhangen van hoeveel
+            // voorbeelden er toevallig bewaard zijn.
+            IssueSignature.Signature signature = IssueSignature.price(result.componentCode(),
+                    result.direction());
+            pass.tally.add(PriceDeviationEvaluator.CODE_PRICE_DEVIATION_EXCEEDED, signature,
+                    control.severity(), candidate.rowNumber(), now);
             // Dezelfde voorbeeldcap als elke andere foutcode (R-ISS-03): boven de cap worden er geen
             // voorbeelden meer bewaard, maar het aantal blijft geteld.
             if (pass.recorded >= maxSampleRowsPerCode) {
-                pass.capped = true;
                 continue;
             }
             pass.recorded++;
             issues.add(ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(),
                     candidate.rowNumber(), PriceDeviationEvaluator.CODE_PRICE_DEVIATION_EXCEEDED,
                     result.fieldName(), result.newAmount().toPlainString(), result.expectedValue(),
-                    result.message(), control.severity(), now));
+                    result.message(), signature, control.severity(), now));
         }
         rowIssues.insertBatch(issues);
+        // De aantallen van deze chunk, in dezelfde transactie als haar hervatpunt.
+        issueGroups.accumulate(context.batchId(), pass.tally.drain());
     }
 
     /**
@@ -1160,32 +1254,15 @@ public class DeliveryScreeningService {
                 Instant.now())));
     }
 
-    /**
-     * Dezelfde informatieve melding als bij het stagen, maar voor de prijscontrolepass: hoeveel
-     * overschrijdingen er in deze doorloop vastgesteld zijn, ook al zijn er niet zoveel voorbeeldrijen
-     * bewaard. Het aantal is dat van <b>deze</b> doorloop; na een hervatting telt een tweede melding
-     * enkel het hervatte deel. Het definitieve, gegroepeerde totaal per foutcode komt in bouwstap 3g
-     * ({@code import_issue_group}).
-     */
-    private void recordPriceSampleCapNotice(Context context, PricePassProgress pass) {
-        if (!pass.capped) {
-            return;
-        }
-        rowIssues.insertBatch(List.of(ImportIssueCatalog.issue(context.batchId(),
-                context.deliveryFileId(), null, CODE_ROW_ISSUE_RECORDING_CAPPED, null, null, null,
-                "priceDeviationSamples: '" + maxSampleRowsPerCode + "' is the maximum number of example "
-                        + "rows kept per issue code; occurrences counted in this price control run: "
-                        + PriceDeviationEvaluator.CODE_PRICE_DEVIATION_EXCEEDED + "=" + pass.exceeded,
-                Instant.now())));
-    }
-
     /** Lopende stand van één prijscontrolepass; enkel binnen {@link #controlPrices(Context)}. */
     private static final class PricePassProgress {
         /** Aantal reeds bewaarde voorbeeldrijen met deze foutcode, inclusief een eerdere doorloop. */
         private long recorded;
-        /** Aantal vastgestelde overschrijdingen in deze doorloop, ook boven de voorbeeldcap. */
-        private long exceeded;
-        private boolean capped;
+        /**
+         * De werkelijke aantallen per signatuur van de lopende chunk; ze worden per chunk
+         * weggeschreven, samen met het hervatpunt.
+         */
+        private final IssueTally tally = new IssueTally();
 
         private PricePassProgress(long alreadyRecorded) {
             this.recorded = alreadyRecorded;
@@ -1278,6 +1355,8 @@ public class DeliveryScreeningService {
         batch.setIdentityIncidentCount(
                 classified.getOrDefault(CandidateClassification.IDENTITY_INCIDENT.name(), 0L));
         batch.setContentMutationCount(mutations.countContentMutations(context.batchId()));
+        // Pass E4 is hiervoor al gedraaid; hier wordt enkel geteld wat ze vastgesteld heeft.
+        batch.setBulkIncidentCount(issueGroups.countBulkIncidents(context.batchId()));
         ValidationResult validationResult = determineValidationResult(context.batchId(), false);
         batch.setValidationResult(validationResult);
         batch.setStatus(ImportBatchStatus.SCREENED);
@@ -1321,6 +1400,7 @@ public class DeliveryScreeningService {
         ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
         if (progress != null) {
             applyCounts(batch, progress);
+            persistStagingTallies(context, progress);
             if (progress.rawRecordCount != null) {
                 batch.getDelivery().setActualRecordCount(progress.rawRecordCount);
             }
@@ -1330,6 +1410,11 @@ public class DeliveryScreeningService {
             batch.setDuplicateIdentityCount(blockage.duplicateRowCount());
         }
         recordBlockageIssue(context, blockage);
+        // Ook een geblokkeerde levering krijgt haar samenvatting (pass E4). Zonder die stap zou een
+        // levering die op een structuurfout strandt, het werkelijke aantal van haar regelfouten
+        // verliezen: daarvan zijn immers hoogstens N voorbeeldrijen bewaard. Prijs- en
+        // referentiegroepen bestaan hier niet - die passen hebben nooit gedraaid.
+        batch.setBulkIncidentCount(aggregate(context).bulkIncidentCount());
         // Nul is hier geen aanname maar een vaststelling: een geblokkeerde levering genereert niets.
         batch.setContentMutationCount(mutations.countContentMutations(context.batchId()));
         ValidationResult validationResult = determineValidationResult(context.batchId(), true);
@@ -1379,6 +1464,14 @@ public class DeliveryScreeningService {
         int budget = (int) Math.max(0, Math.min(maxSampleRowsPerCode - alreadyRecorded, duplicateRowCount));
         List<DuplicateRow> duplicates = stage.findDuplicateRows(context.batchId(), budget);
         Instant now = Instant.now();
+        // Het werkelijke aantal betrokken regels, set-based vastgesteld - niet het aantal bewaarde
+        // voorbeeldrijen. Zonder deze telling zou een lezer van de issuegroepen bij duizend dubbele
+        // identiteiten het getal 200 zien staan.
+        IssueTally tally = new IssueTally();
+        tally.add(CODE_DUPLICATE_IDENTITY_IN_DELIVERY, IssueSignature.generic(null), null,
+                duplicateRowCount,
+                duplicates.isEmpty() ? null : duplicates.get(0).rowNumber(), now);
+        issueGroups.accumulate(context.batchId(), tally.drain());
         List<IssueRow> issues = duplicates.stream()
                 .map(duplicate -> ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(),
                         duplicate.rowNumber(), CODE_DUPLICATE_IDENTITY_IN_DELIVERY, null, null, null,
@@ -1414,6 +1507,9 @@ public class DeliveryScreeningService {
                 candidateReferences.deleteByBatchId(context.batchId());
                 stage.deleteByBatchId(context.batchId());
                 rowIssues.deleteByBatchId(context.batchId());
+                // Ná de issuerijen: de foreign key van import_row_issue wijst naar de groep, en een
+                // samenvatting van verdwenen problemen zou een verzonnen aantal zijn.
+                issueGroups.deleteByBatchId(context.batchId());
                 ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
                 batch.setStagedRowCount(0);
                 batch.setBlockedCode(CODE_SCREENING_FAILED);
@@ -1467,12 +1563,6 @@ public class DeliveryScreeningService {
                 batch.getStagedRowCount(), batch.getDuplicateIdentityCount(), batch.getNewCount(),
                 batch.getChangedCount(), batch.getUnchangedCount(), batch.getIdentityIncidentCount(),
                 batch.getContentMutationCount(), batch.getBlockedCode(), batch.getBlockedReason());
-    }
-
-    private static String describe(Map<String, Long> issueCounts) {
-        return issueCounts.entrySet().stream()
-                .map(entry -> entry.getKey() + "=" + entry.getValue())
-                .collect(Collectors.joining(", "));
     }
 
     private static String truncate(String value, int maxLength) {

@@ -474,6 +474,57 @@ class ScreeningSchemaTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    // --- Fase 3g, changesets 004-12b/004-11e/004-10c: signatuur, teller en bulkpercentage --------
+
+    /**
+     * De signatuur staat op de issuerij zelf, zodat de groepering set-based kan gebeuren. Nullable:
+     * een blokkade die per definitie hoogstens één keer voorkomt, hoort bij geen enkele groep — dat
+     * is "hoort nergens bij" en niet "nog niet bepaald".
+     */
+    @Test
+    void keepsTheIssueSignatureOnTheRowAndAllowsItToBeAbsent() {
+        Scenario s = scenario("SIG");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+
+        jdbc.update("insert into import_row_issue (batch_id, issue_code, message, signature, created_at) "
+                + "values (?, 'PRICE_UNREADABLE', 'met signatuur', 'FIELD=PRIJS', ?)",
+                batch.getId(), OffsetDateTime.now());
+        jdbc.update("insert into import_row_issue (batch_id, issue_code, message, created_at) "
+                + "values (?, 'SOURCE_FILE_EMPTY', 'zonder signatuur', ?)",
+                batch.getId(), OffsetDateTime.now());
+
+        assertThat(jdbc.queryForList("select signature from import_row_issue where batch_id = ? "
+                        + "order by issue_code", String.class, batch.getId()))
+                .containsExactly("FIELD=PRIJS", null);
+    }
+
+    /** De teller is nullable: {@code null} is "niet vastgesteld", nooit stil 0. */
+    @Test
+    void leavesTheBulkIncidentCountUnknownUntilItIsMeasured() {
+        Scenario s = scenario("BULKCNT");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+
+        assertThat(jdbc.queryForObject("select bulk_incident_count from import_batch where id = ?",
+                Long.class, batch.getId())).isNull();
+    }
+
+    /**
+     * Beslissing van de mens (20/09): drempels zijn altijd een percentage. De kolom is daarom
+     * {@code not null} met default 1 — een NULL-drempel zou de bulkdetectie stilzwijgend
+     * uitschakelen.
+     */
+    @Test
+    void givesEveryRevisionABulkIncidentSharePercentOfOneByDefault() {
+        Scenario s = scenario("BULKPCT");
+
+        assertThat(jdbc.queryForObject("select bulk_incident_share_percent "
+                        + "from import_definition_revision where id = ?", BigDecimal.class,
+                s.revision().getId())).isEqualByComparingTo(BigDecimal.ONE);
+        assertThatThrownBy(() -> jdbc.update("update import_definition_revision "
+                        + "set bulk_incident_share_percent = null where id = ?", s.revision().getId()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
     private void insertIssueGroup(Long batchId, String issueCode, String signature, long occurrences,
                                   int samples) {
         jdbc.update("insert into import_issue_group (batch_id, issue_code, signature, severity, "
