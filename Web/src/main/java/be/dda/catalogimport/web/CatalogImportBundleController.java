@@ -1,11 +1,14 @@
 package be.dda.catalogimport.web;
 
+import be.dda.catalogimport.domain.BundleDecisionKind;
 import be.dda.catalogimport.domain.MutationActionType;
 import be.dda.catalogimport.domain.MutationStatus;
 import be.dda.catalogimport.domain.PublicationBundleStatus;
 import be.dda.catalogimport.domain.PublicationTargetMode;
 import be.dda.catalogimport.service.BatchQueryService.MutationRow;
 import be.dda.catalogimport.service.BundleDecisionService;
+import be.dda.catalogimport.service.BundleDecisionService.DecisionFilter;
+import be.dda.catalogimport.service.BundleDecisionService.GroupDecisionView;
 import be.dda.catalogimport.service.BundleDecisionService.MutationDecisionView;
 import be.dda.catalogimport.service.BundleQueryService;
 import be.dda.catalogimport.service.BundleQueryService.BundleBatchRow;
@@ -28,10 +31,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Bediening en inzage van de Publicatiebundel (Fase 4, bouwstappen 4b en 4c): kandidaten opzoeken, een
+ * Bediening en inzage van de Publicatiebundel (Fase 4, bouwstappen 4b t/m 4d): kandidaten opzoeken, een
  * bundel aanmaken (idempotent op {@code bundleReference}), batches toevoegen/verwijderen, het
- * leesmodel, en het individueel goedkeuren/afkeuren van één mutatie met haar beslissingsregister. De
- * groepsactie, het bevriezen en het annuleren volgen in 4d-4f.
+ * leesmodel, het individueel goedkeuren/afkeuren van één mutatie met haar beslissingsregister, en de
+ * groepsactie over een gefilterde selectie. Het bevriezen en het annuleren volgen in 4e-4f.
  * <p>
  * <b>Statuscodes.</b> 404 {@code BUNDLE_NOT_FOUND}, {@code BATCH_NOT_FOUND},
  * {@code BATCH_NOT_IN_BUNDLE}, {@code MUTATION_NOT_IN_BUNDLE}; 409 met een stabiele {@code code}:
@@ -39,9 +42,10 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code BATCH_ALREADY_IN_BUNDLE}, {@code BATCH_NOT_BUNDLEABLE},
  * {@code BATCH_VALIDATION_NOT_ESTABLISHED}, {@code BATCH_VALIDATION_BLOCKING},
  * {@code BATCH_HAS_DECIDED_MUTATIONS}, {@code MUTATION_NOT_DECIDABLE},
- * {@code MUTATION_BLOCKED_BY_IDENTITY_INCIDENT}, {@code IDENTITY_DECISION_NOT_IN_SCOPE}; 400 bij een
- * ongeldige aanvraag (lege naam, lege of {@code system} als actor, ontbrekende {@code targetMode},
- * lege batchlijst, ontbrekende reden bij een afkeuring of een herziening, ongeldige paginering).
+ * {@code MUTATION_BLOCKED_BY_IDENTITY_INCIDENT}, {@code IDENTITY_DECISION_NOT_IN_SCOPE}; 400 met code
+ * {@code DECISION_FILTER_REQUIRED} bij een lege groepsfilter; 400 zonder code bij een andere ongeldige
+ * aanvraag (lege naam, lege of {@code system} als actor, ontbrekende {@code targetMode}, lege
+ * batchlijst, ontbrekende reden bij een afkeuring of een herziening, ongeldige paginering).
  * <p>
  * Autorisatie volgt in Fase 5: {@code createdBy}/{@code addedBy}/{@code removedBy}/{@code decidedBy}
  * zijn voorlopig requestvelden.
@@ -68,6 +72,16 @@ public class CatalogImportBundleController {
      * een herziening van een eerdere beslissing, en optioneel bij een gewone goedkeuring.
      */
     public record DecideMutationRequest(String decidedBy, String reason) {
+    }
+
+    /**
+     * Body van de groepsactie {@code POST /bundles/{id}/decisions} (bouwstap 4d). {@code decisionKind}
+     * is {@code APPROVE} of {@code REJECT}; {@code reason} is verplicht bij een afkeuring.
+     * {@code filter} moet minstens één veld dragen — een lege filter is 400
+     * {@code DECISION_FILTER_REQUIRED}, nooit "dan maar de hele bundel".
+     */
+    public record DecideGroupRequest(BundleDecisionKind decisionKind, String decidedBy, String reason,
+                                     DecisionFilter filter) {
     }
 
     private final PublicationBundleService bundleService;
@@ -186,5 +200,23 @@ public class CatalogImportBundleController {
                                 @PathVariable("mutationId") long mutationId,
                                 @RequestBody DecideMutationRequest request) {
         return decisionService.reject(bundleId, mutationId, request.decidedBy(), request.reason());
+    }
+
+    /**
+     * Keurt in één handeling alle mutaties van deze bundel goed of af die aan de filter voldoen
+     * (bouwstap 4d). Het antwoord draagt de ene beslissingsregel en het werkelijke aantal geraakte
+     * mutaties; raakte de actie niets, dan is {@code decisionId} {@code null} en {@code affectedCount}
+     * 0 — er is dan bewust géén regel geschreven.
+     * <p>
+     * De actie raakt nooit een {@code BLOCKED} mutatie, een identiteitsincident, de
+     * {@code IMPORT_MARKER} of een mutatie die al een beslissing draagt. Een herziening blijft daarom
+     * exclusief het individuele pad hierboven. Een herhaalde, identieke aanroep is veilig: ze vindt
+     * niets meer.
+     */
+    @PostMapping("/{bundleId}/decisions")
+    GroupDecisionView decideGroup(@PathVariable("bundleId") long bundleId,
+                                  @RequestBody DecideGroupRequest request) {
+        return decisionService.decideGroup(bundleId, request.decisionKind(), request.decidedBy(),
+                request.reason(), request.filter());
     }
 }

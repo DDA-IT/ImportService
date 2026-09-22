@@ -344,3 +344,22 @@ requestveld, zelfde validatie als `acceptedBy`; Fase 5 vervangt door Keycloak-id
 - `MutationRow` (bestaand contract `GET /batches/{id}/mutations`) kreeg vijf additieve velden
   (`batchId`, `decidedBy`, `decidedAt`, `decidedFromStatus`, `decisionId`) — één gedeelde weergave
   voor zowel de batch- als de bundelmutatielijst.
+
+## 13. Aanvullingen uit stap 4d (geïmplementeerd, hoofdsessie akkoord)
+
+- `decided_from_status` in de set-based update: `set decided_from_status = status, status = ?, ...` —
+  de `set`-lijst leest per rij de oude kolomwaarde (SQL-standaard); toekenning staat bewust eerst.
+  Geen beperking tot één bronstatus per aanroep; `PLANNED` en `AWAITING_APPROVAL` mogen samen in één
+  groepsactie, elk met de juiste herkomst.
+- Volgorde: tellen met exact dezelfde where-clausule als de update (gedeeld codepad) → bij 0 stoppen
+  zonder te schrijven → decision-regel invoegen met het definitieve `affected_count` → update. Na de
+  update wordt geverifieerd dat het aantal klopt; bij afwijking rolt de hele transactie terug (409
+  `MUTATION_NOT_DECIDABLE`).
+- Filtervalidatie op serviceniveau: ongeldige `status`/`actionType`/`decisionKind` worden geweigerd
+  (400), nooit stil 0 rijen. Lege filter → 400 `DECISION_FILTER_REQUIRED`, vóór het bundelslot.
+- `selectionFilter` (canonieke tekstrepresentatie) additief in het antwoord van de groepsactie.
+- Nieuwe `BadRequestException` (erft van `IllegalArgumentException`, dus bestaand gedrag blijft
+  byte-identiek) + handler in `ApiExceptionHandler` voor 400 met stabiele `code`.
+- Risico benoemd: één groepsactie kan met één aanroep en zonder tweede goedkeurder een zeer groot
+  aantal mutaties tegelijk goedkeuren (vier-ogen blijft herroepen, 20/09) — een grotere hefboom dan de
+  individuele beslissing uit 4c.
