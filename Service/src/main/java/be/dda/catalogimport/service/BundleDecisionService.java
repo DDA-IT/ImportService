@@ -27,7 +27,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Goedkeuren en afkeuren van mutaties binnen een Publicatiebundel (ontwerp fase 4 par. 1 R-DEC, par. 3
  * "Goedkeuringsalgoritme (individueel)" en "Groepsactie", par. 4 statusdiagram): per mutatie
  * ({@link #approve}/{@link #reject}, bouwstap 4c) of in groep ({@link #decideGroup}, bouwstap 4d). Het
- * bevriezen (4e) en het annuleren (4f) volgen apart.
+ * bevriezen staat in {@link BundleFreezeService} (4e), het annuleren in
+ * {@link BundleCancellationService} (4f).
  * <p>
  * Zelfde patroon als {@link PublicationBundleService} en {@code SourceStateBaselineService}: niet
  * {@code @Transactional}, één {@link TransactionTemplate} per aanroep, en

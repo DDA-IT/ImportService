@@ -6,6 +6,7 @@ import be.dda.catalogimport.domain.MutationStatus;
 import be.dda.catalogimport.domain.PublicationBundleStatus;
 import be.dda.catalogimport.domain.PublicationTargetMode;
 import be.dda.catalogimport.service.BatchQueryService.MutationRow;
+import be.dda.catalogimport.service.BundleCancellationService;
 import be.dda.catalogimport.service.BundleDecisionService;
 import be.dda.catalogimport.service.BundleDecisionService.DecisionFilter;
 import be.dda.catalogimport.service.BundleDecisionService.GroupDecisionView;
@@ -32,27 +33,33 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Bediening en inzage van de Publicatiebundel (Fase 4, bouwstappen 4b t/m 4e): kandidaten opzoeken, een
- * bundel aanmaken (idempotent op {@code bundleReference}), batches toevoegen/verwijderen, het
- * leesmodel, het individueel goedkeuren/afkeuren van één mutatie met haar beslissingsregister, de
- * groepsactie over een gefilterde selectie, en het bevriezen. Het annuleren volgt in 4f.
+ * Bediening en inzage van de Publicatiebundel (Fase 4, volledig afgerond met bouwstap 4f): kandidaten
+ * opzoeken, een bundel aanmaken (idempotent op {@code bundleReference}), batches toevoegen/verwijderen,
+ * het leesmodel, het individueel goedkeuren/afkeuren van één mutatie met haar beslissingsregister, de
+ * groepsactie over een gefilterde selectie, het bevriezen en het annuleren. Publiceren zelf (het
+ * daadwerkelijk wegschrijven naar ProDisWebbase/Pervasive) is Fase 5 en bestaat hier niet.
  * <p>
- * <b>Statuscodes.</b> 404 {@code BUNDLE_NOT_FOUND}, {@code BATCH_NOT_FOUND},
- * {@code BATCH_NOT_IN_BUNDLE}, {@code MUTATION_NOT_IN_BUNDLE}; 409 met een stabiele {@code code}:
- * {@code BUNDLE_REFERENCE_REUSED_WITH_DIFFERENT_SCOPE}, {@code BUNDLE_NOT_ASSEMBLING},
- * {@code BATCH_ALREADY_IN_BUNDLE}, {@code BATCH_NOT_BUNDLEABLE},
- * {@code BATCH_VALIDATION_NOT_ESTABLISHED}, {@code BATCH_VALIDATION_BLOCKING},
- * {@code BATCH_HAS_DECIDED_MUTATIONS}, {@code MUTATION_NOT_DECIDABLE},
+ * <b>Statuscodes.</b> 404 met een stabiele {@code code}: {@code BUNDLE_NOT_FOUND},
+ * {@code BATCH_NOT_FOUND}, {@code BATCH_NOT_IN_BUNDLE}, {@code MUTATION_NOT_IN_BUNDLE}. 409 met een
+ * stabiele {@code code}: {@code BUNDLE_REFERENCE_REUSED_WITH_DIFFERENT_SCOPE},
+ * {@code BUNDLE_NOT_ASSEMBLING} (batches toevoegen/verwijderen, elke individuele of groepsbeslissing, of
+ * een tweede bevriezing op een niet-{@code ASSEMBLING} bundel), {@code BATCH_ALREADY_IN_BUNDLE},
+ * {@code BATCH_NOT_BUNDLEABLE}, {@code BATCH_VALIDATION_NOT_ESTABLISHED},
+ * {@code BATCH_VALIDATION_BLOCKING}, {@code BATCH_HAS_DECIDED_MUTATIONS}, {@code MUTATION_NOT_DECIDABLE},
  * {@code MUTATION_BLOCKED_BY_IDENTITY_INCIDENT}, {@code IDENTITY_DECISION_NOT_IN_SCOPE},
  * {@code BUNDLE_EMPTY}, {@code BUNDLE_HAS_UNDECIDED_MUTATIONS},
  * {@code SOURCE_STATE_CHANGED_SINCE_SCREENING}, {@code BUNDLE_OFFER_CONFLICT},
- * {@code OFFER_ALREADY_IN_ANOTHER_BUNDLE}; 400 met code
+ * {@code OFFER_ALREADY_IN_ANOTHER_BUNDLE}, {@code BUNDLE_CONTENT_CHANGED_DURING_FREEZE} (freeze, in de
+ * praktijk onbereikbaar), {@code BUNDLE_NOT_CANCELLABLE} (cancel op elke status buiten
+ * {@code ASSEMBLING}/{@code FROZEN}, dus ook een tweede annulering), en
+ * {@code BUNDLE_CONTENT_CHANGED_DURING_CANCEL} (cancel, in de praktijk onbereikbaar). 400 met code
  * {@code DECISION_FILTER_REQUIRED} bij een lege groepsfilter; 400 zonder code bij een andere ongeldige
  * aanvraag (lege naam, lege of {@code system} als actor, ontbrekende {@code targetMode}, lege
- * batchlijst, ontbrekende reden bij een afkeuring of een herziening, ongeldige paginering).
+ * batchlijst, ontbrekende reden bij een afkeuring, een herziening, een bevriezing of een annulering,
+ * ongeldige paginering).
  * <p>
- * Autorisatie volgt in Fase 5: {@code createdBy}/{@code addedBy}/{@code removedBy}/{@code decidedBy}
- * zijn voorlopig requestvelden.
+ * Autorisatie volgt in Fase 5: {@code createdBy}/{@code addedBy}/{@code removedBy}/{@code decidedBy}/
+ * {@code frozenBy}/{@code cancelledBy} zijn voorlopig requestvelden.
  */
 @RestController
 @RequestMapping("/api/catalog-import/bundles")
@@ -96,17 +103,27 @@ public class CatalogImportBundleController {
     public record FreezeBundleRequest(String frozenBy, String reason) {
     }
 
+    /**
+     * Body van {@code POST /bundles/{id}/cancel} (bouwstap 4f). Beide velden zijn verplicht: een
+     * annulering is altijd van een mens ({@code cancelledBy}, nooit {@code system}) en draagt altijd
+     * een reden.
+     */
+    public record CancelBundleRequest(String cancelledBy, String reason) {
+    }
+
     private final PublicationBundleService bundleService;
     private final BundleDecisionService decisionService;
     private final BundleFreezeService freezeService;
+    private final BundleCancellationService cancellationService;
     private final BundleQueryService queries;
 
     public CatalogImportBundleController(PublicationBundleService bundleService,
                                          BundleDecisionService decisionService, BundleFreezeService freezeService,
-                                         BundleQueryService queries) {
+                                         BundleCancellationService cancellationService, BundleQueryService queries) {
         this.bundleService = bundleService;
         this.decisionService = decisionService;
         this.freezeService = freezeService;
+        this.cancellationService = cancellationService;
         this.queries = queries;
     }
 
@@ -254,6 +271,24 @@ public class CatalogImportBundleController {
     @PostMapping("/{bundleId}/freeze")
     BundleDetail freeze(@PathVariable("bundleId") long bundleId, @RequestBody FreezeBundleRequest request) {
         freezeService.freeze(bundleId, request.frozenBy(), request.reason());
+        return queries.getBundle(bundleId);
+    }
+
+    /**
+     * Annuleert de bundel (bouwstap 4f): vanuit {@code ASSEMBLING} <b>of</b> {@code FROZEN} (beslissingslog
+     * 22/09, keuze 4) — dit is de enige bundelactie die vanuit twee statussen mag. Laat elke nog
+     * niet-terminale mutatie van de actieve leden vervallen ({@code EXPIRED}), geeft die leden vrij (weer
+     * bruikbaar voor {@code accept-baseline} of een andere bundel) en sluit de bundel af
+     * ({@code CANCELLED}). Alles in één transactie, net als bevriezen.
+     * <p>
+     * Het antwoord is de volledige {@code BundleDetail} van de geannuleerde bundel.
+     * <p>
+     * 409 {@code BUNDLE_NOT_CANCELLABLE} vanuit elke andere status (ook een tweede annulering); 400 bij
+     * een ontbrekende {@code cancelledBy} of {@code reason}.
+     */
+    @PostMapping("/{bundleId}/cancel")
+    BundleDetail cancel(@PathVariable("bundleId") long bundleId, @RequestBody CancelBundleRequest request) {
+        cancellationService.cancel(bundleId, request.cancelledBy(), request.reason());
         return queries.getBundle(bundleId);
     }
 }

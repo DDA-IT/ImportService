@@ -9,6 +9,7 @@ import be.dda.catalogimport.domain.BundleDecisionKind;
 import be.dda.catalogimport.domain.MutationActionType;
 import be.dda.catalogimport.domain.MutationStatus;
 import be.dda.catalogimport.service.BadRequestException;
+import be.dda.catalogimport.service.BundleCancellationService;
 import be.dda.catalogimport.service.BundleDecisionService;
 import be.dda.catalogimport.service.BundleDecisionService.DecisionFilter;
 import be.dda.catalogimport.service.BundleDecisionService.GroupDecisionView;
@@ -45,7 +46,7 @@ class BundleGroupDecisionHttpTest {
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new CatalogImportBundleController(Mockito.mock(PublicationBundleService.class),
                         decisionService, Mockito.mock(BundleFreezeService.class),
-                        Mockito.mock(BundleQueryService.class)))
+                        Mockito.mock(BundleCancellationService.class), Mockito.mock(BundleQueryService.class)))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .build();
     }

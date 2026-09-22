@@ -21,8 +21,8 @@ import org.springframework.stereotype.Repository;
  * leverde de tellingen, bouwstap 4c de individuele beslissing ({@link #decideMutation}), bouwstap 4d de
  * groepsactie ({@link #countDecidable} + {@link #decideByFilter}), bouwstap 4e het bevriezen
  * ({@link #countUndecided}, {@link #findInBundleOfferConflicts}, {@link #findCrossBundleOfferConflicts},
- * {@link #approvePlanned}, {@link #computeBatchTotals}, {@link #computeContentHash});
- * {@code expireOpenMutations} volgt in 4f.
+ * {@link #approvePlanned}, {@link #computeBatchTotals}, {@link #computeContentHash}), bouwstap 4f het
+ * annuleren ({@link #countExpirableMutations}, {@link #expireOpenMutations}).
  */
 @Repository
 public class PublicationBundleDao {
@@ -559,6 +559,63 @@ public class PublicationBundleDao {
      * @param prefix {@code "m."} voor de getelde variant (die een alias heeft), leeg voor de
      *               {@code update} (die er geen kan hebben)
      */
+    // --- Bouwstap 4f: annuleren -------------------------------------------------------------------
+
+    /**
+     * De harde {@code where}-staart van het annuleren (R-FRZ-10). In tegenstelling tot
+     * {@link #GROUP_DECISION_TAIL} telt {@code READY_FOR_PUBLICATION} hier <b>wél</b> mee: een al
+     * goedgekeurde maar nog niet gepubliceerde mutatie is bij annulering evengoed nog niets waard
+     * geworden, en er is ook geen {@code decision_id is null}-voorwaarde — een eerder goedgekeurde
+     * mutatie draagt al een beslissing en moet toch vervallen. {@code REJECTED}, {@code SKIPPED},
+     * {@code RECORDED}, {@code BLOCKED} en elke {@code IDENTITY_REFERENCE_INCIDENT}-mutatie (elke
+     * andere status/actionType dan hier vermeld) blijven ongemoeid: "REJECTED blijft REJECTED, BLOCKED
+     * blijft BLOCKED, marker blijft RECORDED" (R-FRZ-10, ontwerp par. 6 stap 4f).
+     */
+    private static final String EXPIRABLE_TAIL = " %1$saction_type in ('CREATE','UPDATE') "
+            + "  and %1$sstatus in ('PLANNED','AWAITING_APPROVAL','READY_FOR_PUBLICATION') ";
+
+    /**
+     * Het aantal mutaties dat {@link #expireOpenMutations} zou raken — exact dezelfde
+     * {@code where}-clausule. De aanroeper telt eerst en schrijft dan pas de
+     * {@code publication_decision}-regel met haar definitieve {@code affected_count} (zelfde volgorde
+     * als bevriezen en de groepsactie).
+     */
+    public long countExpirableMutations(long bundleId) {
+        String sql = "select count(*) from import_mutation m "
+                + "join publication_bundle_batch pbb "
+                + "  on pbb.batch_id = m.batch_id and pbb.bundle_id = ? and pbb.active_marker is not null "
+                + "where" + EXPIRABLE_TAIL.formatted("m.");
+        Long count = jdbc.queryForObject(sql, Long.class, bundleId);
+        return count == null ? 0L : count;
+    }
+
+    /**
+     * Zet bij het annuleren van een bundel (R-FRZ-10, ontwerp par. 6 stap 4f) alle nog niet-terminale
+     * inhoudelijke mutaties van haar actieve batches op {@code EXPIRED}, met haar eigen
+     * {@code decided_by}/{@code decided_at}/{@code decided_from_status} en een verwijzing naar de
+     * {@code CANCEL}-beslissingsregel. Zelfde {@code set}-lijst van vijf kolommen als
+     * {@link #decideByFilter} — geen enkel financieel veld kan meeschrijven — en dezelfde
+     * gecorreleerde-{@code exists} in plaats van een {@code update ... join} (niet draagbaar tussen H2
+     * en PostgreSQL).
+     *
+     * @param decisionId de ene {@code CANCEL}-regel waarnaar alle geraakte rijen wijzen
+     * @return het werkelijke aantal geraakte rijen; de aanroeper vergelijkt dit met
+     *         {@link #countExpirableMutations} en rolt de hele annulering terug wanneer ze verschillen
+     */
+    public int expireOpenMutations(long bundleId, long decisionId, String cancelledBy, Instant at) {
+        String sql = "update import_mutation "
+                + "set decided_from_status = status, "
+                + "    status = 'EXPIRED', "
+                + "    decided_by = ?, "
+                + "    decided_at = ?, "
+                + "    decision_id = ? "
+                + "where" + EXPIRABLE_TAIL.formatted("")
+                + "  and exists (select 1 from publication_bundle_batch pbb "
+                + "              where pbb.batch_id = import_mutation.batch_id and pbb.bundle_id = ? "
+                + "                and pbb.active_marker is not null) ";
+        return jdbc.update(sql, cancelledBy, OffsetDateTime.ofInstant(at, ZoneOffset.UTC), decisionId, bundleId);
+    }
+
     private static void appendSelection(StringBuilder sql, List<Object> parameters, String prefix,
                                         MutationSelection selection) {
         if (selection == null) {

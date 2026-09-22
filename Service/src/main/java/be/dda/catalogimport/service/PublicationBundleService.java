@@ -25,7 +25,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * De Publicatiebundel: aanmaken, batches toevoegen/verwijderen, kandidaten opzoeken (ontwerp fase 4
- * par. 2-3, R-BND). Bouwstap 4b bevat bewust nog geen beslissingen, bevriezing of annulering (4c-4f).
+ * par. 2-3, R-BND). Beslissingen ({@link BundleDecisionService}, 4c-4d), bevriezing
+ * ({@link BundleFreezeService}, 4e) en annulering ({@link BundleCancellationService}, 4f) staan in hun
+ * eigen klassen.
  * <p>
  * Zelfde patroon als {@code SourceStateBaselineService}: niet {@code @Transactional}, één
  * {@link TransactionTemplate} per aanroep, {@link PublicationBundleRepository#findByIdForUpdate} als

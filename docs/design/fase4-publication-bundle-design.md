@@ -384,3 +384,19 @@ requestveld, zelfde validatie als `acceptedBy`; Fase 5 vervangt door Keycloak-id
   ondanks het bundelslot zouden verschillen (defensie in de diepte, in de praktijk onbereikbaar).
 - Bekend risico: een vergeten bevroren bundel blokkeert (via het cross-bundelconflict) een aanbieding
   voor elke andere bundel tot Fase 5 publiceert of 4f annuleert; er is nog geen signalering hiervoor.
+
+## 15. Aanvullingen uit stap 4f (geïmplementeerd, hoofdsessie akkoord) — Fase 4 compleet
+
+- Annuleren kreeg een eigen `BundleCancellationService` (niet samengevoegd met bevriezen): een
+  wezenlijk ander voorwaardenpatroon (twee toegestane bronstatussen ASSEMBLING/FROZEN i.p.v. één, en
+  batches vrijgeven i.p.v. sluiten).
+- Annuleren schrijft altijd een CANCEL-beslissingsregel, ook bij 0 geraakte mutaties (het is de enige
+  auditregel van de annulering zelf, anders dan AUTO_APPROVE_PLANNED dat bij 0 wordt overgeslagen).
+- Na annulering blijven oude mutaties terminaal EXPIRED (worden niet herleefd); alleen het
+  batchlidmaatschap bepaalt of de batch herbruikbaar is voor accept-baseline of een nieuwe bundel.
+- `Web/pom.xml`: `spring-boot-maven-plugin` kreeg een expliciete `mainClass`, wat het eerder gemelde
+  opstartprobleem (`Unable to find a suitable main class` bij `mvn spring-boot:run` zonder
+  installatiestap) verhelpt.
+- Fase 4 (Publicatiebundel) is hiermee compleet: bundel aanmaken/samenstellen (4a-4b), individueel en
+  in groep goedkeuren/afkeuren (4c-4d), bevriezen met conflict-/baselinecontrole (4e), annuleren met
+  vrijgave (4f).
