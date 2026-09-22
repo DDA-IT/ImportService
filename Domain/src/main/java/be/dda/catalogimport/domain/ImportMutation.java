@@ -169,6 +169,26 @@ public class ImportMutation {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    // --- Publicatiebundel-beslissing (fase 4, ontwerp par. 2, R-DEC) --------------------------
+
+    /**
+     * De vier decide-velden zijn samen leeg of samen gevuld ({@code ck_import_mutation_decision_fields})
+     * en worden daarom nooit los gezet — enkel via {@link #recordDecision}.
+     */
+    @Column(name = "decided_by", length = 100)
+    private String decidedBy;
+
+    @Column(name = "decided_at")
+    private Instant decidedAt;
+
+    /** De status vlak vóór de beslissing (bv. {@code PLANNED}, of de tegenovergestelde eindstatus bij een herziening). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "decided_from_status", length = 40)
+    private MutationStatus decidedFromStatus;
+
+    @Column(name = "decision_id")
+    private Long decisionId;
+
     protected ImportMutation() {
         // JPA
     }
@@ -383,5 +403,33 @@ public class ImportMutation {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public String getDecidedBy() {
+        return decidedBy;
+    }
+
+    public Instant getDecidedAt() {
+        return decidedAt;
+    }
+
+    public MutationStatus getDecidedFromStatus() {
+        return decidedFromStatus;
+    }
+
+    public Long getDecisionId() {
+        return decisionId;
+    }
+
+    /**
+     * Legt de vier beslisvelden in één keer consistent vast — nooit los, om
+     * {@code ck_import_mutation_decision_fields} nooit vanuit de applicatie te schenden.
+     */
+    public void recordDecision(String decidedBy, Instant decidedAt, MutationStatus decidedFromStatus,
+                               Long decisionId) {
+        this.decidedBy = decidedBy;
+        this.decidedAt = decidedAt;
+        this.decidedFromStatus = decidedFromStatus;
+        this.decisionId = decisionId;
     }
 }

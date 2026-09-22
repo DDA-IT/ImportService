@@ -297,3 +297,16 @@ requestveld, zelfde validatie als `acceptedBy`; Fase 5 vervangt door Keycloak-id
 > dit conflict alleen tussen verschillende bronnen. Maatregel: dezelfde conflictregel (R-FRZ-03/04)
 > geldt ook hier; bevriezen wordt geweigerd tot één kant is afgekeurd of de oudere bundel eerst
 > gepubliceerd is.
+
+## 10. Aanvullingen uit stap 4a (geïmplementeerd, hoofdsessie akkoord)
+
+- `content_hash` op `PublicationBundle` is gewone JPA (niet JDBC-only): één rij per bundel, geen
+  bulkschrijven, pas gevuld in 4e. Afwijking van het "hashkolommen nooit via JPA"-patroon, bewust
+  aanvaard voor deze ene rij-per-bundel kolom.
+- Samengestelde audit-methoden `recordFreeze`/`recordCancellation`/`recordRemoval` staan er al
+  (zelfde stijl als `ImportBatch.recordBaselineAcceptance`), zonder validatie/transactielogica —
+  die komt in 4e/4f.
+- `ck_publication_bundle_batch_marker` (active_marker enkel NULL of TRUE) toegevoegd voor
+  consistentie met `catalog_reference_state.active_marker`.
+- Index `idx_import_mutation_link_identity_status` naast de bestaande `idx_import_mutation_link_identity`
+  (004), nodig voor de conflictquery uit §3.
