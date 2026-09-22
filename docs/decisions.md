@@ -358,3 +358,25 @@ bewezen is — dat is geen principekeuze die nu al anders wordt vastgelegd.
 
 **Bron:** mens / analyserapport samenvoeging businessanalyses, vraag Q6 (BA1 §14.23 PSARF-matrix vs
 businessanalyse 2 §15.8)
+
+---
+
+## 2026-09-22 — Fase 4: ontwerp Publicatiebundel
+
+**Vraag:** Hoe worden mutaties die op "wacht op goedkeuring"/"gepland" staan samengebracht,
+individueel of in groep goedgekeurd/afgekeurd, en klaargezet voor publicatie (Fase 5)?
+
+**Beslissing:** Het ontwerp in `docs/design/fase4-publication-bundle-design.md` is bindend
+(changeset 005: `publication_bundle`, `publication_bundle_batch` op BATCHNIVEAU, geen
+`publication_bundle_id` op de mutatie; `publication_decision` als append-only beslissingsregister;
+vier additieve velden op `import_mutation`; wijzigingsgroep = `(batch_id, identity_hash)`;
+bouwstappen 4a-4f sequentieel). Vier eigen keuzes van de Denker bevestigd door de mens: (1) `PLANNED`-
+mutaties worden bij het bevriezen in bulk goedgekeurd op naam van de bevriezer, niet één voor één
+aangeklikt; (2) een bundel met één importkoppeling is toegestaan; (3) kritieke identiteitsincidenten
+(`BLOCKED`/`IDENTITY_REFERENCE_INCIDENT`) krijgen in Fase 4 geen goedkeur-/afkeurpad, blijven zichtbaar
+staan en beletten bevriezen niet — dat komt in een latere fase met schrijftoegang tot
+`catalog_reference_state`; (4) een bevroren bundel kan nog geannuleerd worden zolang Fase 5 niet
+begonnen is met publiceren.
+
+**Bron:** denker-zwaar / `businessanalyse-catalogimport.md` h. 17, 18, 22, 23, 25, 26;
+`docs/decisions.md` 2026-09-18 (goedkeurings-/publicatie-eenheid), 2026-09-20 (vier-ogen nooit)
