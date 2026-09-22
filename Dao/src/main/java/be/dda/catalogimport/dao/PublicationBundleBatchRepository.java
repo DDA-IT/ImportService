@@ -18,6 +18,9 @@ public interface PublicationBundleBatchRepository extends JpaRepository<Publicat
 
     List<PublicationBundleBatch> findByBundleId(Long bundleId);
 
+    /** De actieve lidmaatschappen van één bundel; de basis van haar mutatielijst (bouwstap 4c). */
+    List<PublicationBundleBatch> findByBundleIdAndActiveMarkerIsNotNull(Long bundleId);
+
     Page<PublicationBundleBatch> findByBundleId(Long bundleId, Pageable pageable);
 
     long countByBundleIdAndActiveMarkerIsNotNull(Long bundleId);

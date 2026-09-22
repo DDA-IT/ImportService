@@ -1,22 +1,30 @@
 package be.dda.catalogimport.service;
 
+import be.dda.catalogimport.dao.ImportMutationRepository;
 import be.dda.catalogimport.dao.PublicationBundleBatchRepository;
 import be.dda.catalogimport.dao.PublicationBundleDao;
 import be.dda.catalogimport.dao.PublicationBundleDao.MutationStatusCount;
 import be.dda.catalogimport.dao.PublicationBundleRepository;
+import be.dda.catalogimport.dao.PublicationDecisionRepository;
 import be.dda.catalogimport.domain.ImportBatch;
+import be.dda.catalogimport.domain.ImportMutation;
+import be.dda.catalogimport.domain.MutationActionType;
+import be.dda.catalogimport.domain.MutationStatus;
 import be.dda.catalogimport.domain.PublicationBundle;
 import be.dda.catalogimport.domain.PublicationBundleBatch;
 import be.dda.catalogimport.domain.PublicationBundleStatus;
+import be.dda.catalogimport.domain.PublicationDecision;
+import be.dda.catalogimport.service.BatchQueryService.MutationRow;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Leesmodel van de Publicatiebundel (ontwerp fase 4 par. 3 en 6, bouwstap 4b): records, geen
+ * Leesmodel van de Publicatiebundel (ontwerp fase 4 par. 3 en 6, bouwstappen 4b en 4c): records, geen
  * JPA-entiteiten, zelfde stijl als {@code BatchQueryService}.
  * <p>
  * Paginering: {@code page} 0-gebaseerd, {@code size} standaard {@value #DEFAULT_PAGE_SIZE} en begrensd
@@ -131,14 +139,39 @@ public class BundleQueryService {
         }
     }
 
+    /**
+     * Eén regel uit het append-only beslissingsregister van een bundel (bouwstap 4c, ontwerp par. 2
+     * 005-3). Een herziening voegt een <b>nieuwe</b> regel toe; de oude blijft hier staan, met haar
+     * eigen {@code previousStatus}/{@code newStatus}. {@code mutationId} is enkel gevuld bij
+     * {@code decisionScope = MUTATION}; {@code selectionFilter} enkel bij een groepsactie (4d).
+     */
+    public record DecisionRow(long id, long bundleId, Long mutationId, String decisionKind, String decisionScope,
+                              String selectionFilter, String previousStatus, String newStatus,
+                              long affectedCount, String decidedBy, Instant decidedAt, String reason) {
+
+        static DecisionRow of(PublicationDecision decision) {
+            return new DecisionRow(decision.getId(), decision.getBundle().getId(),
+                    decision.getMutation() == null ? null : decision.getMutation().getId(),
+                    decision.getDecisionKind().name(), decision.getDecisionScope().name(),
+                    decision.getSelectionFilter(), decision.getPreviousStatus(), decision.getNewStatus(),
+                    decision.getAffectedCount(), decision.getDecidedBy(), decision.getDecidedAt(),
+                    decision.getReason());
+        }
+    }
+
     private final PublicationBundleRepository bundles;
     private final PublicationBundleBatchRepository bundleBatches;
+    private final ImportMutationRepository mutations;
+    private final PublicationDecisionRepository decisions;
     private final PublicationBundleDao dao;
 
     public BundleQueryService(PublicationBundleRepository bundles, PublicationBundleBatchRepository bundleBatches,
+                              ImportMutationRepository mutations, PublicationDecisionRepository decisions,
                               PublicationBundleDao dao) {
         this.bundles = bundles;
         this.bundleBatches = bundleBatches;
+        this.mutations = mutations;
+        this.decisions = decisions;
         this.dao = dao;
     }
 
@@ -184,12 +217,69 @@ public class BundleQueryService {
         return PageResult.of(result, BundleBatchRow::of);
     }
 
+    /**
+     * De mutatielijst van een bundel: alle mutaties van haar <b>actieve</b> batchlidmaatschappen,
+     * oplopend op id, optioneel gefilterd (bouwstap 4c). Elke regel toont ook haar beslissing
+     * ({@code decidedBy}/{@code decidedAt}/{@code decidedFromStatus}/{@code decisionId}).
+     * <p>
+     * De bundel van een mutatie loopt bewust via haar batch (ontwerp par. 2): er is geen
+     * {@code publication_bundle_id} op {@code import_mutation}. Een batch waarvan het lidmaatschap
+     * verwijderd is, valt hier dus meteen weg.
+     *
+     * @param batchId enkel de mutaties van deze batch; een batch zonder actief lidmaatschap in deze
+     *                bundel levert een lege pagina op (en geen fout: het lidmaatschap kan net
+     *                verwijderd zijn)
+     * @throws NotFoundException        {@link PublicationBundleService#CODE_BUNDLE_NOT_FOUND}
+     * @throws IllegalArgumentException ongeldige paginering
+     */
+    public PageResult<MutationRow> getBundleMutations(long bundleId, MutationStatus status, Long batchId,
+                                                      MutationActionType actionType, Integer page, Integer size) {
+        requireBundle(bundleId);
+        PageRequest pageRequest = pageRequest(page, size, Sort.by("id"));
+        List<Long> batchIds = bundleBatches.findByBundleIdAndActiveMarkerIsNotNull(bundleId).stream()
+                .map(membership -> membership.getBatch().getId())
+                .filter(id -> batchId == null || id.equals(batchId))
+                .toList();
+        if (batchIds.isEmpty()) {
+            return new PageResult<>(List.of(), pageRequest.getPageNumber(), pageRequest.getPageSize(), 0L, 0);
+        }
+        Page<ImportMutation> result;
+        if (status == null && actionType == null) {
+            result = mutations.findByBatchIdIn(batchIds, pageRequest);
+        } else if (actionType == null) {
+            result = mutations.findByBatchIdInAndStatus(batchIds, status, pageRequest);
+        } else if (status == null) {
+            result = mutations.findByBatchIdInAndActionType(batchIds, actionType, pageRequest);
+        } else {
+            result = mutations.findByBatchIdInAndStatusAndActionType(batchIds, status, actionType, pageRequest);
+        }
+        return PageResult.of(result, MutationRow::of);
+    }
+
+    /**
+     * Het beslissingsregister van een bundel, chronologisch (bouwstap 4c). Append-only: een herziening
+     * staat hier als extra regel naast de beslissing die ze herziet, die nooit gewijzigd of verwijderd
+     * wordt.
+     *
+     * @throws NotFoundException        {@link PublicationBundleService#CODE_BUNDLE_NOT_FOUND}
+     * @throws IllegalArgumentException ongeldige paginering
+     */
+    public PageResult<DecisionRow> getBundleDecisions(long bundleId, Integer page, Integer size) {
+        requireBundle(bundleId);
+        PageRequest pageRequest = pageRequest(page, size, Sort.by("decidedAt", "id"));
+        return PageResult.of(decisions.findByBundleId(bundleId, pageRequest), DecisionRow::of);
+    }
+
     private PublicationBundle requireBundle(long bundleId) {
         return bundles.findById(bundleId).orElseThrow(() -> new NotFoundException(
                 PublicationBundleService.CODE_BUNDLE_NOT_FOUND, "Bundle " + bundleId + " not found"));
     }
 
     private static PageRequest pageRequest(Integer page, Integer size) {
+        return pageRequest(page, size, Sort.unsorted());
+    }
+
+    private static PageRequest pageRequest(Integer page, Integer size, Sort sort) {
         int number = page == null ? 0 : page;
         int requested = size == null ? DEFAULT_PAGE_SIZE : size;
         if (number < 0) {
@@ -198,6 +288,6 @@ public class BundleQueryService {
         if (requested < 1) {
             throw new IllegalArgumentException("size must be at least 1");
         }
-        return PageRequest.of(number, Math.min(requested, MAX_PAGE_SIZE));
+        return PageRequest.of(number, Math.min(requested, MAX_PAGE_SIZE), sort);
     }
 }

@@ -79,12 +79,26 @@ public class PublicationDecision {
     public PublicationDecision(PublicationBundle bundle, ImportMutation mutation, BundleDecisionKind decisionKind,
                                BundleDecisionScope decisionScope, long affectedCount, String decidedBy,
                                String reason) {
+        this(bundle, mutation, decisionKind, decisionScope, affectedCount, decidedBy, null, reason);
+    }
+
+    /**
+     * Zoals de constructor hierboven, maar met een expliciet beslismoment (bouwstap 4c, additief). De
+     * mutatie krijgt exact <b>hetzelfde</b> {@code decided_at} als haar beslissingsregel; anders
+     * zouden beide audits een paar microseconden uit elkaar liggen en zou een beslissing niet
+     * eenduidig aan haar regel te koppelen zijn op tijdstip. {@code null} laat {@link #onPersist} het
+     * moment bepalen, exact zoals voorheen.
+     */
+    public PublicationDecision(PublicationBundle bundle, ImportMutation mutation, BundleDecisionKind decisionKind,
+                               BundleDecisionScope decisionScope, long affectedCount, String decidedBy,
+                               Instant decidedAt, String reason) {
         this.bundle = bundle;
         this.mutation = mutation;
         this.decisionKind = decisionKind;
         this.decisionScope = decisionScope;
         this.affectedCount = affectedCount;
         this.decidedBy = decidedBy;
+        this.decidedAt = decidedAt;
         this.reason = reason;
     }
 

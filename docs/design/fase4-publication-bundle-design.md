@@ -327,3 +327,20 @@ requestveld, zelfde validatie als `acceptedBy`; Fase 5 vervangt door Keycloak-id
   om een N+1-queryprobleem per pagina te vermijden.
 - Accept-baseline-wacht gecontroleerd in zowel `prepare()` als `finish()` van
   `SourceStateBaselineService`, vóór elke schrijfactie.
+
+## 12. Aanvullingen uit stap 4c (geïmplementeerd, hoofdsessie akkoord)
+
+- Financiële onveranderlijkheid structureel afgedwongen: een beslissing schrijft via één JDBC-update
+  met precies vijf kolommen (`status`, `decided_by`, `decided_at`, `decided_from_status`,
+  `decision_id`), nooit via JPA `save()` van de volledige entiteit — zo kan `status_reason` of een
+  prijsveld nooit per ongeluk meeschrijven.
+- Reden bij approve: optioneel (constante `APPROVED_WITHOUT_REASON` als geen reden gegeven is, nooit
+  een lege tekst). Reden bij REJECT en bij elke herziening (ook approve→reject of terug): verplicht —
+  wie een al ondertekende beslissing omkeert, moet dat verantwoorden.
+- Dezelfde doelstatus met een andere beslisser: geen idempotentie, wél een nieuwe append-only
+  beslissingsregel (audit, geen vier-ogen-afdwinging — die blijft herroepen).
+- 404 `MUTATION_NOT_IN_BUNDLE` geldt zowel voor een onbekende mutatie als voor een mutatie zonder
+  actief lidmaatschap van déze bundel, om het bestaan van vreemde mutaties niet prijs te geven.
+- `MutationRow` (bestaand contract `GET /batches/{id}/mutations`) kreeg vijf additieve velden
+  (`batchId`, `decidedBy`, `decidedAt`, `decidedFromStatus`, `decisionId`) — één gedeelde weergave
+  voor zowel de batch- als de bundelmutatielijst.

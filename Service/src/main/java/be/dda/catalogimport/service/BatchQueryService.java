@@ -115,18 +115,30 @@ public class BatchQueryService {
      * toegevoegd in bouwstap 3f en zijn enkel gevuld op een {@code IDENTITY_REFERENCE_INCIDENT}: het
      * soort kritieke koppelreferentie en haar oude en nieuwe genormaliseerde waarde. Voor elke andere
      * mutatiesoort blijven ze {@code null}, precies zoals vóór 3f.
+     * <p>
+     * {@code batchId}, {@code decidedBy}, {@code decidedAt}, {@code decidedFromStatus} en
+     * {@code decisionId} zijn additief toegevoegd in bouwstap 4c (ontwerp fase 4 par. 2, R-DEC).
+     * Dezelfde regel wordt nu ook door de mutatielijst van een Publicatiebundel gebruikt — waar
+     * mutaties van meerdere batches door elkaar staan en {@code batchId} dus nodig is — zodat er
+     * <b>één</b> weergave van een mutatie bestaat en niet twee die uit elkaar kunnen groeien. De vier
+     * beslisvelden zijn samen leeg of samen gevuld ({@code ck_import_mutation_decision_fields}) en
+     * blijven {@code null} zolang er over deze mutatie niets beslist is. {@code decisionId} verwijst
+     * naar de <b>laatste</b> beslissing; het volledige, append-only verloop staat in
+     * {@code GET /bundles/{id}/decisions}.
      */
-    public record MutationRow(long id, String actionType, String targetDomain, String status,
+    public record MutationRow(long id, long batchId, String actionType, String targetDomain, String status,
                               String statusReason, String identitySupplier, String identitySupplierGroup,
                               String identitySupplierReference, String identityDiscountCode,
                               String identityDiscountState, String domainMask, BigDecimal beforeBasePrice,
                               BigDecimal afterBasePrice, String basePriceCurrency, String referenceType,
                               String beforeReferenceValue, String afterReferenceValue, Long sourceStateId,
                               Long sourceRowNumber, String resultSummary, String idempotencyKey,
-                              Instant createdAt) {
+                              Instant createdAt, String decidedBy, Instant decidedAt,
+                              String decidedFromStatus, Long decisionId) {
 
-        private static MutationRow of(ImportMutation mutation) {
-            return new MutationRow(mutation.getId(), mutation.getActionType().name(),
+        /** Package-private sinds 4c: {@code BundleQueryService} toont dezelfde regel. */
+        static MutationRow of(ImportMutation mutation) {
+            return new MutationRow(mutation.getId(), mutation.getBatch().getId(), mutation.getActionType().name(),
                     mutation.getTargetDomain().name(), mutation.getStatus().name(), mutation.getStatusReason(),
                     mutation.getIdentitySupplier(), mutation.getIdentitySupplierGroup(),
                     mutation.getIdentitySupplierReference(), mutation.getIdentityDiscountCode(),
@@ -135,7 +147,30 @@ public class BatchQueryService {
                     mutation.getBasePriceCurrency(), mutation.getReferenceType(),
                     mutation.getBeforeReferenceValue(), mutation.getAfterReferenceValue(),
                     mutation.getSourceStateId(), mutation.getSourceRowNumber(),
-                    mutation.getResultSummary(), mutation.getIdempotencyKey(), mutation.getCreatedAt());
+                    mutation.getResultSummary(), mutation.getIdempotencyKey(), mutation.getCreatedAt(),
+                    mutation.getDecidedBy(), mutation.getDecidedAt(),
+                    mutation.getDecidedFromStatus() == null ? null : mutation.getDecidedFromStatus().name(),
+                    mutation.getDecisionId());
+        }
+
+        /**
+         * Dezelfde regel met de zopas vastgelegde beslissing erop (bouwstap 4c). Alle overige velden —
+         * inclusief {@code beforeBasePrice}, {@code afterBasePrice}, {@code domainMask} en
+         * {@code statusReason} — worden ongewijzigd overgenomen: een beslissing verandert er niets
+         * aan, dus doet deze weergave dat ook niet.
+         * <p>
+         * Nodig omdat de beslissing met één gerichte {@code update} geschreven wordt en de
+         * JPA-entiteit daarna bewust niet opnieuw gelezen wordt (binnen dezelfde transactie nooit via
+         * JPA teruglezen wat via JDBC geschreven is).
+         */
+        MutationRow withDecision(String newStatus, String newDecidedBy, Instant newDecidedAt,
+                                 String newDecidedFromStatus, Long newDecisionId) {
+            return new MutationRow(id, batchId, actionType, targetDomain, newStatus, statusReason,
+                    identitySupplier, identitySupplierGroup, identitySupplierReference, identityDiscountCode,
+                    identityDiscountState, domainMask, beforeBasePrice, afterBasePrice, basePriceCurrency,
+                    referenceType, beforeReferenceValue, afterReferenceValue, sourceStateId, sourceRowNumber,
+                    resultSummary, idempotencyKey, createdAt, newDecidedBy, newDecidedAt, newDecidedFromStatus,
+                    newDecisionId);
         }
     }
 

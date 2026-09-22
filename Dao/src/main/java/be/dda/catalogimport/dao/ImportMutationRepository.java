@@ -2,6 +2,8 @@ package be.dda.catalogimport.dao;
 
 import be.dda.catalogimport.domain.ImportMutation;
 import be.dda.catalogimport.domain.MutationActionType;
+import be.dda.catalogimport.domain.MutationStatus;
+import java.util.Collection;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -23,4 +25,23 @@ public interface ImportMutationRepository extends JpaRepository<ImportMutation, 
      * één van de vier samen leeg/samen gevulde decide-velden, dus deze controle volstaat.
      */
     boolean existsByBatchIdAndDecisionIdIsNotNull(Long batchId);
+
+    // --- Mutatielijst van een Publicatiebundel (fase 4, bouwstap 4c) -------------------------------
+    //
+    // De bundel van een mutatie loopt via haar batch (ontwerp par. 2: lidmaatschap op BATCHNIVEAU,
+    // geen publication_bundle_id op de mutatie). De aanroeper bepaalt eerst de ACTIEVE batches van de
+    // bundel en geeft die verzameling hier mee. Vier expliciete afleidingen in plaats van één
+    // dynamisch opgebouwde query: de filtercombinaties liggen vast en zijn zo leesbaar en typeveilig,
+    // zonder SQL in de Service-laag.
+
+    Page<ImportMutation> findByBatchIdIn(Collection<Long> batchIds, Pageable pageable);
+
+    Page<ImportMutation> findByBatchIdInAndStatus(Collection<Long> batchIds, MutationStatus status,
+                                                  Pageable pageable);
+
+    Page<ImportMutation> findByBatchIdInAndActionType(Collection<Long> batchIds, MutationActionType actionType,
+                                                      Pageable pageable);
+
+    Page<ImportMutation> findByBatchIdInAndStatusAndActionType(Collection<Long> batchIds, MutationStatus status,
+                                                               MutationActionType actionType, Pageable pageable);
 }
