@@ -380,3 +380,18 @@ begonnen is met publiceren.
 
 **Bron:** denker-zwaar / `businessanalyse-catalogimport.md` h. 17, 18, 22, 23, 25, 26;
 `docs/decisions.md` 2026-09-18 (goedkeurings-/publicatie-eenheid), 2026-09-20 (vier-ogen nooit)
+
+---
+
+## 2026-09-22 — Frontend: stack en locatie
+
+**Vraag:** README.md meldt een gebruikersinterface als "nog niet aanwezig". Er is geen bestaand
+frontend-project en geen document dat een stack voorschrijft. Welke stack en waar in de repo?
+
+**Beslissing:** React + Vite + TypeScript, als volledig losstaand SPA-project in een nieuwe
+topniveau-map `Frontend/` (sibling van `Domain`/`Dao`/`Service`/`Web`), buiten de Maven-reactor.
+Praat uitsluitend via REST/JSON met de bestaande `Web`-module (lokaal poort 8081, zie
+`Web/src/main/resources/application-local.yml`). Geen Thymeleaf/server-side rendering, geen
+bundeling in de Maven-build.
+
+**Bron:** mens (expliciet gekozen na toelichting van de opties)
