@@ -19,6 +19,10 @@ spring:
       max-request-size: ${CATALOG_MAX_UPLOAD_SIZE:1GB}
 # catalogimport.archive.root (bronarchief van leveringen) is verplicht en heeft bewust geen default:
 # zet het per omgeving (application-local.yml voor lokaal gebruik).
+#
+# catalogimport.setup-api.enabled staat hier BEWUST NIET: zonder die vlag bestaat de setup-API
+# (/api/catalog-import/setup/**) niet en antwoordt elk setup-pad met 404. Die API kan importdefinities
+# en hun drempels bepalen en kent nog geen authenticatie (Fase 5); alleen het demo-profiel zet ze aan.
 catalogimport:
   screening:
     # Aantal rijen per microbatch-transactie tijdens het stagen (design par. 2 en par. 9 stap C).
