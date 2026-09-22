@@ -310,3 +310,20 @@ requestveld, zelfde validatie als `acceptedBy`; Fase 5 vervangt door Keycloak-id
   consistentie met `catalog_reference_state.active_marker`.
 - Index `idx_import_mutation_link_identity_status` naast de bestaande `idx_import_mutation_link_identity`
   (004), nodig voor de conflictquery uit §3.
+
+## 11. Aanvullingen uit stap 4b (geïmplementeerd, hoofdsessie akkoord)
+
+- `addBatches` gebruikt `BATCH_NOT_BUNDLEABLE` als generieke "verkeerde status"-code voor elke status
+  ≠ `SCREENED` (dus ook `BASELINE_ACCEPTED`); de validatiecodes (`BATCH_VALIDATION_NOT_ESTABLISHED`,
+  `BATCH_VALIDATION_BLOCKING`) gelden enkel bij status `SCREENED`.
+- `BUNDLE_NOT_ASSEMBLING` gebruikt voor elke niet-`ASSEMBLING`-status bij `addBatches`/`removeBatch`
+  (consistent met `PublicationBundleStatus.acceptsChanges()`); `BUNDLE_FROZEN` blijft gereserveerd voor
+  latere, freeze-specifieke acties (4c-4f).
+- Extra 404-code `BATCH_NOT_IN_BUNDLE` bij `removeBatch` op een batch zonder actief lidmaatschap in
+  die bundel.
+- `candidates()` staat op `PublicationBundleService` (niet op `BundleQueryService`), zoals letterlijk
+  opgedragen — asymmetrie t.o.v. "leesmodel altijd in BundleQueryService", bewust aanvaard.
+- `listBundles`/`getBundleBatches` gebruiken geen live tellers (enkel `getBundle` van één bundel wel),
+  om een N+1-queryprobleem per pagina te vermijden.
+- Accept-baseline-wacht gecontroleerd in zowel `prepare()` als `finish()` van
+  `SourceStateBaselineService`, vóór elke schrijfactie.

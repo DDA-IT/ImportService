@@ -16,4 +16,11 @@ public interface ImportMutationRepository extends JpaRepository<ImportMutation, 
     Page<ImportMutation> findByBatchIdAndActionType(Long batchId, MutationActionType actionType, Pageable pageable);
 
     long countByBatchIdAndActionType(Long batchId, MutationActionType actionType);
+
+    /**
+     * Heeft deze batch al minstens één beslissing op een mutatie (fase 4, R-BND: {@code removeBatch}
+     * weigert een batch met besliste mutaties uit een bundel te verwijderen)? {@code decisionId} is
+     * één van de vier samen leeg/samen gevulde decide-velden, dus deze controle volstaat.
+     */
+    boolean existsByBatchIdAndDecisionIdIsNotNull(Long batchId);
 }

@@ -3,6 +3,8 @@ package be.dda.catalogimport.dao;
 import be.dda.catalogimport.domain.PublicationBundleBatch;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface PublicationBundleBatchRepository extends JpaRepository<PublicationBundleBatch, Long> {
@@ -15,6 +17,10 @@ public interface PublicationBundleBatchRepository extends JpaRepository<Publicat
     Optional<PublicationBundleBatch> findByBatchIdAndActiveMarkerIsNotNull(Long batchId);
 
     List<PublicationBundleBatch> findByBundleId(Long bundleId);
+
+    Page<PublicationBundleBatch> findByBundleId(Long bundleId, Pageable pageable);
+
+    long countByBundleIdAndActiveMarkerIsNotNull(Long bundleId);
 
     Optional<PublicationBundleBatch> findByBundleIdAndBatchId(Long bundleId, Long batchId);
 }

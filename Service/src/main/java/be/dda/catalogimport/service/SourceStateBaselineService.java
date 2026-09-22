@@ -6,6 +6,7 @@ import be.dda.catalogimport.dao.ImportBatchRepository;
 import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.dao.PriceObservationDao;
 import be.dda.catalogimport.dao.PriceObservationDao.ObservationContext;
+import be.dda.catalogimport.dao.PublicationBundleBatchRepository;
 import be.dda.catalogimport.dao.SourceStateDao;
 import be.dda.catalogimport.dao.SourceStateDao.AcceptanceContext;
 import be.dda.catalogimport.domain.ImportBatch;
@@ -123,12 +124,16 @@ public class SourceStateBaselineService {
      * opnieuw gescreend worden tegen de gewijzigde bibliotheek.
      */
     public static final String CODE_REFERENCE_ALREADY_ACTIVE = "REFERENCE_ALREADY_ACTIVE_FOR_OTHER_OFFER";
+    /**
+     * De batch heeft een actief lidmaatschap in een Publicatiebundel (fase 4, R-BAS-02): de twee
+     * routes sluiten elkaar per batch uit. Gecontroleerd vóór er iets geschreven wordt.
+     */
+    public static final String CODE_BATCH_IN_PUBLICATION_BUNDLE = "BATCH_IN_PUBLICATION_BUNDLE";
 
     /** {@code catalog_source_state.accepted_by} en {@code import_batch.baseline_accepted_by}: varchar(100). */
     static final int MAX_ACCEPTED_BY_LENGTH = 100;
     /** {@code import_batch.baseline_accept_reason}: varchar(500). */
     static final int MAX_REASON_LENGTH = 500;
-    private static final String SYSTEM_USER = "system";
 
     private static final Logger LOG = LoggerFactory.getLogger(SourceStateBaselineService.class);
 
@@ -153,6 +158,7 @@ public class SourceStateBaselineService {
     private final PriceObservationDao observations;
     private final MutationDao mutations;
     private final ImportBatchRepository batches;
+    private final PublicationBundleBatchRepository bundleMemberships;
     private final TransactionTemplate transaction;
     private final Clock clock;
 
@@ -160,6 +166,7 @@ public class SourceStateBaselineService {
                                       CandidateReferenceDao candidateReferences,
                                       PriceObservationDao observations, MutationDao mutations,
                                       ImportBatchRepository batches,
+                                      PublicationBundleBatchRepository bundleMemberships,
                                       PlatformTransactionManager transactionManager, Clock clock) {
         this.sourceState = sourceState;
         this.candidatePrices = candidatePrices;
@@ -167,6 +174,7 @@ public class SourceStateBaselineService {
         this.observations = observations;
         this.mutations = mutations;
         this.batches = batches;
+        this.bundleMemberships = bundleMemberships;
         this.transaction = new TransactionTemplate(transactionManager);
         this.clock = clock;
     }
@@ -180,8 +188,8 @@ public class SourceStateBaselineService {
      *                                  {@link #CODE_SOURCE_STATE_CHANGED}
      */
     public BaselineAcceptance acceptBaseline(long batchId, String acceptedBy, String reason) {
-        String user = requireAcceptedBy(acceptedBy);
-        String motivation = requireText(reason, "reason", MAX_REASON_LENGTH);
+        String user = ActorNames.requireActorName(acceptedBy, "acceptedBy", MAX_ACCEPTED_BY_LENGTH);
+        String motivation = ActorNames.requireText(reason, "reason", MAX_REASON_LENGTH);
 
         Instant acceptedAt = clock.instant();
         // Eén keer per aanvaarding bepaald en niet per chunk: een verwerking die over middernacht
@@ -268,6 +276,7 @@ public class SourceStateBaselineService {
         ImportBatch batch = batches.findById(batchId)
                 .orElseThrow(() -> new NotFoundException("BATCH_NOT_FOUND", "Batch " + batchId + " not found"));
         requireScreened(batch);
+        requireNoActiveBundleMembership(batchId);
         long importLinkId = batch.getImportLink().getId();
         long stale = sourceState.countRowsStaleSinceScreening(batchId, importLinkId);
         if (stale > 0) {
@@ -289,6 +298,7 @@ public class SourceStateBaselineService {
         ImportBatch batch = batches.findByIdForUpdate(batchId)
                 .orElseThrow(() -> new NotFoundException("BATCH_NOT_FOUND", "Batch " + batchId + " not found"));
         requireScreened(batch);
+        requireNoActiveBundleMembership(batchId);
         int skipped = mutations.skipOpenContentMutations(batchId, SKIPPED_REASON);
         batch.setStatus(ImportBatchStatus.BASELINE_ACCEPTED);
         batch.recordBaselineAcceptance(user, acceptedAt, reason);
@@ -304,23 +314,18 @@ public class SourceStateBaselineService {
         }
     }
 
-    private static String requireAcceptedBy(String acceptedBy) {
-        String user = requireText(acceptedBy, "acceptedBy", MAX_ACCEPTED_BY_LENGTH);
-        if (SYSTEM_USER.equalsIgnoreCase(user)) {
-            throw new IllegalArgumentException("acceptedBy must be a person, not '" + SYSTEM_USER + "'");
+    /**
+     * R-BAS-02 (fase 4, "Important technical constraint discovered" in het ontwerp): {@code accept-baseline}
+     * en de Publicatiebundel sluiten elkaar per batch uit. Gecontroleerd vóór er iets geschreven wordt,
+     * zowel in {@link #prepare} als opnieuw in {@link #finish} (dezelfde dubbele controle als
+     * {@link #requireScreened}), zodat een lidmaatschap dat tussen beide momenten ontstaat ook gevangen
+     * wordt.
+     */
+    private void requireNoActiveBundleMembership(long batchId) {
+        if (bundleMemberships.findByBatchIdAndActiveMarkerIsNotNull(batchId).isPresent()) {
+            throw new ConflictException(CODE_BATCH_IN_PUBLICATION_BUNDLE, "Batch " + batchId + " has an active "
+                    + "publication bundle membership; accept-baseline and a publication bundle are mutually "
+                    + "exclusive for the same batch");
         }
-        return user;
-    }
-
-    /** Nooit stil afkappen: een te lange waarde wordt geweigerd. */
-    private static String requireText(String value, String field, int maxLength) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("Missing " + field);
-        }
-        String trimmed = value.trim();
-        if (trimmed.length() > maxLength) {
-            throw new IllegalArgumentException(field + " exceeds " + maxLength + " characters");
-        }
-        return trimmed;
     }
 }
