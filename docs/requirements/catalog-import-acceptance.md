@@ -1,5 +1,9 @@
 # Catalog import — acceptatiecriteria
 
+> Status: historische acceptatieset voor de eerdere proefversie. De actuele vergelijking met de
+> vernieuwde businessanalyse staat in
+> [`../analysis/current-project-vs-businessanalyse-2.md`](../analysis/current-project-vs-businessanalyse-2.md).
+
 ## Functioneel
 
 - Een gebruiker kan een bron en een unieke importdefinitieversie aanmaken.

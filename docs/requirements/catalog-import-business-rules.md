@@ -1,5 +1,9 @@
 # Catalog import — businessregels en uitzonderingen
 
+> Status: historische proefversie. Voor de actuele implementatiestatus en de verschillen met de
+> vernieuwde businessanalyse, zie
+> [`../analysis/current-project-vs-businessanalyse-2.md`](../analysis/current-project-vs-businessanalyse-2.md).
+
 ## Identiteit en traceerbaarheid
 
 - Een catalogusbron heeft een unieke `code`.

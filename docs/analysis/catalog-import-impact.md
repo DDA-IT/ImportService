@@ -1,5 +1,9 @@
 # Catalog import — impactanalyse huidige applicatie
 
+> Status: historische impactanalyse van de eerdere proefversie. Voor de actuele vergelijking met
+> de vernieuwde businessanalyse, zie
+> [`current-project-vs-businessanalyse-2.md`](current-project-vs-businessanalyse-2.md).
+
 ## Architectuur
 
 De Maven-reactor bestaat uit `Domain`, `Dao`, `Service` en `Web`. De lagen volgen één richting: REST in Web roept de transactionele service aan; de service gebruikt Spring Data JPA-repositories; het domeinmodel wordt met JPA/Liquibase in PostgreSQL opgeslagen. Het profiel `local` gebruikt H2.

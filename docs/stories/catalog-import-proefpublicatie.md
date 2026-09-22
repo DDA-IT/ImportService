@@ -1,5 +1,11 @@
 # Story — gecontroleerde catalogusimport in Prodis
 
+> Status: historische proefstory. Zij vertrekt van deployen in het Prodis-project en lokaal
+> `SupplierCatalog`/`CatalogArticle`-beheer. Dat wijkt af van de huidige beslissing dat
+> CatalogImport een zelfstandig project met eigen database blijft en via een afzonderlijke,
+> bevestigde Prodis-publicatieroute integreert. Zie
+> [`catalog-import-v2.md`](catalog-import-v2.md) voor de actuele storyset.
+
 ## Doel
 
 Als catalogusbeheerder wil ik een leveranciersbestand in Prodis laten verwerken tot een controleerbare leverancierscatalogus, zodat ik de catalogusartikelen, prijzen en fouten kan beoordelen zonder centrale operationele artikelen te creëren.

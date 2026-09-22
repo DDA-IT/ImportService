@@ -2,7 +2,10 @@
 
 ## Status
 
-Dit document beschrijft de huidige, werkende proefversie op basis van de broncode, de gerichte integratietest en `business-analyse-leveranciersbibliotheken.md`. Niet-bevestigde legacyfunctionaliteit is niet als vereiste van deze versie opgenomen.
+Dit document beschrijft een eerdere proefversie en is geen actuele implementatiestatus meer.
+Voor de vergelijking met de vernieuwde analyse en de huidige broncode, zie
+[`../analysis/current-project-vs-businessanalyse-2.md`](../analysis/current-project-vs-businessanalyse-2.md).
+Niet-bevestigde legacyfunctionaliteit is niet als vereiste van deze versie opgenomen.
 
 ## Bedrijfsprobleem
 

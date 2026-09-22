@@ -1,5 +1,10 @@
 # Catalog import — technisch ontwerp van de proefversie
 
+> Status: historisch ontwerp van een eerdere proefversie. Het is niet de actuele beschrijving van
+> de broncode; zie
+> [`../analysis/current-project-vs-businessanalyse-2.md`](../analysis/current-project-vs-businessanalyse-2.md)
+> voor de vergelijking met de vernieuwde businessanalyse.
+
 ## Verantwoordelijkheden
 
 - `CatalogImportController` vormt de HTTP-grens en valideert de verplichte requestvelden.
