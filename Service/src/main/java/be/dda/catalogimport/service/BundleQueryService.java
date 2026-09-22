@@ -16,6 +16,7 @@ import be.dda.catalogimport.domain.PublicationBundleStatus;
 import be.dda.catalogimport.domain.PublicationDecision;
 import be.dda.catalogimport.service.BatchQueryService.MutationRow;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -68,9 +69,16 @@ public class BundleQueryService {
      * {@code contentMutationCount}/{@code readyCount}/{@code rejectedCount}/{@code blockedCount}/
      * {@code identityIncidentCount} <b>live</b> berekend over haar actieve batches
      * ({@code PublicationBundleDao.countByStatus}) in plaats van de (nog niet vastgestelde) waarden op
-     * de rij zelf. Na bevriezen (4e) komen ze van de bevroren rij. {@code staleMutationCount} is de
-     * informatieve, niet-blokkerende baselinecontrole (R-BND-06); {@code null} zodra de bundel niet meer
-     * {@code ASSEMBLING} is — die controle is dan al gebeurd of niet meer relevant.
+     * de rij zelf. Zodra de bundel bevroren is (4e), komen alle tien de tellers van de rij: dat zijn de
+     * getallen die op het moment van bevriezen zijn vastgesteld en waarvoor getekend is — ze mogen
+     * daarna nooit meer meebewegen.
+     * <p>
+     * {@code staleMutationCount} is de informatieve, niet-blokkerende baselinecontrole (R-BND-06);
+     * {@code null} zodra de bundel niet meer {@code ASSEMBLING} is — bij het bevriezen is die controle
+     * blokkerend uitgevoerd (R-FRZ) en is ze daarna niet meer van toepassing.
+     * <p>
+     * {@code contentHash} is de volledige bundelhash als hexadecimale tekst, enkel gevuld bij een
+     * bevroren (of daarna geannuleerde) bundel; {@code null} zolang ze {@code ASSEMBLING} is.
      */
     public record BundleDetail(long id, String bundleReference, String description, String status,
                                String targetMode, Instant targetMoment, String publicationPolicy,
@@ -79,7 +87,7 @@ public class BundleQueryService {
                                String cancelledReason, Long batchCount, Long contentMutationCount,
                                Long readyCount, Long rejectedCount, Long blockedCount, Long expiredCount,
                                Long identityIncidentCount, Long bulkIncidentCount, Long criticalIssueCount,
-                               Long warningCount, Long staleMutationCount) {
+                               Long warningCount, Long staleMutationCount, String contentHash) {
 
         private static BundleDetail frozen(PublicationBundle bundle) {
             return new BundleDetail(bundle.getId(), bundle.getBundleReference(), bundle.getDescription(),
@@ -89,39 +97,30 @@ public class BundleQueryService {
                     bundle.getCancelledAt(), bundle.getCancelledReason(), bundle.getBatchCount(),
                     bundle.getContentMutationCount(), bundle.getReadyCount(), bundle.getRejectedCount(),
                     bundle.getBlockedCount(), bundle.getExpiredCount(), bundle.getIdentityIncidentCount(),
-                    bundle.getBulkIncidentCount(), bundle.getCriticalIssueCount(), bundle.getWarningCount(), null);
+                    bundle.getBulkIncidentCount(), bundle.getCriticalIssueCount(), bundle.getWarningCount(), null,
+                    hex(bundle.getContentHash()));
         }
 
         private static BundleDetail live(PublicationBundle bundle, List<MutationStatusCount> counts,
                                          long activeBatchCount, long staleCount) {
-            long contentMutations = 0;
-            long ready = 0;
-            long rejected = 0;
-            long blocked = 0;
-            long identityIncidents = 0;
-            for (MutationStatusCount count : counts) {
-                boolean isContentMutation = "CREATE".equals(count.actionType()) || "UPDATE".equals(count.actionType());
-                if (isContentMutation) {
-                    contentMutations += count.count();
-                    if ("READY_FOR_PUBLICATION".equals(count.status())) {
-                        ready += count.count();
-                    } else if ("REJECTED".equals(count.status())) {
-                        rejected += count.count();
-                    } else if ("BLOCKED".equals(count.status())) {
-                        blocked += count.count();
-                    }
-                } else if ("IDENTITY_REFERENCE_INCIDENT".equals(count.actionType())) {
-                    identityIncidents += count.count();
-                }
-            }
+            BundleMutationTotals totals = BundleMutationTotals.of(counts);
             return new BundleDetail(bundle.getId(), bundle.getBundleReference(), bundle.getDescription(),
                     bundle.getStatus().name(), bundle.getTargetMode().name(), bundle.getTargetMoment(),
                     bundle.getPublicationPolicy(), bundle.getCreatedBy(), bundle.getCreatedAt(),
                     bundle.getFrozenBy(), bundle.getFrozenAt(), bundle.getFrozenReason(), bundle.getCancelledBy(),
-                    bundle.getCancelledAt(), bundle.getCancelledReason(), activeBatchCount, contentMutations,
-                    ready, rejected, blocked, bundle.getExpiredCount(), identityIncidents,
+                    bundle.getCancelledAt(), bundle.getCancelledReason(), activeBatchCount,
+                    totals.contentMutationCount(), totals.readyCount(), totals.rejectedCount(),
+                    // expiredCount blijft bewust de opgeslagen waarde (en dus null zolang de bundel
+                    // ASSEMBLING is): EXPIRED ontstaat pas bij het annuleren (4f), en dan is de bundel
+                    // CANCELLED en leest deze weergave de vastgestelde rij. Gedrag van 4b, ongewijzigd.
+                    totals.blockedCount(), bundle.getExpiredCount(), totals.identityIncidentCount(),
                     bundle.getBulkIncidentCount(), bundle.getCriticalIssueCount(), bundle.getWarningCount(),
-                    staleCount);
+                    staleCount, hex(bundle.getContentHash()));
+        }
+
+        /** De bundelhash als hexadecimale tekst; binaire bytes horen niet in een JSON-antwoord. */
+        private static String hex(byte[] contentHash) {
+            return contentHash == null ? null : HexFormat.of().formatHex(contentHash);
         }
     }
 

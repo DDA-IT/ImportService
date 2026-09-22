@@ -12,6 +12,7 @@ import be.dda.catalogimport.service.BadRequestException;
 import be.dda.catalogimport.service.BundleDecisionService;
 import be.dda.catalogimport.service.BundleDecisionService.DecisionFilter;
 import be.dda.catalogimport.service.BundleDecisionService.GroupDecisionView;
+import be.dda.catalogimport.service.BundleFreezeService;
 import be.dda.catalogimport.service.BundleQueryService;
 import be.dda.catalogimport.service.PublicationBundleService;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,7 +44,8 @@ class BundleGroupDecisionHttpTest {
         decisionService = Mockito.mock(BundleDecisionService.class);
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new CatalogImportBundleController(Mockito.mock(PublicationBundleService.class),
-                        decisionService, Mockito.mock(BundleQueryService.class)))
+                        decisionService, Mockito.mock(BundleFreezeService.class),
+                        Mockito.mock(BundleQueryService.class)))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .build();
     }

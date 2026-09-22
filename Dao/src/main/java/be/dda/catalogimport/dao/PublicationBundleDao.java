@@ -1,9 +1,16 @@
 package be.dda.catalogimport.dao;
 
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -12,11 +19,40 @@ import org.springframework.stereotype.Repository;
  * Set-based tellingen over en gerichte schrijfacties op de mutaties van een {@code publication_bundle},
  * over al haar actieve batchlidmaatschappen heen (ontwerp fase 4 par. 2 en 3, R-BND). Bouwstap 4b
  * leverde de tellingen, bouwstap 4c de individuele beslissing ({@link #decideMutation}), bouwstap 4d de
- * groepsactie ({@link #countDecidable} + {@link #decideByFilter}); {@code approvePlanned},
- * {@code expireOpenMutations} en de bundelhash-stream volgen in 4e-4f.
+ * groepsactie ({@link #countDecidable} + {@link #decideByFilter}), bouwstap 4e het bevriezen
+ * ({@link #countUndecided}, {@link #findInBundleOfferConflicts}, {@link #findCrossBundleOfferConflicts},
+ * {@link #approvePlanned}, {@link #computeBatchTotals}, {@link #computeContentHash});
+ * {@code expireOpenMutations} volgt in 4f.
  */
 @Repository
 public class PublicationBundleDao {
+
+    /**
+     * De statussen waarin een inhoudelijke mutatie nog naar Prodis kán gaan. Basis van de
+     * baselinecontrole (R-BND-06) en van beide conflictregels (R-FRZ-03/04): enkel wie nog
+     * publiceerbaar is, kan met een ander voorstel op dezelfde aanbieding botsen. {@code REJECTED},
+     * {@code EXPIRED}, {@code SKIPPED} en {@code BLOCKED} gaan nooit naar Prodis en botsen dus nooit.
+     */
+    private static final String PUBLISHABLE_STATUSES = "('PLANNED','AWAITING_APPROVAL','READY_FOR_PUBLICATION')";
+
+    /**
+     * De selectie van de bulkgoedkeuring bij bevriezen (R-FRZ, beslissingslog 22/09 keuze 1): alle
+     * resterende {@code PLANNED}-mutaties. De harde staart van {@link #GROUP_DECISION_TAIL} doet de
+     * rest — {@code action_type in ('CREATE','UPDATE')} en {@code decision_id is null} — zodat
+     * {@link #approvePlanned} exact hetzelfde codepad en dezelfde garanties heeft als de groepsactie
+     * uit 4d.
+     */
+    private static final MutationSelection PLANNED_ONLY = new MutationSelection(null, "PLANNED", null, null);
+
+    /** De doelstatus van de bulkgoedkeuring bij bevriezen ({@code MutationStatus.READY_FOR_PUBLICATION}). */
+    private static final String READY_FOR_PUBLICATION = "READY_FOR_PUBLICATION";
+
+    /** Vaste tekst voor een ontbrekende waarde; zie de serialisatie in {@link #computeContentHash}. */
+    private static final String HASH_NULL = "null";
+    /** Scheidt twee velden binnen één mutatie in de bundelhash (unit separator). */
+    private static final char HASH_FIELD_SEPARATOR = '';
+    /** Sluit één mutatie af in de bundelhash (record separator). */
+    private static final char HASH_RECORD_SEPARATOR = '';
 
     /**
      * De <b>harde, niet-onderhandelbare</b> {@code where}-staart van elke groepsactie (ontwerp fase 4
@@ -66,6 +102,45 @@ public class PublicationBundleDao {
         public boolean isEmpty() {
             return batchId == null && status == null && statusReason == null && actionType == null;
         }
+    }
+
+    /**
+     * De leesbare aanbiedingsidentiteit achter een conflict. De conflictregels groeperen op
+     * {@code identity_hash} (binair, en niet leesbaar in een foutmelding); deze drie velden zijn de
+     * bronwaarden waaruit die hash berekend is en dus per definitie gelijk binnen één groep.
+     */
+    public record OfferIdentity(long importLinkId, String supplier, String supplierGroup,
+                                String supplierReference) {
+    }
+
+    /**
+     * Eén aanbieding die binnen <b>dezelfde</b> bundel uit meerdere batches publiceerbaar openstaat
+     * (R-FRZ-03). {@code firstBatchId}/{@code lastBatchId} zijn de laagste en de hoogste betrokken
+     * batch — genoeg om het conflict te kunnen aanwijzen, zonder een niet-draagbare
+     * stringaggregatie ({@code listagg}/{@code string_agg} verschillen tussen H2 en PostgreSQL).
+     */
+    public record InBundleOfferConflict(OfferIdentity offer, long batchCount, long firstBatchId,
+                                        long lastBatchId) {
+    }
+
+    /**
+     * Eén aanbieding van deze bundel die ook in een <b>andere</b>, niet-geannuleerde bundel
+     * publiceerbaar openstaat (R-FRZ-04).
+     */
+    public record CrossBundleOfferConflict(OfferIdentity offer, long batchId, long otherBundleId,
+                                           long otherBatchId) {
+    }
+
+    /**
+     * De drie tellers van {@code publication_bundle} die niet uit {@code import_mutation} komen maar
+     * uit de screeningtellers van de leden-batches ({@code import_batch}, changesets 004-10b/004-11b).
+     * <p>
+     * <b>{@code null} betekent "niet vastgesteld", nooit stil 0.</b> Draagt ook maar één lid-batch
+     * geen waarde voor een teller (bv. een screening die die controle niet uitvoerde), dan is de som
+     * over de bundel onbekend en blijft de teller leeg. Een som die stilzwijgend de ontbrekende
+     * batches als 0 meerekent, zou een bundel rustiger doen lijken dan ze is.
+     */
+    public record BundleBatchTotals(Long bulkIncidentCount, Long criticalIssueCount, Long warningCount) {
     }
 
     private final JdbcTemplate jdbc;
@@ -224,6 +299,256 @@ public class PublicationBundleDao {
         parameters.add(bundleId);
         appendSelection(sql, parameters, "", selection);
         return jdbc.update(sql.toString(), parameters.toArray());
+    }
+
+    // --- Bouwstap 4e: bevriezen ------------------------------------------------------------------
+
+    /**
+     * Het aantal inhoudelijke mutaties van deze bundel dat nog <b>expliciet</b> beoordeeld moet worden
+     * (R-FRZ-02): {@code CREATE}/{@code UPDATE} in {@code AWAITING_APPROVAL}.
+     * <p>
+     * Bewust niet {@code PLANNED}: die worden bij het bevriezen zelf in bulk goedgekeurd op naam van de
+     * bevriezer (beslissingslog 22/09, keuze 1, {@link #approvePlanned}). {@code AWAITING_APPROVAL}
+     * daarentegen betekent dat een regel, drempel of incident om een mens gevraagd heeft — die vraag
+     * mag een bevriezing nooit stilzwijgend beantwoorden. Bewust ook niet {@code BLOCKED} of een
+     * {@code IDENTITY_REFERENCE_INCIDENT}: die krijgen in Fase 4 geen beslispad en beletten het
+     * bevriezen dus niet (ontwerp par. 3.6, beslissingslog 22/09 keuze 3).
+     */
+    public long countUndecided(long bundleId) {
+        Long count = jdbc.queryForObject("select count(*) from import_mutation m "
+                        + "join publication_bundle_batch pbb "
+                        + "  on pbb.batch_id = m.batch_id and pbb.bundle_id = ? and pbb.active_marker is not null "
+                        + "where m.action_type in ('CREATE','UPDATE') and m.status = 'AWAITING_APPROVAL'",
+                Long.class, bundleId);
+        return count == null ? 0L : count;
+    }
+
+    /**
+     * De conflictregel <b>binnen</b> één bundel (R-FRZ-03, ontwerp par. 3.8): twee publiceerbare
+     * mutaties op dezelfde {@code (import_link_id, identity_hash)} uit <b>verschillende</b> batches.
+     * <p>
+     * Zonder deze regel zou "de laatste import wint" ontstaan: twee opeenvolgende leveringen van
+     * dezelfde bron die dezelfde aanbieding wijzigen, allebei goedgekeurd, allebei in dezelfde bundel —
+     * Prodis zou er dan willekeurig één als laatste verwerken en de andere wijziging zou spoorloos
+     * verdwijnen. Dat is expliciet verboden (businessanalyse r.1412). Bevriezen wordt daarom geweigerd
+     * tot één van beide kanten afgekeurd is.
+     * <p>
+     * De sleutel is {@code (import_link_id, identity_hash)} en nooit {@code identity_hash} alleen: twee
+     * koppelingen zijn twee verschillende leveranciersbibliotheken, en dezelfde leverancierssleutel bij
+     * twee koppelingen is twee verschillende aanbiedingen die elkaar niet in de weg zitten.
+     *
+     * @param limit hoogstens zoveel voorbeelden; een bundel met duizenden conflicten moet een leesbare
+     *              foutmelding opleveren, geen volledige dump
+     */
+    public List<InBundleOfferConflict> findInBundleOfferConflicts(long bundleId, int limit) {
+        return jdbc.query("select m.import_link_id, min(m.identity_supplier), min(m.identity_supplier_group), "
+                        + "       min(m.identity_supplier_reference), count(distinct m.batch_id), "
+                        + "       min(m.batch_id), max(m.batch_id) "
+                        + "from import_mutation m "
+                        + "join publication_bundle_batch pbb "
+                        + "  on pbb.batch_id = m.batch_id and pbb.bundle_id = ? and pbb.active_marker is not null "
+                        + "where m.action_type in ('CREATE','UPDATE') "
+                        + "  and m.status in " + PUBLISHABLE_STATUSES + " "
+                        + "group by m.import_link_id, m.identity_hash "
+                        + "having count(distinct m.batch_id) > 1 "
+                        + "order by m.import_link_id, min(m.batch_id) "
+                        + "limit ?",
+                (rs, rowNum) -> new InBundleOfferConflict(
+                        new OfferIdentity(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4)),
+                        rs.getLong(5), rs.getLong(6), rs.getLong(7)),
+                bundleId, limit);
+    }
+
+    /**
+     * De conflictregel <b>tussen</b> bundels (R-FRZ-04): dezelfde
+     * {@code (import_link_id, identity_hash)} staat ook publiceerbaar open in een andere bundel die nog
+     * niet {@code CANCELLED} is.
+     * <p>
+     * Twee bevroren bundels die dezelfde aanbieding dragen, zouden in Fase 5 in onbepaalde volgorde
+     * gepubliceerd worden — exact hetzelfde "laatste import wint" als binnen één bundel, alleen
+     * verspreid over twee goedkeuringsdossiers. Een {@code CANCELLED}-bundel telt niet mee: haar
+     * mutaties worden bij het annuleren {@code EXPIRED} (4f) en haar batches komen weer vrij. De
+     * statuscontrole staat er naast het actieve lidmaatschap als tweede zekering: een bundel die haar
+     * leden zou behouden maar niets meer publiceert, mag deze bevriezing niet blokkeren.
+     *
+     * @param limit hoogstens zoveel voorbeelden, zie {@link #findInBundleOfferConflicts}
+     */
+    public List<CrossBundleOfferConflict> findCrossBundleOfferConflicts(long bundleId, int limit) {
+        return jdbc.query("select distinct m.import_link_id, m.identity_supplier, m.identity_supplier_group, "
+                        + "       m.identity_supplier_reference, m.batch_id, other.bundle_id, other.batch_id "
+                        + "from import_mutation m "
+                        + "join publication_bundle_batch pbb "
+                        + "  on pbb.batch_id = m.batch_id and pbb.bundle_id = ? and pbb.active_marker is not null "
+                        + "join import_mutation om "
+                        + "  on om.import_link_id = m.import_link_id and om.identity_hash = m.identity_hash "
+                        + " and om.batch_id <> m.batch_id "
+                        + " and om.action_type in ('CREATE','UPDATE') "
+                        + " and om.status in " + PUBLISHABLE_STATUSES + " "
+                        + "join publication_bundle_batch other "
+                        + "  on other.batch_id = om.batch_id and other.active_marker is not null "
+                        + " and other.bundle_id <> ? "
+                        + "join publication_bundle b on b.id = other.bundle_id and b.status <> 'CANCELLED' "
+                        + "where m.action_type in ('CREATE','UPDATE') "
+                        + "  and m.status in " + PUBLISHABLE_STATUSES + " "
+                        + "order by m.import_link_id, m.batch_id, other.bundle_id "
+                        + "limit ?",
+                (rs, rowNum) -> new CrossBundleOfferConflict(
+                        new OfferIdentity(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4)),
+                        rs.getLong(5), rs.getLong(6), rs.getLong(7)),
+                bundleId, bundleId, limit);
+    }
+
+    /**
+     * Het aantal {@code PLANNED}-mutaties dat {@link #approvePlanned} zou raken — exact dezelfde
+     * {@code where}-clausule, want beide gaan via {@link #PLANNED_ONLY} en
+     * {@link #countDecidable}/{@link #decideByFilter}. De aanroeper telt eerst en schrijft dan pas,
+     * zodat de append-only {@code publication_decision}-regel meteen met haar definitieve
+     * {@code affected_count} ingevoegd kan worden (zelfde volgorde als de groepsactie in 4d).
+     */
+    public long countPlanned(long bundleId) {
+        return countDecidable(bundleId, PLANNED_ONLY);
+    }
+
+    /**
+     * Keurt bij het bevriezen alle resterende {@code PLANNED}-mutaties van deze bundel in bulk goed
+     * ({@code READY_FOR_PUBLICATION}) op naam van de bevriezer — beslissingslog 22/09, keuze 1: een
+     * geplande, door geen enkele regel tegengehouden mutatie hoeft niet één voor één aangeklikt te
+     * worden, maar krijgt wél haar eigen, volledige audit.
+     * <p>
+     * Bewust <b>geen</b> eigen {@code update}: dit is letterlijk de groepsactie uit 4d met de vaste
+     * selectie {@link #PLANNED_ONLY}, en erft daarmee ongewijzigd al haar garanties — de harde staart
+     * ({@code action_type in ('CREATE','UPDATE')}, {@code decision_id is null}), het actieve
+     * batchlidmaatschap, de per rij vastgelegde {@code decided_from_status}, en de {@code set}-lijst van
+     * exact vijf kolommen die geen enkel financieel veld kan raken. Een tweede, eigen statement zou die
+     * garanties moeten kopiëren en zou dus stilzwijgend uit elkaar kunnen lopen.
+     *
+     * @param decisionId de ene {@code AUTO_APPROVE_PLANNED}-regel waarnaar alle geraakte rijen wijzen
+     * @return het werkelijke aantal geraakte rijen; de aanroeper vergelijkt dit met
+     *         {@link #countPlanned} en rolt de hele bevriezing terug wanneer ze verschillen
+     */
+    public int approvePlanned(long bundleId, long decisionId, String frozenBy, Instant at) {
+        return decideByFilter(bundleId, READY_FOR_PUBLICATION, frozenBy, at, decisionId, PLANNED_ONLY);
+    }
+
+    /**
+     * De drie bundeltellers die uit de screeningtellers van de leden-batches komen
+     * ({@code bulk_incident_count}, {@code critical_issue_count}, {@code warning_count}), gesommeerd
+     * over de <b>actieve</b> lidmaatschappen.
+     * <p>
+     * Per teller wordt naast de som ook geteld hoeveel batches er werkelijk een waarde voor dragen.
+     * Ligt dat lager dan het aantal leden, dan is de som over de bundel niet vastgesteld en komt er
+     * {@code null} uit in plaats van een te lage som (zie {@link BundleBatchTotals}).
+     */
+    public BundleBatchTotals computeBatchTotals(long bundleId) {
+        return jdbc.queryForObject("select count(*), "
+                        + "  count(b.bulk_incident_count), sum(b.bulk_incident_count), "
+                        + "  count(b.critical_issue_count), sum(b.critical_issue_count), "
+                        + "  count(b.warning_count), sum(b.warning_count) "
+                        + "from publication_bundle_batch pbb "
+                        + "join import_batch b on b.id = pbb.batch_id "
+                        + "where pbb.bundle_id = ? and pbb.active_marker is not null",
+                (rs, rowNum) -> {
+                    long members = rs.getLong(1);
+                    return new BundleBatchTotals(total(rs, members, 2, 3), total(rs, members, 4, 5),
+                            total(rs, members, 6, 7));
+                }, bundleId);
+    }
+
+    /** {@code null} zodra niet élke lid-batch een waarde voor deze teller draagt; anders de som. */
+    private static Long total(ResultSet rs, long members, int knownColumn, int sumColumn) throws SQLException {
+        long known = rs.getLong(knownColumn);
+        if (members == 0 || known < members) {
+            return null;
+        }
+        long sum = rs.getLong(sumColumn);
+        return rs.wasNull() ? null : sum;
+    }
+
+    /**
+     * De volledige bundelhash (R-FRZ): één SHA-256 over <b>alle</b> mutaties van alle actieve
+     * lidmaatschappen van deze bundel, op het moment van bevriezen. Ze wordt in
+     * {@code publication_bundle.content_hash} bewaard en maakt in Fase 5 aantoonbaar dat wat
+     * gepubliceerd wordt exact is wat iemand bevroren heeft.
+     *
+     * <h2>Welke mutaties</h2>
+     * Alle mutaties van de batches met een <b>actief</b> lidmaatschap — dus ook de
+     * {@code IMPORT_MARKER}, de {@code BLOCKED}-mutaties en de identiteitsincidenten, die Fase 5 niet
+     * publiceert maar die wel deel zijn van wat er bevroren werd. Batches waarvan het lidmaatschap
+     * eerder verwijderd is, tellen <b>niet</b> mee: ze zijn geen lid meer, hun mutaties gaan niet naar
+     * Prodis, en ze kunnen intussen in een andere bundel zitten. Zou de hash ze toch meenemen, dan zou
+     * hij niet meer beschrijven wát er bevroren is maar hóe men daar geraakt is.
+     *
+     * <h2>Serialisatie (deterministisch, vastgelegd)</h2>
+     * Per mutatie, in exact deze volgorde, gescheiden door {@code U+001F} (unit separator) en per
+     * mutatie afgesloten met {@code U+001E} (record separator):
+     * <pre>batch_id ␟ id ␟ action_type ␟ status ␟ decision_id ␟ identity_hash(hex) ␟ before_base_price ␟ after_base_price ␞</pre>
+     * <ul>
+     *   <li>Ordening op {@code m.id} oplopend, <b>niet</b> op {@code idempotency_key} (ontwerp par. 9
+     *       A28): tekstsortering verschilt tussen H2 en PostgreSQL door collatie, en dan zou dezelfde
+     *       inhoud per database een andere hash geven.</li>
+     *   <li>{@code null} wordt de vaste tekst {@value #HASH_NULL} — onmogelijk te verwarren met een
+     *       bestaande waarde (een id is numeriek, een status is hoofdletters met liggend streepje, een
+     *       hash is kleine hex), en onderscheidbaar van de lege tekst.</li>
+     *   <li>Prijzen als {@code stripTrailingZeros().toPlainString()}: numeriek identieke bedragen
+     *       leveren zo altijd dezelfde tekst, ook als het JDBC-stuurprogramma de schaal anders
+     *       teruggeeft. De opgeslagen waarde wordt nooit aangeraakt — dit is enkel de
+     *       tekstvoorstelling voor de digest.</li>
+     *   <li>De scheidingstekens zijn stuurtekens die in geen enkele van deze velden kunnen voorkomen
+     *       (id/decision_id numeriek, status/action_type enums, identity_hash hex, prijzen decimaal),
+     *       dus twee verschillende reeksen kunnen nooit dezelfde bytes opleveren.</li>
+     * </ul>
+     * De mutatie-id maakt deel uit van de hash. Twee bundels met inhoudelijk identieke leveringen
+     * krijgen daardoor een verschillende hash: deze hash identificeert <b>deze</b> rijen, niet een
+     * abstracte inhoudsgelijkheid. Dat is de bedoeling — Fase 5 moet kunnen vaststellen dat exact deze
+     * mutaties nog onveranderd zijn, niet dat er ergens gelijkaardige bestaan.
+     */
+    public byte[] computeContentHash(long bundleId) {
+        MessageDigest digest = newSha256();
+        HexFormat hex = HexFormat.of();
+        jdbc.query("select m.batch_id, m.id, m.action_type, m.status, m.decision_id, m.identity_hash, "
+                        + "       m.before_base_price, m.after_base_price "
+                        + "from import_mutation m "
+                        + "join publication_bundle_batch pbb "
+                        + "  on pbb.batch_id = m.batch_id and pbb.bundle_id = ? and pbb.active_marker is not null "
+                        + "order by m.id",
+                rs -> {
+                    StringBuilder line = new StringBuilder(160);
+                    append(line, Long.toString(rs.getLong(1)));
+                    append(line, Long.toString(rs.getLong(2)));
+                    append(line, rs.getString(3));
+                    append(line, rs.getString(4));
+                    long decisionId = rs.getLong(5);
+                    append(line, rs.wasNull() ? null : Long.toString(decisionId));
+                    byte[] identityHash = rs.getBytes(6);
+                    append(line, identityHash == null ? null : hex.formatHex(identityHash));
+                    append(line, money(rs.getBigDecimal(7)));
+                    append(line, money(rs.getBigDecimal(8)));
+                    line.append(HASH_RECORD_SEPARATOR);
+                    digest.update(line.toString().getBytes(StandardCharsets.UTF_8));
+                }, bundleId);
+        return digest.digest();
+    }
+
+    private static void append(StringBuilder line, String value) {
+        line.append(value == null ? HASH_NULL : value).append(HASH_FIELD_SEPARATOR);
+    }
+
+    /**
+     * Numeriek identieke bedragen krijgen altijd dezelfde tekst, onafhankelijk van de schaal die het
+     * stuurprogramma teruggeeft. {@code toPlainString} en niet {@code toString}: die laatste kan een
+     * exponent produceren en zou dezelfde waarde twee vormen geven.
+     */
+    private static String money(BigDecimal value) {
+        return value == null ? null : value.stripTrailingZeros().toPlainString();
+    }
+
+    private static MessageDigest newSha256() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException impossible) {
+            // SHA-256 is verplicht in elke Java-implementatie; hier komen betekent een kapotte JVM.
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
+        }
     }
 
     /**

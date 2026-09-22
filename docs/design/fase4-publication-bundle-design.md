@@ -363,3 +363,24 @@ requestveld, zelfde validatie als `acceptedBy`; Fase 5 vervangt door Keycloak-id
 - Risico benoemd: één groepsactie kan met één aanroep en zonder tweede goedkeurder een zeer groot
   aantal mutaties tegelijk goedkeuren (vier-ogen blijft herroepen, 20/09) — een grotere hefboom dan de
   individuele beslissing uit 4c.
+
+## 14. Aanvullingen uit stap 4e (geïmplementeerd, hoofdsessie akkoord)
+
+- Bevriezen is bewust NIET idempotent: een tweede poging geeft 409 `BUNDLE_NOT_ASSEMBLING`.
+- Hash-serialisatie (javadoc `computeContentHash`): per mutatie `batch_id ␟ id ␟ action_type ␟ status ␟
+  decision_id ␟ identity_hash(hex) ␟ before_base_price ␟ after_base_price ␞`, geordend op `m.id`;
+  `null` → letterlijke tekst `null`; prijzen via `stripTrailingZeros().toPlainString()`. De mutatie-id
+  zit in de hash: twee bundels met inhoudelijk identieke leveringen hebben dus altijd een andere hash
+  (de hash bewijst "deze rijen zijn onveranderd", niet "deze inhoud bestaat elders ook").
+- "Alle leden" bij de hash/tellers = actieve lidmaatschappen op het moment van bevriezen; verwijderde
+  lidmaatschappen tellen niet mee.
+- Alle tien tellers uit design §2 zijn vastgesteld (geen enkele blijft structureel `null`);
+  `expired_count` is bij bevriezen altijd een gemeten 0. `bulk_incident_count`/`critical_issue_count`/
+  `warning_count` zijn sommen over de lid-batches; draagt één batch geen waarde, blijft de bundelteller
+  `null` (nooit een te lage som).
+- Geen `AUTO_APPROVE_PLANNED`-regel bij 0 PLANNED-mutaties (zelfde regel als 4d); de `FREEZE`-regel
+  komt er wel altijd, met `affected_count=1`.
+- Nieuwe foutcode `BUNDLE_CONTENT_CHANGED_DURING_FREEZE` (409) als het getelde en bijgewerkte aantal
+  ondanks het bundelslot zouden verschillen (defensie in de diepte, in de praktijk onbereikbaar).
+- Bekend risico: een vergeten bevroren bundel blokkeert (via het cross-bundelconflict) een aanbieding
+  voor elke andere bundel tot Fase 5 publiceert of 4f annuleert; er is nog geen signalering hiervoor.

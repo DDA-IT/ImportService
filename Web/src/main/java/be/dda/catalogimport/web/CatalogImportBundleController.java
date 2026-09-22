@@ -10,6 +10,7 @@ import be.dda.catalogimport.service.BundleDecisionService;
 import be.dda.catalogimport.service.BundleDecisionService.DecisionFilter;
 import be.dda.catalogimport.service.BundleDecisionService.GroupDecisionView;
 import be.dda.catalogimport.service.BundleDecisionService.MutationDecisionView;
+import be.dda.catalogimport.service.BundleFreezeService;
 import be.dda.catalogimport.service.BundleQueryService;
 import be.dda.catalogimport.service.BundleQueryService.BundleBatchRow;
 import be.dda.catalogimport.service.BundleQueryService.BundleDetail;
@@ -31,10 +32,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Bediening en inzage van de Publicatiebundel (Fase 4, bouwstappen 4b t/m 4d): kandidaten opzoeken, een
+ * Bediening en inzage van de Publicatiebundel (Fase 4, bouwstappen 4b t/m 4e): kandidaten opzoeken, een
  * bundel aanmaken (idempotent op {@code bundleReference}), batches toevoegen/verwijderen, het
- * leesmodel, het individueel goedkeuren/afkeuren van één mutatie met haar beslissingsregister, en de
- * groepsactie over een gefilterde selectie. Het bevriezen en het annuleren volgen in 4e-4f.
+ * leesmodel, het individueel goedkeuren/afkeuren van één mutatie met haar beslissingsregister, de
+ * groepsactie over een gefilterde selectie, en het bevriezen. Het annuleren volgt in 4f.
  * <p>
  * <b>Statuscodes.</b> 404 {@code BUNDLE_NOT_FOUND}, {@code BATCH_NOT_FOUND},
  * {@code BATCH_NOT_IN_BUNDLE}, {@code MUTATION_NOT_IN_BUNDLE}; 409 met een stabiele {@code code}:
@@ -42,7 +43,10 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code BATCH_ALREADY_IN_BUNDLE}, {@code BATCH_NOT_BUNDLEABLE},
  * {@code BATCH_VALIDATION_NOT_ESTABLISHED}, {@code BATCH_VALIDATION_BLOCKING},
  * {@code BATCH_HAS_DECIDED_MUTATIONS}, {@code MUTATION_NOT_DECIDABLE},
- * {@code MUTATION_BLOCKED_BY_IDENTITY_INCIDENT}, {@code IDENTITY_DECISION_NOT_IN_SCOPE}; 400 met code
+ * {@code MUTATION_BLOCKED_BY_IDENTITY_INCIDENT}, {@code IDENTITY_DECISION_NOT_IN_SCOPE},
+ * {@code BUNDLE_EMPTY}, {@code BUNDLE_HAS_UNDECIDED_MUTATIONS},
+ * {@code SOURCE_STATE_CHANGED_SINCE_SCREENING}, {@code BUNDLE_OFFER_CONFLICT},
+ * {@code OFFER_ALREADY_IN_ANOTHER_BUNDLE}; 400 met code
  * {@code DECISION_FILTER_REQUIRED} bij een lege groepsfilter; 400 zonder code bij een andere ongeldige
  * aanvraag (lege naam, lege of {@code system} als actor, ontbrekende {@code targetMode}, lege
  * batchlijst, ontbrekende reden bij een afkeuring of een herziening, ongeldige paginering).
@@ -84,14 +88,25 @@ public class CatalogImportBundleController {
                                      DecisionFilter filter) {
     }
 
+    /**
+     * Body van {@code POST /bundles/{id}/freeze} (bouwstap 4e). Beide velden zijn verplicht: een
+     * bevriezing is altijd van een mens ({@code frozenBy}, nooit {@code system}) en draagt altijd een
+     * reden (R-FRZ).
+     */
+    public record FreezeBundleRequest(String frozenBy, String reason) {
+    }
+
     private final PublicationBundleService bundleService;
     private final BundleDecisionService decisionService;
+    private final BundleFreezeService freezeService;
     private final BundleQueryService queries;
 
     public CatalogImportBundleController(PublicationBundleService bundleService,
-                                         BundleDecisionService decisionService, BundleQueryService queries) {
+                                         BundleDecisionService decisionService, BundleFreezeService freezeService,
+                                         BundleQueryService queries) {
         this.bundleService = bundleService;
         this.decisionService = decisionService;
+        this.freezeService = freezeService;
         this.queries = queries;
     }
 
@@ -218,5 +233,27 @@ public class CatalogImportBundleController {
                                   @RequestBody DecideGroupRequest request) {
         return decisionService.decideGroup(bundleId, request.decisionKind(), request.decidedBy(),
                 request.reason(), request.filter());
+    }
+
+    /**
+     * Bevriest de bundel (bouwstap 4e): controleert alle voorwaarden, keurt de resterende
+     * {@code PLANNED}-mutaties in bulk goed op naam van de bevriezer, stelt de tien tellers en de
+     * bundelhash vast en sluit de bundel af ({@code FROZEN}). Alles in één transactie: bij een fout
+     * halverwege blijft de bundel onveranderd {@code ASSEMBLING} en mag de aanroep herhaald worden.
+     * <p>
+     * Het antwoord is de volledige {@code BundleDetail} van de bevroren bundel: de tellers komen dan
+     * van de rij zelf (niet meer live berekend) en {@code contentHash} draagt de bundelhash als
+     * hexadecimale tekst.
+     * <p>
+     * 409 met een stabiele {@code code}: {@code BUNDLE_NOT_ASSEMBLING} (ook bij een tweede poging),
+     * {@code BUNDLE_EMPTY}, {@code BUNDLE_HAS_UNDECIDED_MUTATIONS},
+     * {@code SOURCE_STATE_CHANGED_SINCE_SCREENING}, {@code BUNDLE_OFFER_CONFLICT},
+     * {@code OFFER_ALREADY_IN_ANOTHER_BUNDLE}; 400 bij een ontbrekende {@code frozenBy} of
+     * {@code reason}.
+     */
+    @PostMapping("/{bundleId}/freeze")
+    BundleDetail freeze(@PathVariable("bundleId") long bundleId, @RequestBody FreezeBundleRequest request) {
+        freezeService.freeze(bundleId, request.frozenBy(), request.reason());
+        return queries.getBundle(bundleId);
     }
 }
