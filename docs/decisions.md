@@ -282,3 +282,79 @@ reden, niet `system`) kan die afronden. Risico dat de mens bewust neemt: één p
 initialisatie goedkeuren zonder tweede controle. Strenger maken kan later additief.
 
 **Bron:** mens / afwijking van `business-analyse-leveranciersbibliotheken.md` §16.1, §16.8, §14.23.7
+
+---
+
+## 2026-09-22 — Samenvoeging businessanalyses: centraal artikel
+
+**Vraag:** Komt er een 'centraal artikel' dat meerdere aanbiedingen van verschillende leveranciers
+aan hetzelfde product koppelt?
+
+**Beslissing:** Tussenweg. Een artikelcluster ontstaat alleen automatisch uit een bevestigde
+EAN/PIM/CAB-koppeling (R-REF-01..09), met een vaste interne ID en volledige, permanente audit van
+elke samenvoeging. Geen automatisch samenvoegen op basis van omschrijving of score, geen apart
+beheerscherm voor fuseren/splitsen in de eerste versie.
+
+**Bron:** mens / analyserapport samenvoeging businessanalyses, vraag Q2
+
+---
+
+## 2026-09-22 — Samenvoeging businessanalyses: prijsmodel
+
+**Vraag:** Blijft het prijsmodel 'basisprijs + percentages' (gebouwd), of komt er een volledig
+prijzenstelsel bij (verpakking, staffels, toeslagen)?
+
+**Beslissing:** Beide lagen, gefaseerd. 'Basisprijs + percentages' blijft het publicatiemodel richting
+Prodis (ongewijzigd, al gebouwd). Verpakking/staffels/toeslagen komen er in een latere fase apart bij
+als importlaag-gegevens, met de harde voorwaarde dat een wijziging in verpakking/staffelgrens altijd
+als prijswijziging in de deltavingerafdruk telt — anders kan een prijsstijging onzichtbaar blijven
+(zie het "Important business rule discovered"-blok in het analyserapport). Normalisatie per stuk wordt
+niet ingevoerd vóór deze laag gebouwd is.
+
+**Bron:** mens / analyserapport samenvoeging businessanalyses, vraag Q3
+
+---
+
+## 2026-09-22 — Samenvoeging businessanalyses: prijsanker
+
+**Vraag:** Komt er een bevestigd prijsanker naast de bestaande afwijkingscontrole (vorige prijs,
+gemiddelde 50/200 dagen)?
+
+**Beslissing:** Ja. Een vierde referentie op prijsobservatieniveau die niet automatisch meeschuift met
+dagelijkse goedkeuringen; enkel een bevoegd persoon kan het anker expliciet verzetten. Beschermt tegen
+sluipende prijsdrift die de bestaande drie (meeschuivende) referenties niet detecteren. Additief:
+geen wijziging aan bestaande kolommen/gedrag, komt in een latere Fase-3-achtige uitbreiding van de
+prijscontrole.
+
+**Bron:** mens / analyserapport samenvoeging businessanalyses, vraag Q4 (businessanalyse 2 §11.2/§11.6)
+
+---
+
+## 2026-09-22 — Samenvoeging businessanalyses: leveranciers-BOM's
+
+**Vraag:** Vallen leveranciers-onderdelenlijsten (BOM's) binnen de projectscope?
+
+**Beslissing:** Ja, maar als apart, later te bouwen onderwerp met een eigen publicatieroute (de huidige
+ProDisWebbase/PSIMPORT-route kan een volledige BOM/relatiestructuur niet dragen, businessanalyse 2
+§15.10). Het bestaande supplementmodel (BA1 §14.22/§16.3, gebouwd) blijft het implementatiemodel voor
+supplementen; BOM is een generalisatie die er niet in vervangen wordt maar naast komt.
+
+**Bron:** mens / analyserapport samenvoeging businessanalyses, vraag Q5
+
+---
+
+## 2026-09-22 — Samenvoeging businessanalyses: publicatiebreedte naar Prodis
+
+**Vraag:** Schrijft de publicatie naar Prodis alleen de velden waar de import zeggenschap over heeft,
+of ook een volledige rij (met risico op overschrijven van Prodis-eigen gegevens zoals voorraad,
+locatie, boekhoudrekeningen)?
+
+**Beslissing:** Alleen eigen velden, altijd. De bestaande veldeigenaarsmatrix (BA1 §14.23: eigenaar
+Catalogusbron/Prijscontrole/Kritieke referentie/Prodis-gebruiker) blijft de harde bovengrens; een veld
+met eigenaar Prodis-gebruiker (eenheid, voorraad, locatie, rekeningen) wordt nooit door de import
+geschreven, ook niet als "behoud van de huidige waarde". Een bredere publicatievariant (volledige rij
+met terugleespatch) wordt pas overwogen nadat het behoud-/patchgedrag van de Prodis-verwerker feitelijk
+bewezen is — dat is geen principekeuze die nu al anders wordt vastgelegd.
+
+**Bron:** mens / analyserapport samenvoeging businessanalyses, vraag Q6 (BA1 §14.23 PSARF-matrix vs
+businessanalyse 2 §15.8)
