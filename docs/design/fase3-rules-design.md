@@ -187,12 +187,37 @@ BOOKMARK ⇒ bookmark_name not null; `price_component_code is null or field_owne
 'BOOKMARK'` + `bookmark_name` bestaan al; later enkel extra tabellen (`import_definition_bookmark`,
 `import_link_bookmark_value`), `import_field_mapping` blijft ongewijzigd.
 
+**Aanvulling (2026-09-23, domeinmodelontwerp sjabloon+bookmarks, changeset 006):** de garantie klopte
+voor `import_field_mapping`, maar niet voor `import_record_filter` hieronder — zie de opmerking bij
+004-3. Een gematerialiseerde `FIELD_MAPPING_FIXED_VALUE`-bookmark wordt weggeschreven als `value_kind=
+'FIXED_VALUE'` + `fixed_value='<waarde>'`, met de herkomst enkel traceerbaar via
+`import_definition_bookmark_value`/`import_link_bookmark_value` — `value_kind='BOOKMARK'` verschijnt
+zelf nooit in een actieve revisie; de bestaande blokkades die daarop rekenen
+(`ImportMappingConfigFactory`, `FieldValueMapper`) blijven dus correct.
+
 004-3 `import_record_filter`: `id`, `definition_revision_id fk`, `sequence_number int`, `filter_stage
 varchar(20) not null default 'SOURCE_FIELD'`, `source_reference varchar(200) not null`, `operator
 varchar(20) not null`, `compare_value varchar(500) not null`, `outcome varchar(20) not null`
 (`INCLUDE|EXCLUDE|REJECT`), `case_sensitive boolean not null default false`, `trim_before_compare
 boolean not null default true`, `null_behaviour varchar(20) not null default 'EXCLUDE'`,
 `missing_column_behaviour varchar(20) not null default 'BLOCK'`; unique `(definition_revision_id, sequence_number)`.
+
+**Aanvulling (2026-09-23):** `compare_value` is `not null` en heeft geen `value_kind`/`bookmark_name`-
+kolom zoals `import_field_mapping`. Een indirectie via bookmark (bv. het BA1 §14.19-voorbeeld
+`culture = [Bookmark: CULTUUR]`) kan hier dus niet als losse verwijzing bestaan zonder deze tabel te
+wijzigen. Gevolg: voor recordfilters is materialisatie (de bookmarkwaarde wordt bij materialisatie
+letterlijk in `compare_value` geschreven) niet één van twee opties maar de enige optie die zonder
+wijziging aan een bestaande tabel werkt — dit bevestigt de DEFINITION-scope-keuze in het
+sjabloon+bookmarks-ontwerp (`docs/decisions.md` 2026-09-23). De herkomst van een gematerialiseerde
+filterwaarde is dan alleen via `import_definition_bookmark_value` traceerbaar, niet vanaf de filterrij
+zelf.
+
+**Important technical constraint discovered:** het bookmarkvoorbeeld `BESTANDS_PREFIX` (bestandsnaam-
+selectie) heeft in het huidige model geen configuratieplaats om toe te passen — bestandsselectie hoort
+bij een Leveringsconfiguratie-entiteit (`ConnectionProfile`/`DeliveryConfiguration`, BA1 §14.17) die
+niet bestaat (geen entiteit, geen tabel, geen endpoint). Beslissing 2026-09-23: deze bookmarkplaats
+(`DELIVERY_FILE_SELECTION`) wordt voorlopig weggelaten uit de witte lijst van toegelaten
+configuratieplaatsen, tot Leveringsconfiguratie gebouwd is.
 
 004-4 `import_issue_group`: `id`, `batch_id fk not null`, `issue_code varchar(60) not null`, `signature
 varchar(300) not null`, `severity varchar(20) not null`, `issue_domain varchar(40) not null`,

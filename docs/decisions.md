@@ -395,3 +395,172 @@ Praat uitsluitend via REST/JSON met de bestaande `Web`-module (lokaal poort 8081
 bundeling in de Maven-build.
 
 **Bron:** mens (expliciet gekozen na toelichting van de opties)
+
+---
+
+## 2026-09-22 — Frontend: correctie van de schermenindeling (3 → 5)
+
+**Vraag:** Klopt de voorgestelde indeling van drie schermen (leveringssetup, data-analyse
+vanuit een sjabloon, publicatie) volgens de volledige documentenset?
+
+**Beslissing:** Nee, bevestigd door de mens na een denker-zwaar-toetsing tegen de normatieve
+schermkaart (`business-analyse-leveranciersbibliotheken.md` §15.6, 17 schermen) en de
+bestaande backend. Herziene indeling: (0) werkvoorraad/dashboard, (1a) beheer/inrichting,
+(1b) leveringsconfiguratie, (2) levering & screening, (3) publicatiebundel. Van deze vijf
+zijn vandaag alleen (2) en (3) zonder nieuw backendwerk bouwbaar.
+
+**Bron:** denker-zwaar (`Toets 3-schermenindeling aan documentenset`) / `business-analyse-leveranciersbibliotheken.md`
+§15.6, §14.4, §14.16, §14.18; `businessanalyse-catalogimport.md` h.10.1, h.24, h.33, h.34.3;
+`docs/design/fase4-publication-bundle-design.md` §1
+
+---
+
+## 2026-09-22 — Frontend: D14, scope eerste werkvoorraadslice
+
+**Vraag:** Wat moet de eerste werkvoorraad-/dashboardslice (scherm 0) minimaal tonen, of
+stellen we die uit? (`businessanalyse-catalogimport.md` h.33, één van de twee laatst
+openstaande projectbeslissingen)
+
+**Beslissing:** Uitstellen. Eerst schermen (2) levering & screening en (3) publicatiebundel
+bouwen — de enige twee zonder nieuw backendwerk. Werkvoorraad/dashboard volgt later als
+aparte fase met eigen Denker-analyse (er bestaat vandaag geen enkel lijst-/zoekendpoint voor
+leveringen/batches/taken).
+
+**Bron:** mens / denker-zwaar-toetsing
+
+---
+
+## 2026-09-22 — Frontend: betekenis "sjabloon" in het levering&screening-scherm
+
+**Vraag:** Wat betekent "data-analyse vanuit een sjabloon" — een gewone levering tegen de
+bevroren actieve definitieversie, het importsjabloon+bookmarks-mechanisme (§14.16), of een
+structuurpreview vanaf een testbestand (§14.4)?
+
+**Beslissing:** Importsjabloon + bookmarks (§14.16): een versieerbare blauwdruk met benoemde,
+getypeerde invulvelden waaruit per leverancier een eigen `ImportDefinition` gematerialiseerd
+wordt. Dit mechanisme is al op 2026-09-18 vastgelegd als "vereiste mogelijkheid, geen
+optionele latere uitbreiding", maar is nog niet gebouwd: geen `import_definition_bookmark`/
+`import_link_bookmark_value`-tabellen, geen endpoint.
+
+**Belangrijk gevolg (nog niet opgelost, zie melding aan de mens hierna):** dit maakt scherm
+(2) afhankelijk van eerst nieuw domeinmodel-/servicewerk (sjabloon + bookmarks) — scherm (2)
+is dus NIET meer zonder nieuw backendwerk bouwbaar, in tegenstelling tot de eerdere
+denker-conclusie. Dit moet met de mens kortgesloten worden vóór er een Bouwer op scherm (2)
+start.
+
+**Bron:** mens / `business-analyse-leveranciersbibliotheken.md` §14.16; `docs/decisions.md`
+2026-09-18 "Fase 1: bronkoppeling ImportDefinition/ImportLink + sjablonen/bookmarks"
+
+---
+
+## 2026-09-22 — Frontend: plaatsing accept-baseline vs. bundel-opname
+
+**Vraag:** Waar hoort de keuze tussen `accept-baseline` en "toevoegen aan publicatiebundel"
+in de UI thuis? De twee sluiten elkaar per batch onherroepelijk uit (409
+`BATCH_IN_PUBLICATION_BUNDLE`).
+
+**Beslissing:** Op het levering&screening-scherm (2), als actie naast de batch zelf, dicht
+bij waar de status van die batch toch al zichtbaar is.
+
+**Bron:** mens / denker-zwaar-toetsing
+
+---
+
+## 2026-09-22 — Frontend: koppelingoverstijgende mutatielijst (BA1 scherm 11)
+
+**Vraag:** Wordt de koppelingoverstijgende mutatielijst een eigen scherm, of een
+herbruikbaar component ingebed in de andere schermen?
+
+**Beslissing:** Herbruikbaar component, ingebed in zowel scherm (2) (`/batches/{id}/mutations`)
+als scherm (3) (`/bundles/{id}/mutations`) — dit matcht hoe de backend al bewust gebouwd is
+(Fase 4c: "dezelfde vier velden ... zodat beide lijsten exact dezelfde vorm hebben"). Geen
+apart, koppelingoverstijgend scherm nu.
+
+**Bron:** mens / denker-zwaar-toetsing
+
+---
+
+## 2026-09-22 — Volgorde: sjabloon+bookmarks vóór scherm 2
+
+**Vraag:** Scherm 2 hangt af van het nog niet gebouwde importsjabloon+bookmarks-mechanisme
+(§14.16). Bouwen we dat mechanisme eerst (nieuwe Fase 1-achtige cyclus), bouwen we scherm 2
+eerst zonder sjabloon, of starten we de eerste UI-slice met alleen scherm 3?
+
+**Beslissing:** Eerst het sjabloon+bookmarks-mechanisme bouwen (domeinmodel + service +
+endpoint), vóór er UI voor scherm 2 komt. Vereist een eigen denker-zwaar-ontwerp (Fase
+1-achtig: entiteiten, migratie, relatie tot bestaande `ImportDefinition`/
+`ImportDefinitionRevision`), gevolgd door bouwer-cycli — dit is geen frontend-taak.
+
+**Bron:** mens / denker-zwaar-toetsing
+
+---
+
+## 2026-09-22 — Frontend: setup-API productiewaardig maken
+
+**Vraag:** Komt er eerst een productiewaardige, geautoriseerde beheer-API voor de
+inrichtingsketen (bronorganisatie/definitie/koppeling — scherm 1a), of blijft dat voorlopig
+de ontwikkelhulp-API (`CatalogImportSetupController`, standaard uit, geen authenticatie,
+create-only)?
+
+**Beslissing:** Later, na Fase 5/Keycloak. Scherm (1a) blijft uitgesteld tot de
+autorisatiebeslissing er is (`docs/decisions.md` 2026-09-18 "Fase 0: permissiemodel"). Nu
+focus op schermen (2) en (3).
+
+**Bron:** mens / denker-zwaar-toetsing
+
+---
+
+## 2026-09-23 — Fase 1-achtig: domeinmodel sjabloon + bookmarks
+
+**Vraag:** Hoe wordt het importsjabloon+bookmarkmechanisme (§14.16) gemodelleerd — eigen
+entiteit of variant op `ImportDefinition`, waar leeft de ingevulde bookmarkwaarde
+(definitie/revisie vs. koppeling), en hoe verhoudt het zich tot bestaand versiebeheer?
+
+**Beslissing:** Het ontwerp van de denker-zwaar (`Ontwerp sjabloon+bookmarks domeinmodel`,
+2026-09-23) is bindend: een sjabloon is een bestaande `ImportDefinition` met
+`usage_type = REUSABLE_TEMPLATE` (géén nieuwe tabel, géén parallel versiebegrip — hergebruikt
+`ImportDefinitionRevision`). Vier nieuwe, volledig additieve tabellen (changeset
+`006-import-template-bookmark.sql`): `import_definition_bookmark` (declaratie op
+revisieniveau), `import_definition_bookmark_usage` (witte lijst toegelaten
+configuratieplaatsen), `import_definition_bookmark_value` (DEFINITION-scope snapshot bij
+materialisatie), `import_link_bookmark_value` (LINK-scope waarde per koppeling, gekoppeld op
+`bookmark_name`, niet op FK naar de declaratierij — declaraties verdwijnen bij elke
+opvolgrevisie, koppelingen niet).
+
+Concrete keuzes bevestigd door de mens:
+1. **Scopemodel:** elke bookmark krijgt een verplichte `value_scope`. DEFINITION-scope wordt
+   bij materialisatie in de afgeleide revisie vastgezet; LINK-scope wordt per `ImportLink`
+   ingevuld. Enige lezing waarin BA1 §14.16 en §14.17/§14.19/§14.20 elkaar niet
+   tegenspreken.
+2. **Gedeelde definitie toegestaan, met beperking:** één uit een sjabloon afgeleide
+   `ImportDefinition` mag door meerdere `ImportLink`s (meerdere leveranciers) gedeeld
+   blijven. Gevolg: een DEFINITION-scope bookmark mag nooit een waarde bevatten die per
+   leverancier zou moeten verschillen — zo'n bookmark moet LINK-scope zijn. Dit moet als
+   regel afgedwongen worden bij het declareren van een bookmark (niet pas bij materialisatie
+   ontdekt).
+3. **`DELIVERY_FILE_SELECTION`-plaats (bv. `BESTANDS_PREFIX`) wordt weggelaten** tot er een
+   Leveringsconfiguratie-entiteit bestaat — geen bookmarkplaats die nu niets toepast.
+4. **`source_organisation_id` blijft verplicht (NOT NULL)** op een sjabloon; een
+   bronoverstijgend sjabloon is geen scope van deze bouwstap, kan later additief.
+5. **Reproduceerbaarheid — hash + lock:** een nullable `import_batch.bookmark_values_hash`
+   toegevoegd (additieve kolom op een bestaande tabel, expliciet gemeld) én een LINK-scope
+   bookmarkwaarde wordt niet meer wijzigbaar zolang de koppeling een open (niet-terminale)
+   batch heeft.
+6. **Blokkeerpunt verplichte bookmarks:** zowel bij het activeren van de afgeleide revisie
+   als bij de start van een batch/levering, via de bestaande `CONFIG_*`-foutfamilie. Dit is
+   een nieuwe blokkeergrond op leveringsniveau.
+
+7. **Databaseguard (changeset `006-5`) wordt meegenomen, niet alleen serviceniveau:**
+   `import_definition.id` krijgt `unique (id, usage_type)`, `import_link` krijgt een nieuwe
+   kolom `definition_usage_type varchar(40) not null default 'OWN_DEFINITION'` met een
+   samengestelde FK naar `(import_definition_id, usage_type='OWN_DEFINITION')` en een check —
+   zodat een sjabloon nooit een `ImportLink` (en dus nooit een batch of publicatie) kan
+   krijgen, ook niet bij een toekomstige servicebug. Additief: bestaande rijen blijven geldig
+   via de default.
+
+**Nog niet gebouwd in deze beslissing:** service-/REST-/UI-laag (materialisatiewizard,
+sjabloonversievergelijking, bulkcreatie) — dat is de volgende bouwstap.
+
+**Bron:** denker-zwaar (`Ontwerp sjabloon+bookmarks domeinmodel`) / mens (Q1-Q6 bevestigd) /
+`business-analyse-leveranciersbibliotheken.md` §14.14-§14.20; `Businessanalyse_artikelimport_en_prijsacceptatie-2.md`
+§5.8-§5.10; `docs/decisions.md` 2026-09-18 (bronkoppeling + sjablonen/bookmarks)

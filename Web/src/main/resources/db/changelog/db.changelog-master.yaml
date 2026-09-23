@@ -18,3 +18,5 @@ databaseChangeLog:
       file: db/changelog/004-import-rules-core.sql
   - include:
       file: db/changelog/005-publication-bundle-core.sql
+  - include:
+      file: db/changelog/006-import-template-bookmark.sql
