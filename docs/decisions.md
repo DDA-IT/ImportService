@@ -610,3 +610,61 @@ sequentieel starten zonder verdere architectuurvragen.
 **Bron:** denker-zwaar (`Ontwerp materialisatiewizard service/REST-laag`) /
 `docs/design/sjabloon-materialisatie-design.md`; mens (Q1-Q5 bevestigd, Q3 wijkt af van het
 denker-voorstel)
+
+---
+
+## 2026-09-23 — Frontend-slice 1: scherm (3) Publicatiebundel + het frontendfundament
+
+**Vraag:** Hoe wordt de eerste echte frontend-slice gebouwd — welke fundamentele patronen (mapstructuur,
+API-client, foutcodeweergave, server-state, stijl, actormodel) en hoe ziet scherm (3) Publicatiebundel
+eruit, inclusief het herbruikbare mutatielijst-component dat scherm (2) later ongewijzigd overneemt?
+
+**Beslissing:** Het ontwerp in `docs/design/frontend-scherm3-bundel-design.md` is bindend. Kern:
+
+- **Geen server-state-bibliotheek** (geen TanStack Query/Redux/SWR): twee eigen hooks met expliciete
+  cache-invalidatie. Reden: optimistische updates zijn hier ongewenst — een goedkeuring is een
+  geauditeerde handeling en de UI mag nooit "goedgekeurd" tonen vóór de server dat bevestigt.
+  Herzieningstrigger vastgelegd in §5.
+- **Gewone CSS met CSS Modules**, geen Tailwind/componentenbibliotheek. `react-router` is de enige
+  nieuwe runtime-afhankelijkheid.
+- **Stabiele backendfoutcodes blijven altijd zichtbaar** in de UI (`errors/codes.ts` met
+  familie-fallbacks); een onbekende code geeft nog steeds een leesbare melding mét de code.
+- **De frontend rekent nooit met bedragen** — geen berekend prijsverschil tussen `beforeBasePrice` en
+  `afterBasePrice` (AGENT.md §2 principe 8; zie ook het BigDecimal-constraintblok in §18).
+- **`bundlePolicy.ts` is een spiegel van de backend, nooit de bron van waarheid**: elke 409 wordt
+  afgehandeld, ook wanneer de UI-poort "toegestaan" zei. Verboden acties worden uitgeschakeld getoond
+  mét reden, niet verborgen.
+- **Bevriezen en annuleren vragen een typ-bevestiging** van de `bundleReference`; dat zijn de twee
+  acties die binnen de applicatie niet meer ongedaan te maken zijn.
+- Bouwstappen F1-F11 strikt sequentieel (zij delen `routes.tsx`, de app shell en `api/types.ts`), plus
+  een aparte backendstap B1.
+
+**Vier vragen door de mens beantwoord (2026-09-23), alle conform de aanbeveling:**
+1. **Q1 (actornaam):** één keer per browsersessie invullen, bewaard in `sessionStorage`, permanent
+   zichtbaar in de app shell én in elke bevestigingsdialoog opnieuw getoond en ter plekke wijzigbaar.
+   Bewust niet `localStorage`: een naam die dagen later nog voorgevuld staat op een gedeelde machine is
+   precies hoe iemand ongemerkt op naam van een collega tekent.
+2. **Q2 (bereikbaarheid):** de frontend blijft tot Fase 5/Keycloak uitdrukkelijk een ontwikkelhulpmiddel
+   — alleen `npm run dev` tegen een lokale backend. Geen CORS, geen statische uitlevering via de
+   `Web`-module, niets uitgeleverd. Zonder authenticatie zou een bereikbare frontend betekenen dat
+   iedereen die het netwerkadres kent een publicatiebundel kan bevriezen.
+3. **Q3 (`targetMode`):** alle drie de waarden worden aangeboden, zonder voorselectie, met een expliciete
+   waarschuwing bij `PRODUCTION` dat een latere publicatiefase die bundel als echte publicatie
+   behandelt. Verbergen zou schijnveiligheid geven — de backend aanvaardt de waarde toch.
+4. **Q4 (sortering):** `GET /bundles` en `GET /bundles/{id}/batches` krijgen deterministische sortering
+   (bundels aflopend op `id`, lidmaatschappen oplopend) als aparte backendstap B1. Dit legt een tot nu
+   toe ongedefinieerde volgorde vast.
+
+**Vier ontdekkingen** staan in §18 van het ontwerp en verdienen terugschrijving naar de betrokken
+ontwerpdocumenten: paginering zonder sortering (fase 4), het niet-uniforme foutcontract
+(`IllegalArgumentException` → 400 zonder `code`, fase 4), de synchrone upload+screening binnen één
+HTTP-verzoek bij een maximum van 1 GB (fase 2), en `BigDecimal` als JSON-getal waardoor schaal en
+precisie in de browser verloren gaan.
+
+**Nog niet beslist, wel voorgesteld:** drie kleine additieve backenduitbreidingen die scherm (3)
+merkbaar bruikbaarder maken (§16): een `statusReason`-filter op de mutatielijst, tellers voor `PLANNED`
+en `AWAITING_APPROVAL` op `BundleDetail`, en `importLinkCode`/`supplierCode` op `BundleBatchRow`/
+`BundleCandidate` zodat de UI niet "koppeling #7" hoeft te tonen.
+
+**Bron:** denker-zwaar (`Ontwerp frontend scherm 3 + fundament`) /
+`docs/design/frontend-scherm3-bundel-design.md`; mens (Q1-Q4 bevestigd)
