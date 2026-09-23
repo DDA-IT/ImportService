@@ -25,6 +25,7 @@ import be.dda.catalogimport.domain.ImportLink;
 import be.dda.catalogimport.domain.ImportLinkBookmarkValue;
 import be.dda.catalogimport.domain.ImportRecordFilter;
 import be.dda.catalogimport.domain.ImportRevisionFieldCriticality;
+import be.dda.catalogimport.domain.RevisionCriticalityField;
 import be.dda.catalogimport.domain.RevisionStatus;
 import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.service.support.BookmarkDeclarations;
@@ -107,18 +108,35 @@ import org.springframework.transaction.annotation.Transactional;
  *       nooit per ongeluk door twee leveranciers gedeeld worden.</li>
  * </ol>
  *
- * <h2>Grenzen van de bouwstappen 5c/5d</h2>
- * Uitsluitend de plaatsen
+ * <h2>Grenzen van deze bouwstap (5e)</h2>
+ * Zes van de zeven plaatsen zijn materialiseerbaar:
  * {@link BookmarkUsagePlace#FIELD_MAPPING_FIXED_VALUE}, {@link BookmarkUsagePlace#RECORD_FILTER_COMPARE_VALUE},
- * {@link BookmarkUsagePlace#LINK_LIBRARY_CODE} en {@link BookmarkUsagePlace#LINK_SUPPLIER_ORGANISATION}.
- * {@link BookmarkUsagePlace#REVISION_IDENTITY_FIELD} en {@link BookmarkUsagePlace#LINK_SEARCH_SUPPLIER}
- * volgen in 5e, {@link BookmarkUsagePlace#REVISION_PRICE_POLICY} blijft geweigerd (§9 punt 4, A37).
- * Elk van die plaatsen wordt <b>uitdrukkelijk geweigerd</b> met
- * {@code CONFIG_BOOKMARK_PLACE_NOT_SUPPORTED}, nooit stil genegeerd — een stil genegeerde bookmark zou
- * een leeg of verkeerd doelveld opleveren dat op een bewuste keuze lijkt.
+ * {@link BookmarkUsagePlace#REVISION_IDENTITY_FIELD}, {@link BookmarkUsagePlace#LINK_LIBRARY_CODE},
+ * {@link BookmarkUsagePlace#LINK_SEARCH_SUPPLIER} en {@link BookmarkUsagePlace#LINK_SUPPLIER_ORGANISATION}.
+ * Alleen {@link BookmarkUsagePlace#REVISION_PRICE_POLICY} blijft geweigerd (§9 punt 4, A37): er bestaat
+ * geen beleidsprofiel-entiteit om een waarde op toe te passen. Ze wordt <b>uitdrukkelijk geweigerd</b>
+ * met {@code CONFIG_BOOKMARK_PLACE_NOT_SUPPORTED}, nooit stil genegeerd — een stil genegeerde bookmark
+ * zou een leeg of verkeerd doelveld opleveren dat op een bewuste keuze lijkt.
  * <p>
- * {@code warnings} in deze bouwstappen altijd leeg; de getypeerde waarschuwingen
- * ({@code OPTIONAL_BOOKMARK_NOT_FILLED}, {@code LINK_SEARCH_SUPPLIER_NOT_DERIVED}) horen bij 5e (§11).
+ * <b>{@link BookmarkUsagePlace#REVISION_IDENTITY_FIELD}</b> schrijft de waarde in het revisieveld dat de
+ * {@code targetHint} (een {@link RevisionCriticalityField}-sleutel) aanwijst. Vier van de zeven sleutels
+ * ({@code SUPPLIER}, {@code SUPPLIER_GROUP}, {@code SUPPLIER_REFERENCE}, {@code DISCOUNT_CODE}) zijn de
+ * aanbiedingsidentiteit zelf: een waarde hier verandert dus mee de identiteit én — via
+ * {@link RevisionConfigHashes#applyAll}, opnieuw aangeroepen nadat alle waarden toegepast zijn — de
+ * configuratiehashes van de afgeleide revisie (§2, §10 kernproef). Dit is de belangrijkste van de twee
+ * nieuwe plaatsen: fase C accepteerde alle zeven sleutels al sinds bouwstap 5a/5b
+ * ({@code BookmarkDeclarations}, {@code BookmarkValueRules}), maar geen enkele kon tot nu toe echt
+ * geschreven worden.
+ * <p>
+ * <b>{@link BookmarkUsagePlace#LINK_SEARCH_SUPPLIER}</b> vult uitsluitend {@code
+ * import_link.library_search_supplier_code} — nooit uit de leverancier van de koppeling of uit
+ * {@code DETAILLEVERANCIER} afgeleid (R-BMK-04). Ontbreekt de bookmark of blijft ze onbeantwoord, dan
+ * blijft de kolom {@code null} en krijgt het antwoord de waarschuwing
+ * {@code LINK_SEARCH_SUPPLIER_NOT_DERIVED}.
+ * <p>
+ * {@code warnings} draagt sinds deze bouwstap de twee getypeerde codes uit §5: {@code
+ * OPTIONAL_BOOKMARK_NOT_FILLED} (een niet-verplichte bookmark zonder waarde; de plaats behoudt wat ze
+ * had) en {@code LINK_SEARCH_SUPPLIER_NOT_DERIVED} hierboven. Beide zijn getypeerd, geen vrije tekst.
  * <p>
  * Autorisatie volgt in Fase 5; {@code materialisedBy} is voorlopig een requestveld met dezelfde regels
  * als {@code acceptedBy}/{@code decidedBy} (A38, Q1).
@@ -141,24 +159,22 @@ public class TemplateMaterialisationService {
     private static final int MAX_BOOKMARK_NAME_LENGTH = 60;
 
     /**
-     * De plaatsen die <b>deze</b> bouwstap toepast (§11, 5c). Bewust enger dan de witte lijst van
-     * {@link BookmarkDeclarations}: die laat een sjabloon toe om nu al een
-     * {@link BookmarkUsagePlace#REVISION_IDENTITY_FIELD}- of
-     * {@link BookmarkUsagePlace#LINK_SEARCH_SUPPLIER}-bookmark te declareren (dat blijft geldig
-     * declaratiewerk), maar materialiseren kan die plaatsen nog niet invullen. Ze worden daarom hier
-     * geweigerd in plaats van in {@code BookmarkDeclarations}, zodat bouwstap 5b ongewijzigd blijft.
+     * De plaatsen die <b>deze</b> bouwstap toepast (§11, 5e). Gelijk aan de witte lijst van
+     * {@link BookmarkDeclarations} min {@link BookmarkUsagePlace#REVISION_PRICE_POLICY}: die plaats blijft
+     * uitdrukkelijk geweigerd (§9 punt 4, A37) omdat er geen beleidsprofiel-entiteit bestaat.
      */
     private static final Set<BookmarkUsagePlace> MATERIALISABLE_PLACES = EnumSet.of(
             BookmarkUsagePlace.FIELD_MAPPING_FIXED_VALUE, BookmarkUsagePlace.RECORD_FILTER_COMPARE_VALUE,
-            BookmarkUsagePlace.LINK_LIBRARY_CODE, BookmarkUsagePlace.LINK_SUPPLIER_ORGANISATION);
+            BookmarkUsagePlace.REVISION_IDENTITY_FIELD, BookmarkUsagePlace.LINK_LIBRARY_CODE,
+            BookmarkUsagePlace.LINK_SEARCH_SUPPLIER, BookmarkUsagePlace.LINK_SUPPLIER_ORGANISATION);
 
     /**
      * De plaatsen die in de <b>revisie</b> landen in plaats van op de koppeling (bouwstap 5d). Een
      * {@code LINK}-scope bookmark op zo'n plaats zet een per-leverancier waarde vast in configuratie die
      * gedeeld zou worden; dat is precies wat vraag Q2 als "toegestaan, maar dan niet deelbaar"
-     * beantwoordt. De drie staan hier voluit, ook
-     * {@link BookmarkUsagePlace#REVISION_IDENTITY_FIELD} die pas in 5e materialiseerbaar wordt: de
-     * deelbaarheidsregel mag niet stilzwijgend versoepelen op het moment dat 5e die plaats aanzet.
+     * beantwoordt. Sinds bouwstap 5e is {@link BookmarkUsagePlace#REVISION_IDENTITY_FIELD} ook echt
+     * materialiseerbaar (zie {@code MATERIALISABLE_PLACES}); ze stond hier al vóór die stap, zodat de
+     * deelbaarheidsregel niet stilzwijgend versoepelde op het moment dat 5e die plaats aanzette.
      */
     private static final Set<BookmarkUsagePlace> REVISION_LEVEL_PLACES = EnumSet.of(
             BookmarkUsagePlace.FIELD_MAPPING_FIXED_VALUE, BookmarkUsagePlace.RECORD_FILTER_COMPARE_VALUE,
@@ -211,7 +227,12 @@ public class TemplateMaterialisationService {
                                String targetHint) {
     }
 
-    /** Getypeerde waarschuwing; in bouwstap 5c altijd leeg (zie klasse-javadoc). */
+    /**
+     * Getypeerde waarschuwing (§5), geen vrije tekst. {@code OPTIONAL_BOOKMARK_NOT_FILLED}:
+     * {@code bookmarkName} gevuld, de plaats behield haar bestaande waarde. {@code
+     * LINK_SEARCH_SUPPLIER_NOT_DERIVED}: {@code bookmarkName} is {@code null} wanneer geen enkele
+     * bookmark de plaats declareerde.
+     */
     public record Warning(String code, String bookmarkName, String message) {
     }
 
@@ -608,8 +629,15 @@ public class TemplateMaterialisationService {
 
     // --- Fase D ------------------------------------------------------------------------------------
 
-    /** De uitkomst van fase D: welke waarde er per bookmark geldt, en wat de koppeling krijgt. */
-    private record Values(Map<String, String> effective, String supplierOrganisationCode, String libraryCode) {
+    /**
+     * De uitkomst van fase D: welke waarde er per bookmark geldt, en wat de koppeling krijgt.
+     *
+     * @param librarySearchSupplierCode {@code null} wanneer geen enkele bron (bookmark of requestveld) ze
+     *                                  vult — R-BMK-04 verbiedt ze stil af te leiden, dus dat blijft zo en
+     *                                  levert {@code LINK_SEARCH_SUPPLIER_NOT_DERIVED} op (§5)
+     */
+    private record Values(Map<String, String> effective, String supplierOrganisationCode, String libraryCode,
+                          String librarySearchSupplierCode) {
     }
 
     private Values checkValues(MaterialiseRequest command, Declarations declarations, RequestShape shape) {
@@ -704,14 +732,20 @@ public class TemplateMaterialisationService {
                 command.supplierOrganisationCode(), declarations, effective, MAX_CODE_LENGTH);
         String libraryCode = linkField(BookmarkUsagePlace.LINK_LIBRARY_CODE, "libraryCode",
                 command.libraryCode(), declarations, effective, MAX_LIBRARY_CODE_LENGTH);
-        return new Values(effective, supplierCode, libraryCode);
+        // R-BMK-04: librarySearchSupplierCode is de enige van de drie LINK_*-kolommen die nullable is en
+        // dus géén CONFIG_REQUIRED_BOOKMARK_MISSING oplevert wanneer ze leeg blijft — ze wordt nooit
+        // stil afgeleid, en het ontbreken wordt met de waarschuwing LINK_SEARCH_SUPPLIER_NOT_DERIVED
+        // gemeld in plaats van geweigerd (write/writeReuse).
+        String librarySearchSupplierCode = linkOptionalField(BookmarkUsagePlace.LINK_SEARCH_SUPPLIER,
+                shape.librarySearchSupplierCode(), "librarySearchSupplierCode", declarations, effective);
+        return new Values(effective, supplierCode, libraryCode, librarySearchSupplierCode);
     }
 
     /**
-     * De waarde van één {@code LINK_*}-kolom: uit de bookmark wanneer het sjabloon er één declareert,
-     * anders uit het requestveld (§4 D7). Beide kolommen zijn {@code not null}, dus een gedeclareerde
-     * maar niet ingevulde <i>optionele</i> bookmark laat de koppeling zonder waarde achter — dat is
-     * hier {@code CONFIG_REQUIRED_BOOKMARK_MISSING} in plaats van een databasefout.
+     * De waarde van één verplichte {@code LINK_*}-kolom: uit de bookmark wanneer het sjabloon er één
+     * declareert, anders uit het requestveld (§4 D7). Beide kolommen zijn {@code not null}, dus een
+     * gedeclareerde maar niet ingevulde <i>optionele</i> bookmark laat de koppeling zonder waarde achter —
+     * dat is hier {@code CONFIG_REQUIRED_BOOKMARK_MISSING} in plaats van een databasefout.
      */
     private String linkField(BookmarkUsagePlace place, String requestField, String requestValue,
                              Declarations declarations, Map<String, String> effective, int maxLength) {
@@ -730,6 +764,27 @@ public class TemplateMaterialisationService {
                     + "' fills " + requestField + ", which the import link always needs; give it a value");
         }
         return requireText(value, requestField, maxLength);
+    }
+
+    /**
+     * De waarde van {@link BookmarkUsagePlace#LINK_SEARCH_SUPPLIER} (§4 D7, R-BMK-04): uit de bookmark
+     * wanneer het sjabloon er één declareert, anders het al gevalideerde requestveld. Anders dan
+     * {@link #linkField}: deze kolom is nullable en een niet-ingevulde optionele bookmark is <b>geen</b>
+     * fout — ze levert later gewoon {@code null} op, expliciet gemeld via
+     * {@code LINK_SEARCH_SUPPLIER_NOT_DERIVED} (nooit stil afgeleid uit iets anders).
+     */
+    private String linkOptionalField(BookmarkUsagePlace place, String requestValue, String requestFieldForError,
+                                     Declarations declarations, Map<String, String> effective) {
+        ImportDefinitionBookmark owner = declarations.linkPlaceOwners().get(place);
+        if (owner == null) {
+            return requestValue;
+        }
+        if (requestValue != null) {
+            throw new BadRequestException("LINK_FIELD_BOTH_BOOKMARK_AND_EXPLICIT", "Bookmark '"
+                    + owner.getName() + "' already fills " + requestFieldForError + " through place '" + place
+                    + "'; leave the request field out so there is only one source for that value");
+        }
+        return effective.get(owner.getName());
     }
 
     // --- Fase E ------------------------------------------------------------------------------------
@@ -897,14 +952,19 @@ public class TemplateMaterialisationService {
             link = new ImportLink(shape.linkCode(), shape.linkName(), definition, supplier,
                     values.libraryCode());
             // R-BMK-04: de bibliotheekzoekleverancier wordt nooit afgeleid uit de leverancier van de
-            // koppeling of uit een detailleverancier; zonder opgave blijft ze leeg.
-            link.setLibrarySearchSupplierCode(shape.librarySearchSupplierCode());
+            // koppeling of uit een detailleverancier; zonder opgave (geen bookmark, geen requestveld)
+            // blijft ze leeg en meldt de waarschuwing hieronder dat expliciet.
+            link.setLibrarySearchSupplierCode(values.librarySearchSupplierCode());
             link = links.saveAndFlush(link);
 
             List<AppliedValue> appliedDefinition = new ArrayList<>();
             List<AppliedValue> appliedLink = new ArrayList<>();
+            List<Warning> warnings = new ArrayList<>();
+            if (values.librarySearchSupplierCode() == null) {
+                warnings.add(searchSupplierNotDerivedWarning(declarations));
+            }
             applyValues(templateRevision, declarations, values, revision, link, mappings, filters, actor,
-                    appliedDefinition, appliedLink);
+                    appliedDefinition, appliedLink, warnings);
 
             fieldMappings.saveAll(mappings.values());
             recordFilters.saveAll(filters.values());
@@ -923,7 +983,7 @@ public class TemplateMaterialisationService {
                     templateRevision.getRevisionNumber(), templateRevision.getStatus().name(),
                     definition.getId(), definition.getCode(), true, revision.getId(),
                     revision.getRevisionNumber(), revision.getStatus().name(), link.getId(), link.getCode(),
-                    List.copyOf(appliedDefinition), List.copyOf(appliedLink), List.of());
+                    List.copyOf(appliedDefinition), List.copyOf(appliedLink), List.copyOf(warnings));
         } catch (DataIntegrityViolationException violation) {
             throw translate(violation);
         }
@@ -948,16 +1008,30 @@ public class TemplateMaterialisationService {
             ImportLink link = new ImportLink(shape.linkCode(), shape.linkName(), reused.definition(),
                     supplier, values.libraryCode());
             // R-BMK-04 blijft ook hier gelden: nooit stil afleiden uit de leverancier van de koppeling.
-            link.setLibrarySearchSupplierCode(shape.librarySearchSupplierCode());
+            link.setLibrarySearchSupplierCode(values.librarySearchSupplierCode());
             link = links.saveAndFlush(link);
 
             List<AppliedValue> appliedLink = new ArrayList<>();
+            List<Warning> warnings = new ArrayList<>();
+            if (values.librarySearchSupplierCode() == null) {
+                warnings.add(searchSupplierNotDerivedWarning(declarations));
+            }
             for (ImportDefinitionBookmark bookmark : declarations.bookmarks()) {
                 if (bookmark.getValueScope() != BookmarkValueScope.LINK) {
                     continue;
                 }
                 String value = values.effective().get(bookmark.getName());
                 if (value == null) {
+                    // Optioneel en niet ingevuld: LINK_SEARCH_SUPPLIER kreeg hierboven al haar eigen
+                    // waarschuwing (R-BMK-04); voor elke andere plaats blijft de bestaande waarde staan.
+                    for (ImportDefinitionBookmarkUsage usage : declarations.usages().get(bookmark)) {
+                        if (usage.getPlaceKind() == BookmarkUsagePlace.LINK_SEARCH_SUPPLIER) {
+                            continue;
+                        }
+                        warnings.add(new Warning("OPTIONAL_BOOKMARK_NOT_FILLED", bookmark.getName(),
+                                "Bookmark '" + bookmark.getName() + "' has no value; place '"
+                                        + usage.getPlaceKind() + "' keeps its current value"));
+                    }
                     continue;
                 }
                 for (ImportDefinitionBookmarkUsage usage : declarations.usages().get(bookmark)) {
@@ -979,10 +1053,24 @@ public class TemplateMaterialisationService {
                     templateRevision.getRevisionNumber(), templateRevision.getStatus().name(),
                     reused.definition().getId(), reused.definition().getCode(), false, revision.getId(),
                     revision.getRevisionNumber(), revision.getStatus().name(), link.getId(), link.getCode(),
-                    List.of(), List.copyOf(appliedLink), List.of());
+                    List.of(), List.copyOf(appliedLink), List.copyOf(warnings));
         } catch (DataIntegrityViolationException violation) {
             throw translate(violation);
         }
+    }
+
+    /**
+     * R-BMK-04: {@code import_link.library_search_supplier_code} blijft {@code null} in plaats van stil
+     * afgeleid te worden. {@code bookmarkName} wijst naar de declaratie die de plaats draagt maar niet
+     * ingevuld werd, of is {@code null} wanneer het sjabloon de plaats helemaal niet declareert.
+     */
+    private static Warning searchSupplierNotDerivedWarning(Declarations declarations) {
+        ImportDefinitionBookmark owner = declarations.linkPlaceOwners().get(BookmarkUsagePlace.LINK_SEARCH_SUPPLIER);
+        return new Warning("LINK_SEARCH_SUPPLIER_NOT_DERIVED", owner == null ? null : owner.getName(),
+                "import_link.library_search_supplier_code is not filled; R-BMK-04 forbids deriving it "
+                        + "silently from the link's supplier organisation or from a detail-supplier value — "
+                        + "fill a LINK_SEARCH_SUPPLIER bookmark or the librarySearchSupplierCode request "
+                        + "field explicitly");
     }
 
     /**
@@ -1164,17 +1252,28 @@ public class TemplateMaterialisationService {
                              Values values, ImportDefinitionRevision revision, ImportLink link,
                              Map<String, ImportFieldMapping> mappings, Map<Integer, ImportRecordFilter> filters,
                              String actor, List<AppliedValue> appliedDefinition,
-                             List<AppliedValue> appliedLink) {
+                             List<AppliedValue> appliedLink, List<Warning> warnings) {
         for (ImportDefinitionBookmark bookmark : declarations.bookmarks()) {
             String value = values.effective().get(bookmark.getName());
             if (value == null) {
-                // Optioneel en niet ingevuld: de plaats behoudt de sjabloonwaarde. De getypeerde
-                // waarschuwing OPTIONAL_BOOKMARK_NOT_FILLED hoort bij bouwstap 5e (§11).
+                // Optioneel en niet ingevuld: de plaats behoudt haar bestaande waarde
+                // (OPTIONAL_BOOKMARK_NOT_FILLED). LINK_SEARCH_SUPPLIER kreeg in write()/writeReuse() al
+                // haar eigen, specifiekere waarschuwing (LINK_SEARCH_SUPPLIER_NOT_DERIVED, R-BMK-04): er
+                // bestaat voor die kolom geen "sjabloonwaarde" om te behouden (R-SHR-01, een sjabloon
+                // heeft nooit een koppeling), dus hier geen tweede waarschuwing voor dezelfde bookmark.
+                for (ImportDefinitionBookmarkUsage usage : declarations.usages().get(bookmark)) {
+                    if (usage.getPlaceKind() == BookmarkUsagePlace.LINK_SEARCH_SUPPLIER) {
+                        continue;
+                    }
+                    warnings.add(new Warning("OPTIONAL_BOOKMARK_NOT_FILLED", bookmark.getName(),
+                            "Bookmark '" + bookmark.getName() + "' has no value; place '"
+                                    + usage.getPlaceKind() + "' keeps the value it already had"));
+                }
                 continue;
             }
             boolean definitionScope = bookmark.getValueScope() == BookmarkValueScope.DEFINITION;
             for (ImportDefinitionBookmarkUsage usage : declarations.usages().get(bookmark)) {
-                applyToTarget(usage, value, mappings, filters);
+                applyToTarget(usage, value, revision, mappings, filters);
                 AppliedValue applied = new AppliedValue(bookmark.getName(), bookmark.getDataType().name(),
                         value, usage.getPlaceKind().name(), usage.getTargetHint());
                 (definitionScope ? appliedDefinition : appliedLink).add(applied);
@@ -1192,7 +1291,7 @@ public class TemplateMaterialisationService {
     }
 
     private void applyToTarget(ImportDefinitionBookmarkUsage usage, String value,
-                               Map<String, ImportFieldMapping> mappings,
+                               ImportDefinitionRevision revision, Map<String, ImportFieldMapping> mappings,
                                Map<Integer, ImportRecordFilter> filters) {
         switch (usage.getPlaceKind()) {
             case FIELD_MAPPING_FIXED_VALUE -> {
@@ -1215,13 +1314,43 @@ public class TemplateMaterialisationService {
                 }
                 filter.setCompareValue(value);
             }
+            case REVISION_IDENTITY_FIELD -> {
+                // Onbereikbaar: fase C3 (BookmarkDeclarations) heeft de targetHint al tegen
+                // RevisionCriticalityField geresolved.
+                RevisionCriticalityField field = RevisionCriticalityField.byKey(usage.getTargetHint())
+                        .orElseThrow(() -> new ConflictException("CONFIG_BOOKMARK_PLACE_UNRESOLVED",
+                                "Revision field '" + usage.getTargetHint() + "' is unknown"));
+                applyRevisionField(revision, field, value);
+            }
             // De koppelingskolommen zijn in fase D al opgelost tot één bron per kolom en worden bij het
             // aanmaken van de ImportLink gezet; hier valt niets meer toe te passen.
-            case LINK_LIBRARY_CODE, LINK_SUPPLIER_ORGANISATION -> {
+            case LINK_LIBRARY_CODE, LINK_SUPPLIER_ORGANISATION, LINK_SEARCH_SUPPLIER -> {
                 // Zie hierboven.
             }
             default -> throw new ConflictException("CONFIG_BOOKMARK_PLACE_NOT_SUPPORTED",
                     "Place '" + usage.getPlaceKind() + "' is not materialised by this build");
+        }
+    }
+
+    /**
+     * Schrijft {@code value} in het revisieveld dat {@code field} aanwijst (§2). Vier van de zeven
+     * sleutels zijn de aanbiedingsidentiteit zelf ({@code SUPPLIER}, {@code SUPPLIER_GROUP},
+     * {@code SUPPLIER_REFERENCE}, {@code DISCOUNT_CODE}); een waarde daar verandert dus mee de identiteit
+     * én, via {@link RevisionConfigHashes#applyAll} die na deze stap opnieuw draait, de
+     * {@code record_rules_config_hash}/{@code composite_config_hash} van de afgeleide revisie. De overige
+     * drie ({@code BASE_PRICE}, {@code CURRENCY}, {@code DESCRIPTION}) delen dezelfde kolomvorm
+     * (varchar(200), zie {@code BookmarkValueRules}) maar raken de identiteit niet.
+     */
+    private static void applyRevisionField(ImportDefinitionRevision revision, RevisionCriticalityField field,
+                                           String value) {
+        switch (field) {
+            case SUPPLIER -> revision.setIdentitySupplierField(value);
+            case SUPPLIER_GROUP -> revision.setIdentitySupplierGroupField(value);
+            case SUPPLIER_REFERENCE -> revision.setIdentitySupplierReferenceField(value);
+            case DISCOUNT_CODE -> revision.setIdentityDiscountCodeField(value);
+            case BASE_PRICE -> revision.setRecordBasePriceField(value);
+            case CURRENCY -> revision.setRecordCurrencyField(value);
+            case DESCRIPTION -> revision.setRecordDescriptionField(value);
         }
     }
 

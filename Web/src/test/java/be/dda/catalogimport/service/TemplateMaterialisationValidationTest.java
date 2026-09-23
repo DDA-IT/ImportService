@@ -190,22 +190,16 @@ class TemplateMaterialisationValidationTest {
     }
 
     /**
-     * C4. {@code REVISION_PRICE_POLICY} blijft geweigerd (§9 punt 4, A37);
-     * {@code REVISION_IDENTITY_FIELD} en {@code LINK_SEARCH_SUPPLIER} zijn geldige declaraties maar
-     * worden pas in bouwstap 5e gematerialiseerd — tot dan uitdrukkelijk geweigerd in plaats van stil
-     * genegeerd.
+     * C4. {@code REVISION_PRICE_POLICY} blijft geweigerd (§9 punt 4, A37): er bestaat geen
+     * beleidsprofiel-entiteit om een waarde op toe te passen. {@code REVISION_IDENTITY_FIELD} en
+     * {@code LINK_SEARCH_SUPPLIER} zijn sinds bouwstap 5e wél materialiseerbaar — zie
+     * {@code TemplateMaterialisationTest} en de D6/D7-toetsen hieronder.
      */
     @Test
-    void refusesEveryPlaceThatThisBuildStepCannotMaterialise() {
-        assertPlaceNotSupported("C4A", BookmarkUsagePlace.REVISION_PRICE_POLICY, "");
-        assertPlaceNotSupported("C4B", BookmarkUsagePlace.REVISION_IDENTITY_FIELD, "SUPPLIER");
-        assertPlaceNotSupported("C4C", BookmarkUsagePlace.LINK_SEARCH_SUPPLIER, "");
-    }
-
-    private void assertPlaceNotSupported(String prefix, BookmarkUsagePlace place, String targetHint) {
-        MaterialisationFixtures.Template template = fixtures.template(prefix);
+    void refusesTheOnlyPlaceThisBuildStepCannotMaterialise() {
+        MaterialisationFixtures.Template template = fixtures.template("C4A");
         fixtures.declareOn(template.revision(), "TE_VROEG", BookmarkValueScope.LINK, true,
-                BookmarkDataType.TEXT, 1, place, targetHint);
+                BookmarkDataType.TEXT, 1, BookmarkUsagePlace.REVISION_PRICE_POLICY, "");
 
         assertThatThrownBy(() -> materialisation.materialise(template.definition().getId(),
                 request(template, List.of(new BookmarkValue("TE_VROEG", "x")), null)))
@@ -313,6 +307,46 @@ class TemplateMaterialisationValidationTest {
                         template.definitionCode(), "x", null, template.linkCode(), "y",
                         template.supplier().getCode(), "PSARF001", null,
                         List.of(new BookmarkValue("DOELBIBLIOTHEEK", "PSARF002")), USER)))
+                .isInstanceOf(BadRequestException.class)
+                .extracting(error -> ((BadRequestException) error).getCode())
+                .isEqualTo("LINK_FIELD_BOTH_BOOKMARK_AND_EXPLICIT");
+    }
+
+    /**
+     * D6 voor {@code LINK_SEARCH_SUPPLIER} (bouwstap 5e): {@code value_text} is {@code varchar(500)},
+     * maar {@code import_link.library_search_supplier_code} is {@code varchar(50)}.
+     */
+    @Test
+    void refusesALibrarySearchSupplierValueThatDoesNotFitTheTargetColumn() {
+        MaterialisationFixtures.Template template = fixtures.template("D6B");
+        fixtures.declareOn(template.revision(), "BIB_ZOEKLEVERANCIER", BookmarkValueScope.LINK, true,
+                BookmarkDataType.TEXT, 1, BookmarkUsagePlace.LINK_SEARCH_SUPPLIER, "");
+
+        assertThatThrownBy(() -> materialisation.materialise(template.definition().getId(),
+                new MaterialiseRequest(null, MaterialisationMode.NEW_DEFINITION, null,
+                        template.definitionCode(), "x", null, template.linkCode(), "y",
+                        template.supplier().getCode(), "PSARF001", null,
+                        List.of(new BookmarkValue("BIB_ZOEKLEVERANCIER", "S".repeat(51))), USER)))
+                .isInstanceOf(BadRequestException.class)
+                .extracting(error -> ((BadRequestException) error).getCode())
+                .isEqualTo("CONFIG_BOOKMARK_VALUE_TOO_LONG");
+    }
+
+    /**
+     * D7 voor {@code LINK_SEARCH_SUPPLIER} (bouwstap 5e, R-BMK-04): ook deze — nullable — kolom heeft
+     * precies één bron; de bookmark en het requestveld mogen nooit allebei gevuld zijn.
+     */
+    @Test
+    void refusesALibrarySearchSupplierFilledByBothABookmarkAndAnExplicitRequestField() {
+        MaterialisationFixtures.Template template = fixtures.template("D7B");
+        fixtures.declareOn(template.revision(), "BIB_ZOEKLEVERANCIER", BookmarkValueScope.LINK, false,
+                BookmarkDataType.TEXT, 1, BookmarkUsagePlace.LINK_SEARCH_SUPPLIER, "");
+
+        assertThatThrownBy(() -> materialisation.materialise(template.definition().getId(),
+                new MaterialiseRequest(null, MaterialisationMode.NEW_DEFINITION, null,
+                        template.definitionCode(), "x", null, template.linkCode(), "y",
+                        template.supplier().getCode(), "PSARF001", "ACME-SEARCH",
+                        List.of(new BookmarkValue("BIB_ZOEKLEVERANCIER", "ACME-SEARCH")), USER)))
                 .isInstanceOf(BadRequestException.class)
                 .extracting(error -> ((BadRequestException) error).getCode())
                 .isEqualTo("LINK_FIELD_BOTH_BOOKMARK_AND_EXPLICIT");

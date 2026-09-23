@@ -198,18 +198,24 @@ class TemplateMaterialisationTest {
                 .containsExactly("CULTUUR=NL");
         assertThat(view.linkValues()).extracting(value -> value.name() + '=' + value.value())
                 .containsExactlyInAnyOrder("DETAILLEVERANCIER=ACME-001", "DOELBIBLIOTHEEK=PSARF012");
-        assertThat(view.warnings()).isEmpty();
+        // R-BMK-04: geen LINK_SEARCH_SUPPLIER-bookmark en geen requestveld, dus de kolom blijft leeg —
+        // en dat wordt getypeerd gemeld, nooit stil afgeleid (bouwstap 5e).
+        assertThat(view.warnings()).extracting(TemplateMaterialisationService.Warning::code)
+                .containsExactly("LINK_SEARCH_SUPPLIER_NOT_DERIVED");
     }
 
     // --- Hashes ---------------------------------------------------------------------------------------
 
     /**
      * §2: de vier hashes van de afgeleide revisie worden <b>herberekend</b> en beschrijven die revisie
-     * zelf. In deze bouwstap kan geen enkele bookmarkplaats een revisieveld raken
-     * ({@code REVISION_IDENTITY_FIELD} volgt in 5e), dus de afgeleide revisie is inhoudelijk gelijk aan
-     * het sjabloon en draagt terecht dezelfde hashes — de hash zegt "deze configuratie", niet "deze rij".
-     * Wat hier bewezen wordt is dat de hashes uit de canonieke berekening over de <i>eigen</i>
-     * veldwaarden komen, en dus meebewegen zodra een waarde een revisieveld wél verandert.
+     * zelf. Het canonieke sjabloon van deze klasse raakt geen enkel revisieveld (haar vier plaatsen
+     * blijven {@code RECORD_FILTER_COMPARE_VALUE}, {@code LINK_LIBRARY_CODE} en
+     * {@code FIELD_MAPPING_FIXED_VALUE}), dus de afgeleide revisie is inhoudelijk gelijk aan het sjabloon
+     * en draagt terecht dezelfde hashes — de hash zegt "deze configuratie", niet "deze rij". Wat hier
+     * bewezen wordt is dat de hashes uit de canonieke berekening over de <i>eigen</i> veldwaarden komen.
+     * De kernproef dat een bookmarkwaarde die wél een revisieveld raakt de hash daadwerkelijk verandert,
+     * staat hieronder in {@link #materialisesARevisionIdentityFieldAndChangesTheConfigurationHashes()}
+     * (§10, bouwstap 5e: geen van de vier 5c-plaatsen kon dit tonen).
      */
     @Test
     void recomputesTheFourHashesFromTheDerivedRevisionItself() {
@@ -234,6 +240,58 @@ class TemplateMaterialisationTest {
         RevisionConfigHashes.applyAll(other);
         assertThat(other.getRecordRulesConfigHash()).isNotEqualTo(derived.getRecordRulesConfigHash());
         assertThat(other.getCompositeConfigHash()).isNotEqualTo(derived.getCompositeConfigHash());
+    }
+
+    // --- 5e: REVISION_IDENTITY_FIELD -------------------------------------------------------------------
+
+    /**
+     * De belangrijkste van de twee 5e-plaatsen (§11): een bookmark op {@code REVISION_IDENTITY_FIELD}
+     * verandert een identiteitsveld van de afgeleide revisie, en dus de aanbiedingsidentiteit én de
+     * configuratiehashes (§2). Dit is de kernproef uit §10 ("de hashes verschillen van die van het
+     * sjabloon zodra een waarde een revisieveld raakt") end-to-end via de echte materialisatie, in plaats
+     * van de synthetische mutatie hierboven.
+     */
+    @Test
+    void materialisesARevisionIdentityFieldAndChangesTheConfigurationHashes() {
+        MaterialisationFixtures.Template template = fixtures.template("IDENT");
+        declareCanonicalBookmarks(template.revision());
+        fixtures.declareOn(template.revision(), "LEVERANCIERSVELD", BookmarkValueScope.DEFINITION, true,
+                BookmarkDataType.TEXT, 4, BookmarkUsagePlace.REVISION_IDENTITY_FIELD, "SUPPLIER");
+
+        MaterialisationView view = materialisation.materialise(template.definition().getId(),
+                new MaterialiseRequest(null, MaterialisationMode.NEW_DEFINITION, null,
+                        template.definitionCode(), "Afgeleide definitie", null, template.linkCode(),
+                        "Afgeleide koppeling", template.supplier().getCode(), null, null,
+                        List.of(new BookmarkValue("CULTUUR", "NL"),
+                                new BookmarkValue("DOELBIBLIOTHEEK", "PSARF020"),
+                                new BookmarkValue("DETAILLEVERANCIER", "ACME-001"),
+                                new BookmarkValue("LEVERANCIERSVELD", "ANDERE_KOLOM")),
+                        USER));
+
+        // --- de waarde staat letterlijk in het revisieveld (R-MAT-02); het sjabloon blijft onaangeroerd
+        ImportDefinitionRevision derived = revisions.findById(view.definitionRevisionId()).orElseThrow();
+        assertThat(derived.getIdentitySupplierField()).isEqualTo("ANDERE_KOLOM");
+        ImportDefinitionRevision templateRevision = revisions.findById(template.revision().getId())
+                .orElseThrow();
+        assertThat(templateRevision.getIdentitySupplierField()).isEqualTo("LEVERANCIER");
+
+        // --- de kernproef: de hashes verschillen van die van het sjabloon
+        assertThat(derived.getRecordRulesConfigHash())
+                .isNotEqualTo(templateRevision.getRecordRulesConfigHash());
+        assertThat(derived.getCompositeConfigHash())
+                .isNotEqualTo(templateRevision.getCompositeConfigHash());
+        // De andere twee lagen zijn onveranderd: alleen een recordregel-veld verschilde.
+        assertThat(derived.getAccessConfigHash()).isEqualTo(templateRevision.getAccessConfigHash());
+        assertThat(derived.getStructureConfigHash()).isEqualTo(templateRevision.getStructureConfigHash());
+
+        // --- de waarderij: snapshot met herkomst (R-MAT-02)
+        ImportDefinitionBookmarkValue value = definitionValues
+                .findByDefinitionRevisionIdAndBookmarkName(derived.getId(), "LEVERANCIERSVELD").orElseThrow();
+        assertThat(value.getValueText()).isEqualTo("ANDERE_KOLOM");
+        assertThat(value.getSourceTemplateRevision().getId()).isEqualTo(template.revision().getId());
+
+        assertThat(view.definitionValues()).extracting(v -> v.name() + '=' + v.value())
+                .contains("LEVERANCIERSVELD=ANDERE_KOLOM");
     }
 
     // --- Q3: SUPERSEDED sjabloonrevisie ---------------------------------------------------------------
@@ -319,7 +377,8 @@ class TemplateMaterialisationTest {
                 .andExpect(jsonPath("$.importLinkCode").value(template.linkCode()))
                 .andExpect(jsonPath("$.definitionValues[0].name").value("CULTUUR"))
                 .andExpect(jsonPath("$.linkValues.length()").value(2))
-                .andExpect(jsonPath("$.warnings").isEmpty());
+                .andExpect(jsonPath("$.warnings.length()").value(1))
+                .andExpect(jsonPath("$.warnings[0].code").value("LINK_SEARCH_SUPPLIER_NOT_DERIVED"));
     }
 
     // --- Helpers ---------------------------------------------------------------------------------------

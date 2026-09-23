@@ -166,7 +166,10 @@ class TemplateReuseTest {
         assertThat(reused.definitionValues()).isEmpty();
         assertThat(reused.linkValues()).extracting(value -> value.name() + '=' + value.value())
                 .containsExactly("DOELBIBLIOTHEEK=PSARF302");
-        assertThat(reused.warnings()).isEmpty();
+        // R-BMK-04: geen LINK_SEARCH_SUPPLIER-bookmark en geen requestveld, dus expliciet gemeld in
+        // plaats van stil afgeleid (bouwstap 5e).
+        assertThat(reused.warnings()).extracting(TemplateMaterialisationService.Warning::code)
+                .containsExactly("LINK_SEARCH_SUPPLIER_NOT_DERIVED");
         assertThat(reused.templateRevisionId()).isEqualTo(template.revision().getId());
         assertThat(reused.definitionRevisionStatus()).isEqualTo("DRAFT");
     }
