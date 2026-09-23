@@ -191,27 +191,29 @@ public class BundleQueryService {
     }
 
     /**
-     * De bundels, oplopend op id, optioneel beperkt tot één status. Geen live tellers (te duur per
-     * pagina); zie {@link #getBundle} voor de actuele stand van één bundel.
+     * De bundels, aflopend op id (nieuwste eerst; beslissingslog 23/09 "Frontend-slice 1", vraag Q4),
+     * optioneel beperkt tot één status. Geen live tellers (te duur per pagina); zie {@link #getBundle}
+     * voor de actuele stand van één bundel.
      *
      * @throws IllegalArgumentException ongeldige paginering
      */
     public PageResult<BundleSummary> listBundles(PublicationBundleStatus status, Integer page, Integer size) {
-        PageRequest pageRequest = pageRequest(page, size);
+        PageRequest pageRequest = pageRequest(page, size, Sort.by(Sort.Direction.DESC, "id"));
         Page<PublicationBundle> result = status == null ? bundles.findAll(pageRequest)
                 : bundles.findByStatus(status, pageRequest);
         return PageResult.of(result, BundleSummary::of);
     }
 
     /**
-     * De lidmaatschappen van een bundel (actief en verwijderd), oplopend op id.
+     * De lidmaatschappen van een bundel (actief en verwijderd), oplopend op id (beslissingslog 23/09
+     * "Frontend-slice 1", vraag Q4).
      *
      * @throws NotFoundException        {@link PublicationBundleService#CODE_BUNDLE_NOT_FOUND}
      * @throws IllegalArgumentException ongeldige paginering
      */
     public PageResult<BundleBatchRow> getBundleBatches(long bundleId, Integer page, Integer size) {
         requireBundle(bundleId);
-        PageRequest pageRequest = pageRequest(page, size);
+        PageRequest pageRequest = pageRequest(page, size, Sort.by(Sort.Direction.ASC, "id"));
         Page<PublicationBundleBatch> result = bundleBatches.findByBundleId(bundleId, pageRequest);
         return PageResult.of(result, BundleBatchRow::of);
     }
@@ -272,10 +274,6 @@ public class BundleQueryService {
     private PublicationBundle requireBundle(long bundleId) {
         return bundles.findById(bundleId).orElseThrow(() -> new NotFoundException(
                 PublicationBundleService.CODE_BUNDLE_NOT_FOUND, "Bundle " + bundleId + " not found"));
-    }
-
-    private static PageRequest pageRequest(Integer page, Integer size) {
-        return pageRequest(page, size, Sort.unsorted());
     }
 
     private static PageRequest pageRequest(Integer page, Integer size, Sort sort) {

@@ -2,7 +2,9 @@ package be.dda.catalogimport.dao;
 
 import be.dda.catalogimport.domain.ImportBatch;
 import be.dda.catalogimport.domain.ImportBatchStatus;
+import be.dda.catalogimport.domain.ValidationResult;
 import jakarta.persistence.LockModeType;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -62,4 +64,50 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, Long> 
             + "and not exists (select 1 from PublicationBundleBatch pbb "
             + "  where pbb.batch = b and pbb.activeMarker is not null)")
     Page<ImportBatch> findBundleCandidates(@Param("importLinkId") Long importLinkId, Pageable pageable);
+
+    /**
+     * Werkvoorraadlijst voor Scherm 0 (D14): alle batches, optioneel gefilterd, vast {@code id desc}
+     * (nieuwste eerst — vastgelegd in de {@code order by}, niet in de {@link Pageable}, om een dubbele
+     * sortering te vermijden). {@code join fetch} op {@code importLink} en haar
+     * {@code supplierOrganisation} (beide {@code LAZY}) omdat {@code BatchQueryService.BatchRow} hun
+     * velden nodig heeft en dat anders per rij een extra query zou kosten.
+     * {@code createdFrom}/{@code createdTo} zijn halfopen {@code [from, to)} op {@code created_at}.
+     */
+    @Query(value = "select b from ImportBatch b "
+            + "join fetch b.importLink il "
+            + "join fetch il.supplierOrganisation "
+            + "where (:status is null or b.status = :status) "
+            + "and (:validationResult is null or b.validationResult = :validationResult) "
+            + "and (:importLinkId is null or il.id = :importLinkId) "
+            + "and (cast(:createdFrom as timestamp) is null or b.createdAt >= :createdFrom) "
+            + "and (cast(:createdTo as timestamp) is null or b.createdAt < :createdTo) "
+            + "order by b.id desc",
+            countQuery = "select count(b) from ImportBatch b "
+                    + "where (:status is null or b.status = :status) "
+                    + "and (:validationResult is null or b.validationResult = :validationResult) "
+                    + "and (:importLinkId is null or b.importLink.id = :importLinkId) "
+                    + "and (cast(:createdFrom as timestamp) is null or b.createdAt >= :createdFrom) "
+                    + "and (cast(:createdTo as timestamp) is null or b.createdAt < :createdTo)")
+    Page<ImportBatch> findBatchRows(@Param("status") ImportBatchStatus status,
+                                    @Param("validationResult") ValidationResult validationResult,
+                                    @Param("importLinkId") Long importLinkId,
+                                    @Param("createdFrom") Instant createdFrom,
+                                    @Param("createdTo") Instant createdTo, Pageable pageable);
+
+    /**
+     * Aantal batches per {@link ImportBatchStatus}, optioneel beperkt tot één koppeling (Scherm 0-
+     * samenvatting). Eén {@code group by}-query in plaats van een telling per statuswaarde.
+     */
+    @Query("select b.status, count(b) from ImportBatch b "
+            + "where (:importLinkId is null or b.importLink.id = :importLinkId) group by b.status")
+    List<Object[]> countByStatusGrouped(@Param("importLinkId") Long importLinkId);
+
+    /**
+     * Aantal batches per {@link ValidationResult}, inclusief een eigen groep voor {@code null}
+     * ("niet vastgesteld") — die mag nooit met {@code VALID} samenvallen en nooit wegvallen wanneer er
+     * werkelijk niet-vastgestelde batches zijn.
+     */
+    @Query("select b.validationResult, count(b) from ImportBatch b "
+            + "where (:importLinkId is null or b.importLink.id = :importLinkId) group by b.validationResult")
+    List<Object[]> countByValidationResultGrouped(@Param("importLinkId") Long importLinkId);
 }

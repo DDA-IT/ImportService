@@ -6,9 +6,12 @@ import be.dda.catalogimport.dao.ImportRowIssueRepository;
 import be.dda.catalogimport.dao.IssueGroupDao;
 import be.dda.catalogimport.dao.IssueGroupDao.GroupRow;
 import be.dda.catalogimport.domain.ImportBatch;
+import be.dda.catalogimport.domain.ImportBatchStatus;
+import be.dda.catalogimport.domain.ImportLink;
 import be.dda.catalogimport.domain.ImportMutation;
 import be.dda.catalogimport.domain.ImportRowIssue;
 import be.dda.catalogimport.domain.MutationActionType;
+import be.dda.catalogimport.domain.ValidationResult;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -106,6 +109,58 @@ public class BatchQueryService {
                     batch.getBlockedReason(), batch.getBaselineAcceptedBy(), batch.getBaselineAcceptedAt(),
                     batch.getBaselineAcceptReason(), batch.getCreatedAt(), batch.getCreatedBy());
         }
+    }
+
+    /**
+     * Eén rij van de werkvoorraadlijst (Scherm 0, D14, bouwstap S0-B1): dezelfde batch als
+     * {@link BatchDetail}, maar herleid tot wat een lijstweergave nodig heeft — zonder de
+     * {@code *ProgressRowNumber}-hervatpunten, de {@code creation*}-velden en de lange
+     * {@code blockedReason}, die exclusief in {@link #getBatch} blijven. Bevat ook koppelinggegevens
+     * ({@code importLinkCode}, {@code supplierCode}, {@code libraryCode}) zodat de lijst geen aparte
+     * opzoekactie per rij nodig heeft.
+     */
+    public record BatchRow(long batchId, long deliveryId, long importLinkId, String importLinkCode,
+                           String supplierCode, String libraryCode, int attemptNo, String status,
+                           String validationResult, Instant createdAt, Instant startedAt, Instant finishedAt,
+                           Long rawRecordCount, Long validRecordCount, Long rejectedRecordCount,
+                           Long contentMutationCount, Long awaitingApprovalCount, Long criticalLineCount,
+                           Long criticalIssueCount, Long warningCount, Long bulkIncidentCount,
+                           Long identityIncidentCount, String blockedCode, String baselineAcceptedBy,
+                           Instant baselineAcceptedAt) {
+
+        private static BatchRow of(ImportBatch batch) {
+            ImportLink link = batch.getImportLink();
+            return new BatchRow(batch.getId(), batch.getDelivery().getId(), link.getId(), link.getCode(),
+                    link.getSupplierOrganisation().getCode(), link.getLibraryCode(), batch.getAttemptNo(),
+                    batch.getStatus().name(),
+                    batch.getValidationResult() == null ? null : batch.getValidationResult().name(),
+                    batch.getCreatedAt(), batch.getStartedAt(), batch.getFinishedAt(),
+                    batch.getRawRecordCount(), batch.getValidRecordCount(), batch.getRejectedRecordCount(),
+                    batch.getContentMutationCount(), batch.getAwaitingApprovalCount(),
+                    batch.getCriticalLineCount(), batch.getCriticalIssueCount(), batch.getWarningCount(),
+                    batch.getBulkIncidentCount(), batch.getIdentityIncidentCount(), batch.getBlockedCode(),
+                    batch.getBaselineAcceptedBy(), batch.getBaselineAcceptedAt());
+        }
+    }
+
+    /** Aantal batches met een bepaalde {@link ImportBatchStatus}. */
+    public record StatusCount(ImportBatchStatus status, long count) {
+    }
+
+    /**
+     * Aantal batches met een bepaald {@link ValidationResult}; {@code validationResult == null} is de
+     * eigen, altijd zichtbare groep "niet vastgesteld" (nooit samengevoegd met {@code VALID}, nooit
+     * weggelaten wanneer er werkelijk zulke batches zijn).
+     */
+    public record ValidationCount(ValidationResult validationResult, long count) {
+    }
+
+    /**
+     * Samenvatting voor Scherm 0 (D14, bouwstap S0-B2): totaal aantal batches en de verdeling over
+     * beide statusassen, optioneel beperkt tot één koppeling. {@code total} is de som van
+     * {@code byStatus} (elke batch heeft altijd een status), dus geen aparte tellingsquery nodig.
+     */
+    public record BatchSummary(long total, List<StatusCount> byStatus, List<ValidationCount> byValidationResult) {
     }
 
     /**
@@ -254,6 +309,39 @@ public class BatchQueryService {
     }
 
     /**
+     * De werkvoorraadlijst (Scherm 0, D14, bouwstap S0-B1): alle batches, optioneel gefilterd op
+     * {@code status}, {@code validationResult}, {@code importLinkId} en het halfopen
+     * {@code [createdFrom, createdTo)}-interval op {@code createdAt}. Vaste sortering {@code id desc}
+     * (nieuwste eerst) — nooit onbepaald, want dat geeft op Postgres instabiele paginering.
+     *
+     * @throws IllegalArgumentException ongeldige paginering
+     */
+    public PageResult<BatchRow> listBatches(ImportBatchStatus status, ValidationResult validationResult,
+                                            Long importLinkId, Instant createdFrom, Instant createdTo,
+                                            Integer page, Integer size) {
+        PageRequest pageRequest = pageRequest(page, size);
+        Page<ImportBatch> result = batches.findBatchRows(status, validationResult, importLinkId, createdFrom,
+                createdTo, pageRequest);
+        return PageResult.of(result, BatchRow::of);
+    }
+
+    /**
+     * De werkvoorraadsamenvatting (Scherm 0, D14, bouwstap S0-B2): totaal en de verdeling over status
+     * en eindoordeel, optioneel beperkt tot één koppeling. Twee {@code group by}-query's, geen losse
+     * telling per waarde.
+     */
+    public BatchSummary getSummary(Long importLinkId) {
+        List<StatusCount> byStatus = batches.countByStatusGrouped(importLinkId).stream()
+                .map(row -> new StatusCount((ImportBatchStatus) row[0], (Long) row[1]))
+                .toList();
+        long total = byStatus.stream().mapToLong(StatusCount::count).sum();
+        List<ValidationCount> byValidationResult = batches.countByValidationResultGrouped(importLinkId).stream()
+                .map(row -> new ValidationCount((ValidationResult) row[0], (Long) row[1]))
+                .toList();
+        return new BatchSummary(total, byStatus, byValidationResult);
+    }
+
+    /**
      * De mutatielijst van een batch, oplopend op id (= volgorde van aanmaak), optioneel gefilterd op
      * {@code actionType}.
      *
@@ -320,6 +408,11 @@ public class BatchQueryService {
 
     private static NotFoundException notFound(long batchId) {
         return new NotFoundException("BATCH_NOT_FOUND", "Batch " + batchId + " not found");
+    }
+
+    /** Voor query's die hun sortering al vast in de {@code order by} van de {@code @Query} hebben. */
+    private static PageRequest pageRequest(Integer page, Integer size) {
+        return pageRequest(page, size, Sort.unsorted());
     }
 
     private static PageRequest pageRequest(Integer page, Integer size, Sort sort) {

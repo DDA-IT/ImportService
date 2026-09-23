@@ -107,6 +107,11 @@ final class MaterialisationFixtures {
         String linkCode() {
             return unique + "-LINK";
         }
+
+        /** Een tweede koppelingscode op hetzelfde sjabloon, voor hergebruik (bouwstap 5d). */
+        String linkCode(String suffix) {
+            return unique + "-LINK" + suffix;
+        }
     }
 
     /** Een sjabloon met een {@code ACTIVE} revisie. */
@@ -138,8 +143,32 @@ final class MaterialisationFixtures {
         return old;
     }
 
+    /**
+     * Een tweede, {@code ACTIVE} sjabloonrevisie (nummer 2) met dezelfde structuur; de eerste wordt
+     * {@code SUPERSEDED}. Nodig voor de sjabloonversieregel van bouwstap 5d (§6 punt 3): een definitie
+     * die op revisie 1 bevroren is, mag niet stil hergebruikt worden wanneer het verzoek revisie 2
+     * noemt.
+     * <p>
+     * De eerste revisie wordt <b>eerst</b> op {@code SUPERSEDED} gezet: er mag hoogstens één
+     * {@code ACTIVE} revisie per definitie bestaan, en dat wordt ook op databaseniveau afgedwongen.
+     * Bookmarkdeclaraties komen hier niet mee — de test declareert die zelf op de nieuwe revisie.
+     */
+    ImportDefinitionRevision nextRevision(Template template) {
+        supersede(template);
+        ImportDefinitionRevision next = revisions.saveAndFlush(
+                revision(template.definition(), RevisionStatus.ACTIVE, 2));
+        addMapping(next);
+        addFilter(next, FilterOperator.EQUALS);
+        return next;
+    }
+
     private ImportDefinitionRevision revision(ImportDefinition definition, RevisionStatus status) {
-        ImportDefinitionRevision revision = new ImportDefinitionRevision(definition, 1,
+        return revision(definition, status, 1);
+    }
+
+    private ImportDefinitionRevision revision(ImportDefinition definition, RevisionStatus status,
+                                              int revisionNumber) {
+        ImportDefinitionRevision revision = new ImportDefinitionRevision(definition, revisionNumber,
                 IdentityProfileKind.THREE_PART, USER);
         revision.setStatus(status);
         revision.setIdentitySupplierField("LEVERANCIER");
@@ -152,6 +181,16 @@ final class MaterialisationFixtures {
         revision.setRecordCanonicalisationVersion(2);
         RevisionConfigHashes.applyAll(revision);
         return revision;
+    }
+
+    /**
+     * Een extra leverancier bij hetzelfde sjabloon: de <b>tweede</b> leverancier die dezelfde gedeelde
+     * definitie hergebruikt (bouwstap 5d). Twee leveranciers op één definitie is precies het geval dat
+     * {@code REUSE_DEFINITION} bedient.
+     */
+    SourceOrganisation extraSupplier(Template template, String suffix) {
+        return organisations.saveAndFlush(new SourceOrganisation(template.unique() + "-SUP" + suffix,
+                template.unique() + " leverancier " + suffix, SourceOrganisationType.SUPPLIER));
     }
 
     /** Een vaste-waardemapping met de sjabloonwaarde erin: het doel van een FIELD_MAPPING_FIXED_VALUE. */

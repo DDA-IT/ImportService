@@ -52,6 +52,10 @@
 >
 > Cataloguspublicatie maakt of wijzigt bibliotheekaanbiedingen, maar mag geen massale creatie van operationele artikelen veroorzaken.
 
+> Important business rule discovered
+>
+> Een werkvoorraad-/dashboardteller mag "niet vastgesteld" nooit als 0 tonen. Het datamodel onderscheidt beide consequent — `ImportBatch.validationResult`, `criticalLineCount`, `bulkIncidentCount`, `awaitingApprovalCount`, `creationOutcome` zijn allemaal nullable met de expliciete javadoc "`null` betekent niet vastgesteld, nooit stil 0" — maar dat moet ook in elke aggregatie/weergave zo blijven. Een tegel "0 kritieke lijnen" over batches waarvan `criticalLineCount` null is (technisch mislukte of lopende screening) is een onware geruststelling. Elke aggregatie over nullable tellers toont "niet vastgesteld" als een eigen, zichtbare categorie naast het getal.
+
 ## Open uitzonderingen die nog een businesskeuze vragen
 
 - De proefversie bewaart enkel een issueaantal; zij bewaart reden en bronregel niet voor ongeldige regels. Support kan de originele CSV raadplegen, maar geen foutdetail opvragen.

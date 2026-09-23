@@ -1,5 +1,6 @@
 import type { RouteObject } from 'react-router-dom';
 import { Navigate } from 'react-router-dom';
+import { BundleListPage } from './features/bundles/BundleListPage.tsx';
 
 /* Placeholder pages for now */
 function NotFoundPage() {
@@ -7,15 +8,6 @@ function NotFoundPage() {
     <div style={{ padding: '2rem', textAlign: 'center' }}>
       <h1>404 — Pagina niet gevonden</h1>
       <p>De pagina die u zoekt, bestaat niet.</p>
-    </div>
-  );
-}
-
-function BundleListPage() {
-  return (
-    <div style={{ padding: '2rem' }}>
-      <h1>Publicatiebundels</h1>
-      <p>Bundelijst (nog niet geïmplementeerd)</p>
     </div>
   );
 }

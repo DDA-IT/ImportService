@@ -44,3 +44,7 @@ Bij een fout in header, verplichte kolommen, invoer of bulkdrempel wordt de batc
 - Unieke constraints zijn functioneel: `definition + contentHash`, `batch + leverancier + referentie`, `candidate` per mutatie en `bibliotheek + leverancier + referentie`.
 - `LibraryOffer` heeft bewust alleen de minimale catalogusvelden. Uitbreiding naar het brede legacy-model vraagt een expliciete mapping- en datamodelkeuze.
 - De bestaande `MutationType.INACTIVATE` is nog niet gebruikt. Alleen een enumwaarde toevoegen betekent niet dat opschoning veilig is.
+
+> Important technical constraint discovered
+>
+> Het woord "taak" is in de code al bezet door `CatalogImportTask` — een geconfigureerde, herhaalbare importtaak (trigger MANUAL/SCHEDULED, met `TaskRun` als uitvoering), géén menselijke taak. De URL-ruimte is ook al bezet: `POST /api/catalog-import/tasks/{taskId}/deliveries` is het upload-endpoint. Een toekomstig behandelgeval- of deeltaakobject (ST-11, businessanalyse h.24.1) mag daarom nooit op `/tasks` of op een klasse `Task`/`TaskRepository` landen: dat maakt achteraf onherleidbaar of een rij een importjob of een menselijk werkitem is. Reserveer bij implementatie een aparte naamruimte (bv. `work-item`/`Behandelgeval`), of houd de werkvoorraad afgeleid zonder eigen entiteit.

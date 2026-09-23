@@ -109,7 +109,7 @@ class TemplateMaterialisationValidationTest {
     // --- Fase B ---------------------------------------------------------------------------------------
 
     @Test
-    void refusesAMissingModeAndTheReuseModeThatThisBuildStepDoesNotHaveYet() {
+    void refusesAMissingModeAndAModeThatDoesNotMatchReuseDefinitionId() {
         MaterialisationFixtures.Template template = fixtures.template("B1");
 
         assertThatThrownBy(() -> materialisation.materialise(template.definition().getId(),
@@ -120,13 +120,16 @@ class TemplateMaterialisationValidationTest {
                 .extracting(error -> ((BadRequestException) error).getCode())
                 .isEqualTo("MATERIALISATION_MODE_REQUIRED");
 
+        // Sinds bouwstap 5d bestaat REUSE_DEFINITION wél (de tijdelijke weigering van 5c is vervallen);
+        // wat blijft is B2: modus en veld moeten elkaar in beide richtingen dekken. Zonder
+        // reuseDefinitionId is er niets om aan te koppelen.
         assertThatThrownBy(() -> materialisation.materialise(template.definition().getId(),
-                new MaterialiseRequest(null, MaterialisationMode.REUSE_DEFINITION, 1L,
-                        template.definitionCode(), "x", null, template.linkCode(), "y",
-                        template.supplier().getCode(), "PSARF001", null, List.of(), USER)))
+                new MaterialiseRequest(null, MaterialisationMode.REUSE_DEFINITION, null, null, null, null,
+                        template.linkCode(), "y", template.supplier().getCode(), "PSARF001", null,
+                        List.of(), USER)))
                 .isInstanceOf(BadRequestException.class)
                 .extracting(error -> ((BadRequestException) error).getCode())
-                .isEqualTo("REUSE_DEFINITION_NOT_ALLOWED");
+                .isEqualTo("REUSE_DEFINITION_REQUIRED");
 
         assertThatThrownBy(() -> materialisation.materialise(template.definition().getId(),
                 new MaterialiseRequest(null, MaterialisationMode.NEW_DEFINITION, 99L,

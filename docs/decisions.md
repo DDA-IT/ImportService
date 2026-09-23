@@ -730,6 +730,27 @@ ongerelateerd aan Scherm 0.
 
 ---
 
+## 2026-09-23 — Fase 7-verificatie S0-B1/B2/B3: collision-gevoelige testsleutels in `BundleHttpTest`
+
+**Vraag:** Bij het gericht draaien van `mvn -pl Web -am test` voor de Scherm 0-endpoints
+faalden drie ongerelateerde tests in `BundleHttpTest` (409 i.p.v. 200, unieke-constraint-
+schendingen op `SourceOrganisation`-codes). Oorzaak: `BundleHttpTest` genereert testcodes met
+een JVM-lokale `AtomicInteger SEQUENCE` die bij elke Maven-run weer bij 1 begint, terwijl de
+lokale Postgres-database persistent is (geen H2 meer). Na enkele runs botsen nieuwe
+testcodes op eerder achtergebleven rijen. Dit is een pre-existing test-infrastructuurprobleem,
+niet veroorzaakt door de sorteringsfix op `BundleQueryService` — is dit nu meteen te fixen, of
+apart te loggen en later op te pakken?
+
+**Beslissing:** Nu meteen fixen, beperkt tot `BundleHttpTest` (niet de 30+ andere testklassen
+met hetzelfde `AtomicInteger SEQUENCE`-patroon, die vandaag niet faalden en dus buiten deze
+scope vallen). Fix: dezelfde `System.nanoTime()`+teller-combinatie toepassen die al bewezen is
+in `CatalogImportWorkQueueHttpTest` (nieuw in deze cyclus), zodat gegenereerde testcodes uniek
+blijven over JVM-herstarts heen.
+
+**Bron:** mens (expliciet gekozen: "Nu meteen fixen" i.p.v. enkel loggen of negeren)
+
+---
+
 ## 2026-09-23 — 5f-nalevering: PUT op een LINK-bookmark werkt de koppelingskolom bij
 
 **Vraag:** Bij materialisatie wordt een bookmark met een `LINK_*`-plaats in twee dingen tegelijk

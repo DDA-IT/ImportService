@@ -1,8 +1,12 @@
 package be.dda.catalogimport.web;
 
+import be.dda.catalogimport.domain.ImportBatchStatus;
 import be.dda.catalogimport.domain.MutationActionType;
+import be.dda.catalogimport.domain.ValidationResult;
 import be.dda.catalogimport.service.BatchQueryService;
 import be.dda.catalogimport.service.BatchQueryService.BatchDetail;
+import be.dda.catalogimport.service.BatchQueryService.BatchRow;
+import be.dda.catalogimport.service.BatchQueryService.BatchSummary;
 import be.dda.catalogimport.service.BatchQueryService.IssueGroupRow;
 import be.dda.catalogimport.service.BatchQueryService.IssueRow;
 import be.dda.catalogimport.service.BatchQueryService.MutationRow;
@@ -11,6 +15,7 @@ import be.dda.catalogimport.service.DeliveryScreeningService.ScreeningOutcome;
 import be.dda.catalogimport.service.PageResult;
 import be.dda.catalogimport.service.SourceStateBaselineService;
 import be.dda.catalogimport.service.SourceStateBaselineService.BaselineAcceptance;
+import java.time.Instant;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -49,6 +54,41 @@ public class CatalogImportBatchController {
         this.queries = queries;
         this.baseline = baseline;
         this.screening = screening;
+    }
+
+    /**
+     * De werkvoorraadlijst (Scherm 0, D14, bouwstap S0-B1): alle batches, nieuwste eerst
+     * ({@code id desc}, vast — nooit onbepaald), optioneel gefilterd op {@code status},
+     * {@code validationResult}, {@code importLinkId} en het halfopen {@code [createdFrom, createdTo)}
+     * op {@code createdAt}. Let op de padvolgorde met {@link #summary}: {@code /batches/summary} is een
+     * letterlijk pad en wint van dit endpoint niet — Spring matcht {@code GET /batches} hier alleen
+     * zonder verder pad.
+     */
+    @GetMapping
+    PageResult<BatchRow> batches(@RequestParam(value = "status", required = false) ImportBatchStatus status,
+                                 @RequestParam(value = "validationResult", required = false)
+                                 ValidationResult validationResult,
+                                 @RequestParam(value = "importLinkId", required = false) Long importLinkId,
+                                 @RequestParam(value = "createdFrom", required = false) Instant createdFrom,
+                                 @RequestParam(value = "createdTo", required = false) Instant createdTo,
+                                 @RequestParam(value = "page", required = false) Integer page,
+                                 @RequestParam(value = "size", required = false) Integer size) {
+        return queries.listBatches(status, validationResult, importLinkId, createdFrom, createdTo, page, size);
+    }
+
+    /**
+     * De werkvoorraadsamenvatting (Scherm 0, D14, bouwstap S0-B2): totaal en de verdeling over status
+     * en eindoordeel, optioneel beperkt tot één koppeling. {@code validationResult == null} ("niet
+     * vastgesteld") is een eigen zichtbare regel in {@code byValidationResult}, nooit samengevoegd met
+     * {@code VALID} en nooit weggelaten wanneer er werkelijk zulke batches bestaan.
+     * <p>
+     * Dit letterlijke pad wordt vóór {@code GET /batches/{batchId}} gematcht: {@code "summary"} is geen
+     * geldige {@code batchId} maar Spring's {@code PathPattern}-matching geeft toch voorrang aan het
+     * letterlijke segment.
+     */
+    @GetMapping("/summary")
+    BatchSummary summary(@RequestParam(value = "importLinkId", required = false) Long importLinkId) {
+        return queries.getSummary(importLinkId);
     }
 
     /**

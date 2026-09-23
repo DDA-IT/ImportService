@@ -41,9 +41,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -77,8 +80,35 @@ import org.springframework.transaction.annotation.Transactional;
  *       blokkeren, is onbruikbaar.</li>
  * </ul>
  *
- * <h2>Grenzen van bouwstap 5c</h2>
- * Uitsluitend {@link MaterialisationMode#NEW_DEFINITION} (hergebruik is 5d) en uitsluitend de plaatsen
+ * <h2>Hergebruik van een al gematerialiseerde definitie (bouwstap 5d, §6)</h2>
+ * Met {@link MaterialisationMode#REUSE_DEFINITION} ontstaat er <b>geen</b> tweede definitie en
+ * <b>geen</b> tweede revisie: de bestaande revisie blijft byte-identiek en alleen een {@link ImportLink}
+ * met haar {@code LINK}-scope waarden komt erbij. Vijf regels bewaken dat (§6):
+ * <ol>
+ *   <li>de definitie bestaat en is een {@link DefinitionUsageType#OWN_DEFINITION};</li>
+ *   <li>ze stamt uit <b>dit</b> sjabloon ({@code based_on_definition_id}), anders 409
+ *       {@code DEFINITION_NOT_FROM_TEMPLATE} — een willekeurige definitie aan een koppeling hangen is
+ *       geen sjabloonwerk, daar bestaat {@code POST /setup/links} voor;</li>
+ *   <li>ze stamt uit <b>dezelfde</b> sjabloonversie als het verzoek, anders 409
+ *       {@code TEMPLATE_REVISION_MISMATCH_ON_REUSE}. Stil een definitie hergebruiken die op een oudere
+ *       sjabloonversie bevroren is terwijl de gebruiker een nieuwere koos, zou de
+ *       sjabloonversievergelijking half en onzichtbaar uitvoeren (§9 punt 1);</li>
+ *   <li>er worden geen {@code DEFINITION}-scope waarden aanvaard (400
+ *       {@code DEFINITION_SCOPE_VALUE_NOT_ALLOWED_ON_REUSE}): die liggen vast in de bestaande revisie
+ *       en zouden bij twee leveranciers tegelijk veranderen;</li>
+ *   <li><b>deelbaarheid (vraag Q2, beslist door de mens).</b> Een {@code LINK}-scope bookmark waarvan de
+ *       plaats op revisieniveau ligt ({@link BookmarkUsagePlace#FIELD_MAPPING_FIXED_VALUE},
+ *       {@link BookmarkUsagePlace#RECORD_FILTER_COMPARE_VALUE},
+ *       {@link BookmarkUsagePlace#REVISION_IDENTITY_FIELD}) mág bij materialisatie, maar maakt de
+ *       resulterende definitie <b>niet deelbaar</b>: 409 {@code DEFINITION_NOT_SHAREABLE}, met
+ *       vermelding van de bookmark die het verhindert. Dat is het {@code DETAILLEVERANCIER}-geval: zo'n
+ *       waarde landt op een revisieveld dat mee de <i>aanbiedingsidentiteit</i> bepaalt
+ *       (leverancier + leveranciersgroep + leveranciersreferentie, beslissingslog 18/09), en die mag
+ *       nooit per ongeluk door twee leveranciers gedeeld worden.</li>
+ * </ol>
+ *
+ * <h2>Grenzen van de bouwstappen 5c/5d</h2>
+ * Uitsluitend de plaatsen
  * {@link BookmarkUsagePlace#FIELD_MAPPING_FIXED_VALUE}, {@link BookmarkUsagePlace#RECORD_FILTER_COMPARE_VALUE},
  * {@link BookmarkUsagePlace#LINK_LIBRARY_CODE} en {@link BookmarkUsagePlace#LINK_SUPPLIER_ORGANISATION}.
  * {@link BookmarkUsagePlace#REVISION_IDENTITY_FIELD} en {@link BookmarkUsagePlace#LINK_SEARCH_SUPPLIER}
@@ -87,7 +117,7 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code CONFIG_BOOKMARK_PLACE_NOT_SUPPORTED}, nooit stil genegeerd — een stil genegeerde bookmark zou
  * een leeg of verkeerd doelveld opleveren dat op een bewuste keuze lijkt.
  * <p>
- * {@code warnings} in het antwoord is in deze bouwstap altijd leeg; de getypeerde waarschuwingen
+ * {@code warnings} in deze bouwstappen altijd leeg; de getypeerde waarschuwingen
  * ({@code OPTIONAL_BOOKMARK_NOT_FILLED}, {@code LINK_SEARCH_SUPPLIER_NOT_DERIVED}) horen bij 5e (§11).
  * <p>
  * Autorisatie volgt in Fase 5; {@code materialisedBy} is voorlopig een requestveld met dezelfde regels
@@ -122,6 +152,18 @@ public class TemplateMaterialisationService {
             BookmarkUsagePlace.FIELD_MAPPING_FIXED_VALUE, BookmarkUsagePlace.RECORD_FILTER_COMPARE_VALUE,
             BookmarkUsagePlace.LINK_LIBRARY_CODE, BookmarkUsagePlace.LINK_SUPPLIER_ORGANISATION);
 
+    /**
+     * De plaatsen die in de <b>revisie</b> landen in plaats van op de koppeling (bouwstap 5d). Een
+     * {@code LINK}-scope bookmark op zo'n plaats zet een per-leverancier waarde vast in configuratie die
+     * gedeeld zou worden; dat is precies wat vraag Q2 als "toegestaan, maar dan niet deelbaar"
+     * beantwoordt. De drie staan hier voluit, ook
+     * {@link BookmarkUsagePlace#REVISION_IDENTITY_FIELD} die pas in 5e materialiseerbaar wordt: de
+     * deelbaarheidsregel mag niet stilzwijgend versoepelen op het moment dat 5e die plaats aanzet.
+     */
+    private static final Set<BookmarkUsagePlace> REVISION_LEVEL_PLACES = EnumSet.of(
+            BookmarkUsagePlace.FIELD_MAPPING_FIXED_VALUE, BookmarkUsagePlace.RECORD_FILTER_COMPARE_VALUE,
+            BookmarkUsagePlace.REVISION_IDENTITY_FIELD);
+
     // --- Contract --------------------------------------------------------------------------------
 
     /**
@@ -148,7 +190,8 @@ public class TemplateMaterialisationService {
      * sjabloon (A31, beslissingslog 23/09 keuze 4). De concrete leverancier zit op de koppeling.
      *
      * @param templateRevisionId        {@code null} = de {@code ACTIVE} sjabloonrevisie
-     * @param reuseDefinitionId         alleen bij {@link MaterialisationMode#REUSE_DEFINITION} (5d)
+     * @param reuseDefinitionId         verplicht bij {@link MaterialisationMode#REUSE_DEFINITION} en
+     *                                  verboden bij {@link MaterialisationMode#NEW_DEFINITION} (§4 B2)
      * @param changeReason              optioneel; zonder opgave een vaste zin met sjabloon en revisie
      * @param supplierOrganisationCode  tenzij het sjabloon een {@code LINK_SUPPLIER_ORGANISATION}-bookmark
      *                                  declareert — dan is die bookmark het invoerveld (§4 D7)
@@ -188,6 +231,31 @@ public class TemplateMaterialisationService {
                                       String definitionRevisionStatus, long importLinkId,
                                       String importLinkCode, List<AppliedValue> definitionValues,
                                       List<AppliedValue> linkValues, List<Warning> warnings) {
+    }
+
+    /**
+     * Eén rij van de keuzelijst {@code GET /templates/{id}/materialisations} (§6): een definitie die al
+     * uit dit sjabloon voortkwam, met alles wat het scherm nodig heeft om "nieuw" en "hergebruik" naast
+     * elkaar te zetten.
+     *
+     * @param definitionRevisionId    de materialisatierevisie; {@code null} wanneer geen enkele revisie
+     *                                van deze definitie een herkomstrevisie uit dit sjabloon draagt —
+     *                                dan is hergebruik onmogelijk ({@code DEFINITION_NOT_FROM_TEMPLATE})
+     * @param templateRevisionId      de sjabloonversie waarop deze definitie bevroren is; hergebruik
+     *                                slaagt alleen wanneer het verzoek diezelfde versie noemt (§6 punt 3)
+     * @param importLinkCount         hoeveel koppelingen (leveranciers) deze definitie vandaag al delen
+     * @param shareable               of {@code REUSE_DEFINITION} op deze definitie aanvaard wordt
+     * @param blockingBookmarkName    de {@code LINK}-scope bookmark op een revisieniveau-plaats die het
+     *                                delen verhindert (§6 punt 5); {@code null} wanneer er geen is —
+     *                                ook wanneer {@code shareable} vals is omdat de materialisatierevisie
+     *                                ontbreekt
+     */
+    public record MaterialisedDefinitionView(long definitionId, String definitionCode, String definitionName,
+                                             Long definitionRevisionId, Integer definitionRevisionNumber,
+                                             String definitionRevisionStatus, Long templateRevisionId,
+                                             Integer templateRevisionNumber, String templateRevisionStatus,
+                                             long importLinkCount, boolean shareable,
+                                             String blockingBookmarkName) {
     }
 
     private final ImportDefinitionRepository definitions;
@@ -233,19 +301,24 @@ public class TemplateMaterialisationService {
     }
 
     /**
-     * Materialiseert het sjabloon tot een nieuwe definitie + revisie + koppeling. De fasen A t/m E
-     * lopen volledig af <b>voordat</b> er één rij geschreven wordt (§4); fase F schrijft en valideert
-     * daarna binnen dezelfde transactie.
+     * Materialiseert het sjabloon tot een nieuwe definitie + revisie + koppeling
+     * ({@link MaterialisationMode#NEW_DEFINITION}), of hangt enkel een nieuwe koppeling aan een al
+     * gematerialiseerde, deelbare definitie ({@link MaterialisationMode#REUSE_DEFINITION}, §6). De fasen
+     * A t/m E lopen volledig af <b>voordat</b> er één rij geschreven wordt (§4); fase F schrijft en
+     * valideert daarna binnen dezelfde transactie.
      *
      * @throws NotFoundException   {@code TEMPLATE_NOT_FOUND}, {@code TEMPLATE_REVISION_NOT_FOUND},
-     *                             {@code SOURCE_ORGANISATION_NOT_FOUND}
+     *                             {@code DEFINITION_NOT_FOUND}, {@code SOURCE_ORGANISATION_NOT_FOUND}
      * @throws ConflictException   {@code DEFINITION_NOT_A_TEMPLATE},
      *                             {@code TEMPLATE_REVISION_NOT_MATERIALISABLE},
      *                             {@code NO_ACTIVE_TEMPLATE_REVISION}, de fase C-codes
-     *                             ({@code CONFIG_BOOKMARK_*}), {@code DEFINITION_CODE_IN_USE},
+     *                             ({@code CONFIG_BOOKMARK_*}), {@code DEFINITION_NOT_FROM_TEMPLATE},
+     *                             {@code TEMPLATE_REVISION_MISMATCH_ON_REUSE},
+     *                             {@code DEFINITION_NOT_SHAREABLE}, {@code DEFINITION_CODE_IN_USE},
      *                             {@code LINK_CODE_IN_USE}, {@code LINK_SCOPE_IN_USE}
      * @throws BadRequestException {@code MATERIALISATION_MODE_REQUIRED},
      *                             {@code REUSE_DEFINITION_REQUIRED}, {@code REUSE_DEFINITION_NOT_ALLOWED},
+     *                             {@code DEFINITION_SCOPE_VALUE_NOT_ALLOWED_ON_REUSE},
      *                             {@code BOOKMARK_UNKNOWN}, {@code CONFIG_REQUIRED_BOOKMARK_MISSING},
      *                             {@code CONFIG_BOOKMARK_VALUE_INVALID},
      *                             {@code CONFIG_BOOKMARK_VALUE_TOO_LONG},
@@ -271,12 +344,97 @@ public class TemplateMaterialisationService {
         // --- Fase D: de ingevulde waarden ----------------------------------------------------------
         Values values = checkValues(command, declarations, shape);
 
-        // --- Fase E: uniciteit ----------------------------------------------------------------------
+        // --- Fase E: uniciteit en hergebruik --------------------------------------------------------
+        if (shape.reuse()) {
+            ReusedDefinition reused = resolveReuse(template, templateRevision, declarations,
+                    command.reuseDefinitionId());
+            SourceOrganisation supplier = organisation(values.supplierOrganisationCode());
+            checkLinkCodeFree(shape.linkCode());
+            checkLinkScopeFree(reused.definition(), supplier, values.libraryCode());
+            // --- Fase F bij hergebruik: alleen de koppeling, geen enkele revisieschrijving.
+            return writeReuse(template, templateRevision, shape, declarations, values, supplier, reused);
+        }
         SourceOrganisation supplier = organisation(values.supplierOrganisationCode());
         checkUniqueness(template, shape);
 
         // --- Fase F: schrijven, en daarna nog eens valideren ----------------------------------------
         return write(template, templateRevision, shape, declarations, values, supplier);
+    }
+
+    // --- De keuzelijst voor "nieuw" versus "hergebruik" (§6) ---------------------------------------
+
+    /**
+     * De definities die al uit dit sjabloon gematerialiseerd zijn, gepagineerd. Dit is de lijst waarmee
+     * het scherm de gebruiker beide opties kan voorleggen in plaats van hem te laten raden of er al een
+     * deelbare definitie bestaat.
+     * <p>
+     * <b>Deterministisch gesorteerd</b> (op code, dan id — zie
+     * {@code ImportDefinitionRepository.findMaterialisedFrom}). Een gepagineerde lijst zonder
+     * {@code order by} mag per pagina van volgorde wisselen; dan kan dezelfde definitie op twee pagina's
+     * staan of op geen enkele. Dat is dezelfde tekortkoming die {@code GET /bundles} met een expliciete
+     * sortering opgelost heeft (beslissingslog 23/09, vraag Q4). {@code GET /templates} zelf blijft
+     * ongewijzigd: dat is een apart contract.
+     *
+     * @throws NotFoundException {@code TEMPLATE_NOT_FOUND}
+     * @throws ConflictException {@code DEFINITION_NOT_A_TEMPLATE}
+     */
+    @Transactional(readOnly = true)
+    public PageResult<MaterialisedDefinitionView> listMaterialisations(long definitionId, Integer page,
+                                                                       Integer size) {
+        ImportDefinition template = template(definitionId);
+        Page<ImportDefinition> derived = definitions.findMaterialisedFrom(template.getId(),
+                pageRequest(page, size));
+        List<Long> ids = derived.getContent().stream().map(ImportDefinition::getId).toList();
+        if (ids.isEmpty()) {
+            return PageResult.of(derived, row -> {
+                throw new IllegalStateException("unreachable: the page is empty");
+            });
+        }
+
+        // Drie verzamelqueries in plaats van drie queries per rij: met een paginagrootte tot 200 is dat
+        // het verschil tussen 3 en 600 queries.
+        Map<Long, Long> linkCounts = new HashMap<>();
+        for (Object[] row : links.countByImportDefinitionIdGrouped(ids)) {
+            linkCounts.put((Long) row[0], (Long) row[1]);
+        }
+        Map<Long, ImportDefinitionRevision> originByDefinition = new HashMap<>();
+        for (ImportDefinitionRevision revision : revisions.findWithOriginByImportDefinitionIdIn(ids)) {
+            ImportDefinitionRevision origin = revision.getBasedOnRevision();
+            if (origin == null || !origin.getImportDefinition().getId().equals(template.getId())) {
+                continue;
+            }
+            // Oplopend op revisienummer: de eerste die er staat is de materialisatierevisie.
+            originByDefinition.putIfAbsent(revision.getImportDefinition().getId(), revision);
+        }
+        Map<Long, String> blockingByRevision = new HashMap<>();
+        List<Long> revisionIds = originByDefinition.values().stream()
+                .map(ImportDefinitionRevision::getId).toList();
+        if (!revisionIds.isEmpty()) {
+            for (ImportDefinitionBookmarkUsage usage
+                    : usages.findByRevisionIdsAndScope(revisionIds, BookmarkValueScope.LINK)) {
+                if (REVISION_LEVEL_PLACES.contains(usage.getPlaceKind())) {
+                    blockingByRevision.putIfAbsent(
+                            usage.getBookmark().getDefinitionRevision().getId(),
+                            usage.getBookmark().getName());
+                }
+            }
+        }
+
+        return PageResult.of(derived, definition -> {
+            ImportDefinitionRevision revision = originByDefinition.get(definition.getId());
+            String blocking = revision == null ? null : blockingByRevision.get(revision.getId());
+            ImportDefinitionRevision origin = revision == null ? null : revision.getBasedOnRevision();
+            return new MaterialisedDefinitionView(definition.getId(), definition.getCode(),
+                    definition.getDescription(),
+                    revision == null ? null : revision.getId(),
+                    revision == null ? null : revision.getRevisionNumber(),
+                    revision == null ? null : revision.getStatus().name(),
+                    origin == null ? null : origin.getId(),
+                    origin == null ? null : origin.getRevisionNumber(),
+                    origin == null ? null : origin.getStatus().name(),
+                    linkCounts.getOrDefault(definition.getId(), 0L),
+                    revision != null && blocking == null, blocking);
+        });
     }
 
     // --- Fase A ------------------------------------------------------------------------------------
@@ -324,9 +482,18 @@ public class TemplateMaterialisationService {
 
     // --- Fase B ------------------------------------------------------------------------------------
 
-    /** De gevalideerde vorm van het verzoek; alle tekst is al getrimd en op lengte gecontroleerd. */
-    private record RequestShape(String definitionCode, String definitionName, String linkCode, String linkName,
-                                String changeReason, String librarySearchSupplierCode, String materialisedBy) {
+    /**
+     * De gevalideerde vorm van het verzoek; alle tekst is al getrimd en op lengte gecontroleerd.
+     * {@code definitionCode}/{@code definitionName} zijn {@code null} bij
+     * {@link MaterialisationMode#REUSE_DEFINITION}: de hergebruikte definitie houdt haar eigen code.
+     */
+    private record RequestShape(MaterialisationMode mode, String definitionCode, String definitionName,
+                                String linkCode, String linkName, String changeReason,
+                                String librarySearchSupplierCode, String materialisedBy) {
+
+        boolean reuse() {
+            return mode == MaterialisationMode.REUSE_DEFINITION;
+        }
     }
 
     private RequestShape checkRequestShape(MaterialiseRequest command) {
@@ -336,23 +503,32 @@ public class TemplateMaterialisationService {
                             + "explicitly — a guessed choice decides whether two suppliers share one "
                             + "configuration");
         }
-        if (command.mode() == MaterialisationMode.REUSE_DEFINITION) {
-            // Bouwstap 5d bouwt hergebruik. Tot dan wordt de modus geweigerd in plaats van stil als
-            // "nieuw" behandeld te worden: dat zou een tweede definitie maken waar de aanroeper er
-            // juist één wilde delen.
-            throw new BadRequestException("REUSE_DEFINITION_NOT_ALLOWED",
-                    "mode REUSE_DEFINITION is not available yet (build step 5d); this build only "
-                            + "materialises a new definition");
+        boolean reuse = command.mode() == MaterialisationMode.REUSE_DEFINITION;
+        // B2: reuseDefinitionId aanwezig ⇔ mode REUSE_DEFINITION. Beide richtingen zijn een fout, nooit
+        // een stille correctie: het veld bepaalt of twee leveranciers voortaan één configuratie delen.
+        if (reuse && command.reuseDefinitionId() == null) {
+            throw new BadRequestException("REUSE_DEFINITION_REQUIRED",
+                    "mode REUSE_DEFINITION needs reuseDefinitionId; name the existing definition to "
+                            + "attach this link to");
         }
-        if (command.reuseDefinitionId() != null) {
+        if (!reuse && command.reuseDefinitionId() != null) {
             throw new BadRequestException("REUSE_DEFINITION_NOT_ALLOWED",
                     "reuseDefinitionId only belongs to mode REUSE_DEFINITION");
         }
         String materialisedBy = ActorNames.requireActorName(command.materialisedBy(), "materialisedBy",
                 MAX_USER_LENGTH);
-        return new RequestShape(
-                requireText(command.definitionCode(), "definitionCode", MAX_CODE_LENGTH),
-                requireText(command.definitionName(), "definitionName", MAX_NAME_LENGTH),
+        if (reuse && (command.definitionCode() != null || command.definitionName() != null
+                || command.changeReason() != null)) {
+            // Hergebruik maakt geen definitie en geen revisie: een meegegeven code, naam of
+            // wijzigingsreden zou nergens landen. Stil negeren zou de aanroeper laten geloven dat de
+            // gedeelde definitie hernoemd is (§4 D1 in de geest: nooit stil negeren).
+            throw new IllegalArgumentException("definitionCode, definitionName and changeReason do not "
+                    + "belong to mode REUSE_DEFINITION; the reused definition keeps its own code, name "
+                    + "and revision");
+        }
+        return new RequestShape(command.mode(),
+                reuse ? null : requireText(command.definitionCode(), "definitionCode", MAX_CODE_LENGTH),
+                reuse ? null : requireText(command.definitionName(), "definitionName", MAX_NAME_LENGTH),
                 requireText(command.linkCode(), "linkCode", MAX_CODE_LENGTH),
                 requireText(command.linkName(), "linkName", MAX_NAME_LENGTH),
                 optionalText(command.changeReason(), "changeReason", MAX_CHANGE_REASON_LENGTH),
@@ -446,9 +622,18 @@ public class TemplateMaterialisationService {
                 : command.bookmarkValues()) {
             String name = requireText(value == null ? null : value.name(), "bookmarkValues[].name",
                     MAX_BOOKMARK_NAME_LENGTH);
-            if (!byName.containsKey(name)) {
+            ImportDefinitionBookmark declared = byName.get(name);
+            if (declared == null) {
                 throw new BadRequestException("BOOKMARK_UNKNOWN", "Bookmark '" + name
                         + "' is not declared in this template revision");
+            }
+            // D2 - bij hergebruik liggen de DEFINITION-waarden al vast in de bestaande revisie. Ze hier
+            // alsnog aanvaarden zou die revisie wijzigen en dus de configuratie van elke andere
+            // leverancier op die definitie mee veranderen.
+            if (shape.reuse() && declared.getValueScope() == BookmarkValueScope.DEFINITION) {
+                throw new BadRequestException("DEFINITION_SCOPE_VALUE_NOT_ALLOWED_ON_REUSE", "Bookmark '"
+                        + name + "' is DEFINITION-scope; reusing an existing definition never changes its "
+                        + "revision. Materialise a new definition if this value must differ");
             }
             if (value.value() == null) {
                 throw new IllegalArgumentException("bookmarkValues['" + name
@@ -467,11 +652,16 @@ public class TemplateMaterialisationService {
         }
 
         // D2 - in NEW_DEFINITION zijn beide scopes in scope: de wizard maakt definitie én koppeling.
-        // Er is hier dus geen scopeafwijzing; DEFINITION_SCOPE_VALUE_NOT_ALLOWED_ON_REUSE hoort bij 5d.
+        // Bij REUSE_DEFINITION is dat hierboven al per aangeleverde naam afgewezen.
 
         Map<String, String> effective = new LinkedHashMap<>();
         List<String> missing = new ArrayList<>();
         for (ImportDefinitionBookmark bookmark : declarations.bookmarks()) {
+            if (shape.reuse() && bookmark.getValueScope() == BookmarkValueScope.DEFINITION) {
+                // Een verplichte DEFINITION-bookmark is bij hergebruik al ingevuld toen de definitie
+                // gematerialiseerd werd; ze hier opnieuw eisen zou D2 tegenspreken.
+                continue;
+            }
             String value = supplied.get(bookmark.getName());
             if (value == null) {
                 value = bookmark.getDefaultValue();
@@ -551,18 +741,131 @@ public class TemplateMaterialisationService {
                     + "' already exists for source organisation '"
                     + template.getSourceOrganisation().getCode() + "'");
         }
-        if (links.findByCode(shape.linkCode()).isPresent()) {
-            throw new ConflictException("LINK_CODE_IN_USE",
-                    "Import link code '" + shape.linkCode() + "' already exists");
-        }
+        checkLinkCodeFree(shape.linkCode());
         // De derde unieke sleutel (definitie + leverancier + bibliotheek) kan bij een nieuwe definitie
-        // niet bezet zijn; ze wordt door de database alsnog bewaakt en hieronder vertaald.
+        // niet bezet zijn; ze wordt door de database alsnog bewaakt en hieronder vertaald. Bij hergebruik
+        // kán ze dat wél — zie checkLinkScopeFree.
+    }
+
+    private void checkLinkCodeFree(String linkCode) {
+        if (links.findByCode(linkCode).isPresent()) {
+            throw new ConflictException("LINK_CODE_IN_USE",
+                    "Import link code '" + linkCode + "' already exists");
+        }
+    }
+
+    /**
+     * {@code uk_import_link_scope} (definitie + leverancier + bibliotheek). Bij hergebruik is dit een
+     * gewone gebruikersfout — dezelfde leverancier twee keer aan dezelfde gedeelde definitie hangen voor
+     * dezelfde bibliotheek — en geen race. Ze wordt daarom vooraf gecontroleerd voor een leesbaar
+     * antwoord; {@link #translate} blijft het racepad afdekken.
+     */
+    private void checkLinkScopeFree(ImportDefinition definition, SourceOrganisation supplier,
+                                    String libraryCode) {
+        boolean taken = links.findByImportDefinitionId(definition.getId()).stream()
+                .anyMatch(link -> link.getSupplierOrganisation().getId().equals(supplier.getId())
+                        && link.getLibraryCode().equals(libraryCode));
+        if (taken) {
+            throw new ConflictException("LINK_SCOPE_IN_USE", "Definition '" + definition.getCode()
+                    + "' already has a link for supplier '" + supplier.getCode() + "' and library '"
+                    + libraryCode + "'");
+        }
     }
 
     private SourceOrganisation organisation(String code) {
         return organisations.findByCode(code)
                 .orElseThrow(() -> new NotFoundException("SOURCE_ORGANISATION_NOT_FOUND",
                         "Source organisation '" + code + "' does not exist"));
+    }
+
+    // --- Fase E, hergebruik (§6) ---------------------------------------------------------------------
+
+    /** De hergebruikte definitie en de revisie waarin ze uit het sjabloon gematerialiseerd is. */
+    private record ReusedDefinition(ImportDefinition definition, ImportDefinitionRevision revision) {
+    }
+
+    /**
+     * De vijf regels van §6, in volgorde van goedkoop-en-structureel naar inhoudelijk. Er wordt hier nog
+     * niets geschreven.
+     *
+     * @throws NotFoundException {@code DEFINITION_NOT_FOUND}
+     * @throws ConflictException {@code DEFINITION_NOT_FROM_TEMPLATE},
+     *                           {@code TEMPLATE_REVISION_MISMATCH_ON_REUSE},
+     *                           {@code DEFINITION_NOT_SHAREABLE}
+     */
+    private ReusedDefinition resolveReuse(ImportDefinition template, ImportDefinitionRevision templateRevision,
+                                          Declarations declarations, long reuseDefinitionId) {
+        ImportDefinition definition = definitions.findById(reuseDefinitionId)
+                .orElseThrow(() -> new NotFoundException("DEFINITION_NOT_FOUND",
+                        "Import definition " + reuseDefinitionId + " does not exist"));
+        // §6 punt 1 - een sjabloon krijgt nooit een koppeling (R-SHR-01, databaseguard 006-5); die guard
+        // afwachten zou een 500 opleveren waar een leesbaar antwoord hoort.
+        if (definition.getUsageType() != DefinitionUsageType.OWN_DEFINITION) {
+            throw new ConflictException("DEFINITION_NOT_FROM_TEMPLATE", "Definition " + reuseDefinitionId
+                    + " is " + definition.getUsageType() + "; only a definition that was materialised from "
+                    + "this template can be reused");
+        }
+        // §6 punt 2
+        ImportDefinition basedOn = definition.getBasedOnDefinition();
+        if (basedOn == null || !basedOn.getId().equals(template.getId())) {
+            throw new ConflictException("DEFINITION_NOT_FROM_TEMPLATE", "Definition '" + definition.getCode()
+                    + "' does not come from template '" + template.getCode()
+                    + "'; attaching an unrelated definition to a link is not template work");
+        }
+        // §6 punt 1 (heeft een revisie) + punt 3. De materialisatierevisie is de laagst genummerde
+        // revisie met een herkomstrevisie uit dít sjabloon; latere revisies van dezelfde definitie zijn
+        // gewoon versiebeheer en verleggen de herkomst niet.
+        ImportDefinitionRevision materialised = null;
+        for (ImportDefinitionRevision revision
+                : revisions.findByImportDefinitionIdOrderByRevisionNumberDesc(definition.getId())) {
+            ImportDefinitionRevision origin = revision.getBasedOnRevision();
+            if (origin != null && origin.getImportDefinition().getId().equals(template.getId())) {
+                materialised = revision;
+            }
+        }
+        if (materialised == null) {
+            throw new ConflictException("DEFINITION_NOT_FROM_TEMPLATE", "Definition '" + definition.getCode()
+                    + "' has no revision that was materialised from template '" + template.getCode() + "'");
+        }
+        if (!materialised.getBasedOnRevision().getId().equals(templateRevision.getId())) {
+            throw new ConflictException("TEMPLATE_REVISION_MISMATCH_ON_REUSE", "Definition '"
+                    + definition.getCode() + "' is frozen on template revision "
+                    + materialised.getBasedOnRevision().getRevisionNumber() + ", the request names revision "
+                    + templateRevision.getRevisionNumber()
+                    + "; comparing template versions is out of scope, so this is never resolved silently");
+        }
+        // §6 punt 5 (vraag Q2). Twee bewijsbronnen, want ze moeten gelijk zijn: de meegekopieerde
+        // declaraties op de afgeleide revisie (R-MAT-03) en de declaraties van de sjabloonrevisie zelf.
+        // Wijkt een definitie af doordat ze buiten deze wizard om ontstond, dan weegt de strengste.
+        blockingBookmarkName(materialised.getId())
+                .or(() -> blockingBookmarkName(declarations))
+                .ifPresent(name -> {
+                    throw new ConflictException("DEFINITION_NOT_SHAREABLE", "Definition '"
+                            + definition.getCode() + "' is not shareable: bookmark '" + name
+                            + "' is LINK-scope but lands in the revision itself, so its value would be "
+                            + "shared by every supplier on this definition. Materialise a new definition "
+                            + "instead");
+                });
+        return new ReusedDefinition(definition, materialised);
+    }
+
+    /** De eerste {@code LINK}-scope bookmark van een revisie die op een revisieniveau-plaats landt. */
+    private Optional<String> blockingBookmarkName(long definitionRevisionId) {
+        return usages.findByRevisionIdsAndScope(List.of(definitionRevisionId), BookmarkValueScope.LINK)
+                .stream()
+                .filter(usage -> REVISION_LEVEL_PLACES.contains(usage.getPlaceKind()))
+                .map(usage -> usage.getBookmark().getName())
+                .findFirst();
+    }
+
+    /** Dezelfde toets op de al ingelezen sjabloondeclaraties, zonder extra query. */
+    private static Optional<String> blockingBookmarkName(Declarations declarations) {
+        return declarations.bookmarks().stream()
+                .filter(bookmark -> bookmark.getValueScope() == BookmarkValueScope.LINK)
+                .filter(bookmark -> declarations.usages().get(bookmark).stream()
+                        .anyMatch(usage -> REVISION_LEVEL_PLACES.contains(usage.getPlaceKind())))
+                .map(ImportDefinitionBookmark::getName)
+                .findFirst();
     }
 
     // --- Fase F ------------------------------------------------------------------------------------
@@ -621,6 +924,62 @@ public class TemplateMaterialisationService {
                     definition.getId(), definition.getCode(), true, revision.getId(),
                     revision.getRevisionNumber(), revision.getStatus().name(), link.getId(), link.getCode(),
                     List.copyOf(appliedDefinition), List.copyOf(appliedLink), List.of());
+        } catch (DataIntegrityViolationException violation) {
+            throw translate(violation);
+        }
+    }
+
+    /**
+     * Fase F bij hergebruik (§6 punt 4): <b>alleen</b> {@code import_link} en
+     * {@code import_link_bookmark_value} ontstaan. Er wordt geen definitie, geen revisie, geen mapping,
+     * geen filter en geen {@code import_definition_bookmark_value} geschreven, en er worden geen hashes
+     * herberekend — de bestaande revisie blijft byte-identiek, precies zoals de andere leveranciers op
+     * die definitie haar kennen.
+     * <p>
+     * Om diezelfde reden draait fase F hier geen configuratievalidatie: die revisie is bij haar eigen
+     * materialisatie al gevalideerd en is sindsdien niet aangeraakt. Hetzelfde geldt voor de
+     * {@code DEFINITION}-scope declaraties en waarden: die zijn eigendom van de bestaande revisie.
+     */
+    private MaterialisationView writeReuse(ImportDefinition template, ImportDefinitionRevision templateRevision,
+                                           RequestShape shape, Declarations declarations, Values values,
+                                           SourceOrganisation supplier, ReusedDefinition reused) {
+        String actor = shape.materialisedBy();
+        try {
+            ImportLink link = new ImportLink(shape.linkCode(), shape.linkName(), reused.definition(),
+                    supplier, values.libraryCode());
+            // R-BMK-04 blijft ook hier gelden: nooit stil afleiden uit de leverancier van de koppeling.
+            link.setLibrarySearchSupplierCode(shape.librarySearchSupplierCode());
+            link = links.saveAndFlush(link);
+
+            List<AppliedValue> appliedLink = new ArrayList<>();
+            for (ImportDefinitionBookmark bookmark : declarations.bookmarks()) {
+                if (bookmark.getValueScope() != BookmarkValueScope.LINK) {
+                    continue;
+                }
+                String value = values.effective().get(bookmark.getName());
+                if (value == null) {
+                    continue;
+                }
+                for (ImportDefinitionBookmarkUsage usage : declarations.usages().get(bookmark)) {
+                    // Een revisieniveau-plaats is hier onbereikbaar: resolveReuse heeft die al met
+                    // DEFINITION_NOT_SHAREABLE geweigerd. De LINK_*-plaatsen zijn in fase D tot één bron
+                    // per koppelingskolom opgelost en staan hierboven al op de ImportLink.
+                    appliedLink.add(new AppliedValue(bookmark.getName(), bookmark.getDataType().name(),
+                            value, usage.getPlaceKind().name(), usage.getTargetHint()));
+                }
+                linkValues.save(new ImportLinkBookmarkValue(link, bookmark.getName(), bookmark.getDataType(),
+                        value, actor));
+            }
+            linkValues.flush();
+
+            ImportDefinitionRevision revision = reused.revision();
+            // definitionValues blijft leeg: dit verzoek heeft geen enkele DEFINITION-waarde toegepast.
+            // De bevroren waarden van de bestaande revisie horen bij die revisie, niet bij deze handeling.
+            return new MaterialisationView(template.getId(), templateRevision.getId(),
+                    templateRevision.getRevisionNumber(), templateRevision.getStatus().name(),
+                    reused.definition().getId(), reused.definition().getCode(), false, revision.getId(),
+                    revision.getRevisionNumber(), revision.getStatus().name(), link.getId(), link.getCode(),
+                    List.of(), List.copyOf(appliedLink), List.of());
         } catch (DataIntegrityViolationException violation) {
             throw translate(violation);
         }
@@ -919,6 +1278,23 @@ public class TemplateMaterialisationService {
                     "This definition already has a link for that supplier and library");
         }
         return violation;
+    }
+
+    /**
+     * Dezelfde paginagrenzen als elke andere lijst van dit project
+     * ({@link BundleQueryService#DEFAULT_PAGE_SIZE}/{@link BundleQueryService#MAX_PAGE_SIZE}): één bron
+     * voor de getallen, zodat een lijst nooit stilzwijgend een andere maximale grootte krijgt.
+     */
+    private static PageRequest pageRequest(Integer page, Integer size) {
+        int number = page == null ? 0 : page;
+        int requested = size == null ? BundleQueryService.DEFAULT_PAGE_SIZE : size;
+        if (number < 0) {
+            throw new IllegalArgumentException("page must not be negative");
+        }
+        if (requested < 1) {
+            throw new IllegalArgumentException("size must be at least 1");
+        }
+        return PageRequest.of(number, Math.min(requested, BundleQueryService.MAX_PAGE_SIZE));
     }
 
     private static String requireText(String value, String field, int maxLength) {
