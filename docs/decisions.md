@@ -801,3 +801,35 @@ volledig staat (met de denker-zwaar-analyse en de vier door de mens beantwoorde 
 te vermijden dat het logboek twee verschillende verhalen over dezelfde beslissing bijhoudt,
 is de inhoud samengevoegd in het blok "2026-09-23 — Frontend: D14 opgepakt, eerste verticale
 slice Scherm 0 (werkvoorraad)" hierboven. Zie daar voor de volledige, bindende beslissing.
+
+---
+
+## 2026-09-23 — D13: RPO/RTO-productiedoel voor de importcontrolelaag
+
+**Vraag:** `businessanalyse-catalogimport.md` §28.1/§33 (D13) benoemt expliciet een niet-opgelost
+verschil tussen BA1 (`RPO ≤ 24u`, `RTO ≤ 4u`, §16.7/§26.1) en BA2's NF05 (`RPO ≤ 15 minuten`,
+`RTO ≤ 4u`) voor de PostgreSQL-database van de importcontrolelaag. Het document zegt zelf dat dit
+geen architectuurkeuze is (beide waarden passen op dezelfde technische architectuur) maar dat het
+concrete getal vastgesteld moet worden op basis van werkelijke back-up-/hersteltests — welk doel
+stellen we vast?
+
+**Bevindingen (denker-gemiddeld):** vandaag bestaat er **geen enkel back-upmechanisme** voor de
+CatalogImport-Postgres-database — geen docker-compose, geen `pg_dump`/WAL/point-in-time-configuratie,
+nergens in het project. Zowel 24u als 15 minuten RPO zijn dus vandaag evenzeer onhaalbaar; het
+fundament ontbreekt. Verzachtende factor: de hervatbare, idempotente kernflow (hoofdstuk 26) vangt
+dataverlies binnen het RPO-venster grotendeels op als herwerk (opnieuw screenen), niet als
+dubbele publicaties of boekhoudschade — dit is dus eerder een operationeel comfortdoel dan een
+integriteitskritische eis.
+
+**Beslissing:** `RPO ≤ 24 uur`, `RTO ≤ 4 uur` (BA1) wordt het productiedoel. Bouw eerst een dagelijkse
+`pg_dump`/snapshot-back-up met hersteltest — aanmerkelijk eenvoudiger dan point-in-time recovery via
+WAL-archiving (nodig voor 15 min), en er bestaat vandaag nog geen van beide. Een strenger RPO (BA2's
+15 min) wordt pas heroverwogen zodra de operationele praktijk (werkelijke storingsfrequentie,
+acceptabel herwerk) daarom vraagt. Dit is uitdrukkelijk geen code-/architectuurwijziging in dit
+blok — het legt het doel vast; het bouwen en testen van het back-upregime is nog te doen werk,
+buiten deze CatalogImport-applicatiecode (hosting/infrastructuur).
+
+**Bron:** denker-gemiddeld (`Onderzoek D13 RPO/RTO-hersteldoel`) / `businessanalyse-catalogimport.md`
+§16.7-context, §26.1, §28.1, §29, §33; `business-analyse-leveranciersbibliotheken.md` recovery-/
+retentietabel; `Businessanalyse_artikelimport_en_prijsacceptatie-2.md` NF05; mens (optie A bevestigd,
+conform aanbeveling)
