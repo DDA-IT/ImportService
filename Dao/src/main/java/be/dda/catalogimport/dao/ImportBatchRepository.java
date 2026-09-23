@@ -22,6 +22,17 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, Long> 
 
     List<ImportBatch> findByDeliveryIdOrderByAttemptNoAsc(Long deliveryId);
 
+    /**
+     * Heeft deze koppeling een open (niet-terminale) batch? {@code open_marker} is {@code TRUE} zolang
+     * de status niet terminaal is en {@code null} zodra ze dat wel is (zie {@link ImportBatch}), dus dit
+     * is exact "een batch die nog loopt of nog op verwerking wacht".
+     * <p>
+     * Grondslag van het slot op LINK-bookmarkwaarden (beslissingslog 23/09 keuze 5,
+     * sjabloon-materialisatie-design.md §7): een bookmarkwaarde wijzigen terwijl er een levering onder
+     * die waarde loopt, maakt achteraf onbepaalbaar met welke invulling er gescreend is.
+     */
+    boolean existsByImportLinkIdAndOpenMarkerIsNotNull(Long importLinkId);
+
     /** Alle batches van een levering onder één revisie (bepaalt het volgende {@code attemptNo}). */
     List<ImportBatch> findByDeliveryIdAndDefinitionRevisionId(Long deliveryId, Long definitionRevisionId);
 

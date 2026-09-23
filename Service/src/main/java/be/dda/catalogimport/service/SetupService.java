@@ -1,6 +1,8 @@
 package be.dda.catalogimport.service;
 
 import be.dda.catalogimport.dao.CatalogImportTaskRepository;
+import be.dda.catalogimport.dao.ImportDefinitionBookmarkRepository;
+import be.dda.catalogimport.dao.ImportDefinitionBookmarkValueRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.ImportFieldCatalogRepository;
@@ -9,6 +11,7 @@ import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
 import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
+import be.dda.catalogimport.domain.BookmarkValueScope;
 import be.dda.catalogimport.domain.CatalogImportTask;
 import be.dda.catalogimport.domain.Criticality;
 import be.dda.catalogimport.domain.DefinitionUsageType;
@@ -19,6 +22,8 @@ import be.dda.catalogimport.domain.FilterOperator;
 import be.dda.catalogimport.domain.FilterOutcome;
 import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.ImportDefinition;
+import be.dda.catalogimport.domain.ImportDefinitionBookmark;
+import be.dda.catalogimport.domain.ImportDefinitionBookmarkValue;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
 import be.dda.catalogimport.domain.ImportFieldMapping;
@@ -222,6 +227,8 @@ public class SetupService {
     private final ImportRevisionFieldCriticalityRepository fieldCriticalities;
     private final ImportLinkRepository links;
     private final CatalogImportTaskRepository tasks;
+    private final ImportDefinitionBookmarkRepository bookmarks;
+    private final ImportDefinitionBookmarkValueRepository bookmarkValues;
     private final SourceStructureConfigFactory structureFactory;
     private final ImportMappingConfigFactory mappingFactory;
 
@@ -229,7 +236,9 @@ public class SetupService {
                         ImportDefinitionRevisionRepository revisions, ImportFieldCatalogRepository fieldCatalog,
                         ImportFieldMappingRepository fieldMappings, ImportRecordFilterRepository recordFilters,
                         ImportRevisionFieldCriticalityRepository fieldCriticalities, ImportLinkRepository links,
-                        CatalogImportTaskRepository tasks, SourceStructureConfigFactory structureFactory,
+                        CatalogImportTaskRepository tasks, ImportDefinitionBookmarkRepository bookmarks,
+                        ImportDefinitionBookmarkValueRepository bookmarkValues,
+                        SourceStructureConfigFactory structureFactory,
                         ImportMappingConfigFactory mappingFactory) {
         this.organisations = organisations;
         this.definitions = definitions;
@@ -240,6 +249,8 @@ public class SetupService {
         this.fieldCriticalities = fieldCriticalities;
         this.links = links;
         this.tasks = tasks;
+        this.bookmarks = bookmarks;
+        this.bookmarkValues = bookmarkValues;
         this.structureFactory = structureFactory;
         this.mappingFactory = mappingFactory;
     }
@@ -425,7 +436,9 @@ public class SetupService {
      * screening: een revisie die pas bij de eerste levering blijkt te blokkeren, is onbruikbaar.
      *
      * @throws NotFoundException        {@code REVISION_NOT_FOUND}
-     * @throws ConflictException        {@code REVISION_NOT_ACTIVATABLE} (al ACTIVE of niet meer DRAFT)
+     * @throws ConflictException        {@code REVISION_NOT_ACTIVATABLE} (al ACTIVE of niet meer DRAFT),
+     *                                  {@code CONFIG_REQUIRED_BOOKMARK_MISSING} (een verplichte
+     *                                  DEFINITION-bookmark van deze revisie is niet ingevuld)
      * @throws IllegalArgumentException een {@code CONFIG_*}-fout in de configuratie
      */
     public RevisionView activateRevision(long revisionId, String approvedBy) {
@@ -439,6 +452,7 @@ public class SetupService {
                     + revision.getStatus() + "; only a DRAFT revision is activated by this setup API");
         }
         validateConfiguration(revision);
+        requireDefinitionBookmarkValues(revision);
         long definitionId = revision.getImportDefinition().getId();
         Optional<ImportDefinitionRevision> current =
                 revisions.findByImportDefinitionIdAndStatus(definitionId, RevisionStatus.ACTIVE);
@@ -684,6 +698,53 @@ public class SetupService {
      * ze wordt vertaald naar een 400 met de {@code CONFIG_*}-code in de boodschap, en de omringende
      * transactie rolt terug.
      */
+    /**
+     * Blokkeerpunt bij het activeren (beslissingslog 23/09 keuze 6, ontwerp §7): elke <b>verplichte</b>
+     * {@link BookmarkValueScope#DEFINITION}-bookmark van deze revisie moet een
+     * {@code import_definition_bookmark_value}-rij met een niet-lege waarde hebben, anders 409
+     * {@code CONFIG_REQUIRED_BOOKMARK_MISSING}. Een revisie die live gaat met een open invulveld zou
+     * dat veld stil leeg toepassen op elke levering die erop draait.
+     * <p>
+     * <b>{@code ""} bevredigt een verplichte bookmark niet</b> (R-BMK-03/R-VAL-04): afwezigheid van een
+     * rij is "niet ingevuld", een lege waarde is "uitdrukkelijk leeg" — voor een verplicht veld is geen
+     * van beide een invulling.
+     * <p>
+     * <b>LINK-scope wordt hier niet beoordeeld</b>: op dit moment bestaat er nog geen of meer dan één
+     * koppeling. Die controle gebeurt bij de start van een levering
+     * ({@code DeliveryIntakeService.resolve}).
+     * <p>
+     * <b>Een sjabloon wordt overgeslagen.</b> Een {@link DefinitionUsageType#REUSABLE_TEMPLATE} is per
+     * definitie een blauwdruk: zijn DEFINITION-bookmarks worden pas bij materialisatie ingevuld
+     * (§14.16 stap 4, R-MAT-02) en de waarderijen ontstaan op de <i>afgeleide</i> revisie. Zou de
+     * controle hier ook op een sjabloon slaan, dan kon een sjabloon met een verplichte
+     * DEFINITION-bookmark nooit {@code ACTIVE} worden en dus nooit gematerialiseerd worden (fase A3/A4
+     * eist een niet-{@code DRAFT} sjabloonrevisie) — het mechanisme zou zichzelf blokkeren. Zie de
+     * levenscyclus in ontwerp §8: dit blokkeerpunt staat op de afgeleide revisie, niet op het sjabloon.
+     */
+    private void requireDefinitionBookmarkValues(ImportDefinitionRevision revision) {
+        if (revision.getImportDefinition().getUsageType() == DefinitionUsageType.REUSABLE_TEMPLATE) {
+            return;
+        }
+        List<String> missing = bookmarks.findByDefinitionRevisionIdOrderBySortOrderAsc(revision.getId()).stream()
+                .filter(bookmark -> bookmark.getValueScope() == BookmarkValueScope.DEFINITION)
+                .filter(ImportDefinitionBookmark::isRequired)
+                .map(ImportDefinitionBookmark::getName)
+                .filter(name -> !hasDefinitionBookmarkValue(revision.getId(), name))
+                .sorted()
+                .toList();
+        if (!missing.isEmpty()) {
+            throw new ConflictException("CONFIG_REQUIRED_BOOKMARK_MISSING", "Revision " + revision.getId()
+                    + " declares required DEFINITION bookmark(s) " + missing + " without a value");
+        }
+    }
+
+    private boolean hasDefinitionBookmarkValue(long revisionId, String bookmarkName) {
+        return bookmarkValues.findByDefinitionRevisionIdAndBookmarkName(revisionId, bookmarkName)
+                .map(ImportDefinitionBookmarkValue::getValueText)
+                .filter(value -> !value.isBlank())
+                .isPresent();
+    }
+
     private void validateConfiguration(ImportDefinitionRevision revision) {
         try {
             SourceStructureConfig structure = structureFactory.from(revision);

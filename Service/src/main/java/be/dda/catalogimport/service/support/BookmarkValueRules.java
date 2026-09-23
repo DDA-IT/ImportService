@@ -25,14 +25,16 @@ import java.util.regex.PatternSyntaxException;
  * <b>D5 dwingt principe 8 van AGENT.md af in de bookmarklaag</b>: een niet-parsebare {@code DECIMAL}
  * wordt nooit stil 0 of leeg, ze blokkeert met {@link #CODE_VALUE_INVALID}.
  * <p>
- * Nog geen aanroeper in bouwstap 5a: deze klasse wordt in een latere bouwstap aangeroepen bij het
- * invullen van een bookmarkwaarde en defensief bij materialisatie. Package-private: enkel bedoeld voor
- * Service-klassen in dit pakket, geen publiek contract.
+ * Sinds bouwstap 5f is er een aanroeper: {@code LinkBookmarkValueService} toetst hiermee een
+ * gewijzigde LINK-waarde vóór ze geschreven wordt. Die service leeft in {@code ..service}, deze klasse
+ * in {@code ..service.support}, vandaar {@code public} in plaats van package-private (bouwstap 5f,
+ * enkel een zichtbaarheidsverruiming — geen gedrags- of signatuurwijziging). Het blijft een interne
+ * hulpklasse van de Service-laag en geen REST-contract.
  */
-final class BookmarkValueRules {
+public final class BookmarkValueRules {
 
-    static final String CODE_VALUE_INVALID = "CONFIG_BOOKMARK_VALUE_INVALID";
-    static final String CODE_VALUE_TOO_LONG = "CONFIG_BOOKMARK_VALUE_TOO_LONG";
+    public static final String CODE_VALUE_INVALID = "CONFIG_BOOKMARK_VALUE_INVALID";
+    public static final String CODE_VALUE_TOO_LONG = "CONFIG_BOOKMARK_VALUE_TOO_LONG";
 
     /**
      * De doelkolomlengte per plaats (D6). {@code import_field_mapping.fixed_value} en
@@ -63,7 +65,7 @@ final class BookmarkValueRules {
         // Enkel statische helpers.
     }
 
-    record Problem(String code, String message) {
+    public record Problem(String code, String message) {
     }
 
     /**
@@ -76,8 +78,8 @@ final class BookmarkValueRules {
      * @param validationPattern optioneel Java-regexpatroon; {@code null} of leeg betekent "geen extra
      *                          patrooncontrole"
      */
-    static Optional<Problem> checkType(BookmarkDataType dataType, String allowedValues, String validationPattern,
-                                       String valueText) {
+    public static Optional<Problem> checkType(BookmarkDataType dataType, String allowedValues,
+                                              String validationPattern, String valueText) {
         if (valueText.isEmpty()) {
             return Optional.empty();
         }
@@ -154,7 +156,7 @@ final class BookmarkValueRules {
      * (nog niet ondersteund, zie {@code BookmarkDeclarations} C4) levert hier geen oordeel: die plaats
      * is al elders tegengehouden.
      */
-    static Optional<Problem> checkLength(BookmarkUsagePlace place, String valueText) {
+    public static Optional<Problem> checkLength(BookmarkUsagePlace place, String valueText) {
         Integer maxLength = TARGET_COLUMN_LENGTHS.get(place);
         if (maxLength == null) {
             return Optional.empty();

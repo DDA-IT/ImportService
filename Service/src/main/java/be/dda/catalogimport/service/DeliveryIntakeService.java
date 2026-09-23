@@ -1,5 +1,6 @@
 package be.dda.catalogimport.service;
 
+import be.dda.catalogimport.dao.BatchBookmarkHashDao;
 import be.dda.catalogimport.dao.CatalogImportTaskRepository;
 import be.dda.catalogimport.dao.DeliveryFileRepository;
 import be.dda.catalogimport.dao.DeliveryRepository;
@@ -73,6 +74,8 @@ public class DeliveryIntakeService {
     private final DeliveryRepository deliveries;
     private final DeliveryFileRepository deliveryFiles;
     private final ImportBatchRepository batches;
+    private final LinkBookmarkValueService linkBookmarkValues;
+    private final BatchBookmarkHashDao bookmarkHashes;
     private final TransactionTemplate transaction;
     private final TransactionTemplate readOnlyTransaction;
 
@@ -80,6 +83,8 @@ public class DeliveryIntakeService {
                                  CatalogImportTaskRepository tasks, ImportDefinitionRevisionRepository revisions,
                                  TaskRunRepository runs, DeliveryRepository deliveries,
                                  DeliveryFileRepository deliveryFiles, ImportBatchRepository batches,
+                                 LinkBookmarkValueService linkBookmarkValues,
+                                 BatchBookmarkHashDao bookmarkHashes,
                                  PlatformTransactionManager transactionManager) {
         this.archive = archive;
         this.queries = queries;
@@ -89,6 +94,8 @@ public class DeliveryIntakeService {
         this.deliveries = deliveries;
         this.deliveryFiles = deliveryFiles;
         this.batches = batches;
+        this.linkBookmarkValues = linkBookmarkValues;
+        this.bookmarkHashes = bookmarkHashes;
         this.transaction = new TransactionTemplate(transactionManager);
         this.readOnlyTransaction = new TransactionTemplate(transactionManager);
         this.readOnlyTransaction.setReadOnly(true);
@@ -100,7 +107,8 @@ public class DeliveryIntakeService {
      *
      * @throws NotFoundException  onbekende taak ({@code TASK_NOT_FOUND})
      * @throws ConflictException  {@code TASK_NOT_MANUAL}, {@code NO_ACTIVE_REVISION},
-     *                            {@code CONFIG_PRICE_FIELD_MISSING}, {@code TASK_RUN_IN_PROGRESS},
+     *                            {@code CONFIG_PRICE_FIELD_MISSING},
+     *                            {@code CONFIG_REQUIRED_BOOKMARK_MISSING}, {@code TASK_RUN_IN_PROGRESS},
      *                            {@code DELIVERY_REFERENCE_REUSED_WITH_DIFFERENT_CONTENT}
      * @throws IllegalArgumentException ongeldige aanvraagvelden
      */
@@ -185,8 +193,27 @@ public class DeliveryIntakeService {
         ImportBatch batch = new ImportBatch(delivery, task.getImportLink(), resolved.revision(), 1, uploader);
         batch.setTaskRun(run);
         batches.saveAndFlush(batch);
+        recordBookmarkValuesHash(batch);
 
         return new IntakeResult(true, queries.getDelivery(delivery.getId()));
+    }
+
+    /**
+     * Legt vast met welke LINK-bookmarkwaarden deze batch gedraaid heeft
+     * ({@code import_batch.bookmark_values_hash}, ontwerp §7, beslissingslog 23/09 keuze 5).
+     * <p>
+     * De kolom is bewust niet op {@link ImportBatch} gemapt (changeset 006-6) en wordt daarom met één
+     * gerichte JDBC-update gezet, in dezelfde transactie als de batch zelf: een volledige
+     * {@code save()} zou andere kolommen meeschrijven. Heeft de koppeling geen enkele bookmarkwaarde,
+     * dan blijft de kolom {@code null} — "geen bookmarkwaarden van toepassing", niet de hash van een
+     * lege reeks. Vanaf dit punt is het slot op die waarden actief: de batch is open, dus
+     * {@code LinkBookmarkValueService} weigert elke wijziging tot ze terminaal is.
+     */
+    private void recordBookmarkValuesHash(ImportBatch batch) {
+        byte[] hash = bookmarkHashes.computeLinkBookmarkValuesHash(batch.getImportLink().getId());
+        if (hash != null) {
+            bookmarkHashes.setBookmarkValuesHash(batch.getId(), hash);
+        }
     }
 
     /**
@@ -215,6 +242,18 @@ public class DeliveryIntakeService {
         if (priceField == null || priceField.isBlank()) {
             throw new ConflictException("CONFIG_PRICE_FIELD_MISSING",
                     "Active revision " + revision.getRevisionNumber() + " has no base price field configured");
+        }
+        // Blokkeerpunt verplichte LINK-bookmarks (beslissingslog 23/09 keuze 6, vraag Q4, ontwerp §7):
+        // dezelfde vorm, plaats en foutfamilie als de prijsveldcontrole hierboven. Bewust hier en niet
+        // later: de upload wordt geweigerd vóór er iets gearchiveerd of geregistreerd is, en de batch
+        // wordt niet op BLOCKED gezet - de serverstand is onvolledig, niet de levering.
+        List<String> missingBookmarks = linkBookmarkValues
+                .missingRequiredValues(task.getImportLink().getId(), revision.getId());
+        if (!missingBookmarks.isEmpty()) {
+            throw new ConflictException("CONFIG_REQUIRED_BOOKMARK_MISSING",
+                    "Import link " + task.getImportLink().getId() + " has no value for required LINK bookmark(s) "
+                            + missingBookmarks + " declared in active revision "
+                            + revision.getRevisionNumber());
         }
         if (runs.findByTaskIdAndConcurrencyTokenIsNotNull(taskId).isPresent()) {
             throw inProgress(task);
