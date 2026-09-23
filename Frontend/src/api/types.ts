@@ -317,3 +317,58 @@ export type AcceptBaselineRequest = {
   acceptedBy: string;
   reason: string;
 };
+
+// be.dda.catalogimport.service.BatchQueryService.BatchRow (Scherm 0, D14, bouwstap S0-B1)
+export type BatchRow = {
+  batchId: number;
+  deliveryId: number;
+  importLinkId: number;
+  importLinkCode: string;
+  supplierCode: string;
+  libraryCode: string;
+  attemptNo: number;
+  status: ImportBatchStatus;
+  validationResult: ValidationResult | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  rawRecordCount: number | null;
+  validRecordCount: number | null;
+  rejectedRecordCount: number | null;
+  contentMutationCount: number | null;
+  awaitingApprovalCount: number | null;
+  criticalLineCount: number | null;
+  criticalIssueCount: number | null;
+  warningCount: number | null;
+  bulkIncidentCount: number | null;
+  identityIncidentCount: number | null;
+  blockedCode: string | null;
+  baselineAcceptedBy: string | null;
+  baselineAcceptedAt: string | null;
+};
+
+// be.dda.catalogimport.service.BatchQueryService.StatusCount
+export type StatusCount = { status: ImportBatchStatus; count: number };
+
+// be.dda.catalogimport.service.BatchQueryService.ValidationCount ("niet vastgesteld" =
+// validationResult === null, altijd een eigen zichtbare regel, nooit als 0 getoond of samengevoegd
+// met VALID)
+export type ValidationCount = { validationResult: ValidationResult | null; count: number };
+
+// be.dda.catalogimport.service.BatchQueryService.BatchSummary (Scherm 0, D14, bouwstap S0-B2)
+export type BatchSummary = {
+  total: number;
+  byStatus: StatusCount[];
+  byValidationResult: ValidationCount[];
+};
+
+// be.dda.catalogimport.service.ImportLinkQueryService.ImportLinkRow (Scherm 0/3, D14, bouwstap S0-B3)
+export type ImportLinkRow = {
+  id: number;
+  code: string;
+  name: string;
+  supplierCode: string;
+  supplierName: string;
+  libraryCode: string;
+  active: boolean;
+};

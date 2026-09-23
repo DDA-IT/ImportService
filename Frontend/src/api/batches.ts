@@ -1,12 +1,54 @@
 /**
  * Functies voor `/batches`-endpoints van `be.dda.catalogimport.web.CatalogImportBatchController`
  * die scherm (3) nodig heeft: de mutatielijst (hergebruikt door het herbruikbare
- * mutatielijst-component, zie §11 van het ontwerp) en `accept-baseline` (scherm 2). De overige
- * endpoints van die controller (`/batches/{id}`, `/issues`, `/issue-groups`, `/continue`) horen bij
- * scherm (2) en volgen in een latere bouwstap.
+ * mutatielijst-component, zie §11 van het ontwerp) en `accept-baseline` (scherm 2). Sinds bouwstap
+ * S0-B1/S0-B2 (D14, Scherm 0) ook `listBatches`/`batchSummary`, de werkvoorraadlijst en -samenvatting.
+ * De overige endpoints van die controller (`/batches/{id}`, `/issues`, `/issue-groups`, `/continue`)
+ * horen bij scherm (2) en volgen in een latere bouwstap.
  */
 import { request, toQueryString } from './http.ts';
-import type { AcceptBaselineRequest, BaselineAcceptance, MutationActionType, MutationRow, PageResult } from './types.ts';
+import type {
+  AcceptBaselineRequest,
+  BaselineAcceptance,
+  BatchRow,
+  BatchSummary,
+  ImportBatchStatus,
+  MutationActionType,
+  MutationRow,
+  PageResult,
+  ValidationResult,
+} from './types.ts';
+
+/** GET /batches — CatalogImportBatchController.batches (Scherm 0, D14, bouwstap S0-B1) */
+export function listBatches(
+  params: {
+    status?: ImportBatchStatus;
+    validationResult?: ValidationResult;
+    importLinkId?: number;
+    createdFrom?: string;
+    createdTo?: string;
+    page?: number;
+    size?: number;
+  },
+  signal?: AbortSignal,
+): Promise<PageResult<BatchRow>> {
+  const query = toQueryString({
+    status: params.status,
+    validationResult: params.validationResult,
+    importLinkId: params.importLinkId,
+    createdFrom: params.createdFrom,
+    createdTo: params.createdTo,
+    page: params.page,
+    size: params.size,
+  });
+  return request<PageResult<BatchRow>>(`/batches${query}`, { signal });
+}
+
+/** GET /batches/summary — CatalogImportBatchController.summary (Scherm 0, D14, bouwstap S0-B2) */
+export function batchSummary(params: { importLinkId?: number }, signal?: AbortSignal): Promise<BatchSummary> {
+  const query = toQueryString({ importLinkId: params.importLinkId });
+  return request<BatchSummary>(`/batches/summary${query}`, { signal });
+}
 
 /** GET /batches/{batchId}/mutations — CatalogImportBatchController.mutations */
 export function batchMutations(

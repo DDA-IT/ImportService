@@ -1,6 +1,6 @@
 import type { RouteObject } from 'react-router-dom';
-import { Navigate } from 'react-router-dom';
 import { BundleListPage } from './features/bundles/BundleListPage.tsx';
+import { WorkQueuePage } from './features/workqueue/WorkQueuePage.tsx';
 
 /* Placeholder pages for now */
 function NotFoundPage() {
@@ -51,7 +51,7 @@ function BundleDecisionsPage() {
 export const routes: RouteObject[] = [
   {
     path: '/',
-    element: <Navigate to="/bundles" replace />,
+    element: <WorkQueuePage />,
   },
   {
     path: '/bundles',

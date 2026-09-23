@@ -37,6 +37,12 @@ const STATUS_FAMILY: Record<string, StatusFamily> = {
   SCREENED: 'ready',
   FAILED: 'rejected',
   BASELINE_ACCEPTED: 'ready',
+  // ValidationResult (het eindoordeel, Scherm 0); `null` ("niet vastgesteld") heeft geen entry hier
+  // en wordt door de aanroeper apart getoond — een badge veronderstelt altijd een stringwaarde.
+  VALID: 'ready',
+  VALID_WITH_WARNINGS: 'awaiting',
+  REVIEW_REQUIRED: 'blocked',
+  BLOCKING: 'rejected',
 };
 
 export type StatusBadgeProps = { status: string };
