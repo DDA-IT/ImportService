@@ -312,6 +312,113 @@ class LinkBookmarkValueTest {
         assertThat(aantal.getId()).isNotNull();
     }
 
+    // --- LINK_*-kolomsynchronisatie (5f-nalevering, beslissingslog 2026-09-23) ---------------------
+
+    @Test
+    void aLinkLibraryCodeBookmarkKeepsTheImportLinkColumnInSyncAfterAPut() {
+        Fixture f = fixture("LIBCODE");
+        ImportDefinitionBookmark bib = declare(f, "DOELBIBLIOTHEEK", BookmarkDataType.TEXT, true);
+        usages.saveAndFlush(new ImportDefinitionBookmarkUsage(bib, BookmarkUsagePlace.LINK_LIBRARY_CODE, ""));
+
+        LinkBookmarkValueRow row = service.setValue(f.link().getId(), "DOELBIBLIOTHEEK", "PSARF099", USER);
+
+        assertThat(row.valueText()).isEqualTo("PSARF099");
+        // Niet enkel de waarderij: de kolom op import_link moet dezelfde waarde dragen.
+        ImportLink reloaded = links.findById(f.link().getId()).orElseThrow();
+        assertThat(reloaded.getLibraryCode()).isEqualTo("PSARF099");
+
+        // Een tweede wijziging houdt waarde en kolom nog steeds gelijk.
+        service.setValue(f.link().getId(), "DOELBIBLIOTHEEK", "PSARF100", USER);
+        assertThat(links.findById(f.link().getId()).orElseThrow().getLibraryCode()).isEqualTo("PSARF100");
+        assertThat(value(f, "DOELBIBLIOTHEEK").getValueText()).isEqualTo("PSARF100");
+    }
+
+    @Test
+    void anEmptyValueOnALinkLibraryCodeBookmarkIsBlockedInsteadOfClearingTheNotNullColumn() {
+        Fixture f = fixture("LIBEMPTY");
+        ImportDefinitionBookmark bib = declare(f, "DOELBIBLIOTHEEK", BookmarkDataType.TEXT, false);
+        usages.saveAndFlush(new ImportDefinitionBookmarkUsage(bib, BookmarkUsagePlace.LINK_LIBRARY_CODE, ""));
+        String originalLibraryCode = f.link().getLibraryCode();
+
+        assertThatThrownBy(() -> service.setValue(f.link().getId(), "DOELBIBLIOTHEEK", "", USER))
+                .isInstanceOf(BadRequestException.class)
+                .extracting(error -> ((BadRequestException) error).getCode())
+                .isEqualTo("CONFIG_REQUIRED_BOOKMARK_MISSING");
+        // Geen halve wijziging: noch de bookmarkwaarde, noch de NOT NULL-kolom is aangeraakt.
+        assertThat(values.findByImportLinkIdAndBookmarkName(f.link().getId(), "DOELBIBLIOTHEEK")).isEmpty();
+        assertThat(links.findById(f.link().getId()).orElseThrow().getLibraryCode())
+                .isEqualTo(originalLibraryCode);
+    }
+
+    @Test
+    void aLinkSupplierOrganisationBookmarkResolvesAndUpdatesTheSupplierColumn() {
+        Fixture f = fixture("SUPPLIER");
+        String newSupplierCode = f.code() + "-NEWSUP";
+        SourceOrganisation newSupplier = organisations.saveAndFlush(
+                new SourceOrganisation(newSupplierCode, newSupplierCode + " leverancier",
+                        SourceOrganisationType.SUPPLIER));
+        ImportDefinitionBookmark leverancier = declare(f, "DETAILLEVERANCIER", BookmarkDataType.TEXT, true);
+        usages.saveAndFlush(new ImportDefinitionBookmarkUsage(leverancier,
+                BookmarkUsagePlace.LINK_SUPPLIER_ORGANISATION, ""));
+
+        LinkBookmarkValueRow row = service.setValue(f.link().getId(), "DETAILLEVERANCIER", newSupplierCode, USER);
+
+        assertThat(row.valueText()).isEqualTo(newSupplierCode);
+        ImportLink reloaded = links.findById(f.link().getId()).orElseThrow();
+        assertThat(reloaded.getSupplierOrganisation().getId()).isEqualTo(newSupplier.getId());
+    }
+
+    @Test
+    void aLinkSupplierOrganisationBookmarkPointingAtAnUnknownCodeIs404AndWritesNothing() {
+        Fixture f = fixture("SUPPLIERBAD");
+        ImportDefinitionBookmark leverancier = declare(f, "DETAILLEVERANCIER", BookmarkDataType.TEXT, true);
+        usages.saveAndFlush(new ImportDefinitionBookmarkUsage(leverancier,
+                BookmarkUsagePlace.LINK_SUPPLIER_ORGANISATION, ""));
+        Long originalSupplierId = f.link().getSupplierOrganisation().getId();
+
+        assertThatThrownBy(() -> service.setValue(f.link().getId(), "DETAILLEVERANCIER",
+                f.code() + "-DOESNOTEXIST", USER))
+                .isInstanceOf(NotFoundException.class)
+                .extracting(error -> ((NotFoundException) error).getCode())
+                .isEqualTo("SOURCE_ORGANISATION_NOT_FOUND");
+        // Geen halve wijziging: noch de bookmarkwaarde, noch de koppelingskolom is aangeraakt.
+        assertThat(values.findByImportLinkIdAndBookmarkName(f.link().getId(), "DETAILLEVERANCIER")).isEmpty();
+        assertThat(links.findById(f.link().getId()).orElseThrow().getSupplierOrganisation().getId())
+                .isEqualTo(originalSupplierId);
+    }
+
+    @Test
+    void aLinkSearchSupplierBookmarkFollowsTheValueDirectlyIncludingClearingItToEmpty() {
+        Fixture f = fixture("SEARCHSUP");
+        ImportDefinitionBookmark zoekleverancier = declare(f, "ZOEKLEVERANCIER", BookmarkDataType.TEXT, false);
+        usages.saveAndFlush(new ImportDefinitionBookmarkUsage(zoekleverancier,
+                BookmarkUsagePlace.LINK_SEARCH_SUPPLIER, ""));
+
+        service.setValue(f.link().getId(), "ZOEKLEVERANCIER", "9001", USER);
+        assertThat(links.findById(f.link().getId()).orElseThrow().getLibrarySearchSupplierCode())
+                .isEqualTo("9001");
+
+        // Deze kolom is nullable: een expliciet lege waarde mag ze wél leegmaken.
+        service.setValue(f.link().getId(), "ZOEKLEVERANCIER", "", USER);
+        assertThat(links.findById(f.link().getId()).orElseThrow().getLibrarySearchSupplierCode())
+                .isEmpty();
+    }
+
+    @Test
+    void theLockAlsoBlocksAChangeToALinkLibraryCodeBookmarkAndLeavesTheColumnUntouched() {
+        Fixture f = fixture("LOCKLIB");
+        ImportDefinitionBookmark bib = declare(f, "DOELBIBLIOTHEEK", BookmarkDataType.TEXT, true);
+        usages.saveAndFlush(new ImportDefinitionBookmarkUsage(bib, BookmarkUsagePlace.LINK_LIBRARY_CODE, ""));
+        service.setValue(f.link().getId(), "DOELBIBLIOTHEEK", "PSARF200", USER);
+        openBatch(f);
+
+        assertThatThrownBy(() -> service.setValue(f.link().getId(), "DOELBIBLIOTHEEK", "PSARF201", USER))
+                .isInstanceOf(ConflictException.class)
+                .extracting(error -> ((ConflictException) error).getCode())
+                .isEqualTo("LINK_BOOKMARK_LOCKED_BY_OPEN_BATCH");
+        assertThat(links.findById(f.link().getId()).orElseThrow().getLibraryCode()).isEqualTo("PSARF200");
+    }
+
     // --- Helpers ------------------------------------------------------------------------------------
 
     private LinkBookmarkValueRow row(LinkBookmarkValues view, String name) {

@@ -24,11 +24,14 @@ import org.springframework.web.bind.annotation.RestController;
  * ontwikkelmachine met wegwerpgegevens.
  *
  * <h2>Statuscodes</h2>
- * 200 bij beide endpoints. 404 met code {@code LINK_NOT_FOUND}. 409 met code
- * {@code LINK_BOOKMARK_LOCKED_BY_OPEN_BATCH} (de koppeling heeft een open batch, keuze 5) of
+ * 200 bij beide endpoints. 404 met code {@code LINK_NOT_FOUND} of {@code SOURCE_ORGANISATION_NOT_FOUND}
+ * (een {@code LINK_SUPPLIER_ORGANISATION}-bookmark wijst naar een onbestaande leverancierscode). 409 met
+ * code {@code LINK_BOOKMARK_LOCKED_BY_OPEN_BATCH} (de koppeling heeft een open batch, keuze 5) of
  * {@code NO_ACTIVE_REVISION} (niets declareert welke bookmarks deze koppeling heeft). 400 met code
- * {@code BOOKMARK_UNKNOWN}, {@code BOOKMARK_SCOPE_MISMATCH}, {@code CONFIG_BOOKMARK_VALUE_INVALID} of
- * {@code CONFIG_BOOKMARK_VALUE_TOO_LONG}; 400 zonder code bij een ontbrekend of te lang veld.
+ * {@code BOOKMARK_UNKNOWN}, {@code BOOKMARK_SCOPE_MISMATCH}, {@code CONFIG_BOOKMARK_VALUE_INVALID},
+ * {@code CONFIG_BOOKMARK_VALUE_TOO_LONG} of {@code CONFIG_REQUIRED_BOOKMARK_MISSING} (een lege waarde
+ * zou {@code library_code} of de leveranciersorganisatie leegmaken, allebei {@code NOT NULL} —
+ * 5f-nalevering, beslissingslog 2026-09-23); 400 zonder code bij een ontbrekend of te lang veld.
  * <p>
  * Alle antwoorden komen uit {@link LinkBookmarkValueService} als records; er gaat geen JPA-entiteit
  * naar buiten.

@@ -6,6 +6,8 @@ import be.dda.catalogimport.dao.ImportDefinitionBookmarkUsageRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.ImportLinkBookmarkValueRepository;
 import be.dda.catalogimport.dao.ImportLinkRepository;
+import be.dda.catalogimport.dao.SourceOrganisationRepository;
+import be.dda.catalogimport.domain.BookmarkUsagePlace;
 import be.dda.catalogimport.domain.BookmarkValueScope;
 import be.dda.catalogimport.domain.ImportDefinitionBookmark;
 import be.dda.catalogimport.domain.ImportDefinitionBookmarkUsage;
@@ -13,6 +15,7 @@ import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportLink;
 import be.dda.catalogimport.domain.ImportLinkBookmarkValue;
 import be.dda.catalogimport.domain.RevisionStatus;
+import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.service.support.BookmarkValueRules;
 import java.time.Instant;
 import java.util.List;
@@ -46,15 +49,22 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li><b>{@code null} ≠ {@code ""} (R-BMK-03).</b> Geen rij betekent "niet ingevuld"; een rij met een
  *       lege waarde betekent "uitdrukkelijk leeg" en bevredigt een <i>verplichte</i> bookmark niet.
  *       Deze service laat {@code ""} toe als waarde maar telt ze nooit als ingevuld.</li>
+ *   <li><b>Eén waarheid voor een {@code LINK_*}-plaats (5f-nalevering, beslissingslog 2026-09-23,
+ *       A34).</b> Vult een bookmark {@link BookmarkUsagePlace#LINK_LIBRARY_CODE},
+ *       {@link BookmarkUsagePlace#LINK_SEARCH_SUPPLIER} of
+ *       {@link BookmarkUsagePlace#LINK_SUPPLIER_ORGANISATION}, dan werkt {@link #setValue} in dezelfde
+ *       transactie ook de bijbehorende kolom op {@link ImportLink} bij — exact zoals
+ *       {@code TemplateMaterialisationService} die drie plaatsen bij materialisatie schrijft. Waarde en
+ *       kolom kunnen na een wijziging dus niet meer uiteenlopen: de bookmark blijft ook ná
+ *       materialisatie het enige invoerveld voor die koppelingskolom.</li>
  * </ul>
  *
  * <h2>Grenzen van deze service</h2>
- * Ze schrijft uitsluitend in {@code import_link_bookmark_value}. De kolommen op {@link ImportLink}
- * ({@code library_code}, {@code library_search_supplier_code}, de leveranciersorganisatie) en de
- * bevroren waarden in een revisie worden hier <b>niet</b> aangeraakt: die zijn bij materialisatie
- * gezet en de kolom op de koppeling is voor de runtime de waarheid (A34, R-MAT-02). Een wijziging hier
- * is dus een wijziging van het invulveld, geen herconfiguratie van een bestaande koppeling; dat laatste
- * vraagt een eigen beslissing en bestaat nog niet.
+ * Buiten de drie {@code LINK_*}-plaatsen hierboven raakt ze geen andere kolom op {@link ImportLink} en
+ * geen bevroren waarde in een revisie. {@code library_code} en de leveranciersorganisatie zijn
+ * {@code NOT NULL}; een lege waarde op zo'n plaats leegt de kolom dus nooit stilzwijgend — dat blokkeert
+ * met een leesbare 400 ({@code CONFIG_REQUIRED_BOOKMARK_MISSING}). {@code library_search_supplier_code}
+ * is nullable en volgt de bookmarkwaarde rechtstreeks, net als bij materialisatie.
  * <p>
  * Autorisatie volgt in Fase 5; {@code updatedBy} is voorlopig een requestveld met dezelfde regels als
  * {@code acceptedBy}/{@code decidedBy} (A38).
@@ -106,18 +116,21 @@ public class LinkBookmarkValueService {
     private final ImportDefinitionBookmarkRepository bookmarks;
     private final ImportDefinitionBookmarkUsageRepository usages;
     private final ImportBatchRepository batches;
+    private final SourceOrganisationRepository organisations;
 
     public LinkBookmarkValueService(ImportLinkRepository links, ImportLinkBookmarkValueRepository values,
                                     ImportDefinitionRevisionRepository revisions,
                                     ImportDefinitionBookmarkRepository bookmarks,
                                     ImportDefinitionBookmarkUsageRepository usages,
-                                    ImportBatchRepository batches) {
+                                    ImportBatchRepository batches,
+                                    SourceOrganisationRepository organisations) {
         this.links = links;
         this.values = values;
         this.revisions = revisions;
         this.bookmarks = bookmarks;
         this.usages = usages;
         this.batches = batches;
+        this.organisations = organisations;
     }
 
     /**
@@ -156,12 +169,17 @@ public class LinkBookmarkValueService {
      *
      * @param valueText de nieuwe waarde; {@code ""} is een uitdrukkelijk lege waarde en wordt bewaard,
      *                  {@code null} is een ontbrekend veld en wordt geweigerd (R-BMK-03)
-     * @throws NotFoundException        {@code LINK_NOT_FOUND}
+     * @throws NotFoundException        {@code LINK_NOT_FOUND}, {@code SOURCE_ORGANISATION_NOT_FOUND}
+     *                                  (een {@code LINK_SUPPLIER_ORGANISATION}-waarde wijst naar een
+     *                                  onbestaande leverancierscode)
      * @throws ConflictException        {@code LINK_BOOKMARK_LOCKED_BY_OPEN_BATCH},
      *                                  {@code NO_ACTIVE_REVISION}
      * @throws BadRequestException      {@code BOOKMARK_UNKNOWN}, {@code BOOKMARK_SCOPE_MISMATCH},
      *                                  {@code CONFIG_BOOKMARK_VALUE_INVALID},
-     *                                  {@code CONFIG_BOOKMARK_VALUE_TOO_LONG}
+     *                                  {@code CONFIG_BOOKMARK_VALUE_TOO_LONG},
+     *                                  {@code CONFIG_REQUIRED_BOOKMARK_MISSING} (een lege waarde zou
+     *                                  {@code library_code} of de leveranciersorganisatie leegmaken,
+     *                                  allebei {@code NOT NULL})
      * @throws IllegalArgumentException ontbrekende of te lange velden
      */
     public LinkBookmarkValueRow setValue(long linkId, String bookmarkName, String valueText, String updatedBy) {
@@ -179,6 +197,9 @@ public class LinkBookmarkValueService {
 
         ImportDefinitionBookmark declaration = declaration(link, name);
         validate(declaration, newValue);
+        // 5f-nalevering: vóór er iets geschreven wordt, moet ook de propagatie naar de ImportLink-kolom
+        // (indien van toepassing) al geldig zijn — geen halve wijziging bij een blokkerende plaats.
+        applyToLink(link, declaration, newValue);
 
         Instant now = Instant.now();
         ImportLinkBookmarkValue stored = values.findByImportLinkIdAndBookmarkName(linkId, name)
@@ -191,7 +212,54 @@ public class LinkBookmarkValueService {
                 })
                 .orElseGet(() -> new ImportLinkBookmarkValue(link, name, declaration.getDataType(), newValue,
                         updater));
-        return row(values.saveAndFlush(stored), declaration);
+        ImportLinkBookmarkValue saved = values.saveAndFlush(stored);
+        links.saveAndFlush(link);
+        return row(saved, declaration);
+    }
+
+    /**
+     * De propagatie van A34: vult {@code declaration} één van de drie {@code LINK_*}-plaatsen, dan
+     * schrijft deze methode de bijbehorende kolom op {@code link} mee, in dezelfde transactie als de
+     * bookmarkwaarde zelf. Volgt dezelfde regels als {@code TemplateMaterialisationService} bij
+     * materialisatie: {@code library_code} en de leveranciersorganisatie zijn verplicht en mogen nooit
+     * leeg gemaakt worden; {@code library_search_supplier_code} is optioneel en volgt de waarde
+     * rechtstreeks. Een bookmark zonder {@code LINK_*}-plaats laat {@code link} ongemoeid.
+     */
+    private void applyToLink(ImportLink link, ImportDefinitionBookmark declaration, String newValue) {
+        for (ImportDefinitionBookmarkUsage usage : usages.findByBookmarkId(declaration.getId())) {
+            switch (usage.getPlaceKind()) {
+                case LINK_LIBRARY_CODE ->
+                        link.setLibraryCode(requireLinkColumnValue(declaration, newValue, "libraryCode"));
+                case LINK_SUPPLIER_ORGANISATION -> link.setSupplierOrganisation(
+                        organisation(requireLinkColumnValue(declaration, newValue, "supplierOrganisationCode")));
+                case LINK_SEARCH_SUPPLIER -> link.setLibrarySearchSupplierCode(newValue);
+                default -> {
+                    // Geen koppelingskolom voor deze plaats (bv. FIELD_MAPPING_FIXED_VALUE).
+                }
+            }
+        }
+    }
+
+    /**
+     * {@code library_code} en de leveranciersorganisatie zijn {@code NOT NULL} op {@link ImportLink}.
+     * Een bookmark op die plaats mag dus nooit met een lege waarde bevredigd worden — dat blokkeert hier
+     * leesbaar, net zoals {@code TemplateMaterialisationService#linkField} dat bij materialisatie doet,
+     * in plaats van pas op een databasefout te stuiten.
+     */
+    private static String requireLinkColumnValue(ImportDefinitionBookmark declaration, String value,
+                                                  String requestFieldLabel) {
+        if (value.isBlank()) {
+            throw new BadRequestException("CONFIG_REQUIRED_BOOKMARK_MISSING", "Bookmark '"
+                    + declaration.getName() + "' fills " + requestFieldLabel + ", which the import link "
+                    + "always needs; an empty value would leave that column without a value");
+        }
+        return value;
+    }
+
+    private SourceOrganisation organisation(String code) {
+        return organisations.findByCode(code)
+                .orElseThrow(() -> new NotFoundException("SOURCE_ORGANISATION_NOT_FOUND",
+                        "Source organisation '" + code + "' does not exist"));
     }
 
     // --- Gedeeld met DeliveryIntakeService ---------------------------------------------------------
