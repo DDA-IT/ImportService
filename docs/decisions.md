@@ -833,3 +833,46 @@ buiten deze CatalogImport-applicatiecode (hosting/infrastructuur).
 §16.7-context, §26.1, §28.1, §29, §33; `business-analyse-leveranciersbibliotheken.md` recovery-/
 retentietabel; `Businessanalyse_artikelimport_en_prijsacceptatie-2.md` NF05; mens (optie A bevestigd,
 conform aanbeveling)
+
+---
+
+## 2026-09-23 — D13-uitvoering: ontwerp back-up-/hersteltaak (losstaande scripts)
+
+**Vraag:** Hoe landt het dagelijkse `pg_dump`-back-upregime met hersteltest (D13) concreet, gegeven
+dat er geen enkele infra-as-code (docker-compose/CI/CD) in dit project bestaat?
+
+**Beslissing:** Losstaande scripts buiten de Spring Boot-applicatiecode, geen scheduled `@Component` —
+back-up is infrastructuur, geen applicatielogica.
+
+- **Locatie:** nieuwe top-level map `scripts/backup/` (geen Maven-module, geen naamsbotsing met
+  Domain/Dao/Service/Web): `backup-postgres.sh` (productie/Linux/cron) + `backup-postgres.ps1`
+  (lokaal/demo Windows-equivalent, Task Scheduler), `restore-and-verify.sh`/`.ps1` (hersteltest).
+- **Back-up:** `pg_dump -Fc` naar `$CATALOG_BACKUP_DIR/daily/catalog_import_<db>_<timestamp>.dump`,
+  via de native libpq-env-vars (`PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER`/`PGPASSWORD`, wachtwoord nooit
+  als CLI-argument), plus een goedkope `pg_restore --list`-syntaxcontrole na elke dump.
+- **Retentie (nieuw, geen brondocument geeft een getal — expliciet een voorstel, geen aanname):**
+  laatste 7 dagelijkse dumps in `daily/`, laatste 5 wekelijkse kopieën (zondag) in `weekly/`. Geen
+  langere laag: back-upbestanden zijn een eigen, kortere levenscyclus dan de 7-jarige
+  applicatiedata-auditretentie uit §16.7 — beide niet verwarren.
+- **Hersteltest, aantoonbaar:** restore in een aparte scratch-database (nooit de echte
+  `catalog_import`), gevolgd door (a) een Liquibase-statuscontrole ("up to date", geen pending
+  changesets) en (b) een eenvoudige rijentelling (`>0`) op de kerntabellen uit changelog 001-003.
+  Een sterkere sidecar-countvergelijking is een expliciet uitgestelde verbetering, geen scope-belofte
+  nu.
+- **Documentatie:** nieuw `docs/design/backup-herstel-design.md`, volgt het bestaande
+  `*-design.md`-patroon; bevat het cron-voorbeeld (productie) en het Windows Task
+  Scheduler-voorbeeld (lokaal/demo-rehearsal), en verwijst naar dit D13-blok als bron van het
+  RPO/RTO-doel.
+
+**Aannames (§6: geen architectuurimpact, later aan te passen):** productie is Linux/cron (onbekend
+waar het exact draait — enkel de scheduling-laag verandert als dat niet klopt, niet de scripts);
+wachtwoordopslag via `.pgpass`/env var op de host, geen secrets-manager-aanname; retentiegetallen
+7/5 zijn een redelijk minimum, geen afgeleide brontekst.
+
+**Geen open vraag voor de mens** — dit raakt geen databasesleutel, identiteitsdefinitie of
+mutatiescope (§6), en elke keuze hierboven is zonder herontwerp aanpasbaar.
+
+**Bron:** denker-gemiddeld (`Ontwerp dagelijkse Postgres-back-up + hersteltest`) /
+`business-analyse-leveranciersbibliotheken.md` §16.7; `README.md`; `application.yml`/
+`application-local.yml`/`application-demo.yml`; dit blok voert het hierboven vastgelegde D13-besluit
+uit
