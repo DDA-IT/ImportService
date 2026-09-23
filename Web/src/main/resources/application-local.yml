@@ -1,12 +1,13 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:catalogimport;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
-    username: sa
-    password:
-    driver-class-name: org.h2.Driver
-  jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
+    url: jdbc:postgresql://localhost:5432/catalog_import
+    username: catalog_import
+    password: catalog_import
+    driver-class-name: org.postgresql.Driver
 catalogimport:
   archive:
     # Lokale ontwikkelmap; productie zet catalogimport.archive.root expliciet (geen default in application.yml).
-    root: ${java.io.tmpdir}/catalogimport-archive
+    root: C:/tmp/catalogimport-archive
+server:
+  # Stel bijvoorbeeld CATALOG_SERVER_PORT=8083 in zonder de YAML te wijzigen.
+  port: ${CATALOG_SERVER_PORT:8081}
