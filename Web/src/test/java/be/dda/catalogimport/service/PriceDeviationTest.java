@@ -632,7 +632,7 @@ class PriceDeviationTest {
 
     private Fixture fixture(String prefix, boolean withPriceComponent,
                             Consumer<ImportDefinitionRevision> customiser) {
-        String unique = "PD" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "PD" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(new ImportDefinition(organisation,

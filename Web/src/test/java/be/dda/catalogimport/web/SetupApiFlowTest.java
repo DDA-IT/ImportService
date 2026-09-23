@@ -465,7 +465,7 @@ class SetupApiFlowTest {
     }
 
     private static String unique(String prefix) {
-        return "SU" + SEQUENCE.incrementAndGet() + prefix;
+        return "SU" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + prefix;
     }
 
     /** {@code import_link.library_code} is varchar(20). */

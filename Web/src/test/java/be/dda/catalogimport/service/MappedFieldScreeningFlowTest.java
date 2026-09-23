@@ -292,7 +292,7 @@ class MappedFieldScreeningFlowTest {
      *                     catalogusvelden; {@code false} bouwt exact de fase 2-revisie
      */
     private Fixture fixture(String prefix, boolean withMappings) {
-        String unique = "MF" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "MF" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(new ImportDefinition(organisation,

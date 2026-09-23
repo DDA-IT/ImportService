@@ -336,7 +336,7 @@ class BundleConflictTest {
     }
 
     private Fixture fixture(String prefix) {
-        String unique = "BCF" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "BCF" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(

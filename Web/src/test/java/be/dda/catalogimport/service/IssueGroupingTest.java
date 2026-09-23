@@ -606,7 +606,7 @@ class IssueGroupingTest {
 
     private Fixture fixture(String prefix, boolean withEan,
                             Consumer<ImportDefinitionRevision> customiser) {
-        String unique = "IG" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "IG" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(new ImportDefinition(organisation,

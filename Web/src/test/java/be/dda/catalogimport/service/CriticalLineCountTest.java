@@ -600,7 +600,7 @@ class CriticalLineCountTest {
     private Fixture fixture(String prefix, Consumer<ImportDefinitionRevision> beforeSave,
                             Consumer<ImportFieldMapping> mappingTweak,
                             Consumer<ImportDefinitionRevision> afterSave) {
-        String unique = "CL" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "CL" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(new ImportDefinition(organisation,

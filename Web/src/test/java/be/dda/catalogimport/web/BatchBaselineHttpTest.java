@@ -753,7 +753,7 @@ class BatchBaselineHttpTest {
     }
 
     private Fixture fixture(String prefix, boolean fourPart) {
-        String unique = "BF" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "BF" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(

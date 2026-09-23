@@ -568,7 +568,7 @@ class DeliveryStagingTest {
 
     private Screened upload(String prefix, byte[] content, Long expectedRecordCount, Long expectedByteSize,
                             Consumer<ImportDefinitionRevision> revisionCustomiser) {
-        String unique = "ST" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "ST" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(

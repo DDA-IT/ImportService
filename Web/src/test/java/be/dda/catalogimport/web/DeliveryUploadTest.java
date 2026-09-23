@@ -512,7 +512,7 @@ class DeliveryUploadTest {
     /** Volledige keten tot en met een MANUAL-taak met een ACTIEVE revisie met prijsveld. */
     private Fixture fixture(String prefix, Consumer<ImportDefinitionRevision> revisionCustomiser,
                             Consumer<CatalogImportTask> taskCustomiser) {
-        String unique = "UP" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "UP" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(

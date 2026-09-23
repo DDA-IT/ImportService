@@ -255,7 +255,7 @@ class ScreeningRecoveryServiceTest {
     }
 
     private Fixture fixture(String prefix) {
-        String unique = "RC" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "RC" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(

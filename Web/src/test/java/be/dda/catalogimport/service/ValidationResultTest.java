@@ -614,7 +614,7 @@ class ValidationResultTest {
      * {@code ThresholdBlockingTest} bewijst de default zelf.
      */
     private Fixture fixture(String prefix, Consumer<ImportDefinitionRevision> tweak) {
-        String unique = "VR" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "VR" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(new ImportDefinition(

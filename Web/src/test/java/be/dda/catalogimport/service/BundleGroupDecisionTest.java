@@ -614,7 +614,7 @@ class BundleGroupDecisionTest {
     }
 
     private Fixture fixture(String prefix) {
-        String unique = "BGD" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "BGD" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(

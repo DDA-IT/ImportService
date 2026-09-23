@@ -302,7 +302,7 @@ class ScreeningCounterReconciliationTest {
 
     private Uploaded upload(String prefix, String content, Consumer<ImportDefinitionRevision> filters,
                             Long expectedRecordCount, Long expectedByteSize) {
-        String unique = "RC" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "RC" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(new ImportDefinition(organisation,

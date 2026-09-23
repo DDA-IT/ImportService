@@ -606,7 +606,7 @@ class ThresholdBlockingTest {
 
     /** @param withEan mapt de EAN-kolom als kritieke koppelreferentie (canonicalisatieversie 2) */
     private Fixture fixture(String prefix, boolean withEan) {
-        String unique = "TB" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "TB" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(new ImportDefinition(organisation,

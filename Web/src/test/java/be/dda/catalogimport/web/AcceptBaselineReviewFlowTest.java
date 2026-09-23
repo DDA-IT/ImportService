@@ -434,7 +434,7 @@ class AcceptBaselineReviewFlowTest {
      * niet over de drempel die een levering stopt (die bewijst {@code ThresholdBlockingTest}).
      */
     private Fixture fixture(String prefix, Consumer<ImportDefinitionRevision> tweak) {
-        String unique = "AR" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "AR" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(new ImportDefinition(organisation,

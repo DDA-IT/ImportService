@@ -328,7 +328,7 @@ class BundleCancelTest {
         Scenario scenario = creationScenario("REBUNDLE", 3);
         cancellationService.cancel(scenario.bundleId(), CANCELLER, CANCEL_REASON);
 
-        BundleReference secondBundle = bundleService.createBundle("BND-REBUNDLE-" + SEQUENCE.incrementAndGet(), null,
+        BundleReference secondBundle = bundleService.createBundle("BND-REBUNDLE-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet(), null,
                 PublicationTargetMode.SIMULATION, null, null, CREATOR);
         bundleService.addBatches(secondBundle.id(), List.of(scenario.batchId()), CREATOR);
         assertThat(bundleBatches.findByBatchIdAndActiveMarkerIsNotNull(scenario.batchId()))
@@ -451,7 +451,7 @@ class BundleCancelTest {
     }
 
     private Fixture fixture(String prefix) {
-        String unique = "BCN" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "BCN" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(

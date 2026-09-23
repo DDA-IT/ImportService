@@ -262,7 +262,7 @@ class BundleFreezeTest {
 
     @Test
     void anEmptyBundleCannotBeFrozen() {
-        BundleReference bundle = bundleService.createBundle("BND-EMPTY-" + SEQUENCE.incrementAndGet(), null,
+        BundleReference bundle = bundleService.createBundle("BND-EMPTY-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet(), null,
                 PublicationTargetMode.SIMULATION, null, null, CREATOR);
 
         assertThatThrownBy(() -> freezeService.freeze(bundle.id(), FREEZER, FREEZE_REASON))
@@ -586,7 +586,7 @@ class BundleFreezeTest {
     }
 
     private Fixture fixture(String prefix) {
-        String unique = "BFZ" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "BFZ" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(

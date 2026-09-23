@@ -395,7 +395,7 @@ class ControlHierarchyTest {
 
     private Uploaded upload(String prefix, String content, Long expectedRecordCount, Long expectedByteSize,
                             Consumer<ImportDefinitionRevision> revisionCustomiser) {
-        String unique = "CH" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        String unique = "CH" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(new ImportDefinition(organisation,
