@@ -1,0 +1,36 @@
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding: var(--spacing-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-md);
+  background: var(--status-rejected-bg);
+  color: var(--color-text);
+}
+
+.title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--status-rejected-text);
+}
+
+.explanation {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.whatNow {
+  margin: 0;
+  font-style: italic;
+}
+
+.technical {
+  margin: 0;
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--color-border-dark);
+  font-family: monospace;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
