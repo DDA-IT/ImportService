@@ -365,22 +365,10 @@ public class SetupService {
         }
         applyThresholds(revision, command);
         revision.setChangeReason(optionalText(command.changeReason(), "changeReason", 500));
-        revision.setAccessConfigHash(RevisionConfigHashes.hash("access", identityKind.name(),
-                revision.getAccessDeliverySetKind()));
-        revision.setStructureConfigHash(RevisionConfigHashes.hash("structure", revision.getStructureFormat(),
-                revision.getStructureCharset(), revision.getStructureDelimiter(),
-                String.valueOf(revision.getStructureQuoteChar()), String.valueOf(revision.isStructureHasHeader()),
-                String.valueOf(revision.getStructureHeaderLineNumber()),
-                revision.getStructureFieldReferenceKind(),
-                String.valueOf(revision.getStructureExpectedColumnCount())));
-        revision.setRecordRulesConfigHash(RevisionConfigHashes.hash("record", identityKind.name(),
-                revision.getIdentitySupplierField(), revision.getIdentitySupplierGroupField(),
-                revision.getIdentitySupplierReferenceField(), String.valueOf(revision.getIdentityDiscountCodeField()),
-                revision.getRecordBasePriceField(), String.valueOf(revision.getRecordDescriptionField()),
-                String.valueOf(revision.getRecordCurrencyField()),
-                String.valueOf(revision.getRecordCanonicalisationVersion())));
-        revision.setCompositeConfigHash(RevisionConfigHashes.hash("composite", revision.getAccessConfigHash(),
-                revision.getStructureConfigHash(), revision.getRecordRulesConfigHash()));
+        // Bouwstap 5c: dezelfde vier regels als voorheen, nu als één gedeelde berekening. De
+        // materialisatiewizard moet exact dezelfde hashes op een afgeleide revisie kunnen zetten; twee
+        // kopieën van deze opbouw zouden op termijn uit elkaar lopen (zie RevisionConfigHashes#applyAll).
+        RevisionConfigHashes.applyAll(revision);
         return view(revisions.saveAndFlush(revision));
     }
 

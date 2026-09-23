@@ -8,6 +8,9 @@ import be.dda.catalogimport.service.TemplateBookmarkService.BookmarkView;
 import be.dda.catalogimport.service.TemplateBookmarkService.DeclareBookmarkCommand;
 import be.dda.catalogimport.service.TemplateBookmarkService.TemplateView;
 import be.dda.catalogimport.service.TemplateBookmarkService.UsageView;
+import be.dda.catalogimport.service.TemplateMaterialisationService;
+import be.dda.catalogimport.service.TemplateMaterialisationService.MaterialisationView;
+import be.dda.catalogimport.service.TemplateMaterialisationService.MaterialiseRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,9 +23,9 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * De declaratielaag van de materialisatiewizard (sjabloon-materialisatie-design.md §5, bouwstap 5b):
- * sjablonen opzoeken en de bookmarks van één sjabloonrevisie declareren/lezen. De materialisatie zelf
- * ({@code POST .../materialisations}) hoort hier nog niet bij — dat is bouwstap 5c/5d.
+ * De materialisatiewizard (sjabloon-materialisatie-design.md §5, bouwstappen 5b en 5c): sjablonen
+ * opzoeken, de bookmarks van één sjabloonrevisie declareren/lezen, en een sjabloon materialiseren tot
+ * een leveranciersgebonden definitie + revisie + koppeling.
  *
  * <h2>WAARSCHUWING — dit endpoint staat standaard uit en mag nooit in productie aan</h2>
  * Zelfde vlag als {@link CatalogImportSetupController} ({@code catalogimport.setup-api.enabled}, default
@@ -31,16 +34,24 @@ import org.springframework.web.bind.annotation.RestController;
  * gematerialiseerd wordt. Zet de vlag dus uitsluitend aan op een ontwikkelmachine met wegwerpgegevens.
  *
  * <h2>Statuscodes</h2>
- * 201 bij een aangemaakte bookmark/usage-rij, 200 bij lezen. 404 met een stabiele {@code code}:
- * {@code TEMPLATE_NOT_FOUND}, {@code TEMPLATE_REVISION_NOT_FOUND}, {@code BOOKMARK_NOT_FOUND}. 409 met
- * een stabiele {@code code}: {@code REVISION_NOT_EDITABLE} (declareren mag alleen op een DRAFT-revisie),
- * {@code DEFINITION_NOT_A_TEMPLATE}, {@code BOOKMARK_NAME_IN_USE}, {@code BOOKMARK_ORDER_IN_USE},
- * {@code BOOKMARK_USAGE_IN_USE}, of één van de fase C-codes ({@code CONFIG_BOOKMARK_SCOPE_PLACE_CONFLICT},
- * {@code CONFIG_BOOKMARK_PLACE_UNRESOLVED}, {@code CONFIG_BOOKMARK_PLACE_NOT_SUPPORTED}). 400 bij een
- * ontbrekende, te lange of ongeldige waarde.
+ * 201 bij een aangemaakte bookmark/usage-rij en bij een geslaagde materialisatie, 200 bij lezen. 404 met
+ * een stabiele {@code code}: {@code TEMPLATE_NOT_FOUND}, {@code TEMPLATE_REVISION_NOT_FOUND},
+ * {@code BOOKMARK_NOT_FOUND}, {@code SOURCE_ORGANISATION_NOT_FOUND}. 409 met een stabiele {@code code}:
+ * {@code REVISION_NOT_EDITABLE} (declareren mag alleen op een DRAFT-revisie),
+ * {@code DEFINITION_NOT_A_TEMPLATE}, {@code TEMPLATE_REVISION_NOT_MATERIALISABLE},
+ * {@code NO_ACTIVE_TEMPLATE_REVISION}, {@code BOOKMARK_NAME_IN_USE}, {@code BOOKMARK_ORDER_IN_USE},
+ * {@code BOOKMARK_USAGE_IN_USE}, {@code DEFINITION_CODE_IN_USE}, {@code LINK_CODE_IN_USE},
+ * {@code LINK_SCOPE_IN_USE}, of één van de fase C-codes ({@code CONFIG_BOOKMARK_SCOPE_PLACE_CONFLICT},
+ * {@code CONFIG_BOOKMARK_WITHOUT_PLACE}, {@code CONFIG_BOOKMARK_PLACE_UNRESOLVED},
+ * {@code CONFIG_BOOKMARK_PLACE_NOT_SUPPORTED}). 400 met een stabiele {@code code}:
+ * {@code MATERIALISATION_MODE_REQUIRED}, {@code REUSE_DEFINITION_NOT_ALLOWED}, {@code BOOKMARK_UNKNOWN},
+ * {@code CONFIG_REQUIRED_BOOKMARK_MISSING}, {@code CONFIG_BOOKMARK_VALUE_INVALID},
+ * {@code CONFIG_BOOKMARK_VALUE_TOO_LONG}, {@code LINK_FIELD_BOTH_BOOKMARK_AND_EXPLICIT}, of de
+ * {@code CONFIG_*}-code van een fase F-blokkade; 400 zonder code bij een ontbrekende of te lange waarde.
  * <p>
- * Alle antwoorden komen uit {@link TemplateBookmarkService} als records; er gaat geen JPA-entiteit naar
- * buiten. Inline {@code record}-requests/responses, dezelfde stijl als {@code CatalogImportBundleController}.
+ * Alle antwoorden komen uit {@link TemplateBookmarkService} en {@link TemplateMaterialisationService} als
+ * records; er gaat geen JPA-entiteit naar buiten. Inline {@code record}-requests/responses, dezelfde
+ * stijl als {@code CatalogImportBundleController}.
  */
 @RestController
 @RequestMapping("/api/catalog-import/templates")
@@ -48,9 +59,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class CatalogImportTemplateController {
 
     private final TemplateBookmarkService templateBookmarks;
+    private final TemplateMaterialisationService materialisations;
 
-    public CatalogImportTemplateController(TemplateBookmarkService templateBookmarks) {
+    public CatalogImportTemplateController(TemplateBookmarkService templateBookmarks,
+                                           TemplateMaterialisationService materialisations) {
         this.templateBookmarks = templateBookmarks;
+        this.materialisations = materialisations;
     }
 
     /** De sjablonen ({@code usage_type = REUSABLE_TEMPLATE}), gepagineerd. */
@@ -86,5 +100,22 @@ public class CatalogImportTemplateController {
                        @PathVariable("revisionId") long revisionId, @PathVariable("name") String name,
                        @RequestBody AddUsageCommand request) {
         return templateBookmarks.addUsage(definitionId, revisionId, name, request);
+    }
+
+    /**
+     * <b>De operatie</b>: materialiseert het sjabloon tot een nieuwe importdefinitie + revisie 1
+     * ({@code DRAFT}) + koppeling, in één transactie (201). Het antwoord toont altijd welke
+     * sjabloonversie effectief gebruikt is, ook wanneer die {@code SUPERSEDED} is (beslissingslog 23/09
+     * Q3) — materialiseren uit een oudere versie mag, maar nooit stilzwijgend.
+     * <p>
+     * In deze bouwstap uitsluitend {@code mode = NEW_DEFINITION}; {@code REUSE_DEFINITION} en
+     * {@code reuseDefinitionId} staan in het contract maar worden geweigerd met 400
+     * {@code REUSE_DEFINITION_NOT_ALLOWED} tot bouwstap 5d.
+     */
+    @PostMapping("/{definitionId}/materialisations")
+    @ResponseStatus(HttpStatus.CREATED)
+    MaterialisationView materialise(@PathVariable("definitionId") long definitionId,
+                                    @RequestBody MaterialiseRequest request) {
+        return materialisations.materialise(definitionId, request);
     }
 }

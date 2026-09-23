@@ -2,6 +2,8 @@ package be.dda.catalogimport.service.support;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import be.dda.catalogimport.domain.IdentityProfileKind;
+import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -39,6 +41,81 @@ class RevisionConfigHashesTest {
         String first = RevisionConfigHashes.hash("structure", "CSV", "UTF-8");
         String second = RevisionConfigHashes.hash("structure", "CSV", "UTF-8");
         assertThat(first).isEqualTo(second);
+    }
+
+    /**
+     * Bouwstap 5c: {@link RevisionConfigHashes#applyAll} zet de vier hashes die
+     * {@code SetupService.createRevision} vóór deze bouwstap zelf, regel voor regel, samenstelde. Die
+     * vier regels zijn verplaatst zodat de materialisatiewizard exact dezelfde berekening op een
+     * afgeleide revisie kan doen. Deze test reconstrueert de <b>oude</b> samenstelling hier
+     * onafhankelijk — inclusief de volgorde van de onderdelen per laag — en bewijst zo dat geen enkele
+     * bestaande hash van waarde verandert.
+     */
+    @Test
+    void applyAllIsByteIdenticalToTheOldSetupServiceComposition() {
+        ImportDefinitionRevision revision = new ImportDefinitionRevision(null, 1,
+                IdentityProfileKind.THREE_PART, "tester");
+        revision.setIdentitySupplierField("LEVERANCIER");
+        revision.setIdentitySupplierGroupField("GROEP");
+        revision.setIdentitySupplierReferenceField("REFERENTIE");
+        revision.setIdentityDiscountCodeField(null);
+        revision.setRecordBasePriceField("PRIJS");
+        revision.setRecordDescriptionField("OMSCHRIJVING");
+        revision.setRecordCurrencyField(null);
+        revision.setRecordCanonicalisationVersion(2);
+        revision.setStructureDelimiter(";");
+        revision.setStructureExpectedColumnCount(7);
+
+        String expectedAccess = oldSetupServiceHash("access", "THREE_PART",
+                revision.getAccessDeliverySetKind());
+        String expectedStructure = oldSetupServiceHash("structure", revision.getStructureFormat(),
+                revision.getStructureCharset(), revision.getStructureDelimiter(),
+                String.valueOf(revision.getStructureQuoteChar()),
+                String.valueOf(revision.isStructureHasHeader()),
+                String.valueOf(revision.getStructureHeaderLineNumber()),
+                revision.getStructureFieldReferenceKind(),
+                String.valueOf(revision.getStructureExpectedColumnCount()));
+        String expectedRecord = oldSetupServiceHash("record", "THREE_PART", "LEVERANCIER", "GROEP",
+                "REFERENTIE", "null", "PRIJS", "OMSCHRIJVING", "null", "2");
+        String expectedComposite = oldSetupServiceHash("composite", expectedAccess, expectedStructure,
+                expectedRecord);
+
+        RevisionConfigHashes.applyAll(revision);
+
+        assertThat(revision.getAccessConfigHash()).isEqualTo(expectedAccess);
+        assertThat(revision.getStructureConfigHash()).isEqualTo(expectedStructure);
+        assertThat(revision.getRecordRulesConfigHash()).isEqualTo(expectedRecord);
+        assertThat(revision.getCompositeConfigHash()).isEqualTo(expectedComposite);
+    }
+
+    /**
+     * De kern van §2: twee inhoudelijk verschillende revisies dragen nooit dezelfde configuratiehash.
+     * Precies dit maakt het herberekenen bij materialisatie noodzakelijk zodra een bookmarkwaarde een
+     * revisieveld invult.
+     */
+    @Test
+    void applyAllChangesTheRecordAndCompositeHashWhenAnIdentityFieldChanges() {
+        ImportDefinitionRevision first = minimalRevision();
+        RevisionConfigHashes.applyAll(first);
+        ImportDefinitionRevision second = minimalRevision();
+        second.setIdentitySupplierField("EEN_ANDERE_KOLOM");
+        RevisionConfigHashes.applyAll(second);
+
+        assertThat(second.getRecordRulesConfigHash()).isNotEqualTo(first.getRecordRulesConfigHash());
+        assertThat(second.getCompositeConfigHash()).isNotEqualTo(first.getCompositeConfigHash());
+        // De structuurlaag is niet geraakt en blijft dus wél gelijk: de drie lagen zijn apart versieerbaar.
+        assertThat(second.getStructureConfigHash()).isEqualTo(first.getStructureConfigHash());
+    }
+
+    private static ImportDefinitionRevision minimalRevision() {
+        ImportDefinitionRevision revision = new ImportDefinitionRevision(null, 1,
+                IdentityProfileKind.THREE_PART, "tester");
+        revision.setIdentitySupplierField("LEVERANCIER");
+        revision.setIdentitySupplierGroupField("GROEP");
+        revision.setIdentitySupplierReferenceField("REFERENTIE");
+        revision.setRecordBasePriceField("PRIJS");
+        revision.setStructureDelimiter(";");
+        return revision;
     }
 
     private static void assertHashMatchesOldImplementation(String layer, String... parts) {

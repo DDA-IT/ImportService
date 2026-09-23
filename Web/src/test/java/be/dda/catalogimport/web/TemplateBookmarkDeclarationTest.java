@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -29,7 +30,13 @@ import org.springframework.test.web.servlet.MockMvc;
  * {@code catalogimport.setup-api.enabled=true}) wordt bewezen in {@link SetupApiDisabledTest}, samen
  * met de bestaande setup-API — dezelfde vlag raakt beide controllers.
  */
-@SpringBootTest(properties = "catalogimport.setup-api.enabled=true")
+// De verbindingspool staat uitdrukkelijk klein (bouwstap 5c). De lokale PostgreSQL heeft een beperkt
+// aantal verbindingen en Spring houdt elke afwijkende testconfiguratie als een aparte applicatiecontext
+// in de cache, elk met een eigen pool; een gerichte testronde die deze klasse samen met de
+// 5c-materialisatietests draait, liep daardoor vast op "remaining connection slots are reserved".
+// Enkel een testeigenschap: aan het gedrag van deze test verandert niets.
+@SpringBootTest(properties = {"catalogimport.setup-api.enabled=true",
+        "spring.datasource.hikari.maximum-pool-size=4"})
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
 class TemplateBookmarkDeclarationTest {
@@ -173,11 +180,35 @@ class TemplateBookmarkDeclarationTest {
     void listsOnlyReusableTemplateDefinitions() throws Exception {
         TemplateRevision template = template("LIST");
 
-        // Geen ORDER BY op deze lijst (net als BundleQueryService.listBundles): een grote paginagrootte
-        // maakt de test onafhankelijk van hoeveel sjablonen eerdere testruns al achterlieten.
-        mockMvc.perform(get(TEMPLATES).param("size", "200"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id==" + template.definitionId() + ")]").exists());
+        // Deze lijst heeft geen ORDER BY (net als BundleQueryService.listBundles) en de paginagrootte is
+        // begrensd tot MAX_PAGE_SIZE. Tegen een blijvende database groeit het aantal sjablonen met elke
+        // testrun, zodat één grote pagina de nieuwste rij op den duur niet meer bereikt. De test loopt
+        // daarom alle pagina's af.
+        //
+        // Important technical constraint discovered: zonder deterministische sortering kan geen enkele
+        // aanroeper (test of scherm) op de volgorde of op de inhoud van één pagina rekenen. Dezelfde
+        // vaststelling ligt voor GET /bundles al vast (beslissingslog 23/09, scherm 3 vraag Q4:
+        // deterministische sortering als aparte backendstap). GET /templates verdient dezelfde
+        // behandeling; dat is geen onderdeel van bouwstap 5c.
+        assertTemplateAppearsInTheList(template.definitionId());
+    }
+
+    private void assertTemplateAppearsInTheList(long definitionId) throws Exception {
+        int page = 0;
+        int totalPages;
+        do {
+            String body = mockMvc.perform(get(TEMPLATES).param("page", String.valueOf(page))
+                            .param("size", "200"))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString();
+            List<Object> found = JsonPath.read(body, "$.content[?(@.id==" + definitionId + ")]");
+            if (!found.isEmpty()) {
+                return;
+            }
+            totalPages = ((Number) JsonPath.read(body, "$.totalPages")).intValue();
+            page++;
+        } while (page < totalPages);
+        throw new AssertionError("Template " + definitionId + " does not appear in GET " + TEMPLATES);
     }
 
     // --- Helpers -------------------------------------------------------------------------------------
