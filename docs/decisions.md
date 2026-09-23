@@ -668,3 +668,91 @@ en `AWAITING_APPROVAL` op `BundleDetail`, en `importLinkCode`/`supplierCode` op 
 
 **Bron:** denker-zwaar (`Ontwerp frontend scherm 3 + fundament`) /
 `docs/design/frontend-scherm3-bundel-design.md`; mens (Q1-Q4 bevestigd)
+
+---
+
+## 2026-09-23 — Frontend: D14 opgepakt, eerste verticale slice Scherm 0 (werkvoorraad)
+
+**Vraag:** D14 stond uitgesteld (22/09, "geen enkel lijst-/zoekendpoint voor
+leveringen/batches/taken"). Nu scherm (2)/(3) grotendeels gebouwd zijn: wat is de kleinste
+eerste verticale slice voor Scherm 0, welke lijst-/zoekendpoints zijn daarvoor nodig, en
+welke scope-/autorisatiekeuzes moeten daarbij expliciet vastgelegd worden?
+
+**Beslissing:** `ImportBatch` is de enige zinvolle werkvoorraad-eenheid (draagt status,
+eindoordeel, alle tellers en de blokkeerreden; leveringen/taken/runs voegen niets toe).
+Eerste slice is volledig alleen-lezen en bouwt drie nieuwe endpoints, zonder nieuwe tabellen
+of migraties:
+
+- **`GET /api/catalog-import/batches`** — `PageResult<BatchRow>`, filters `status`,
+  `validationResult`, `importLinkId`, `createdFrom`/`createdTo` (op `created_at`), vaste
+  sortering `id desc`. Hergebruikt `ImportBatchRepository`/`BatchQueryService`/
+  `CatalogImportBatchController` (patroon: `findBundleCandidates`). Vereist `join fetch`
+  op `importLink`/`supplierOrganisation` (beide `LAZY`) om N+1 te vermijden.
+- **`GET /api/catalog-import/batches/summary`** — telblokken per status en per
+  eindoordeel (JPQL `group by`, geen losse count-queries per status). `null`-eindoordeel
+  ("niet vastgesteld") is een eigen zichtbare regel, nooit samengevoegd met `VALID` en
+  nooit als 0 getoond.
+- **`GET /api/catalog-import/import-links`** — nieuw, alleen-lezen, altijd bereikbaar
+  (buiten de `catalogimport.setup-api.enabled`-vlag om): `id/code/name/supplierCode/
+  supplierName/libraryCode/active`. Nodig zodat Scherm 0 (en scherm 3) koppelingsnamen
+  tonen i.p.v. "koppeling #7".
+
+**Vier vragen door de mens beantwoord (2026-09-23), alle conform de aanbeveling:**
+1. **Q1 (import-links buiten setup-vlag):** ja, nieuw alleen-lezen endpoint, altijd aan.
+   Het schrijft geen configuratie (dat is wat de setup-API-vlag beschermt) en `GET
+   /batches`/`GET /bundles` staan vandaag ook al zonder authenticatie open.
+2. **Q2 (behandelgeval/deeltaak, D14-kern):** geen nieuwe tabellen. De werkvoorraad blijft
+   een **afgeleide weergave** over bestaande batches/issuegroepen. ST-11's volledige
+   behandelgeval-model (oorzaak, eigenaar, prioriteit, statusmachine) blijft uitgesteld —
+   een eigenaarsveld zonder geverifieerde identiteit zou een lege schil zijn.
+3. **Q3 (toewijzing/"Mijn taken"):** nee, uitgesteld tot Fase 5/Keycloak. De actor is
+   vandaag een zelfingetypte `sessionStorage`-naam; dat is expliciet niet het bewijs dat
+   ST-11 als vereiste identiteit stelt en zou anders permanent in de database komen te
+   staan.
+4. **Q4 (issue-afhandeling):** nee. Slice 1 blijft volledig alleen-lezen; `IssueHandlingStatus`
+   blijft op `DETECTED` staan (fase 3-beperking, zie de enum-javadoc). Een aanvaardingsactie
+   laat data door die de screening tegenhield en verdient een eigen ontwerp.
+
+**Kleinste eerste verticale slice:** S0-B1 (`GET /batches`), S0-B2 (`GET /batches/summary`),
+S0-B3 (`GET /import-links`), S0-F1 (route `/` met telblokken + filterbare tabel, geen enkele
+schrijfactie). Bouwstap B1 uit de scherm-3-beslissing (deterministische sortering op
+`GET /bundles`) wordt in dezelfde cyclus meegenomen — zelfde patroon, nog niet uitgevoerd.
+
+**Bewust buiten scope:** rollen/rechten, behandelgeval/deeltaak, eigenaar/toewijzing,
+issue-afhandelacties, ERP-monitoring, notificaties, cross-batch issuegroeplijst,
+vrije-tekstzoek, deep-linking van filterstatus. D13 (RPO/RTO) blijft apart openstaand,
+ongerelateerd aan Scherm 0.
+
+**Bron:** denker-zwaar (`Denker-analyse lijst-/zoekendpoints Scherm 0`) /
+`businessanalyse-catalogimport.md` h.24, h.29, h.33; `business-analyse-leveranciersbibliotheken.md`
+§15.6; `docs/stories/catalog-import-v2.md` ST-10/ST-11; `docs/analysis/current-project-vs-businessanalyse-2.md`;
+`docs/design/frontend-scherm3-bundel-design.md` §12-§16; mens (Q1-Q4 bevestigd, alle conform aanbeveling)
+
+---
+
+## 2026-09-23 — 5f-nalevering: PUT op een LINK-bookmark werkt de koppelingskolom bij
+
+**Vraag:** Bij materialisatie wordt een bookmark met een `LINK_*`-plaats in twee dingen tegelijk
+geschreven: de kolom op `import_link` (waar de runtime naar kijkt, aanname A34) én een
+`import_link_bookmark_value`-rij (het auditspoor). Bouwstap 5f implementeerde `PUT
+/links/{id}/bookmark-values/{name}` zó dat alleen de waarderij wijzigt. Daardoor kunnen de twee na een
+wijziging uiteenlopen. Wat moet `PUT` doen?
+
+**Beslissing (mens):** `PUT` werkt de bijbehorende kolom op `import_link` mee bij. De bookmark blijft
+dus ook ná materialisatie het invoerveld voor die koppelingskolom; er is één waarheid in plaats van een
+auditspoor dat iets anders beweert dan wat de runtime gebruikt. De wijziging blijft achter het
+bestaande slot staan (409 `LINK_BOOKMARK_LOCKED_BY_OPEN_BATCH` zolang de koppeling een open batch
+heeft), en blijft door `BookmarkValueRules` gevalideerd — inclusief de doelkolomlengte, die nu
+werkelijk bepalend is.
+
+Verworpen alternatieven: `PUT` weigeren voor bookmarks met een `LINK_*`-plaats (dwingt een tweede
+route via de setup-API af voor iets wat de wizard juist bundelt), en divergentie toestaan (het
+auditspoor zou dan kunnen tegenspreken wat er werkelijk toegepast wordt).
+
+**Gevolg — nog te bouwen:** bouwstap 5f is gecommit (`56c8061`) zonder deze propagatie. Er volgt een
+aparte bouwstap die `LinkBookmarkValueService.setValue` uitbreidt naar `import_link.library_code`,
+`library_search_supplier_code` en de leverancierskoppeling, met een test die bewijst dat waarde en
+kolom na een `PUT` niet meer uiteen kunnen lopen.
+
+**Bron:** mens / rapport bouwstap 5f, punt 2; `docs/design/sjabloon-materialisatie-design.md` §4 (D7,
+"waarheidsbron na materialisatie"), aanname A34
