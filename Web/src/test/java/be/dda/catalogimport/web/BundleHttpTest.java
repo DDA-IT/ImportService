@@ -105,7 +105,7 @@ class BundleHttpTest {
                 .andExpect(jsonPath("$.content[?(@.batchId==" + batchId + ")]").exists());
 
         // Aanmaken: 200, en idempotent bij een herhaalde aanroep met dezelfde scope.
-        String bundleReference = "BND-HTTP-" + SEQUENCE.incrementAndGet();
+        String bundleReference = "BND-HTTP-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet();
         String createBody = createBundleBody(bundleReference, "SIMULATION", CREATOR);
         String created = mockMvc.perform(post("/api/catalog-import/bundles")
                         .contentType(MediaType.APPLICATION_JSON).content(createBody))
@@ -216,7 +216,7 @@ class BundleHttpTest {
                 .andExpect(jsonPath("$.code").value("BUNDLE_NOT_CANCELLABLE"));
 
         // De batch is vrij: opnieuw toevoegen aan een NIEUWE bundel en die gewoon bevriezen.
-        String secondReference = "BND-HTTP2-" + SEQUENCE.incrementAndGet();
+        String secondReference = "BND-HTTP2-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet();
         String secondCreated = mockMvc.perform(post("/api/catalog-import/bundles")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBundleBody(secondReference, "SIMULATION", CREATOR)))
@@ -285,7 +285,7 @@ class BundleHttpTest {
     void paginationIsZeroBasedWithADefaultAndAMaximumSizeOnEveryPagedBundleEndpoint() throws Exception {
         Fixture f = fixture("PAGE");
         long batchId = uploadAndScreen(f, "REF-1", rows(5, 100));
-        long bundleId = createBundle("BND-PAGE-" + SEQUENCE.incrementAndGet(), CREATOR);
+        long bundleId = createBundle("BND-PAGE-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet(), CREATOR);
         mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", bundleId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"batchIds\":[" + batchId + "],\"addedBy\":\"" + CREATOR + "\"}"))
@@ -347,7 +347,7 @@ class BundleHttpTest {
     /** Een tweede aanmaak met dezelfde referentie maar een andere scope is een conflict, geen creatie. */
     @Test
     void reusingABundleReferenceWithADifferentScopeIsA409() throws Exception {
-        String reference = "BND-SCOPE-" + SEQUENCE.incrementAndGet();
+        String reference = "BND-SCOPE-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet();
         mockMvc.perform(post("/api/catalog-import/bundles").contentType(MediaType.APPLICATION_JSON)
                         .content(createBundleBody(reference, "SIMULATION", CREATOR)))
                 .andExpect(status().isOk());
@@ -361,7 +361,7 @@ class BundleHttpTest {
 
     @Test
     void freezeAndCancelWithoutARequiredFieldAreBothA400() throws Exception {
-        long bundleId = createBundle("BND-REQ-" + SEQUENCE.incrementAndGet(), CREATOR);
+        long bundleId = createBundle("BND-REQ-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet(), CREATOR);
 
         mockMvc.perform(post("/api/catalog-import/bundles/{id}/freeze", bundleId)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"frozenBy\":\"" + FREEZER + "\"}"))
@@ -426,7 +426,11 @@ class BundleHttpTest {
     }
 
     private Fixture fixture(String prefix) {
-        String unique = "BH" + SEQUENCE.incrementAndGet() + "-" + prefix;
+        // De database is een persistente lokale Postgres (geen wegwerp-testcontainer): een teller die
+        // per JVM-run bij 0 herbegint zou bij een herhaalde testrun op dezelfde database botsen met
+        // codes van een vorige run. Vandaar System.nanoTime() erbij, naast de teller voor leesbare
+        // volgorde binnen één run.
+        String unique = "BH" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(
