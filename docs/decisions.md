@@ -876,3 +876,15 @@ mutatiescope (§6), en elke keuze hierboven is zonder herontwerp aanpasbaar.
 `business-analyse-leveranciersbibliotheken.md` §16.7; `README.md`; `application.yml`/
 `application-local.yml`/`application-demo.yml`; dit blok voert het hierboven vastgelegde D13-besluit
 uit
+
+**Uitvoering (bouwer-gemiddeld), afwijkingen van het ontwerp — geen §6-vraag, wel vastgelegd:**
+1. Het ontwerp nam een bestaande Liquibase-Maven-plugin aan; die bestaat niet (alleen `liquibase-core`
+   in `Web/pom.xml`, en het Liquibase-CLI werkt niet door ontbrekende picocli). De hersteltest compileert
+   daarom `scripts/backup/LiquibaseStatusCheck.java` on the fly tegen het Maven-classpath van de Web-module
+   (`listUnrunChangeSets` op `db.changelog-master.yaml`). `Web/pom.xml` is bewust niet gewijzigd.
+2. De applicatierol `catalog_import` heeft geen `CREATEDB`; de hersteltest kan de scratch-database dus niet
+   aanmaken zonder een aparte beheerrol. Voor productie moet de hersteltaak met een andere `PGUSER`
+   draaien dan de back-up (vastgelegd in `docs/design/backup-herstel-design.md` §5).
+3. Rehearsal-status: `.sh`-scripts end-to-end gerepeteerd (backup, retentie 7/5, restore PASS);
+   `.ps1`-scripts enkel syntactisch gecontroleerd, niet functioneel uitgevoerd (geen Postgres-clienttools
+   in PATH op deze host).
