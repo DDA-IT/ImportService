@@ -436,7 +436,7 @@ class BundleMutationDecisionTest {
         long mutationId = scenario.firstContentMutation();
         decisions.approve(scenario.bundleId(), mutationId, DECIDER, "Akkoord");
 
-        PageResult<MutationRow> all = queries.getBundleMutations(scenario.bundleId(), null, null, null, 0, 50);
+        PageResult<MutationRow> all = queries.getBundleMutations(scenario.bundleId(), null, null, null, null, 0, 50);
         // Vijf inhoudelijke mutaties + de IMPORT_MARKER van de screening.
         assertThat(all.totalElements()).isEqualTo(6L);
         assertThat(all.content()).allSatisfy(row -> assertThat(row.batchId()).isEqualTo(scenario.batchId()));
@@ -449,22 +449,22 @@ class BundleMutationDecisionTest {
                 });
 
         PageResult<MutationRow> ready = queries.getBundleMutations(scenario.bundleId(),
-                MutationStatus.READY_FOR_PUBLICATION, null, null, 0, 50);
+                MutationStatus.READY_FOR_PUBLICATION, null, null, null, 0, 50);
         assertThat(ready.content()).singleElement()
                 .satisfies(row -> assertThat(row.id()).isEqualTo(mutationId));
 
         PageResult<MutationRow> markers = queries.getBundleMutations(scenario.bundleId(), null, null,
-                MutationActionType.IMPORT_MARKER, 0, 50);
+                MutationActionType.IMPORT_MARKER, null, 0, 50);
         assertThat(markers.totalElements()).isEqualTo(1L);
 
         PageResult<MutationRow> byBatch = queries.getBundleMutations(scenario.bundleId(), null,
-                scenario.batchId(), null, 0, 2);
+                scenario.batchId(), null, null, 0, 2);
         assertThat(byBatch.content()).hasSize(2);
         assertThat(byBatch.totalElements()).isEqualTo(6L);
         assertThat(byBatch.totalPages()).isEqualTo(3);
 
         // Een batch die geen (actief) lid is van deze bundel levert een lege pagina op, geen fout.
-        assertThat(queries.getBundleMutations(scenario.bundleId(), null, UNKNOWN_ID, null, 0, 50).content())
+        assertThat(queries.getBundleMutations(scenario.bundleId(), null, UNKNOWN_ID, null, null, 0, 50).content())
                 .isEmpty();
     }
 
@@ -489,7 +489,7 @@ class BundleMutationDecisionTest {
 
     @Test
     void readingMutationsOrDecisionsOfAnUnknownBundleIsNotFound() {
-        assertThatThrownBy(() -> queries.getBundleMutations(UNKNOWN_ID, null, null, null, 0, 50))
+        assertThatThrownBy(() -> queries.getBundleMutations(UNKNOWN_ID, null, null, null, null, 0, 50))
                 .isInstanceOf(NotFoundException.class)
                 .hasFieldOrPropertyWithValue("code", PublicationBundleService.CODE_BUNDLE_NOT_FOUND);
         assertThatThrownBy(() -> queries.getBundleDecisions(UNKNOWN_ID, 0, 50))

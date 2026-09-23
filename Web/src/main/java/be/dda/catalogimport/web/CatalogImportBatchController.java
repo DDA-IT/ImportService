@@ -2,6 +2,7 @@ package be.dda.catalogimport.web;
 
 import be.dda.catalogimport.domain.ImportBatchStatus;
 import be.dda.catalogimport.domain.MutationActionType;
+import be.dda.catalogimport.domain.MutationStatus;
 import be.dda.catalogimport.domain.ValidationResult;
 import be.dda.catalogimport.service.BatchQueryService;
 import be.dda.catalogimport.service.BatchQueryService.BatchDetail;
@@ -119,14 +120,20 @@ public class CatalogImportBatchController {
         return queries.getBatch(batchId);
     }
 
-    /** De mutatielijst, gepagineerd en optioneel gefilterd op {@code actionType}; zonder hashkolommen. */
+    /**
+     * De mutatielijst, gepagineerd en optioneel gefilterd op {@code status}, {@code statusReason}
+     * (exact, hoofdlettergevoelig; afwezig of blanco = geen filter) en {@code actionType}; zonder
+     * hashkolommen.
+     */
     @GetMapping("/{batchId}/mutations")
     PageResult<MutationRow> mutations(@PathVariable("batchId") long batchId,
+                                      @RequestParam(value = "status", required = false) MutationStatus status,
+                                      @RequestParam(value = "statusReason", required = false) String statusReason,
                                       @RequestParam(value = "actionType", required = false)
                                       MutationActionType actionType,
                                       @RequestParam(value = "page", required = false) Integer page,
                                       @RequestParam(value = "size", required = false) Integer size) {
-        return queries.getMutations(batchId, actionType, page, size);
+        return queries.getMutations(batchId, status, statusReason, actionType, page, size);
     }
 
     /**

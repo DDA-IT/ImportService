@@ -227,6 +227,8 @@ public class BundleQueryService {
      * {@code publication_bundle_id} op {@code import_mutation}. Een batch waarvan het lidmaatschap
      * verwijderd is, valt hier dus meteen weg.
      *
+     * @param statusReason exacte (hoofdlettergevoelige) statusreden; {@code null} of blanco = geen
+     *                     filter, een onbekende reden geeft een lege pagina
      * @param batchId enkel de mutaties van deze batch; een batch zonder actief lidmaatschap in deze
      *                bundel levert een lege pagina op (en geen fout: het lidmaatschap kan net
      *                verwijderd zijn)
@@ -234,7 +236,8 @@ public class BundleQueryService {
      * @throws IllegalArgumentException ongeldige paginering
      */
     public PageResult<MutationRow> getBundleMutations(long bundleId, MutationStatus status, Long batchId,
-                                                      MutationActionType actionType, Integer page, Integer size) {
+                                                      MutationActionType actionType, String statusReason,
+                                                      Integer page, Integer size) {
         requireBundle(bundleId);
         PageRequest pageRequest = pageRequest(page, size, Sort.by("id"));
         List<Long> batchIds = bundleBatches.findByBundleIdAndActiveMarkerIsNotNull(bundleId).stream()
@@ -244,16 +247,9 @@ public class BundleQueryService {
         if (batchIds.isEmpty()) {
             return new PageResult<>(List.of(), pageRequest.getPageNumber(), pageRequest.getPageSize(), 0L, 0);
         }
-        Page<ImportMutation> result;
-        if (status == null && actionType == null) {
-            result = mutations.findByBatchIdIn(batchIds, pageRequest);
-        } else if (actionType == null) {
-            result = mutations.findByBatchIdInAndStatus(batchIds, status, pageRequest);
-        } else if (status == null) {
-            result = mutations.findByBatchIdInAndActionType(batchIds, actionType, pageRequest);
-        } else {
-            result = mutations.findByBatchIdInAndStatusAndActionType(batchIds, status, actionType, pageRequest);
-        }
+        String reason = statusReason == null || statusReason.isBlank() ? null : statusReason;
+        Page<ImportMutation> result = mutations.findBundleMutations(batchIds, status, actionType, reason,
+                pageRequest);
         return PageResult.of(result, MutationRow::of);
     }
 

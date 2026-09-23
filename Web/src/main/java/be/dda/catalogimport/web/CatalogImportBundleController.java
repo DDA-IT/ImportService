@@ -183,7 +183,8 @@ public class CatalogImportBundleController {
 
     /**
      * De mutaties van alle actieve batches van deze bundel, gepagineerd en optioneel gefilterd op
-     * {@code status}, {@code batchId} en {@code actionType} (bouwstap 4c).
+     * {@code status}, {@code batchId}, {@code actionType} en {@code statusReason} (exacte,
+     * hoofdlettergevoelige gelijkheid; afwezig of blanco = geen filter) (bouwstap 4c).
      * <p>
      * Elke regel toont naast de screeninggegevens ook haar beslissing: {@code decidedBy},
      * {@code decidedAt}, {@code decidedFromStatus} en {@code decisionId} — dezelfde vier velden die
@@ -197,9 +198,10 @@ public class CatalogImportBundleController {
                                       @RequestParam(value = "batchId", required = false) Long batchId,
                                       @RequestParam(value = "actionType", required = false)
                                       MutationActionType actionType,
+                                      @RequestParam(value = "statusReason", required = false) String statusReason,
                                       @RequestParam(value = "page", required = false) Integer page,
                                       @RequestParam(value = "size", required = false) Integer size) {
-        return queries.getBundleMutations(bundleId, status, batchId, actionType, page, size);
+        return queries.getBundleMutations(bundleId, status, batchId, actionType, statusReason, page, size);
     }
 
     /**

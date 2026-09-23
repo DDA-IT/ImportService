@@ -11,6 +11,7 @@ import be.dda.catalogimport.domain.ImportLink;
 import be.dda.catalogimport.domain.ImportMutation;
 import be.dda.catalogimport.domain.ImportRowIssue;
 import be.dda.catalogimport.domain.MutationActionType;
+import be.dda.catalogimport.domain.MutationStatus;
 import be.dda.catalogimport.domain.ValidationResult;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -343,18 +344,18 @@ public class BatchQueryService {
 
     /**
      * De mutatielijst van een batch, oplopend op id (= volgorde van aanmaak), optioneel gefilterd op
-     * {@code actionType}.
+     * {@code status}, {@code statusReason} (exact; blanco = geen filter) en {@code actionType}.
      *
      * @throws NotFoundException        onbekende batch
      * @throws IllegalArgumentException ongeldige paginering
      */
-    public PageResult<MutationRow> getMutations(long batchId, MutationActionType actionType, Integer page,
-                                                Integer size) {
+    public PageResult<MutationRow> getMutations(long batchId, MutationStatus status, String statusReason,
+                                                MutationActionType actionType, Integer page, Integer size) {
         requireBatch(batchId);
         PageRequest pageRequest = pageRequest(page, size, Sort.by("id"));
-        Page<ImportMutation> result = actionType == null
-                ? mutations.findByBatchId(batchId, pageRequest)
-                : mutations.findByBatchIdAndActionType(batchId, actionType, pageRequest);
+        String reason = statusReason == null || statusReason.isBlank() ? null : statusReason;
+        Page<ImportMutation> result = mutations.findBatchMutations(batchId, status, actionType, reason,
+                pageRequest);
         return PageResult.of(result, MutationRow::of);
     }
 
