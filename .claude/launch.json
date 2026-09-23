@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "Frontend", "run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "backend-local",
+      "runtimeExecutable": "mvn",
+      "runtimeArgs": ["-pl", "Web", "spring-boot:run", "-Dspring-boot.run.profiles=local"],
+      "port": 8081
     }
   ]
 }
