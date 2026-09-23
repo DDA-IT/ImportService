@@ -342,6 +342,12 @@ class BundleCancelTest {
         assertThat(detail.contentMutationCount()).isEqualTo(3L);
         assertThat(detail.expiredCount()).isEqualTo(3L);
         assertThat(detail.readyCount()).isZero();
+        assertThat(detail.plannedCount()).isNull();
+        assertThat(detail.awaitingApprovalCount()).isNull();
+        BundleDetail cancelled = queries.getBundle(scenario.bundleId());
+        assertThat(cancelled.status()).isEqualTo("CANCELLED");
+        assertThat(cancelled.plannedCount()).isNull();
+        assertThat(cancelled.awaitingApprovalCount()).isNull();
     }
 
     // --- (g) Financiële onveranderlijkheid, ook bij EXPIRED ------------------------------------------

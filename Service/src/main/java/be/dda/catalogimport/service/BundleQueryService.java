@@ -79,6 +79,10 @@ public class BundleQueryService {
      * <p>
      * {@code contentHash} is de volledige bundelhash als hexadecimale tekst, enkel gevuld bij een
      * bevroren (of daarna geannuleerde) bundel; {@code null} zolang ze {@code ASSEMBLING} is.
+     * <p>
+     * {@code plannedCount} (het aantal dat het bevriezen in bulk goedkeurt, {@code countPlanned}) en
+     * {@code awaitingApprovalCount} (de blokkadevoorwaarde van het bevriezen, {@code countUndecided}) zijn
+     * enkel live gevuld bij {@code ASSEMBLING}; {@code null} bij FROZEN/CANCELLED (geen levend getal meer).
      */
     public record BundleDetail(long id, String bundleReference, String description, String status,
                                String targetMode, Instant targetMoment, String publicationPolicy,
@@ -87,7 +91,8 @@ public class BundleQueryService {
                                String cancelledReason, Long batchCount, Long contentMutationCount,
                                Long readyCount, Long rejectedCount, Long blockedCount, Long expiredCount,
                                Long identityIncidentCount, Long bulkIncidentCount, Long criticalIssueCount,
-                               Long warningCount, Long staleMutationCount, String contentHash) {
+                               Long warningCount, Long staleMutationCount, String contentHash,
+                               Long plannedCount, Long awaitingApprovalCount) {
 
         private static BundleDetail frozen(PublicationBundle bundle) {
             return new BundleDetail(bundle.getId(), bundle.getBundleReference(), bundle.getDescription(),
@@ -98,11 +103,12 @@ public class BundleQueryService {
                     bundle.getContentMutationCount(), bundle.getReadyCount(), bundle.getRejectedCount(),
                     bundle.getBlockedCount(), bundle.getExpiredCount(), bundle.getIdentityIncidentCount(),
                     bundle.getBulkIncidentCount(), bundle.getCriticalIssueCount(), bundle.getWarningCount(), null,
-                    hex(bundle.getContentHash()));
+                    hex(bundle.getContentHash()), null, null);
         }
 
         private static BundleDetail live(PublicationBundle bundle, List<MutationStatusCount> counts,
-                                         long activeBatchCount, long staleCount) {
+                                         long activeBatchCount, long staleCount, long plannedCount,
+                                         long awaitingApprovalCount) {
             BundleMutationTotals totals = BundleMutationTotals.of(counts);
             return new BundleDetail(bundle.getId(), bundle.getBundleReference(), bundle.getDescription(),
                     bundle.getStatus().name(), bundle.getTargetMode().name(), bundle.getTargetMoment(),
@@ -115,7 +121,7 @@ public class BundleQueryService {
                     // CANCELLED en leest deze weergave de vastgestelde rij. Gedrag van 4b, ongewijzigd.
                     totals.blockedCount(), bundle.getExpiredCount(), totals.identityIncidentCount(),
                     bundle.getBulkIncidentCount(), bundle.getCriticalIssueCount(), bundle.getWarningCount(),
-                    staleCount, hex(bundle.getContentHash()));
+                    staleCount, hex(bundle.getContentHash()), plannedCount, awaitingApprovalCount);
         }
 
         /** De bundelhash als hexadecimale tekst; binaire bytes horen niet in een JSON-antwoord. */
@@ -185,7 +191,8 @@ public class BundleQueryService {
             List<MutationStatusCount> counts = dao.countByStatus(bundleId);
             long activeBatchCount = bundleBatches.countByBundleIdAndActiveMarkerIsNotNull(bundleId);
             long stale = dao.countStaleMutations(bundleId);
-            return BundleDetail.live(bundle, counts, activeBatchCount, stale);
+            return BundleDetail.live(bundle, counts, activeBatchCount, stale, dao.countPlanned(bundleId),
+                    dao.countUndecided(bundleId));
         }
         return BundleDetail.frozen(bundle);
     }

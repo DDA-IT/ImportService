@@ -380,6 +380,43 @@ class BundleFreezeTest {
         assertThat(detail.contentMutationCount()).isEqualTo(5L);
     }
 
+    // --- (d2) Live tellers plannedCount / awaitingApprovalCount (C2) ---------------------------------
+
+    /** ASSEMBLING: plannedCount is exact het aantal dat de bevriezing in bulk goedkeurt; daarna null. */
+    @Test
+    void assemblingDetailShowsPlannedCountEqualToTheAutoApproveAndNullAfterFreezing() {
+        Scenario scenario = updateScenario("CNTPLAN");
+
+        BundleDetail live = queries.getBundle(scenario.bundleId());
+        assertThat(live.plannedCount()).isEqualTo(5L);
+        assertThat(live.awaitingApprovalCount()).isZero();
+
+        freezeService.freeze(scenario.bundleId(), FREEZER, FREEZE_REASON);
+
+        DecisionRow auto = queries.getBundleDecisions(scenario.bundleId(), 0, 50).content().stream()
+                .filter(row -> row.decisionKind().equals("AUTO_APPROVE_PLANNED")).findFirst().orElseThrow();
+        assertThat(live.plannedCount()).isEqualTo(auto.affectedCount());
+        BundleDetail frozen = queries.getBundle(scenario.bundleId());
+        assertThat(frozen.plannedCount()).isNull();
+        assertThat(frozen.awaitingApprovalCount()).isNull();
+    }
+
+    /** awaitingApprovalCount > 0 precies wanneer het bevriezen 409 BUNDLE_HAS_UNDECIDED_MUTATIONS geeft. */
+    @Test
+    void awaitingApprovalCountIsPositiveExactlyWhenFreezingIsBlocked() {
+        Scenario scenario = creationScenario("CNTWAIT", 3);
+        BundleDetail live = queries.getBundle(scenario.bundleId());
+        assertThat(live.awaitingApprovalCount()).isEqualTo(3L);
+        assertThatThrownBy(() -> freezeService.freeze(scenario.bundleId(), FREEZER, FREEZE_REASON))
+                .isInstanceOf(ConflictException.class)
+                .hasFieldOrPropertyWithValue("code", BundleFreezeService.CODE_BUNDLE_HAS_UNDECIDED_MUTATIONS);
+
+        decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER, "Nagekeken",
+                new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null));
+        assertThat(queries.getBundle(scenario.bundleId()).awaitingApprovalCount()).isZero();
+        freezeService.freeze(scenario.bundleId(), FREEZER, FREEZE_REASON);
+    }
+
     // --- (e) Vastgehouden mutaties beletten het bevriezen niet -------------------------------------
 
     /**
