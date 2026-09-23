@@ -756,3 +756,55 @@ kolom na een `PUT` niet meer uiteen kunnen lopen.
 
 **Bron:** mens / rapport bouwstap 5f, punt 2; `docs/design/sjabloon-materialisatie-design.md` §4 (D7,
 "waarheidsbron na materialisatie"), aanname A34
+
+---
+
+## 2026-09-23 — Scherm 0 (werkvoorraad) wordt tóch gebouwd: D14-uitstel herroepen
+
+**Vraag:** Het blok van 2026-09-22 ("Frontend: D14, scope eerste werkvoorraadslice") stelde scherm (0)
+werkvoorraad/dashboard uit, met als reden dat er geen enkel lijst-/zoekendpoint voor leveringen,
+batches of taken bestond. Blijft dat uitstel staan?
+
+**Beslissing:** Nee — het uitstel is herroepen. Een parallelle sessie bouwt de backendslice voor
+scherm 0 (bouwstappen S0-B1 t/m S0-B3), precies het ontbrekende stuk dat het uitstel destijds
+motiveerde. Dit blok legt vast wat daar feitelijk besloten is, zodat logboek en code elkaar niet
+tegenspreken.
+
+Wat die slice toevoegt:
+- **`GET /batches`** — de werkvoorraadlijst. `BatchQueryService.BatchRow` is dezelfde batch als
+  `BatchDetail` maar herleid tot wat een lijst nodig heeft: zonder de hervatpunten
+  (`*ProgressRowNumber`), de `creation*`-velden en de lange `blockedReason`, die exclusief in
+  `getBatch` blijven. De rij draagt wél `importLinkCode`, `supplierCode` en `libraryCode`, zodat de
+  lijst geen aparte opzoekactie per rij nodig heeft.
+- **`GET /import-links`** — alleen-lezen opzoeklijst van koppelingen, zodat de UI een koppelingscode
+  kan tonen in plaats van een kaal id.
+- **Deterministische sortering** op `GET /bundles` (aflopend op id, nieuwste eerst) en
+  `GET /bundles/{id}/batches` (oplopend) — dit is bouwstap **B1** uit
+  `docs/design/frontend-scherm3-bundel-design.md` §15, conform vraag Q4 van 2026-09-23.
+
+**Autorisatie:** `GET /import-links` staat bewust **niet** achter `catalogimport.setup-api.enabled`.
+Motivering in die slice: dit endpoint schrijft geen configuratie maar toont enkel labels, net zoals
+`GET /batches` en `GET /bundles` vandaag al zonder authenticatie bereikbaar zijn. Dat verschilt bewust
+van `CatalogImportLinkController` (de bookmarkwaarde-endpoints van de materialisatiewizard), die wél
+achter de vlag staat omdat die schrijft. De grens is dus lezen-vs-schrijven, niet scherm-vs-scherm.
+
+**Gevolg voor het scherm 3-ontwerp:** drie van de zeven tekortkomingen uit
+`docs/design/frontend-scherm3-bundel-design.md` §16 zijn hiermee opgelost of in behandeling: §16.5
+(koppelingscode in plaats van "koppeling #7"), §16.6 (paginering zonder sortering) en §16.7 (geen
+lijstendpoint voor batches). §16.1, §16.2, §16.3 en §16.4 blijven open.
+
+**Twee ontdekkingen uit die slice**, teruggeschreven naar de specificatiedocumenten:
+1. *Important technical constraint discovered* (`docs/analysis/catalog-import-impact.md`): het woord
+   "taak" is in de code al bezet door `CatalogImportTask` — een geconfigureerde, herhaalbare importtaak,
+   géén menselijke taak — en `/api/catalog-import/tasks/{taskId}/deliveries` is al het upload-endpoint.
+   Een toekomstig behandelgeval mag daarom nooit op `/tasks` of op een klasse `Task` landen, anders is
+   achteraf onherleidbaar of een rij een importjob of een menselijk werkitem is.
+2. *Important business rule discovered* (`docs/requirements/catalog-import-business-rules.md`): een
+   werkvoorraadteller mag "niet vastgesteld" nooit als 0 tonen. Het datamodel onderscheidt beide
+   consequent (nullable tellers met expliciete javadoc), en elke aggregatie moet "niet vastgesteld" als
+   eigen, zichtbare categorie tonen. Een tegel "0 kritieke lijnen" over batches waarvan de screening
+   technisch mislukte is een onware geruststelling.
+
+**Bron:** parallelle sessie (bouwstappen S0-B1..S0-B3, ten tijde van dit blok nog ongecommit in de
+werkkopie) / mens (bevestigd dat dit in het beslissingslog hoort); herroept `docs/decisions.md`
+2026-09-22 "Frontend: D14, scope eerste werkvoorraadslice"
