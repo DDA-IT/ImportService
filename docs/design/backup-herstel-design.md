@@ -82,10 +82,20 @@ consistent":
    `import_definition_revision` (changeset 001) — de kerntabellen van de importcontrolelaag.
 
 **Rechten:** de hersteltest maakt de scratch-database aan en verwijdert ze weer, dus de rol in
-`PGUSER` heeft het `CREATEDB`-recht nodig. De gewone applicatierol (`catalog_import`) heeft dat
-niet; laat de wekelijkse hersteltest daarom draaien met een aparte beheerrol (andere `PGUSER`/
-`PGPASSWORD` in de cron-omgeving van die taak dan bij de back-up), of geef die rol `CREATEDB`.
-Zonder dat recht stopt het script met een duidelijke `FAIL`-regel.
+`PGUSER` heeft het `CREATEDB`-recht nodig. De applicatierol (`catalog_import`) heeft dat bewust
+niet en krijgt het ook niet. Daarom bestaat `scripts/backup/create-restore-role.sql`: een
+databasebeheerder voert dat eenmalig uit en maakt de rol `catalog_import_restore` (LOGIN +
+CREATEDB) aan; het wachtwoord gaat mee als psql-variabele, er staat geen geheim in het bestand:
+
+```
+psql -d postgres -v restore_password='<geheim>' -f scripts/backup/create-restore-role.sql
+```
+
+De back-up blijft draaien als `catalog_import` (`PGUSER=catalog_import`); enkel de cron-/Taakplanner-
+omgeving van de hersteltest zet `PGUSER=catalog_import_restore` en het bijhorende `PGPASSWORD`
+(of een `.pgpass`-regel). Omdat de restore met `--no-owner` gebeurt en de scratch-database eigendom
+is van de herstelrol, zijn geen extra rechten nodig. Zonder CREATEDB stopt het script met een
+duidelijke `FAIL`-regel.
 
 Bij falen van een van beide checks stopt het script met exitcode 1 en een duidelijke `FAIL`-regel,
 geschikt voor cron-/Taakplanner-monitoring op basis van de exitcode. Standaard ruimt het script de

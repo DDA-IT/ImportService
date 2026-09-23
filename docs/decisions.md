@@ -883,8 +883,10 @@ uit
    daarom `scripts/backup/LiquibaseStatusCheck.java` on the fly tegen het Maven-classpath van de Web-module
    (`listUnrunChangeSets` op `db.changelog-master.yaml`). `Web/pom.xml` is bewust niet gewijzigd.
 2. De applicatierol `catalog_import` heeft geen `CREATEDB`; de hersteltest kan de scratch-database dus niet
-   aanmaken zonder een aparte beheerrol. Voor productie moet de hersteltaak met een andere `PGUSER`
-   draaien dan de back-up (vastgelegd in `docs/design/backup-herstel-design.md` §5).
-3. Rehearsal-status: `.sh`-scripts end-to-end gerepeteerd (backup, retentie 7/5, restore PASS);
-   `.ps1`-scripts enkel syntactisch gecontroleerd, niet functioneel uitgevoerd (geen Postgres-clienttools
-   in PATH op deze host).
+   aanmaken zonder een aparte beheerrol. **Opgelost (2026-09-23, opvolging):** `scripts/backup/create-restore-role.sql`
+   maakt een aparte rol `catalog_import_restore` (LOGIN + CREATEDB, wachtwoord als psql-variabele); de
+   hersteltest draait met die rol via `PGUSER`, de back-up blijft als `catalog_import` draaien. Een beheerder
+   voert het SQL-bestand op productie eenmalig zelf uit (§5 van het design-document).
+3. Rehearsal-status: `.sh`- én `.ps1`-scripts zijn end-to-end gerepeteerd (backup, retentie 7/5, restore PASS)
+   met tijdelijke `docker exec`-shims buiten de repo; er zijn geen PowerShell-bugs gevonden. Een volledige
+   hersteltest duurt circa 3,5 minuten (binnen RTO 4u).
