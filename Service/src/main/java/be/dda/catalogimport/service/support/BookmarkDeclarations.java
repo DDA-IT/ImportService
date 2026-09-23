@@ -30,9 +30,13 @@ import java.util.Set;
  * zonder te werpen" toont (§5), terwijl een defensieve aanroeper bij materialisatie zelf beslist om op
  * het eerste probleem een {@code CONFIG_*}-fout te werpen.
  * <p>
- * Package-private: enkel bedoeld voor Service-klassen in dit pakket, geen publiek contract.
+ * <b>Publiek vanaf bouwstap 5b.</b> De aanroepers ({@code TemplateBookmarkService},
+ * {@code TemplateMaterialisationService}) leven in het bovenliggende pakket {@code service}, niet in
+ * {@code service.support}. {@link #findProblems} en {@link Problem} zijn daarom publiek gemaakt (was
+ * package-private in bouwstap 5a, toen er nog geen aanroeper bestond); de rest van de klasse blijft
+ * package-private.
  */
-final class BookmarkDeclarations {
+public final class BookmarkDeclarations {
 
     static final String CODE_SCOPE_PLACE_CONFLICT = "CONFIG_BOOKMARK_SCOPE_PLACE_CONFLICT";
     static final String CODE_WITHOUT_PLACE = "CONFIG_BOOKMARK_WITHOUT_PLACE";
@@ -57,7 +61,7 @@ final class BookmarkDeclarations {
     }
 
     /** Eén bevinding: de foutcode, de bookmark waarop ze slaat, en een leesbare boodschap. */
-    record Problem(String code, String bookmarkName, String message) {
+    public record Problem(String code, String bookmarkName, String message) {
     }
 
     /**
@@ -79,7 +83,7 @@ final class BookmarkDeclarations {
      *                               {@code import_record_filter}-rij hebben
      * @return alle gevonden problemen, leeg wanneer de declaratie in orde is
      */
-    static List<Problem> findProblems(List<ImportDefinitionBookmark> bookmarks,
+    public static List<Problem> findProblems(List<ImportDefinitionBookmark> bookmarks,
                                       List<ImportDefinitionBookmarkUsage> usages,
                                       Set<String> mappedTargetFieldCodes,
                                       Set<Integer> filterSequenceNumbers) {

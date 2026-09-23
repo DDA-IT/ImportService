@@ -52,6 +52,35 @@ class SetupApiDisabledTest {
         assertThat(context.getBeanNamesForType(CatalogImportSetupController.class)).isEmpty();
     }
 
+    /**
+     * De materialisatiewizard-declaratielaag (bouwstap 5b) volgt dezelfde vlag als de setup-API
+     * (decisions.md 2026-09-23 Q1): geen authenticatie, dus standaard uit.
+     */
+    @Test
+    void theTemplateControllerDoesNotExistWithoutTheExplicitFlag() {
+        assertThat(context.getBeanNamesForType(CatalogImportTemplateController.class)).isEmpty();
+    }
+
+    @Test
+    void everyTemplatePathAnswers404WhenTheFlagIsNotSet() throws Exception {
+        mockMvc.perform(get("/api/catalog-import/templates"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/catalog-import/templates/{definitionId}/revisions/{revisionId}/bookmarks",
+                        1L, 1L))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/catalog-import/templates/{definitionId}/revisions/{revisionId}/bookmarks",
+                        1L, 1L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"X\",\"label\":\"X\",\"dataType\":\"TEXT\",\"valueScope\":\"LINK\","
+                                + "\"ownerRole\":\"catalogImport.manage\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/catalog-import/templates/{definitionId}/revisions/{revisionId}/bookmarks/"
+                        + "{name}/usages", 1L, 1L, "X")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"placeKind\":\"LINK_LIBRARY_CODE\"}"))
+                .andExpect(status().isNotFound());
+    }
+
     @Test
     void everySetupPathAnswers404WhenTheFlagIsNotSet() throws Exception {
         mockMvc.perform(get("/api/catalog-import/setup/overview"))
