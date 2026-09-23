@@ -564,3 +564,49 @@ sjabloonversievergelijking, bulkcreatie) — dat is de volgende bouwstap.
 **Bron:** denker-zwaar (`Ontwerp sjabloon+bookmarks domeinmodel`) / mens (Q1-Q6 bevestigd) /
 `business-analyse-leveranciersbibliotheken.md` §14.14-§14.20; `Businessanalyse_artikelimport_en_prijsacceptatie-2.md`
 §5.8-§5.10; `docs/decisions.md` 2026-09-18 (bronkoppeling + sjablonen/bookmarks)
+
+---
+
+## 2026-09-23 — Service-/REST-laag materialisatiewizard: ontwerp + vijf beantwoorde vragen
+
+**Vraag:** Hoe wordt de service-/REST-laag ontworpen die vanuit een sjabloon (`ImportDefinition` met
+`usage_type = REUSABLE_TEMPLATE`) + ingevulde bookmarkwaarden een leveranciersgebonden
+`ImportDefinition`/`ImportDefinitionRevision` + `ImportLink` materialiseert? Dit is de bouwstap die op
+2026-09-23 (domeinmodel sjabloon+bookmarks) expliciet als "nog niet gebouwd, volgende bouwstap" is
+aangemerkt.
+
+**Beslissing:** Het ontwerp in `docs/design/sjabloon-materialisatie-design.md` is bindend voor de
+delen die er geen §6-vraag over stellen: geen schemawijziging (alles past in changeset 001-006);
+materialisatie is een snapshot (DEFINITION-waarden worden letterlijk vastgezet, nooit een runtime-
+verwijzing naar het sjabloon); LINK-scope declaraties worden meegekopieerd naar de afgeleide revisie
+(zie Q5 hieronder voor de bevestigingsvraag); de scope↔plaats-regel wordt zowel bij declareren als
+defensief bij materialiseren gecontroleerd (er bestaat nog geen declaratiepad en de database kan de
+regel niet afdwingen — zie het "Important technical constraint discovered"-blok in het ontwerp §13);
+`mode` (NEW_DEFINITION/REUSE_DEFINITION) is verplicht zonder default; foutcodes blijven in de bestaande
+`CONFIG_*`/`*_NOT_FOUND`/`*_IN_USE`-families; bouwstappen 5a-5f strikt sequentieel, 5c is de kleinste
+verticale slice (alleen NEW_DEFINITION, vier plaatsen).
+
+**Vijf punten waren nog open (§6-criteria) en zijn door de mens beantwoord (2026-09-23):**
+1. **Q1 (autorisatie):** materialisatie-API achter de bestaande `catalogimport.setup-api.enabled`-vlag
+   (standaard uit, geen authenticatie — zelfde patroon als `CatalogImportSetupController`).
+2. **Q2 (datamodel/identiteit, de zwaarste):** een LINK-scope bookmark op een revisieniveau-plaats
+   (bv. `DETAILLEVERANCIER` via `FIELD_MAPPING_FIXED_VALUE`) is toegestaan, maar de resulterende
+   definitie wordt daarna geweigerd bij `REUSE_DEFINITION` (409 `DEFINITION_NOT_SHAREABLE`). Houdt
+   §14.15 ("elke leverancier een eigen definitie" voor dit geval) én de 23/09-keuze "gedeelde definitie
+   toegestaan" allebei waar: delen mag, maar niet zodra een per-leverancier waarde in de definitie zit.
+3. **Q3 (statusflow):** ook uit een `SUPERSEDED` sjabloonrevisie mag gematerialiseerd worden (niet enkel
+   `ACTIVE`); alleen `DRAFT` blijft geweigerd. Wijkt af van het aanvankelijke, strengere denker-voorstel.
+4. **Q4 (statusflow):** een ontbrekende verplichte LINK-bookmark bij de start van een levering weigert
+   de upload met 409 `CONFIG_REQUIRED_BOOKMARK_MISSING` vóór er iets gearchiveerd wordt — identiek aan
+   de bestaande `CONFIG_PRICE_FIELD_MISSING`-controle.
+5. **Q5 (contract):** bevestigd — LINK-scope bookmarkdeclaraties worden meegekopieerd naar elke
+   afgeleide revisie. Breidt de betekenis van `import_definition_bookmark` uit van "declaratie op een
+   sjabloonrevisie" naar "declaratie op elke revisie".
+
+Het ontwerp in `docs/design/sjabloon-materialisatie-design.md` is hiermee **volledig bindend**,
+inclusief §4 fase A4 (aangepast voor Q3) en §12 (antwoorden verwerkt). Bouwstappen 5a-5f (§11) kunnen
+sequentieel starten zonder verdere architectuurvragen.
+
+**Bron:** denker-zwaar (`Ontwerp materialisatiewizard service/REST-laag`) /
+`docs/design/sjabloon-materialisatie-design.md`; mens (Q1-Q5 bevestigd, Q3 wijkt af van het
+denker-voorstel)
