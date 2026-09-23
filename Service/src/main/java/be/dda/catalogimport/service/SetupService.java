@@ -33,15 +33,12 @@ import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.domain.SourceOrganisationType;
 import be.dda.catalogimport.domain.TaskTriggerType;
 import be.dda.catalogimport.service.support.ImportMappingConfigFactory;
+import be.dda.catalogimport.service.support.RevisionConfigHashes;
 import be.dda.catalogimport.service.support.ScreeningBlockedException;
 import be.dda.catalogimport.service.support.SourceStructureConfig;
 import be.dda.catalogimport.service.support.SourceStructureConfigFactory;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
@@ -357,20 +354,21 @@ public class SetupService {
         }
         applyThresholds(revision, command);
         revision.setChangeReason(optionalText(command.changeReason(), "changeReason", 500));
-        revision.setAccessConfigHash(hash("access", identityKind.name(), revision.getAccessDeliverySetKind()));
-        revision.setStructureConfigHash(hash("structure", revision.getStructureFormat(),
+        revision.setAccessConfigHash(RevisionConfigHashes.hash("access", identityKind.name(),
+                revision.getAccessDeliverySetKind()));
+        revision.setStructureConfigHash(RevisionConfigHashes.hash("structure", revision.getStructureFormat(),
                 revision.getStructureCharset(), revision.getStructureDelimiter(),
                 String.valueOf(revision.getStructureQuoteChar()), String.valueOf(revision.isStructureHasHeader()),
                 String.valueOf(revision.getStructureHeaderLineNumber()),
                 revision.getStructureFieldReferenceKind(),
                 String.valueOf(revision.getStructureExpectedColumnCount())));
-        revision.setRecordRulesConfigHash(hash("record", identityKind.name(),
+        revision.setRecordRulesConfigHash(RevisionConfigHashes.hash("record", identityKind.name(),
                 revision.getIdentitySupplierField(), revision.getIdentitySupplierGroupField(),
                 revision.getIdentitySupplierReferenceField(), String.valueOf(revision.getIdentityDiscountCodeField()),
                 revision.getRecordBasePriceField(), String.valueOf(revision.getRecordDescriptionField()),
                 String.valueOf(revision.getRecordCurrencyField()),
                 String.valueOf(revision.getRecordCanonicalisationVersion())));
-        revision.setCompositeConfigHash(hash("composite", revision.getAccessConfigHash(),
+        revision.setCompositeConfigHash(RevisionConfigHashes.hash("composite", revision.getAccessConfigHash(),
                 revision.getStructureConfigHash(), revision.getRecordRulesConfigHash()));
         return view(revisions.saveAndFlush(revision));
     }
@@ -791,24 +789,5 @@ public class SetupService {
 
     private static <T> T orDefault(T value, T fallback) {
         return value == null ? fallback : value;
-    }
-
-    /**
-     * De configuratiehash van één laag. De revisie draagt drie laaghashes plus een samengestelde hash
-     * (§14.14): ze maken zichtbaar dát een configuratie verschilt. Een verzonnen constante zou dat
-     * onderscheid stilzwijgend wegnemen.
-     */
-    private static String hash(String layer, String... parts) {
-        StringBuilder canonical = new StringBuilder(layer);
-        for (String part : parts) {
-            canonical.append('').append(part);
-        }
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(canonical.toString().getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("SHA-256 is required but not available", impossible);
-        }
     }
 }
