@@ -890,3 +890,50 @@ uit
 3. Rehearsal-status: `.sh`- én `.ps1`-scripts zijn end-to-end gerepeteerd (backup, retentie 7/5, restore PASS)
    met tijdelijke `docker exec`-shims buiten de repo; er zijn geen PowerShell-bugs gevonden. Een volledige
    hersteltest duurt circa 3,5 minuten (binnen RTO 4u).
+
+---
+
+## 2026-09-23 — Frontend: batchdetail, scherm (2) levering & screening en de §16-uitbreidingen
+
+**Vraag:** De mens gaf opdracht alles wat openstaat te bouwen, behalve Keycloak/Fase 5. Welke bouwvolgorde
+en welke scope-/autorisatiekeuzes gelden voor (A) het batchdetailscherm, (B) scherm (2) levering &
+screening en (C) de openstaande backenduitbreidingen uit `docs/design/frontend-scherm3-bundel-design.md` §16?
+
+**Beslissing:** Het denker-zwaar-ontwerp is bindend, met de vier onderstaande antwoorden van de mens.
+Strikt sequentiële bouwvolgorde, één commit per stap:
+
+1. C1 `statusReason`(+`status`)-filter op `GET /bundles/{id}/mutations` en `GET /batches/{id}/mutations`
+   (exacte, hoofdlettergevoelige gelijkheid; blanco = geen filter; onbekende reden = lege pagina).
+2. C2 `plannedCount`/`awaitingApprovalCount` op `BundleDetail` (ASSEMBLING gevuld, FROZEN/CANCELLED `null`).
+3. C3 `GET /bundles/{id}/freeze-check` (droogloop, momentopname zonder slot; `freeze` blijft de waarheid).
+4. C4 filter `?identityHash=` op beide mutatielijsten (zie V3).
+5. A-B1 koppelingslabels op `BatchDetail`.
+6. B-B1 alleen-lezen, altijd bereikbaar `GET /api/catalog-import/tasks`.
+7. F8 `MutationList` (herbruikbaar component, scherm-3-ontwerp §11), F9 `GroupDecisionDialog`,
+   F10 `FreezeDialog`/`CancelDialog`, F11 `BundleDecisionsTab`.
+8. A-F1 batchdetail `/batches/:batchId` (alleen-lezen) + doorklik vanaf Scherm 0; A-F2 problemen, foutgroepen
+   en levering.
+9. B-F1 uploadscherm (geen voortgangsbalk maar twee benoemde fasen + tijdteller; deterministische
+   `deliveryReference`; idempotente herhaling als herstelroute; geen `AbortSignal`); B-F2 `accept-baseline` (met
+   typ-bevestiging) en bundel-opname; B-F3 `continue`.
+
+**Vier vragen door de mens beantwoord (2026-09-23):**
+- **V1 (taak aanmaken via UI):** bij het materialisatiewizard-spoor leggen (achter de setup-vlag). Dit spoor
+  bouwt GEEN `POST /tasks`; de uploadpagina toont bij een koppeling zonder manuele taak een uitleg.
+- **V2 (`continue` aanbieden):** ja, met de expliciete vermelding dat de actie niet op naam wordt vastgelegd
+  (het endpoint kent geen actorveld).
+- **V3 (wijzigingsgroep/`identity_hash`):** **nu bouwen, als serverzijdig filter** `?identityHash=` — afwijkend
+  van de aanbeveling (uitstellen). Gevolg: de mutatielijst gaat van een JPA-entiteitsprojectie naar een
+  JDBC-projectie voor die waarde, want `identity_hash` is in `ImportMutation` bewust niet gemapt. Dit is een
+  aparte, zwaardere bouwstap (C4) die een werkende laag raakt.
+- **V4 (goedkeuringsgetal):** ja, `plannedCount` uit `PublicationBundleDao.countPlanned` en
+  `awaitingApprovalCount` uit `countUndecided`, zodat de UI per constructie toont wat de server zal schrijven.
+
+**Ontdekkingen (nog niet teruggeschreven naar de specificatiedocumenten):** `identity_hash` bewust niet
+gemapt; het UI-getal "wordt goedgekeurd" wijkt af van `countPlanned`; geen `MaxUploadSizeExceededException`-
+handler (413 zonder `code`); upload-voortgang principieel niet meetbaar; `POST /batches/{id}/continue` is de
+enige schrijfactie zonder actorveld.
+
+**Bron:** denker-zwaar (`Ontwerp batchdetail, scherm 2 en scherm-3-uitbreidingen`) /
+`docs/design/frontend-scherm3-bundel-design.md` §11, §12, §15, §16; `docs/design/sjabloon-materialisatie-design.md`
+§9; mens (V1-V4)
