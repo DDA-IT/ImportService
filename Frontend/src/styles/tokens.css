@@ -1,0 +1,73 @@
+/* Design Tokens */
+
+:root {
+  /* Spacing */
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-5: 1.25rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-10: 2.5rem;
+  --spacing-12: 3rem;
+
+  /* Colors */
+  --color-primary: #0066cc;
+  --color-primary-hover: #0052a3;
+  --color-danger: #d32f2f;
+  --color-danger-hover: #b71c1c;
+  --color-success: #2e7d32;
+  --color-success-hover: #1b5e20;
+  --color-warning: #f57c00;
+  --color-warning-hover: #e65100;
+  --color-info: #1976d2;
+  --color-info-hover: #1565c0;
+
+  /* Text colors */
+  --color-text: #1a1a1a;
+  --color-text-secondary: #666666;
+  --color-text-tertiary: #999999;
+
+  /* Surface colors */
+  --color-background: #ffffff;
+  --color-surface: #f5f5f5;
+  --color-surface-variant: #eeeeee;
+  --color-border: #e0e0e0;
+  --color-border-dark: #cccccc;
+
+  /* Status colors */
+  --status-planned: #e3f2fd;
+  --status-planned-text: #1565c0;
+  --status-awaiting: #fff3e0;
+  --status-awaiting-text: #e65100;
+  --status-ready: #e8f5e9;
+  --status-ready-text: #1b5e20;
+  --status-rejected: #ffebee;
+  --status-rejected-text: #b71c1c;
+  --status-blocked: #f3e5f5;
+  --status-blocked-text: #6a1b9a;
+  --status-expired: #fce4ec;
+  --status-expired-text: #ad1457;
+  --status-neutral: #f5f5f5;
+  --status-neutral-text: #424242;
+
+  /* Status color shorthand for backgrounds */
+  --status-planned-bg: #e3f2fd;
+  --status-awaiting-bg: #fff3e0;
+  --status-ready-bg: #e8f5e9;
+  --status-rejected-bg: #ffebee;
+  --status-blocked-bg: #f3e5f5;
+  --status-expired-bg: #fce4ec;
+  --status-neutral-bg: #f5f5f5;
+
+  /* Shadow */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+
+  /* Border radius */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+}

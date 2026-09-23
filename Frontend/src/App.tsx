@@ -1,10 +1,21 @@
+import { Outlet } from 'react-router-dom';
+
 function App() {
   return (
-    <main>
-      <h1>CatalogImport</h1>
-      <p>Frontend scaffold is running. No screens implemented yet.</p>
-    </main>
-  )
+    <>
+      <header style={{ borderBottom: '1px solid var(--color-border)', padding: 'var(--spacing-4)' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <h1 style={{ fontSize: '1.5rem', margin: '0 0 var(--spacing-4) 0' }}>CatalogImport</h1>
+          <nav style={{ display: 'flex', gap: 'var(--spacing-4)' }}>
+            <a href="/bundles">Publicatiebundels</a>
+          </nav>
+        </div>
+      </header>
+      <main style={{ maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+        <Outlet />
+      </main>
+    </>
+  );
 }
 
-export default App
+export default App;
