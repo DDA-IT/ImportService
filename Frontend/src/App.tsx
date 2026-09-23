@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router-dom';
+import { ActorBar } from './actor/ActorBar.tsx';
 
 function App() {
   return (
@@ -11,6 +12,7 @@ function App() {
           </nav>
         </div>
       </header>
+      <ActorBar />
       <main style={{ maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
         <Outlet />
       </main>

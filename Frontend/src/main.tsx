@@ -5,6 +5,7 @@ import './styles/tokens.css';
 import './styles/reset.css';
 import App from './App.tsx';
 import { routes } from './routes.tsx';
+import { ActorProvider } from './actor/ActorContext.tsx';
 
 const router = createBrowserRouter([
   {
@@ -15,6 +16,8 @@ const router = createBrowserRouter([
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    <ActorProvider>
+      <RouterProvider router={router} />
+    </ActorProvider>
   </StrictMode>,
 );

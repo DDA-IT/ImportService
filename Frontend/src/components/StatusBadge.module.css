@@ -1,0 +1,43 @@
+.badge {
+  display: inline-block;
+  padding: 0.125rem var(--spacing-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.planned {
+  background: var(--status-planned-bg);
+  color: var(--status-planned-text);
+}
+
+.awaiting {
+  background: var(--status-awaiting-bg);
+  color: var(--status-awaiting-text);
+}
+
+.ready {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+.rejected {
+  background: var(--status-rejected-bg);
+  color: var(--status-rejected-text);
+}
+
+.blocked {
+  background: var(--status-blocked-bg);
+  color: var(--status-blocked-text);
+}
+
+.expired {
+  background: var(--status-expired-bg);
+  color: var(--status-expired-text);
+}
+
+.neutral {
+  background: var(--status-neutral-bg);
+  color: var(--status-neutral-text);
+}
