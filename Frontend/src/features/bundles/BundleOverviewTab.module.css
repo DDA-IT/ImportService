@@ -1,0 +1,127 @@
+.tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+.section {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-4);
+}
+
+.sectionTitle {
+  margin: 0 0 var(--spacing-3) 0;
+  font-size: 1rem;
+}
+
+.notice {
+  margin: 0 0 var(--spacing-3) 0;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.counters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-4);
+  margin: 0;
+}
+
+.counter {
+  display: flex;
+  flex-direction: column;
+  min-width: 9rem;
+}
+
+.counter dt {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.counter dd {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.counterHint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.count {
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+.staleWarning {
+  margin: var(--spacing-3) 0 0 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--status-awaiting-bg);
+  color: var(--status-awaiting-text);
+  font-size: 0.875rem;
+}
+
+.hash {
+  margin: var(--spacing-3) 0 0 0;
+  font-size: 0.875rem;
+}
+
+.copyButton {
+  padding: var(--spacing-1) var(--spacing-2);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+  cursor: pointer;
+}
+
+.audit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  margin: 0;
+}
+
+.auditRow dt {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.auditRow dd {
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.actionButton {
+  padding: var(--spacing-2) var(--spacing-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-dark);
+  background: var(--color-surface);
+  cursor: not-allowed;
+}
+
+.actionReason {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}

@@ -1,5 +1,8 @@
 import type { RouteObject } from 'react-router-dom';
 import { BundleListPage } from './features/bundles/BundleListPage.tsx';
+import { BundleDetailPage } from './features/bundles/BundleDetailPage.tsx';
+import { BundleOverviewTab } from './features/bundles/BundleOverviewTab.tsx';
+import { BundleBatchesTab } from './features/bundles/BundleBatchesTab.tsx';
 import { WorkQueuePage } from './features/workqueue/WorkQueuePage.tsx';
 
 /* Placeholder pages for now */
@@ -12,38 +15,20 @@ function NotFoundPage() {
   );
 }
 
-function BundleDetailPage() {
-  return (
-    <div style={{ padding: '2rem' }}>
-      <h1>Bundel detail</h1>
-      <p>Bundel detail pagina (nog niet geïmplementeerd)</p>
-    </div>
-  );
-}
-
-function BundleBatchesPage() {
-  return (
-    <div style={{ padding: '2rem' }}>
-      <h1>Bundel - Leden</h1>
-      <p>Batches/leden tabblad (nog niet geïmplementeerd)</p>
-    </div>
-  );
-}
-
+/* Bouwstap F8 (herbruikbaar mutatielijst-component) volgt nog. */
 function BundleMutationsPage() {
   return (
     <div style={{ padding: '2rem' }}>
-      <h1>Bundel - Mutaties</h1>
-      <p>Mutaties tabblad (nog niet geïmplementeerd)</p>
+      <p>Mutaties tabblad (nog niet geïmplementeerd — bouwstap F8)</p>
     </div>
   );
 }
 
+/* Bouwstap F11 (alleen-lezen beslissingsregister) volgt nog. */
 function BundleDecisionsPage() {
   return (
     <div style={{ padding: '2rem' }}>
-      <h1>Bundel - Beslissingen</h1>
-      <p>Beslissingen tabblad (nog niet geïmplementeerd)</p>
+      <p>Beslissingen tabblad (nog niet geïmplementeerd — bouwstap F11)</p>
     </div>
   );
 }
@@ -60,18 +45,12 @@ export const routes: RouteObject[] = [
   {
     path: '/bundles/:bundleId',
     element: <BundleDetailPage />,
-  },
-  {
-    path: '/bundles/:bundleId/batches',
-    element: <BundleBatchesPage />,
-  },
-  {
-    path: '/bundles/:bundleId/mutations',
-    element: <BundleMutationsPage />,
-  },
-  {
-    path: '/bundles/:bundleId/decisions',
-    element: <BundleDecisionsPage />,
+    children: [
+      { index: true, element: <BundleOverviewTab /> },
+      { path: 'batches', element: <BundleBatchesTab /> },
+      { path: 'mutations', element: <BundleMutationsPage /> },
+      { path: 'decisions', element: <BundleDecisionsPage /> },
+    ],
   },
   {
     path: '*',
