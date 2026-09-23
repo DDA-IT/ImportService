@@ -113,12 +113,14 @@ class BundleHttpTest {
                 .andExpect(jsonPath("$.bundleReference").value(bundleReference))
                 .andExpect(jsonPath("$.status").value("ASSEMBLING"))
                 .andExpect(jsonPath("$.targetMode").value("SIMULATION"))
+                .andExpect(jsonPath("$.created").value(true))
                 .andReturn().getResponse().getContentAsString();
         long bundleId = ((Number) JsonPath.read(created, "$.id")).longValue();
         mockMvc.perform(post("/api/catalog-import/bundles")
                         .contentType(MediaType.APPLICATION_JSON).content(createBody))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(bundleId));
+                .andExpect(jsonPath("$.id").value(bundleId))
+                .andExpect(jsonPath("$.created").value(false));
 
         // Lijst, gefilterd op status: de H2-database is gedeeld met de rest van de module (mogelijk
         // meer dan 50 ASSEMBLING-bundels van andere testklassen), dus enkel het contract zelf wordt

@@ -235,6 +235,8 @@ export type BundleReference = {
   createdBy: string;
   createdAt: string;
   idempotencyKey: string | null;
+  /** `false` bij een idempotente hervinding van een bestaande bundel (zelfde referentie/scope). */
+  created: boolean;
 };
 
 // be.dda.catalogimport.service.PublicationBundleService.Membership

@@ -74,16 +74,18 @@ public class PublicationBundleService {
     /**
      * De onveranderlijke identiteitsgegevens van een aangemaakte (of via idempotentie teruggevonden)
      * bundel; de tellers en de bevroren/geannuleerde audit staan in {@code BundleQueryService.getBundle}.
+     * {@code created} is {@code false} bij een idempotente hervinding (zelfde patroon als
+     * {@link DeliveryIntakeService.IntakeResult#created}).
      */
     public record BundleReference(long id, String bundleReference, String description, String status,
                                   String targetMode, Instant targetMoment, String publicationPolicy,
-                                  String createdBy, Instant createdAt, String idempotencyKey) {
+                                  String createdBy, Instant createdAt, String idempotencyKey, boolean created) {
 
-        private static BundleReference of(PublicationBundle bundle) {
+        private static BundleReference of(PublicationBundle bundle, boolean created) {
             return new BundleReference(bundle.getId(), bundle.getBundleReference(), bundle.getDescription(),
                     bundle.getStatus().name(), bundle.getTargetMode().name(), bundle.getTargetMoment(),
                     bundle.getPublicationPolicy(), bundle.getCreatedBy(), bundle.getCreatedAt(),
-                    bundle.getIdempotencyKey());
+                    bundle.getIdempotencyKey(), created);
         }
     }
 
@@ -153,20 +155,20 @@ public class PublicationBundleService {
         return transaction.execute(status -> {
             Optional<PublicationBundle> existing = bundles.findByBundleReference(reference);
             if (existing.isPresent()) {
-                return BundleReference.of(requireSameScope(existing.get(), targetMode, trimmedDescription));
+                return BundleReference.of(requireSameScope(existing.get(), targetMode, trimmedDescription), false);
             }
             PublicationBundle bundle = new PublicationBundle(reference, targetMode, creator);
             bundle.setDescription(trimmedDescription);
             bundle.setTargetMoment(targetMoment);
             bundle.setPublicationPolicy(trimmedPolicy);
             try {
-                return BundleReference.of(bundles.saveAndFlush(bundle));
+                return BundleReference.of(bundles.saveAndFlush(bundle), true);
             } catch (DataIntegrityViolationException race) {
                 // Twee gelijktijdige aanmaken met dezelfde referentie: de unieke constraint besliste,
                 // niet deze aanroep. Behandel het exact zoals een normale idempotente hervinding.
                 PublicationBundle found = bundles.findByBundleReference(reference)
                         .orElseThrow(() -> race);
-                return BundleReference.of(requireSameScope(found, targetMode, trimmedDescription));
+                return BundleReference.of(requireSameScope(found, targetMode, trimmedDescription), false);
             }
         });
     }

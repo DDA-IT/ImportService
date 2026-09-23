@@ -7,8 +7,9 @@
  * - `targetMode = PRODUCTION` krijgt een expliciete waarschuwing (beslissing van de mens, §17 Q3): een
  *   latere publicatiefase behandelt zo'n bundel als echte publicatie naar ProDisWebbase.
  * - De backend is idempotent op `bundleReference`: een herhaalde aanroep met dezelfde referentie (en
- *   scope) geeft de bestaande bundel terug in plaats van een fout. De UI meldt dat expliciet in plaats
- *   van stil te doen alsof er iets nieuws gemaakt is (zie de toelichting bij `alreadyExisted` hieronder).
+ *   scope) geeft de bestaande bundel terug in plaats van een fout. Het antwoord draagt daarvoor het
+ *   expliciete veld `created`; de UI meldt "bestond al" op basis daarvan, niet op basis van een
+ *   tijdsheuristiek.
  * - Een andere scope bij dezelfde referentie geeft 409 `BUNDLE_REFERENCE_REUSED_WITH_DIFFERENT_SCOPE`,
  *   die via `ErrorBanner`/`describe()` al een Nederlandse uitleg krijgt (`errors/codes.ts`).
  */
@@ -32,27 +33,6 @@ export type CreateBundleFormProps = {
 
 const NO_TARGET_MODE = '';
 type TargetModeSelection = PublicationTargetMode | typeof NO_TARGET_MODE;
-
-/**
- * De backend geeft bij `POST /bundles` géén expliciete vlag mee die zegt of de bundel nieuw is of al
- * bestond — het antwoord is in beide gevallen dezelfde `BundleReference`. Bij benadering: als de
- * teruggegeven `createdAt` duidelijk vóór het moment van dit verzoek ligt (met een ruime marge voor
- * netwerklatentie/klokverschil), bestond de bundel al.
- *
- * Important technical constraint discovered: `PublicationBundleService.createBundle` retourneert bij
- * een idempotente hervinding exact dezelfde vorm (`BundleReference`) als bij een nieuwe aanmaak, zonder
- * een "is nieuw"-signaal. Een additief responsveld (bv. `alreadyExisted: boolean`) zou deze benadering
- * overbodig maken. Niet aangepast in deze bouwstap — zie het rapport.
- */
-const ALREADY_EXISTED_MARGIN_MS = 5000;
-
-function isAlreadyExisted(requestedAt: number, bundle: BundleReference): boolean {
-  const createdAtMs = Date.parse(bundle.createdAt);
-  if (Number.isNaN(createdAtMs)) {
-    return false;
-  }
-  return requestedAt - createdAtMs > ALREADY_EXISTED_MARGIN_MS;
-}
 
 export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
   const { actor } = useActor();
@@ -95,13 +75,12 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
     }
     setValidationError(null);
 
-    const requestedAt = Date.now();
     const bundle = await execute();
     if (bundle === undefined) {
       return;
     }
 
-    const alreadyExisted = isAlreadyExisted(requestedAt, bundle);
+    const alreadyExisted = !bundle.created;
     setOutcome({ bundle, alreadyExisted });
     if (!alreadyExisted) {
       setBundleReference('');
