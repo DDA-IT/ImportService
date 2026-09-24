@@ -972,3 +972,25 @@ misleidend zijn totdat een testbron zelf wijzigt of `mvn clean` draait. Idem: dr
 
 **Bron:** bouwer-zwaar (`C4 identityHash-filter en -veld op mutatielijsten`) / mens (V3) /
 `docs/design/frontend-scherm3-bundel-design.md` §11.5, §16.4
+
+---
+
+## 2026-09-24 — F9-voorwaarden: groepsactie met `identityHash` en `statusReason` (nieuwe stap C5)
+
+**Vraag:** De groepsactie (`POST /bundles/{id}/decisions`, `BundleDecisionService.DecisionFilter{batchId, status,
+statusReason, actionType}`) kent geen `identityHash`-filter, terwijl de mutatielijst dat sinds C4 wel heeft
+(F8-bevinding). §10.4 punt 1 eist dat de groepsactie exact de zichtbare lijstfilter gebruikt; anders raakt de actie
+meer mutaties dan de gebruiker ziet. Ook was `statusReason` uit de groepsactie gesloten omdat de lijst er niet op kon
+filteren (§10.4 punt 2) — sinds C1 kan dat wel.
+
+**Beslissing (mens, 2026-09-24):**
+1. **`identityHash` wordt aan het groepsfilter toegevoegd** (nieuwe backendstap **C5**, vóór F9), afwijkend van de
+   aanbeveling (knop uitschakelen). De groepsactie beslist dan exact wat de gefilterde lijst toont.
+2. **`statusReason` mag in de groepsactie** (het filter ondersteunt het al); F9 gebruikt dezelfde filter als de lijst.
+
+**Gevolg:** C5 breidt `DecisionFilter` + de onderliggende selectie (`PublicationBundleDao`, `GROUP_DECISION_TAIL`-pad) met
+`identityHash` uit (byte-vergelijking zoals C4). Invariant (test): `affectedCount` van een groepsactie ≤
+`totalElements` van de lijst met dezelfde filter, met gelijkheid voor mutaties die de actie mag raken (CREATE/UPDATE,
+zonder beslissing). F9-bouwvolgorde: C5 → F9 → F10 → F11.
+
+**Bron:** mens / bouwer-zwaar-bevinding F8 (risico 2 en 3) / `docs/design/frontend-scherm3-bundel-design.md` §10.4, §16.1
