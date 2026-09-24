@@ -1,6 +1,7 @@
 package be.dda.catalogimport.service;
 
 import be.dda.catalogimport.dao.ImportMutationRepository;
+import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.dao.PublicationBundleBatchRepository;
 import be.dda.catalogimport.dao.PublicationBundleDao;
 import be.dda.catalogimport.dao.PublicationBundleDao.MutationStatusCount;
@@ -169,15 +170,18 @@ public class BundleQueryService {
     private final ImportMutationRepository mutations;
     private final PublicationDecisionRepository decisions;
     private final PublicationBundleDao dao;
+    /** Enkel voor de niet-gemapte {@code identity_hash} van een opgehaalde pagina (bouwstap C4). */
+    private final MutationDao mutationHashes;
 
     public BundleQueryService(PublicationBundleRepository bundles, PublicationBundleBatchRepository bundleBatches,
                               ImportMutationRepository mutations, PublicationDecisionRepository decisions,
-                              PublicationBundleDao dao) {
+                              PublicationBundleDao dao, MutationDao mutationHashes) {
         this.bundles = bundles;
         this.bundleBatches = bundleBatches;
         this.mutations = mutations;
         this.decisions = decisions;
         this.dao = dao;
+        this.mutationHashes = mutationHashes;
     }
 
     /**
@@ -239,25 +243,43 @@ public class BundleQueryService {
      * @param batchId enkel de mutaties van deze batch; een batch zonder actief lidmaatschap in deze
      *                bundel levert een lege pagina op (en geen fout: het lidmaatschap kan net
      *                verwijderd zijn)
+     * @param identityHash enkel de mutaties met deze identiteitshash — de wijzigingsgroep van één
+     *                     aanbieding (bouwstap C4). Hexadecimaal, hoofdletterongevoelig; {@code null}
+     *                     of blanco = geen filter. Een onbekende of ongeldige waarde levert een lege
+     *                     pagina op en geen fout. Het filter werkt aan de serverkant en dus over
+     *                     paginagrenzen heen — dat is precies waarom het geen UI-groepering geworden is
+     *                     (ontwerp scherm 3 par. 11.5)
      * @throws NotFoundException        {@link PublicationBundleService#CODE_BUNDLE_NOT_FOUND}
      * @throws IllegalArgumentException ongeldige paginering
      */
     public PageResult<MutationRow> getBundleMutations(long bundleId, MutationStatus status, Long batchId,
                                                       MutationActionType actionType, String statusReason,
-                                                      Integer page, Integer size) {
+                                                      String identityHash, Integer page, Integer size) {
         requireBundle(bundleId);
-        PageRequest pageRequest = pageRequest(page, size, Sort.by("id"));
+        boolean byIdentityHash = BatchQueryService.isIdentityHashFilter(identityHash);
+        // Ongesorteerde Pageable voor de native variant: die draagt haar eigen "order by m.id".
+        PageRequest pageRequest = byIdentityHash ? pageRequest(page, size, Sort.unsorted())
+                : pageRequest(page, size, Sort.by("id"));
         List<Long> batchIds = bundleBatches.findByBundleIdAndActiveMarkerIsNotNull(bundleId).stream()
                 .map(membership -> membership.getBatch().getId())
                 .filter(id -> batchId == null || id.equals(batchId))
                 .toList();
         if (batchIds.isEmpty()) {
-            return new PageResult<>(List.of(), pageRequest.getPageNumber(), pageRequest.getPageSize(), 0L, 0);
+            return BatchQueryService.emptyMutationPage(pageRequest);
         }
         String reason = statusReason == null || statusReason.isBlank() ? null : statusReason;
+        if (byIdentityHash) {
+            byte[] hash = BatchQueryService.parseIdentityHash(identityHash);
+            if (hash == null) {
+                return BatchQueryService.emptyMutationPage(pageRequest);
+            }
+            return BatchQueryService.mutationRows(mutations.findBundleMutationsByIdentityHash(batchIds,
+                    BatchQueryService.name(status), BatchQueryService.name(actionType), reason, hash,
+                    pageRequest), mutationHashes);
+        }
         Page<ImportMutation> result = mutations.findBundleMutations(batchIds, status, actionType, reason,
                 pageRequest);
-        return PageResult.of(result, MutationRow::of);
+        return BatchQueryService.mutationRows(result, mutationHashes);
     }
 
     /**

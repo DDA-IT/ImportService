@@ -64,4 +64,54 @@ public interface ImportMutationRepository extends JpaRepository<ImportMutation, 
                                             @Param("status") MutationStatus status,
                                             @Param("actionType") MutationActionType actionType,
                                             @Param("statusReason") String statusReason, Pageable pageable);
+
+    // --- Filter op de wijzigingsgroep: identity_hash (bouwstap C4) --------------------------------
+    //
+    // WAAROM NATIVE. identity_hash is op ImportMutation BEWUST niet gemapt (zie de klassejavadoc:
+    // databasespecifiek binair type, enkel voor set-based SQL). JPQL kan een niet-gemapte kolom niet
+    // noemen, dus draait deze variant als native query. De kolom komt enkel in de WHERE voor; de
+    // entiteit die eruit komt is exact dezelfde als die van de JPQL-varianten hierboven ({@code m.*}
+    // levert alle gemapte kolommen), zodat er geen tweede weergave van een mutatie ontstaat.
+    //
+    // WAAROM BYTES EN GEEN encode(...,'hex'). De vergelijking gebeurt op de binaire waarde zelf, met
+    // de hexstring in Java ontleed (HexFormat). Dat houdt de query draagbaar (MutationDao: "nooit een
+    // databasespecifieke hexfunctie") en blijft indexeerbaar: encode() per rij zou de indexen
+    // idx_import_mutation_link_identity en idx_import_mutation_identity_status onbruikbaar maken.
+    //
+    // WAAROM APARTE METHODES en geen extra guard op de bestaande query's: de bestaande, werkende
+    // JPQL-paden blijven daardoor letterlijk ongewijzigd voor elke aanroep zonder identityHash.
+    //
+    // De null-guards staan met een expliciete cast in de SQL: PostgreSQL kan het type van een
+    // ongebonden null-parameter anders niet afleiden ("could not determine data type of parameter").
+    // De sortering staat in de query zelf; de aanroeper geeft een ONGESORTEERDE Pageable mee.
+
+    String IDENTITY_HASH_FILTER = " and m.identity_hash = :identityHash "
+            + "and (cast(:status as varchar) is null or m.status = cast(:status as varchar)) "
+            + "and (cast(:actionType as varchar) is null or m.action_type = cast(:actionType as varchar)) "
+            + "and (cast(:statusReason as varchar) is null "
+            + "     or m.status_reason = cast(:statusReason as varchar)) ";
+
+    @Query(value = "select m.* from import_mutation m where m.batch_id in (:batchIds) "
+            + IDENTITY_HASH_FILTER + "order by m.id",
+            countQuery = "select count(*) from import_mutation m where m.batch_id in (:batchIds) "
+                    + IDENTITY_HASH_FILTER,
+            nativeQuery = true)
+    Page<ImportMutation> findBundleMutationsByIdentityHash(@Param("batchIds") Collection<Long> batchIds,
+                                                           @Param("status") String status,
+                                                           @Param("actionType") String actionType,
+                                                           @Param("statusReason") String statusReason,
+                                                           @Param("identityHash") byte[] identityHash,
+                                                           Pageable pageable);
+
+    @Query(value = "select m.* from import_mutation m where m.batch_id = :batchId "
+            + IDENTITY_HASH_FILTER + "order by m.id",
+            countQuery = "select count(*) from import_mutation m where m.batch_id = :batchId "
+                    + IDENTITY_HASH_FILTER,
+            nativeQuery = true)
+    Page<ImportMutation> findBatchMutationsByIdentityHash(@Param("batchId") Long batchId,
+                                                          @Param("status") String status,
+                                                          @Param("actionType") String actionType,
+                                                          @Param("statusReason") String statusReason,
+                                                          @Param("identityHash") byte[] identityHash,
+                                                          Pageable pageable);
 }

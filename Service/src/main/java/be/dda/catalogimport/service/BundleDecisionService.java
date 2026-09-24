@@ -1,6 +1,7 @@
 package be.dda.catalogimport.service;
 
 import be.dda.catalogimport.dao.ImportMutationRepository;
+import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.dao.PublicationBundleBatchRepository;
 import be.dda.catalogimport.dao.PublicationBundleDao;
 import be.dda.catalogimport.dao.PublicationBundleDao.MutationSelection;
@@ -17,6 +18,7 @@ import be.dda.catalogimport.service.BatchQueryService.MutationRow;
 import be.dda.catalogimport.service.BundleQueryService.DecisionRow;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -173,21 +175,35 @@ public class BundleDecisionService {
     private final ImportMutationRepository mutations;
     private final PublicationDecisionRepository decisions;
     private final PublicationBundleDao dao;
+    /** Enkel voor de niet-gemapte {@code identity_hash} van de teruggegeven regel (bouwstap C4). */
+    private final MutationDao mutationHashes;
     private final TransactionTemplate transaction;
     private final Clock clock;
 
     public BundleDecisionService(PublicationBundleRepository bundles,
                                  PublicationBundleBatchRepository bundleBatches,
                                  ImportMutationRepository mutations, PublicationDecisionRepository decisions,
-                                 PublicationBundleDao dao, PlatformTransactionManager transactionManager,
-                                 Clock clock) {
+                                 PublicationBundleDao dao, MutationDao mutationHashes,
+                                 PlatformTransactionManager transactionManager, Clock clock) {
         this.bundles = bundles;
         this.bundleBatches = bundleBatches;
         this.mutations = mutations;
         this.decisions = decisions;
         this.dao = dao;
+        this.mutationHashes = mutationHashes;
         this.transaction = new TransactionTemplate(transactionManager);
         this.clock = clock;
+    }
+
+    /**
+     * Hangt de identiteitshash aan de teruggegeven regel (bouwstap C4), zodat het antwoord van een
+     * beslissing exact dezelfde velden draagt als dezelfde mutatie in de lijst — één weergave van een
+     * mutatie, niet twee. Eén gerichte leesquery op de primaire sleutel; {@code identity_hash} wordt
+     * door een beslissing nooit geschreven (de {@code set}-lijsten van {@code PublicationBundleDao}
+     * bevatten de kolom niet), dus dit leest niets terug wat deze transactie zelf gewijzigd heeft.
+     */
+    private MutationRow withIdentityHash(MutationRow row) {
+        return row.withIdentityHash(mutationHashes.findIdentityHashes(List.of(row.id())).get(row.id()));
     }
 
     /**
@@ -402,7 +418,8 @@ public class BundleDecisionService {
                 PublicationDecision existing = decisions.findById(mutation.getDecisionId()).orElseThrow(
                         () -> new IllegalStateException("Mutation " + mutationId + " points to decision "
                                 + mutation.getDecisionId() + ", which does not exist"));
-                return new MutationDecisionView(MutationRow.of(mutation), DecisionRow.of(existing), true);
+                return new MutationDecisionView(withIdentityHash(MutationRow.of(mutation)),
+                        DecisionRow.of(existing), true);
             }
             boolean revision = current == MutationStatus.READY_FOR_PUBLICATION
                     || current == MutationStatus.REJECTED;
@@ -434,7 +451,7 @@ public class BundleDecisionService {
             }
             LOG.info("Mutation {} of bundle {} decided {} by {} ({} -> {}), decision {}", mutationId, bundleId,
                     kind, decider, current, target, saved.getId());
-            MutationRow decided = MutationRow.of(mutation)
+            MutationRow decided = withIdentityHash(MutationRow.of(mutation))
                     .withDecision(target.name(), decider, decidedAt, current.name(), saved.getId());
             return new MutationDecisionView(decided, DecisionRow.of(saved), false);
         });

@@ -122,8 +122,14 @@ public class CatalogImportBatchController {
 
     /**
      * De mutatielijst, gepagineerd en optioneel gefilterd op {@code status}, {@code statusReason}
-     * (exact, hoofdlettergevoelig; afwezig of blanco = geen filter) en {@code actionType}; zonder
-     * hashkolommen.
+     * (exact, hoofdlettergevoelig; afwezig of blanco = geen filter), {@code actionType} en
+     * {@code identityHash}.
+     * <p>
+     * Additief sinds bouwstap C4: elke regel toont haar {@code identityHash} (hexadecimaal, kleine
+     * letters; {@code null} bij de {@code IMPORT_MARKER}) en de lijst kan met {@code identityHash} tot
+     * één wijzigingsgroep beperkt worden. Dat filter werkt aan de serverkant en dus over paginagrenzen
+     * heen. Een onbekende of ongeldige hexwaarde geeft een lege pagina en geen fout; blanco of afwezig
+     * is geen filter.
      */
     @GetMapping("/{batchId}/mutations")
     PageResult<MutationRow> mutations(@PathVariable("batchId") long batchId,
@@ -131,9 +137,10 @@ public class CatalogImportBatchController {
                                       @RequestParam(value = "statusReason", required = false) String statusReason,
                                       @RequestParam(value = "actionType", required = false)
                                       MutationActionType actionType,
+                                      @RequestParam(value = "identityHash", required = false) String identityHash,
                                       @RequestParam(value = "page", required = false) Integer page,
                                       @RequestParam(value = "size", required = false) Integer size) {
-        return queries.getMutations(batchId, status, statusReason, actionType, page, size);
+        return queries.getMutations(batchId, status, statusReason, actionType, identityHash, page, size);
     }
 
     /**

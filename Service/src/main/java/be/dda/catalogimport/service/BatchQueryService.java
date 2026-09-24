@@ -5,6 +5,7 @@ import be.dda.catalogimport.dao.ImportMutationRepository;
 import be.dda.catalogimport.dao.ImportRowIssueRepository;
 import be.dda.catalogimport.dao.IssueGroupDao;
 import be.dda.catalogimport.dao.IssueGroupDao.GroupRow;
+import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.domain.ImportBatch;
 import be.dda.catalogimport.domain.ImportBatchStatus;
 import be.dda.catalogimport.domain.ImportLink;
@@ -15,7 +16,9 @@ import be.dda.catalogimport.domain.MutationStatus;
 import be.dda.catalogimport.domain.ValidationResult;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -181,6 +184,15 @@ public class BatchQueryService {
      * blijven {@code null} zolang er over deze mutatie niets beslist is. {@code decisionId} verwijst
      * naar de <b>laatste</b> beslissing; het volledige, append-only verloop staat in
      * {@code GET /bundles/{id}/decisions}.
+     * <p>
+     * {@code identityHash} is additief toegevoegd in bouwstap C4 (ontwerp scherm 3 par. 16.4): de
+     * identiteitshash als hexadecimale tekst in kleine letters — de sleutel van de wijzigingsgroep
+     * {@code (batch_id, identity_hash)}. {@code null} wanneer de kolom leeg is, wat per definitie zo
+     * is voor de {@code IMPORT_MARKER} (die draagt geen identiteit, {@code ck_import_mutation_marker}).
+     * De waarde wordt <b>niet</b> door {@link #of(ImportMutation)} gevuld: de kolom is op de entiteit
+     * bewust niet gemapt en komt uit één extra, gerichte query per pagina
+     * ({@code MutationDao.findIdentityHashes}) via {@link #withIdentityHash(String)}. Dit veld staat
+     * bewust achteraan: de bestaande velden en hun volgorde blijven ongewijzigd.
      */
     public record MutationRow(long id, long batchId, String actionType, String targetDomain, String status,
                               String statusReason, String identitySupplier, String identitySupplierGroup,
@@ -190,9 +202,12 @@ public class BatchQueryService {
                               String beforeReferenceValue, String afterReferenceValue, Long sourceStateId,
                               Long sourceRowNumber, String resultSummary, String idempotencyKey,
                               Instant createdAt, String decidedBy, Instant decidedAt,
-                              String decidedFromStatus, Long decisionId) {
+                              String decidedFromStatus, Long decisionId, String identityHash) {
 
-        /** Package-private sinds 4c: {@code BundleQueryService} toont dezelfde regel. */
+        /**
+         * Package-private sinds 4c: {@code BundleQueryService} toont dezelfde regel. {@code identityHash}
+         * blijft hier leeg — zie {@link #withIdentityHash(String)}.
+         */
         static MutationRow of(ImportMutation mutation) {
             return new MutationRow(mutation.getId(), mutation.getBatch().getId(), mutation.getActionType().name(),
                     mutation.getTargetDomain().name(), mutation.getStatus().name(), mutation.getStatusReason(),
@@ -206,7 +221,22 @@ public class BatchQueryService {
                     mutation.getResultSummary(), mutation.getIdempotencyKey(), mutation.getCreatedAt(),
                     mutation.getDecidedBy(), mutation.getDecidedAt(),
                     mutation.getDecidedFromStatus() == null ? null : mutation.getDecidedFromStatus().name(),
-                    mutation.getDecisionId());
+                    mutation.getDecisionId(), null);
+        }
+
+        /**
+         * Dezelfde regel met haar identiteitshash erop (bouwstap C4). Alle overige velden ongewijzigd:
+         * dit is een aanvulling op wat er al gelezen is, geen herberekening.
+         *
+         * @param hash hexadecimaal, kleine letters; {@code null} wanneer de kolom leeg is
+         */
+        MutationRow withIdentityHash(String hash) {
+            return new MutationRow(id, batchId, actionType, targetDomain, status, statusReason,
+                    identitySupplier, identitySupplierGroup, identitySupplierReference, identityDiscountCode,
+                    identityDiscountState, domainMask, beforeBasePrice, afterBasePrice, basePriceCurrency,
+                    referenceType, beforeReferenceValue, afterReferenceValue, sourceStateId, sourceRowNumber,
+                    resultSummary, idempotencyKey, createdAt, decidedBy, decidedAt, decidedFromStatus,
+                    decisionId, hash);
         }
 
         /**
@@ -226,7 +256,7 @@ public class BatchQueryService {
                     identityDiscountState, domainMask, beforeBasePrice, afterBasePrice, basePriceCurrency,
                     referenceType, beforeReferenceValue, afterReferenceValue, sourceStateId, sourceRowNumber,
                     resultSummary, idempotencyKey, createdAt, newDecidedBy, newDecidedAt, newDecidedFromStatus,
-                    newDecisionId);
+                    newDecisionId, identityHash);
         }
     }
 
@@ -295,13 +325,17 @@ public class BatchQueryService {
     private final ImportMutationRepository mutations;
     private final ImportRowIssueRepository issues;
     private final IssueGroupDao issueGroups;
+    /** Enkel voor de niet-gemapte {@code identity_hash} van een opgehaalde pagina (bouwstap C4). */
+    private final MutationDao mutationHashes;
 
     public BatchQueryService(ImportBatchRepository batches, ImportMutationRepository mutations,
-                             ImportRowIssueRepository issues, IssueGroupDao issueGroups) {
+                             ImportRowIssueRepository issues, IssueGroupDao issueGroups,
+                             MutationDao mutationHashes) {
         this.batches = batches;
         this.mutations = mutations;
         this.issues = issues;
         this.issueGroups = issueGroups;
+        this.mutationHashes = mutationHashes;
     }
 
     /** @throws NotFoundException onbekende batch ({@code BATCH_NOT_FOUND}) */
@@ -344,19 +378,83 @@ public class BatchQueryService {
 
     /**
      * De mutatielijst van een batch, oplopend op id (= volgorde van aanmaak), optioneel gefilterd op
-     * {@code status}, {@code statusReason} (exact; blanco = geen filter) en {@code actionType}.
+     * {@code status}, {@code statusReason} (exact; blanco = geen filter), {@code actionType} en
+     * {@code identityHash}.
      *
+     * @param identityHash enkel de mutaties met deze identiteitshash — de wijzigingsgroep van één
+     *                     aanbieding (bouwstap C4). Hexadecimaal, hoofdletterongevoelig; {@code null}
+     *                     of blanco = geen filter. Een onbekende of ongeldige waarde levert een lege
+     *                     pagina op en geen fout: de gebruiker heeft dan gewoon niets gevonden
      * @throws NotFoundException        onbekende batch
      * @throws IllegalArgumentException ongeldige paginering
      */
     public PageResult<MutationRow> getMutations(long batchId, MutationStatus status, String statusReason,
-                                                MutationActionType actionType, Integer page, Integer size) {
+                                                MutationActionType actionType, String identityHash,
+                                                Integer page, Integer size) {
         requireBatch(batchId);
-        PageRequest pageRequest = pageRequest(page, size, Sort.by("id"));
         String reason = statusReason == null || statusReason.isBlank() ? null : statusReason;
+        if (isIdentityHashFilter(identityHash)) {
+            // Ongesorteerde Pageable: de native variant draagt haar eigen "order by m.id".
+            PageRequest nativeRequest = pageRequest(page, size);
+            byte[] hash = parseIdentityHash(identityHash);
+            if (hash == null) {
+                return emptyMutationPage(nativeRequest);
+            }
+            return mutationRows(mutations.findBatchMutationsByIdentityHash(batchId, name(status),
+                    name(actionType), reason, hash, nativeRequest), mutationHashes);
+        }
+        PageRequest pageRequest = pageRequest(page, size, Sort.by("id"));
         Page<ImportMutation> result = mutations.findBatchMutations(batchId, status, actionType, reason,
                 pageRequest);
-        return PageResult.of(result, MutationRow::of);
+        return mutationRows(result, mutationHashes);
+    }
+
+    // --- Identiteitshash op de mutatielijst (bouwstap C4) -----------------------------------------
+    //
+    // Gedeeld met BundleQueryService, dat dezelfde MutationRow toont: één plaats waar de hash aan een
+    // pagina gehangen wordt en één plaats waar een hexinvoer ontleed wordt, zodat beide lijsten
+    // onmogelijk uit elkaar kunnen lopen.
+
+    /** {@code true} zodra er werkelijk op een hash gefilterd wordt; blanco is geen filter. */
+    static boolean isIdentityHashFilter(String identityHash) {
+        return identityHash != null && !identityHash.isBlank();
+    }
+
+    /**
+     * De hexinvoer als bytes, of {@code null} wanneer het geen geldige hex is (oneven lengte of een
+     * teken buiten {@code 0-9a-fA-F}). Bewust geen {@code IllegalArgumentException}: een gebruiker die
+     * een half gekopieerde hash plakt, hoort een lege lijst te zien en geen foutmelding — precies zoals
+     * een onbekende maar geldige hash. {@link HexFormat} aanvaardt hoofd- én kleine letters.
+     */
+    static byte[] parseIdentityHash(String identityHash) {
+        try {
+            return HexFormat.of().parseHex(identityHash.trim());
+        } catch (IllegalArgumentException notHex) {
+            return null;
+        }
+    }
+
+    static PageResult<MutationRow> emptyMutationPage(PageRequest pageRequest) {
+        return new PageResult<>(List.of(), pageRequest.getPageNumber(), pageRequest.getPageSize(), 0L, 0);
+    }
+
+    /**
+     * Zet een pagina entiteiten om in regels en hangt er in <b>één</b> extra query de identiteitshashes
+     * aan (bouwstap C4). Geen query per rij, en de kolom blijft ongemapt op {@link ImportMutation}.
+     */
+    static PageResult<MutationRow> mutationRows(Page<ImportMutation> page, MutationDao hashes) {
+        PageResult<MutationRow> rows = PageResult.of(page, MutationRow::of);
+        if (rows.content().isEmpty()) {
+            return rows;
+        }
+        Map<Long, String> byId = hashes.findIdentityHashes(rows.content().stream().map(MutationRow::id).toList());
+        return new PageResult<>(rows.content().stream().map(row -> row.withIdentityHash(byId.get(row.id()))).toList(),
+                rows.page(), rows.size(), rows.totalElements(), rows.totalPages());
+    }
+
+    /** Enums gaan als tekst naar een native query: daar is geen enum-mapping beschikbaar. */
+    static String name(Enum<?> value) {
+        return value == null ? null : value.name();
     }
 
     /**

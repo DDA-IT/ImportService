@@ -937,3 +937,38 @@ enige schrijfactie zonder actorveld.
 **Bron:** denker-zwaar (`Ontwerp batchdetail, scherm 2 en scherm-3-uitbreidingen`) /
 `docs/design/frontend-scherm3-bundel-design.md` §11, §12, §15, §16; `docs/design/sjabloon-materialisatie-design.md`
 §9; mens (V1-V4)
+
+---
+
+## 2026-09-24 — C4 uitgevoerd: `identityHash` op de mutatielijsten (gevolgen van V3)
+
+**Vraag:** Hoe wordt het door de mens gekozen `?identityHash=`-filter (V3) uitgevoerd, gegeven dat `identity_hash`
+bewust niet als JPA-veld is gemapt, en wat betekent dat voor een eerdere testverwachting?
+
+**Beslissing (bouwer-zwaar, door de hoofdsessie aanvaard):**
+- `MutationRow` krijgt een 28e, laatste component `identityHash` (hex, kleine letters; `null` bij lege kolom, dus
+  altijd bij `IMPORT_MARKER`). Beide mutatielijsten krijgen `?identityHash=` (hoofdletterongevoelig, blanco = geen
+  filter, onbekend/ongeldig = lege pagina 200, onbekende bundel/batch blijft 404).
+- Filter via `m.identity_hash = :bytes` (byte-vergelijking, geen `encode()`): draagbaar naar H2, en de indexen
+  `idx_import_mutation_link_identity`/`idx_import_mutation_identity_status` blijven bruikbaar. Twee aparte native
+  query's; alle aanroepen zonder de parameter draaien letterlijk dezelfde SQL als voorheen. De waarden komen uit één
+  extra `MutationDao.findIdentityHashes`-query per pagina (geen N+1); de kolom blijft ongemapt.
+- `BundleDecisionService` vult de hash ook op het antwoord van een individuele beslissing, zodat een mutatie niet
+  na een beslissing plots `null` toont.
+- **Versoepelde testverwachting:** `BatchBaselineHttpTest.theMutationListIsPagedFilterableAndNeverExposesTheBinaryHashColumns`
+  eiste dat de respons GEEN `identityHash` bevatte (de oude toestand, §16.4 punt 4). Dat is per V3 achterhaald;
+  vervangen door: geen `fingerprint` in de respons, en elke `CREATE`-regel draagt een hash van 64 hex-tekens. De
+  binaire kolommen zelf blijven onzichtbaar.
+- Frontendtypes (`MutationRow.identityHash`) en de doorgifte van de nieuwe filters (`statusReason`, `identityHash`)
+  in `Frontend/src/api/*` horen bij F8 (`MutationList`), niet bij deze backendstap.
+
+**Bekende beperkingen:** een extra query per mutatielijstpagina; H2 niet getest (alle tests draaien op PostgreSQL);
+geen lengtevalidatie op 32 bytes (`?identityHash=ab` = lege pagina, gelijk aan "onbekend").
+
+**Technische constraint ontdekt (bouwproces):** `mvn test-compile` herbouwt testbronnen niet wanneer enkel de
+classpath (een andere module) wijzigt; na een signatuurwijziging in `Service`/`Dao` kan een groene build dus
+misleidend zijn totdat een testbron zelf wijzigt of `mvn clean` draait. Idem: draai `mvn -pl Web -am install
+-DskipTests` vóór een handmatige `spring-boot:run`, anders draait een verouderde `Service`-jar (zie het scenario).
+
+**Bron:** bouwer-zwaar (`C4 identityHash-filter en -veld op mutatielijsten`) / mens (V3) /
+`docs/design/frontend-scherm3-bundel-design.md` §11.5, §16.4

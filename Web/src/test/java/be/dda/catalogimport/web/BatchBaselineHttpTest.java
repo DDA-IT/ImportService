@@ -599,8 +599,12 @@ class BatchBaselineHttpTest {
                         .param("actionType", "UPDATE"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
 
-        // Geen binaire hashkolommen in de respons.
-        assertThat(creates).doesNotContainIgnoringCase("identityHash").doesNotContainIgnoringCase("fingerprint");
+        // Geen binaire kolommen in de respons. Sinds bouwstap C4 (ontwerp scherm 3 par. 16.4) draagt
+        // elke inhoudelijke regel wél haar identityHash, maar als hexadecimale TEKST - de binaire
+        // kolom zelf en beide combined fingerprints blijven buiten de respons.
+        assertThat(creates).doesNotContainIgnoringCase("fingerprint");
+        assertThat(JsonPath.<List<String>>read(creates, "$.content[*].identityHash"))
+                .hasSize(5).allSatisfy(hash -> assertThat(hash).matches("[0-9a-f]{64}"));
 
         // Standaardgrootte en bovengrens; ongeldige waarden zijn een 400.
         mockMvc.perform(get("/api/catalog-import/batches/{id}/mutations", first.batchId()))

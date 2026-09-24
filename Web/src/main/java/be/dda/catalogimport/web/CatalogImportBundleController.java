@@ -191,6 +191,13 @@ public class CatalogImportBundleController {
      * sinds 4c ook in {@code GET /batches/{id}/mutations} staan, zodat beide lijsten exact dezelfde
      * vorm hebben. {@code decisionId} is de <b>laatste</b> beslissing; het volledige verloop staat in
      * {@code GET /bundles/{id}/decisions}.
+     * <p>
+     * Additief sinds bouwstap C4: elke regel toont haar {@code identityHash} (hexadecimaal, kleine
+     * letters; {@code null} bij de {@code IMPORT_MARKER}) — de sleutel van de wijzigingsgroep — en de
+     * lijst kan met {@code identityHash} tot die ene wijzigingsgroep beperkt worden. Dat filter werkt
+     * aan de serverkant en dus over paginagrenzen heen, wat een groepering in de UI juist niet zou
+     * kunnen (ontwerp scherm 3 par. 11.5). Een onbekende of ongeldige hexwaarde geeft een lege pagina
+     * en geen fout; blanco of afwezig is geen filter.
      */
     @GetMapping("/{bundleId}/mutations")
     PageResult<MutationRow> mutations(@PathVariable("bundleId") long bundleId,
@@ -199,9 +206,11 @@ public class CatalogImportBundleController {
                                       @RequestParam(value = "actionType", required = false)
                                       MutationActionType actionType,
                                       @RequestParam(value = "statusReason", required = false) String statusReason,
+                                      @RequestParam(value = "identityHash", required = false) String identityHash,
                                       @RequestParam(value = "page", required = false) Integer page,
                                       @RequestParam(value = "size", required = false) Integer size) {
-        return queries.getBundleMutations(bundleId, status, batchId, actionType, statusReason, page, size);
+        return queries.getBundleMutations(bundleId, status, batchId, actionType, statusReason, identityHash,
+                page, size);
     }
 
     /**

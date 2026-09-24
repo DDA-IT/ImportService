@@ -4,7 +4,12 @@ import java.sql.Types;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.OptionalLong;
 import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Value;
@@ -555,6 +560,42 @@ public class MutationDao {
                 + "status_reason = ? where batch_id = ? and action_type = 'UPDATE' "
                 + "  and status = 'PLANNED' and domain_mask like '%" + PRICE_MASK + "%'",
                 statusReason, batchId);
+    }
+
+    /**
+     * De identiteitshash (hexadecimaal, kleine letters) van een <b>reeds opgehaalde</b> pagina
+     * mutaties, in één query (bouwstap C4, ontwerp scherm 3 par. 16.4).
+     * <p>
+     * <b>Waarom hier en niet op de entiteit.</b> {@code identity_hash} is op {@code ImportMutation}
+     * bewust niet gemapt (databasespecifiek binair type, enkel voor set-based SQL). Die grens blijft
+     * staan: de waarde verlaat de database enkel via deze gerichte leesquery, die de aanroeper met de
+     * id's van precies de getoonde rijen aanroept — één extra query per pagina, nooit een query per
+     * rij.
+     * <p>
+     * <b>Geen {@code encode(...,'hex')} in SQL</b>, maar {@link HexFormat} in Java: dezelfde keuze als
+     * in {@code PublicationBundleDao.computeContentHash} en om dezelfde reden als bij de
+     * idempotentiesleutel — een databasespecifieke hexfunctie zou PostgreSQL en H2 uit elkaar laten
+     * lopen.
+     *
+     * @return per mutatie-id de hash; een id zonder hash (de {@code IMPORT_MARKER} draagt er geen)
+     *         staat <b>niet</b> in de map, zodat de aanroeper {@code null} ziet en nooit een lege
+     *         tekst die op een bestaande waarde lijkt
+     */
+    public Map<Long, String> findIdentityHashes(Collection<Long> mutationIds) {
+        if (mutationIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = String.join(",", Collections.nCopies(mutationIds.size(), "?"));
+        HexFormat hex = HexFormat.of();
+        Map<Long, String> byId = new HashMap<>();
+        jdbc.query("select id, identity_hash from import_mutation where id in (" + placeholders + ")",
+                resultSet -> {
+                    byte[] value = resultSet.getBytes(2);
+                    if (value != null) {
+                        byId.put(resultSet.getLong(1), hex.formatHex(value));
+                    }
+                }, mutationIds.toArray());
+        return byId;
     }
 
     private static String truncate(String value, int maxLength) {
