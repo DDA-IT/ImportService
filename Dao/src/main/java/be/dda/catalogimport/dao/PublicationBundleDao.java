@@ -42,7 +42,7 @@ public class PublicationBundleDao {
      * {@link #approvePlanned} exact hetzelfde codepad en dezelfde garanties heeft als de groepsactie
      * uit 4d.
      */
-    private static final MutationSelection PLANNED_ONLY = new MutationSelection(null, "PLANNED", null, null);
+    private static final MutationSelection PLANNED_ONLY = new MutationSelection(null, "PLANNED", null, null, null);
 
     /** De doelstatus van de bulkgoedkeuring bij bevriezen ({@code MutationStatus.READY_FOR_PUBLICATION}). */
     private static final String READY_FOR_PUBLICATION = "READY_FOR_PUBLICATION";
@@ -91,16 +91,51 @@ public class PublicationBundleDao {
      * Tekstwaarden, geen enums: dit is de databasegrens. De Service-laag valideert en vertaalt
      * ({@code status} enkel {@code PLANNED}/{@code AWAITING_APPROVAL}, {@code actionType} enkel
      * {@code CREATE}/{@code UPDATE}) en weigert een volledig lege selectie vóór de query ooit draait.
-     * Alle vier de waarden gaan als bindparameter mee, nooit als tekst in de statement.
+     * Alle waarden gaan als bindparameter mee, nooit als tekst in de statement.
      *
      * @param statusReason exacte vergelijking (bv. {@code BULK_PRICE_INCIDENT}), geen {@code like}: een
      *                     groepsactie mag nooit méér raken dan wat de aanvrager letterlijk aanduidde
+     * @param identityHash de wijzigingsgroep van één aanbieding (bouwstap C5), {@code null} = niet
+     *                     filteren op de hash; zie {@link IdentityHashFilter}
      */
-    public record MutationSelection(Long batchId, String status, String statusReason, String actionType) {
+    public record MutationSelection(Long batchId, String status, String statusReason, String actionType,
+                                    IdentityHashFilter identityHash) {
 
         /** {@code true} zodra geen enkel veld ingevuld is — dan raakt de actie de hele bundel. */
         public boolean isEmpty() {
-            return batchId == null && status == null && statusReason == null && actionType == null;
+            return batchId == null && status == null && statusReason == null && actionType == null
+                    && identityHash == null;
+        }
+    }
+
+    /**
+     * Het {@code identity_hash}-filter van een groepsactie (bouwstap C5): de bytes waarmee vergeleken
+     * wordt, of de vaststelling dat er wél op een hash gefilterd is maar dat die hash onmogelijk kan
+     * bestaan.
+     * <p>
+     * <b>Waarom een eigen type.</b> Er zijn drie toestanden, niet twee: "niet filteren op de hash"
+     * ({@code null} in {@link MutationSelection}), "filteren op déze bytes", en "de aanvrager filterde op
+     * een hash die geen enkele rij kan dragen" ({@link #UNMATCHABLE}, bv. ongeldige hex). Zou dat derde
+     * geval met het eerste versmelten, dan zou een vergissing in de hash de groepsactie stilzwijgend over
+     * de <b>hele</b> bundel laten lopen — precies het soort onomkeerbare vergissing dat
+     * {@code DECISION_FILTER_REQUIRED} elders al verhindert. {@link #UNMATCHABLE} levert daarom een
+     * selectie op die aantoonbaar 0 rijen raakt.
+     * <p>
+     * De vergelijking gebeurt op de binaire waarde zelf, zonder {@code encode(...,'hex')} — dezelfde
+     * keuze en dezelfde reden als bij het lijstfilter van bouwstap C4
+     * ({@code ImportMutationRepository.IDENTITY_HASH_FILTER}): draagbaar tussen PostgreSQL en H2, en de
+     * indexen op {@code identity_hash} blijven bruikbaar.
+     *
+     * @param hash de 32 bytes van de SHA-256-identiteitshash; {@code null} betekent {@link #UNMATCHABLE}
+     */
+    public record IdentityHashFilter(byte[] hash) {
+
+        /** Er is op een hash gefilterd die geen enkele rij kan dragen; de selectie is dus leeg. */
+        public static final IdentityHashFilter UNMATCHABLE = new IdentityHashFilter(null);
+
+        /** {@code true} wanneer deze filter per definitie 0 rijen kan opleveren. */
+        public boolean matchesNothing() {
+            return hash == null;
         }
     }
 
@@ -554,7 +589,7 @@ public class PublicationBundleDao {
     /**
      * Voegt de optionele versmalling toe, altijd met {@code and} en altijd als bindparameter. Zowel de
      * telling als de {@code update} lopen hierlangs, zodat ze onmogelijk een verschillende selectie
-     * kunnen beschrijven.
+     * kunnen beschrijven — ook niet voor een {@link IdentityHashFilter} die niets kan raken.
      *
      * @param prefix {@code "m."} voor de getelde variant (die een alias heeft), leeg voor de
      *               {@code update} (die er geen kan hebben)
@@ -636,6 +671,18 @@ public class PublicationBundleDao {
         if (selection.actionType() != null) {
             sql.append("  and ").append(prefix).append("action_type = ? ");
             parameters.add(selection.actionType());
+        }
+        IdentityHashFilter identityHash = selection.identityHash();
+        if (identityHash != null) {
+            if (identityHash.matchesNothing()) {
+                // Er is op een hash gefilterd die niet kan bestaan (bouwstap C5). Géén voorwaarde
+                // weglaten: dat zou de selectie verbreden in plaats van versmallen. "1 = 0" maakt zowel
+                // de telling als de update aantoonbaar leeg, langs exact hetzelfde codepad.
+                sql.append("  and 1 = 0 ");
+            } else {
+                sql.append("  and ").append(prefix).append("identity_hash = ? ");
+                parameters.add(identityHash.hash());
+            }
         }
     }
 }

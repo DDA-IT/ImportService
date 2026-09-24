@@ -4,6 +4,7 @@ import be.dda.catalogimport.dao.ImportMutationRepository;
 import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.dao.PublicationBundleBatchRepository;
 import be.dda.catalogimport.dao.PublicationBundleDao;
+import be.dda.catalogimport.dao.PublicationBundleDao.IdentityHashFilter;
 import be.dda.catalogimport.dao.PublicationBundleDao.MutationSelection;
 import be.dda.catalogimport.dao.PublicationBundleRepository;
 import be.dda.catalogimport.dao.PublicationDecisionRepository;
@@ -18,7 +19,9 @@ import be.dda.catalogimport.service.BatchQueryService.MutationRow;
 import be.dda.catalogimport.service.BundleQueryService.DecisionRow;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -119,6 +122,12 @@ public class BundleDecisionService {
     static final int MAX_REASON_LENGTH = 500;
     /** {@code import_mutation.status_reason}: varchar(200) (changeset 002). */
     static final int MAX_STATUS_REASON_LENGTH = 200;
+    /**
+     * De lengte van {@code import_mutation.identity_hash}: een SHA-256, dus altijd 32 bytes (changeset
+     * 002, {@code ${hash.type}} = {@code bytea}/{@code varbinary(32)}). Een hexinvoer van een andere
+     * lengte kan dus geen enkele rij aanduiden — zie {@link #toIdentityHashFilter}.
+     */
+    private static final int IDENTITY_HASH_BYTES = 32;
 
     private static final Logger LOG = LoggerFactory.getLogger(BundleDecisionService.class);
 
@@ -149,14 +158,22 @@ public class BundleDecisionService {
      * @param statusReason exacte waarde, bv. {@code BULK_PRICE_INCIDENT}: "keur alles goed wat om
      *                     déze reden wachtte"
      * @param actionType   enkel {@code CREATE} of {@code UPDATE}
+     * @param identityHash de wijzigingsgroep van één aanbieding, hexadecimaal en
+     *                     hoofdletterongevoelig (bouwstap C5, ontwerp scherm 3 par. 10.4 punt 1);
+     *                     {@code null} of blanco = geen filter. <b>Exact hetzelfde filter als
+     *                     {@code GET /bundles/{id}/mutations?identityHash=}</b>, zodat een groepsactie
+     *                     beslist over precies wat de gefilterde lijst toont en nooit over meer. Een
+     *                     ongeldige of onbekende hash raakt 0 mutaties (net zoals die lijst dan leeg is)
+     *                     en is dus geen fout
      */
     public record DecisionFilter(Long batchId, MutationStatus status, String statusReason,
-                                 MutationActionType actionType) {
+                                 MutationActionType actionType, String identityHash) {
 
-        /** {@code true} zodra geen enkel veld ingevuld is; ook een lege/blanco reden telt niet mee. */
+        /** {@code true} zodra geen enkel veld ingevuld is; ook een lege/blanco tekst telt niet mee. */
         public boolean isEmpty() {
             return batchId == null && status == null && actionType == null
-                    && (statusReason == null || statusReason.isBlank());
+                    && (statusReason == null || statusReason.isBlank())
+                    && !BatchQueryService.isIdentityHashFilter(identityHash);
         }
     }
 
@@ -248,9 +265,20 @@ public class BundleDecisionService {
      * buiten de selectie valt, wordt niet aangeraakt: ze behoudt haar status, haar reden én al haar
      * financiële velden.
      *
+     * <h2>Dezelfde selectie als de lijst (bouwstap C5)</h2>
+     * De filter draagt sinds C5 dezelfde vijf velden als
+     * {@code GET /bundles/{id}/mutations} ({@code batchId}, {@code status}, {@code statusReason},
+     * {@code actionType}, {@code identityHash}) en gebruikt daarvoor dezelfde ontleding en dezelfde
+     * bytevergelijking (ontwerp scherm 3 par. 10.4 punt 1). Daaruit volgt de invariant die de gebruiker
+     * mag verwachten: {@code affectedCount} is nooit groter dan het {@code totalElements} van de lijst
+     * met dezelfde filter, en gelijk voor de mutaties die deze actie mag raken
+     * ({@code CREATE}/{@code UPDATE} zonder beslissing). Zonder dat zou de knop meer beslissen dan het
+     * scherm laat zien.
+     *
      * <h2>Audit</h2>
      * Er komt exact één {@code publication_decision}-regel met {@code decision_scope = GROUP}, de
-     * canoniek gerenderde filter en het werkelijke aantal geraakte rijen. Elke geraakte mutatie wijst
+     * canoniek gerenderde filter — <b>alle</b> toegepaste velden, dus ook de {@code identityHash} van
+     * bouwstap C5 — en het werkelijke aantal geraakte rijen. Elke geraakte mutatie wijst
      * naar díe ene regel en krijgt in dezelfde {@code update} haar eigen {@code decided_by},
      * {@code decided_at} en {@code decided_from_status} — een groepsactie verliest dus geen enkele
      * individuele herkomst. Raakt de actie 0 rijen, dan wordt er geen regel geschreven: een beslissing
@@ -279,11 +307,11 @@ public class BundleDecisionService {
         // geen slot op de bundel te nemen om afgewezen te worden.
         if (filter == null || filter.isEmpty()) {
             throw new BadRequestException(CODE_DECISION_FILTER_REQUIRED, "A group decision requires at least "
-                    + "one filter field (batchId, status, statusReason or actionType); an empty filter would "
-                    + "decide the entire bundle at once");
+                    + "one filter field (batchId, status, statusReason, actionType or identityHash); an empty "
+                    + "filter would decide the entire bundle at once");
         }
         MutationSelection selection = toSelection(filter);
-        String rendered = render(selection);
+        String rendered = render(selection, filter.identityHash());
 
         return transaction.execute(status -> {
             PublicationBundle bundle = bundles.findByIdForUpdate(bundleId).orElseThrow(
@@ -358,23 +386,69 @@ public class BundleDecisionService {
         String statusReason = filter.statusReason() == null || filter.statusReason().isBlank() ? null
                 : ActorNames.requireText(filter.statusReason(), "filter.statusReason", MAX_STATUS_REASON_LENGTH);
         return new MutationSelection(filter.batchId(), status == null ? null : status.name(), statusReason,
-                actionType == null ? null : actionType.name());
+                actionType == null ? null : actionType.name(), toIdentityHashFilter(filter.identityHash()));
+    }
+
+    /**
+     * Zet de hexinvoer om in het binaire filter van de databasegrens (bouwstap C5), met <b>exact
+     * dezelfde</b> ontleding als het lijstfilter van C4
+     * ({@link BatchQueryService#parseIdentityHash}): hoofdletterongevoelige hex, blanco = geen filter.
+     * Zo kunnen de lijst en de groepsactie onmogelijk een andere verzameling mutaties aanduiden.
+     * <p>
+     * Een waarde die geen 32-byte hash kan zijn (ongeldige hex, of een geldige hex van een andere
+     * lengte — een SHA-256 is altijd 32 bytes) wordt
+     * {@link PublicationBundleDao.IdentityHashFilter#UNMATCHABLE} en dus een selectie van 0 mutaties. Dat
+     * is bewust <b>geen</b> fout: het is hetzelfde geval als een geldige maar onbekende hash, en de
+     * gefilterde lijst is dan even leeg (beslissingslog C4: "onbekend/ongeldig = lege pagina 200"). Wat
+     * hier nooit mag gebeuren, is de filter laten wegvallen: dan zou een verkeerd geplakte hash de
+     * groepsactie over de hele bundel laten lopen.
+     */
+    private static IdentityHashFilter toIdentityHashFilter(String identityHash) {
+        if (!BatchQueryService.isIdentityHashFilter(identityHash)) {
+            return null;
+        }
+        byte[] hash = BatchQueryService.parseIdentityHash(identityHash);
+        return hash == null || hash.length != IDENTITY_HASH_BYTES ? IdentityHashFilter.UNMATCHABLE
+                : new IdentityHashFilter(hash);
     }
 
     /**
      * De canonieke tekstweergave die in {@code publication_decision.selection_filter} belandt, bv.
      * {@code batchId=3;status=AWAITING_APPROVAL;statusReason=BULK_PRICE_INCIDENT}. Vaste veldvolgorde en
      * enkel de ingevulde velden: twee identieke selecties leveren zo altijd dezelfde tekst op, en wie
-     * het register later leest, ziet exact waarvoor getekend is. Past altijd binnen de 500 tekens van de
-     * kolom (vier velden, elk begrensd).
+     * het register later leest, ziet exact waarvoor getekend is — <b>inclusief</b> de
+     * {@code identityHash} sinds bouwstap C5, want anders zou het register een bredere selectie
+     * beschrijven dan er werkelijk beslist is.
+     * <p>
+     * Past altijd binnen de 500 tekens van de kolom: vier begrensde velden (samen hoogstens ±290 tekens)
+     * plus {@code identityHash=} met 64 hex-tekens. Een langere hexinvoer is per definitie
+     * {@link IdentityHashFilter#UNMATCHABLE} en raakt dus 0 mutaties, waardoor er geen
+     * {@code publication_decision}-regel geschreven wordt — de echo in het antwoord en in het logboek is
+     * dan wel volledig, zodat de aanvrager ziet waarop hij werkelijk filterde.
      */
-    private static String render(MutationSelection selection) {
+    private static String render(MutationSelection selection, String requestedIdentityHash) {
         StringBuilder rendered = new StringBuilder();
         appendField(rendered, "batchId", selection.batchId() == null ? null : selection.batchId().toString());
         appendField(rendered, "status", selection.status());
         appendField(rendered, "statusReason", selection.statusReason());
         appendField(rendered, "actionType", selection.actionType());
+        appendField(rendered, "identityHash", identityHashText(selection.identityHash(), requestedIdentityHash));
         return rendered.toString();
+    }
+
+    /**
+     * De hash zoals ze in het register en in het antwoord komt: altijd kleine letters, zodat dezelfde
+     * hash in hoofdletters en in kleine letters één en dezelfde tekst oplevert (canoniek, net als de
+     * {@code identityHash} op {@code MutationRow}). Kon de invoer geen hash zijn, dan staat er de
+     * genormaliseerde invoer zélf — niets weglaten, want dan zou het antwoord een bredere selectie
+     * suggereren dan er gevraagd is.
+     */
+    private static String identityHashText(IdentityHashFilter applied, String requested) {
+        if (applied == null) {
+            return null;
+        }
+        return applied.matchesNothing() ? requested.trim().toLowerCase(Locale.ROOT)
+                : HexFormat.of().formatHex(applied.hash());
     }
 
     private static void appendField(StringBuilder rendered, String name, String value) {

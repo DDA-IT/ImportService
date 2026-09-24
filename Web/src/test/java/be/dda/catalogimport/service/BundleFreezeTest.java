@@ -225,7 +225,7 @@ class BundleFreezeTest {
     void freezingABundleWithNothingLeftToApproveWritesOnlyTheFreezeDecision() {
         Scenario scenario = creationScenario("NOPLANNED", 3);
         decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER, "Eerste levering nagekeken",
-                new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null));
+                new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null, null));
 
         BundleFreezeView view = freezeService.freeze(scenario.bundleId(), FREEZER, FREEZE_REASON);
 
@@ -324,7 +324,7 @@ class BundleFreezeTest {
                 .isInstanceOf(ConflictException.class)
                 .hasFieldOrPropertyWithValue("code", BundleDecisionService.CODE_BUNDLE_NOT_ASSEMBLING);
         assertThatThrownBy(() -> decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.REJECT, DECIDER,
-                "Toch niet", new DecisionFilter(scenario.batchId(), null, null, null)))
+                "Toch niet", new DecisionFilter(scenario.batchId(), null, null, null, null)))
                 .isInstanceOf(ConflictException.class)
                 .hasFieldOrPropertyWithValue("code", BundleDecisionService.CODE_BUNDLE_NOT_ASSEMBLING);
 
@@ -412,7 +412,7 @@ class BundleFreezeTest {
                 .hasFieldOrPropertyWithValue("code", BundleFreezeService.CODE_BUNDLE_HAS_UNDECIDED_MUTATIONS);
 
         decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER, "Nagekeken",
-                new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null));
+                new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null, null));
         assertThat(queries.getBundle(scenario.bundleId()).awaitingApprovalCount()).isZero();
         freezeService.freeze(scenario.bundleId(), FREEZER, FREEZE_REASON);
     }
@@ -437,7 +437,7 @@ class BundleFreezeTest {
                 + "reference_type = 'EAN', after_reference_value = '5410000000001' where id = ?", incident);
         // De drie gewone mutaties worden beslist; de twee vastgehouden kunnen dat niet en hoeven dat niet.
         decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER, "Rest nagekeken",
-                new DecisionFilter(scenario.batchId(), null, null, null));
+                new DecisionFilter(scenario.batchId(), null, null, null, null));
 
         BundleFreezeView view = freezeService.freeze(scenario.bundleId(), FREEZER, FREEZE_REASON);
 

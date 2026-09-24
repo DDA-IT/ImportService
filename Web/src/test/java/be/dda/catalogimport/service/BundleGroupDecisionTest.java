@@ -37,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -67,6 +68,10 @@ import org.springframework.test.context.DynamicPropertySource;
  *       tweede beslissingsregel.</li>
  *   <li>Een lege filter wordt geweigerd (400 {@code DECISION_FILTER_REQUIRED}) vóór er iets geschreven
  *       is — {@code {}} mag nooit per ongeluk een hele bundel goedkeuren.</li>
+ *   <li><b>Bouwstap C5</b> (beslissingslog 24/09): met {@code identityHash} beslist de actie over exact
+ *       de wijzigingsgroep die de gefilterde mutatielijst toont — {@code affectedCount} is gelijk aan het
+ *       {@code totalElements} van die lijst — en een onbekende of ongeldige hash raakt 0 mutaties in
+ *       plaats van de filter te laten wegvallen.</li>
  *   <li><b>Financiële onveranderlijkheid</b> (AGENT.md par. 2 principe 8) geldt ook op de groepsroute:
  *       prijsvelden, {@code domain_mask}, {@code status_reason} en de vingerafdrukken zijn vóór en na
  *       byte-identiek.</li>
@@ -139,7 +144,7 @@ class BundleGroupDecisionTest {
 
         GroupDecisionView view = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
                 "Eerste levering integraal nagekeken",
-                new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null));
+                new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null, null));
 
         assertThat(view.affectedCount()).isEqualTo(25L);
         assertThat(view.decisionId()).isNotNull();
@@ -176,7 +181,7 @@ class BundleGroupDecisionTest {
     @Test
     void aGroupRejectionRequiresAReasonAndThenRejectsEveryMatchingMutation() {
         Scenario scenario = updateScenario("GROUPREJECT");
-        DecisionFilter filter = new DecisionFilter(scenario.batchId(), null, null, null);
+        DecisionFilter filter = new DecisionFilter(scenario.batchId(), null, null, null, null);
 
         assertThatThrownBy(() -> decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.REJECT, DECIDER,
                 null, filter)).isInstanceOf(IllegalArgumentException.class);
@@ -210,7 +215,7 @@ class BundleGroupDecisionTest {
         Scenario scenario = creationScenario("GROUPNOREASON", 5);
 
         GroupDecisionView view = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
-                null, new DecisionFilter(scenario.batchId(), null, null, null));
+                null, new DecisionFilter(scenario.batchId(), null, null, null, null));
 
         assertThat(view.affectedCount()).isEqualTo(5L);
         assertThat(queries.getBundleDecisions(scenario.bundleId(), 0, 50).content()).singleElement()
@@ -223,7 +228,7 @@ class BundleGroupDecisionTest {
     @Test
     void repeatingTheSameGroupDecisionAffectsNothingAndWritesNoSecondDecision() {
         Scenario scenario = creationScenario("REPEAT", 5);
-        DecisionFilter filter = new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null);
+        DecisionFilter filter = new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null, null);
         GroupDecisionView first = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
                 "Akkoord", filter);
         assertThat(first.affectedCount()).isEqualTo(5L);
@@ -242,7 +247,7 @@ class BundleGroupDecisionTest {
 
         // Ook een tegengestelde groepsactie raakt ze niet meer: een herziening blijft individueel.
         GroupDecisionView opposite = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.REJECT,
-                OTHER_DECIDER, "Toch niet", new DecisionFilter(scenario.batchId(), null, null, null));
+                OTHER_DECIDER, "Toch niet", new DecisionFilter(scenario.batchId(), null, null, null, null));
         assertThat(opposite.affectedCount()).isZero();
         assertThat(opposite.decisionId()).isNull();
         assertThat(decisionCount(scenario.bundleId())).isEqualTo(decisionsAfterFirst);
@@ -265,7 +270,7 @@ class BundleGroupDecisionTest {
 
         GroupDecisionView view = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
                 "Prijsstijging bevestigd door de leverancier",
-                new DecisionFilter(null, null, BULK_PRICE_INCIDENT, null));
+                new DecisionFilter(null, null, BULK_PRICE_INCIDENT, null, null));
 
         assertThat(view.affectedCount()).isEqualTo(3L);
         assertThat(view.selectionFilter()).isEqualTo("statusReason=BULK_PRICE_INCIDENT");
@@ -291,16 +296,16 @@ class BundleGroupDecisionTest {
         Scenario scenario = creationScenario("FILTERVALUE", 5);
 
         assertThatThrownBy(() -> decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
-                null, new DecisionFilter(null, MutationStatus.READY_FOR_PUBLICATION, null, null)))
+                null, new DecisionFilter(null, MutationStatus.READY_FOR_PUBLICATION, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
-                null, new DecisionFilter(null, null, null, MutationActionType.IMPORT_MARKER)))
+                null, new DecisionFilter(null, null, null, MutationActionType.IMPORT_MARKER, null)))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.FREEZE, DECIDER,
-                "Bevriezen", new DecisionFilter(scenario.batchId(), null, null, null)))
+                "Bevriezen", new DecisionFilter(scenario.batchId(), null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, "system",
-                null, new DecisionFilter(scenario.batchId(), null, null, null)))
+                null, new DecisionFilter(scenario.batchId(), null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         assertThat(decisionCount(scenario.bundleId())).isZero();
@@ -334,7 +339,7 @@ class BundleGroupDecisionTest {
                 "Individueel nagekeken").decision().id();
 
         GroupDecisionView view = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.REJECT, DECIDER,
-                "Rest van de levering afgekeurd", new DecisionFilter(scenario.batchId(), null, null, null));
+                "Rest van de levering afgekeurd", new DecisionFilter(scenario.batchId(), null, null, null, null));
 
         // Enkel de twee overblijvende inhoudelijke mutaties.
         assertThat(view.affectedCount()).isEqualTo(2L);
@@ -377,7 +382,7 @@ class BundleGroupDecisionTest {
         bundleService.removeBatch(scenario.bundleId(), scenario.batchId(), CREATOR, "Toch niet meenemen");
 
         GroupDecisionView view = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
-                "Alles goedkeuren", new DecisionFilter(scenario.batchId(), null, null, null));
+                "Alles goedkeuren", new DecisionFilter(scenario.batchId(), null, null, null, null));
 
         assertThat(view.affectedCount()).isZero();
         assertThat(view.decisionId()).isNull();
@@ -387,14 +392,217 @@ class BundleGroupDecisionTest {
         });
     }
 
+    // --- (d2) Het identityHash-filter (bouwstap C5) ------------------------------------------------
+
+    /**
+     * Bouwstap C5 (beslissingslog 24/09, ontwerp scherm 3 par. 10.4 punt 1): met een
+     * {@code identityHash} beslist de groepsactie over <b>precies</b> de wijzigingsgroep die de
+     * gefilterde lijst toont — één aanbieding — en niet over de rest van de batch. De vergelijking is
+     * hoofdletterongevoelig, en het register draagt de canonieke hash in kleine letters.
+     */
+    @Test
+    void filteringOnAnIdentityHashTouchesOnlyThatChangeGroup() {
+        Scenario scenario = creationScenario("HASHONLY", 4);
+        List<ImportMutation> content = contentMutations(scenario.batchId());
+        Map<Long, String> hashes = mutationDao.findIdentityHashes(
+                content.stream().map(ImportMutation::getId).toList());
+        assertThat(hashes).hasSize(4);
+        long target = content.get(1).getId();
+        String hash = hashes.get(target);
+        assertThat(hash).matches("[0-9a-f]{64}");
+        // Vier aanbiedingen, vier verschillende hashes: de selectie hieronder kan er maar één raken.
+        assertThat(hashes.values()).doesNotHaveDuplicates();
+
+        // Invariant (beslissingslog C5): wat de lijst met dezelfde filter toont, is wat de actie raakt.
+        long visible = queries.getBundleMutations(scenario.bundleId(), null, null, null, null,
+                hash.toUpperCase(), 0, 50).totalElements();
+        assertThat(visible).isEqualTo(1L);
+
+        GroupDecisionView view = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
+                "Deze ene aanbieding nagekeken",
+                new DecisionFilter(null, null, null, null, hash.toUpperCase()));
+
+        assertThat(view.affectedCount()).isEqualTo(visible);
+        assertThat(view.decisionId()).isNotNull();
+        // Canoniek in kleine letters, ook al kwam de invoer in hoofdletters binnen.
+        assertThat(view.selectionFilter()).isEqualTo("identityHash=" + hash);
+
+        ImportMutation decided = mutations.findById(target).orElseThrow();
+        assertThat(decided.getStatus()).isEqualTo(MutationStatus.READY_FOR_PUBLICATION);
+        assertThat(decided.getDecisionId()).isEqualTo(view.decisionId());
+        assertThat(decided.getDecidedBy()).isEqualTo(DECIDER);
+        assertThat(decided.getDecidedFromStatus()).isEqualTo(MutationStatus.AWAITING_APPROVAL);
+
+        // De drie andere aanbiedingen van dezelfde batch zijn niet aangeraakt.
+        for (ImportMutation other : content) {
+            if (other.getId() == target) {
+                continue;
+            }
+            ImportMutation stored = mutations.findById(other.getId()).orElseThrow();
+            assertThat(stored.getStatus()).isEqualTo(MutationStatus.AWAITING_APPROVAL);
+            assertThat(stored.getDecisionId()).isNull();
+            assertThat(stored.getDecidedBy()).isNull();
+        }
+
+        // Het register legt de volledige toegepaste filter vast, inclusief de hash.
+        assertThat(queries.getBundleDecisions(scenario.bundleId(), 0, 50).content()).singleElement()
+                .satisfies(row -> {
+                    assertThat(row.decisionScope()).isEqualTo("GROUP");
+                    assertThat(row.affectedCount()).isEqualTo(1L);
+                    assertThat(row.selectionFilter()).isEqualTo("identityHash=" + hash);
+                });
+
+        // Herhaling raakt niets meer: de mutatie draagt al een beslissing.
+        GroupDecisionView again = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
+                "Nog eens", new DecisionFilter(null, null, null, null, hash));
+        assertThat(again.affectedCount()).isZero();
+        assertThat(again.decisionId()).isNull();
+        assertThat(decisionCount(scenario.bundleId())).isEqualTo(1L);
+    }
+
+    /**
+     * Gecombineerd met {@code batchId}, {@code status}, {@code statusReason} en {@code actionType} —
+     * dezelfde vijf velden als de mutatielijst. Elk veld versmalt verder; een combinatie die niets
+     * overhoudt, raakt 0 mutaties en schrijft geen regel.
+     */
+    @Test
+    void theIdentityHashCombinesWithTheOtherFilterFields() {
+        Scenario scenario = updateScenario("HASHCOMBI");
+        assertThat(mutationDao.holdPlannedPriceUpdates(scenario.batchId(), BULK_PRICE_INCIDENT)).isEqualTo(5);
+        List<ImportMutation> content = contentMutations(scenario.batchId());
+        Map<Long, String> hashes = mutationDao.findIdentityHashes(
+                content.stream().map(ImportMutation::getId).toList());
+        long target = content.get(0).getId();
+        long otherReason = content.get(1).getId();
+        jdbc.update("update import_mutation set status_reason = 'OTHER_HOLD_REASON' where id = ?", otherReason);
+
+        // Een combinatie die elkaar uitsluit: die hash draagt de gevraagde reden niet (meer).
+        GroupDecisionView none = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
+                "Niets te beslissen", new DecisionFilter(scenario.batchId(), MutationStatus.AWAITING_APPROVAL,
+                        BULK_PRICE_INCIDENT, MutationActionType.UPDATE, hashes.get(otherReason)));
+        assertThat(none.affectedCount()).isZero();
+        assertThat(none.decisionId()).isNull();
+        assertThat(decisionCount(scenario.bundleId())).isZero();
+
+        DecisionFilter filter = new DecisionFilter(scenario.batchId(), MutationStatus.AWAITING_APPROVAL,
+                BULK_PRICE_INCIDENT, MutationActionType.UPDATE, hashes.get(target));
+        long visible = queries.getBundleMutations(scenario.bundleId(), MutationStatus.AWAITING_APPROVAL,
+                scenario.batchId(), MutationActionType.UPDATE, BULK_PRICE_INCIDENT, hashes.get(target), 0, 50)
+                .totalElements();
+        assertThat(visible).isEqualTo(1L);
+
+        GroupDecisionView view = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
+                "Prijsstijging van deze ene aanbieding bevestigd", filter);
+
+        assertThat(view.affectedCount()).isEqualTo(visible);
+        // Vaste veldvolgorde, met de hash als laatste veld.
+        assertThat(view.selectionFilter()).isEqualTo("batchId=" + scenario.batchId()
+                + ";status=AWAITING_APPROVAL;statusReason=" + BULK_PRICE_INCIDENT + ";actionType=UPDATE"
+                + ";identityHash=" + hashes.get(target));
+        assertThat(view.selectionFilter().length()).isLessThanOrEqualTo(500);
+        assertThat(statusOf(target)).isEqualTo(MutationStatus.READY_FOR_PUBLICATION);
+        // De vier andere prijswijzigingen van dezelfde batch, met dezelfde reden, blijven staan.
+        for (ImportMutation other : content) {
+            if (other.getId() != target) {
+                assertThat(statusOf(other.getId())).isEqualTo(MutationStatus.AWAITING_APPROVAL);
+            }
+        }
+        assertThat(mutations.findById(target).orElseThrow().getStatusReason()).isEqualTo(BULK_PRICE_INCIDENT);
+    }
+
+    /**
+     * De andere kant van de invariant: de harde staart blijft boven het nieuwe filter staan. Een
+     * {@code BLOCKED} mutatie en een al individueel besliste mutatie staan wél in de gefilterde lijst,
+     * maar de groepsactie raakt ze niet — {@code affectedCount} is dan aantoonbaar <b>kleiner</b> dan
+     * {@code totalElements}, nooit groter.
+     */
+    @Test
+    void theHardTailStillWinsOverTheIdentityHashFilter() {
+        Scenario scenario = creationScenario("HASHTAIL", 3);
+        List<ImportMutation> content = contentMutations(scenario.batchId());
+        Map<Long, String> hashes = mutationDao.findIdentityHashes(
+                content.stream().map(ImportMutation::getId).toList());
+        long blocked = content.get(0).getId();
+        long alreadyDecided = content.get(1).getId();
+        long open = content.get(2).getId();
+        jdbc.update("update import_mutation set status = 'BLOCKED', status_reason = ? where id = ?",
+                "IDENTITY_REFERENCE_INCIDENT", blocked);
+        decisions.approve(scenario.bundleId(), alreadyDecided, OTHER_DECIDER, "Individueel nagekeken");
+        assertThat(decisionCount(scenario.bundleId())).isEqualTo(1L);
+
+        for (long untouchable : List.of(blocked, alreadyDecided)) {
+            String hash = hashes.get(untouchable);
+            long visible = queries.getBundleMutations(scenario.bundleId(), null, null, null, null, hash, 0, 50)
+                    .totalElements();
+            assertThat(visible).as("zichtbaar voor %s", untouchable).isEqualTo(1L);
+            GroupDecisionView view = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.REJECT,
+                    DECIDER, "Toch niet", new DecisionFilter(null, null, null, null, hash));
+            assertThat(view.affectedCount()).as("geraakt voor %s", untouchable).isZero();
+            assertThat(view.affectedCount()).isLessThan(visible);
+            assertThat(view.decisionId()).isNull();
+        }
+        // Niets geschreven bovenop de ene individuele beslissing, en beide mutaties staan zoals ze stonden.
+        assertThat(decisionCount(scenario.bundleId())).isEqualTo(1L);
+        assertThat(statusOf(blocked)).isEqualTo(MutationStatus.BLOCKED);
+        assertThat(mutations.findById(blocked).orElseThrow().getDecisionId()).isNull();
+        assertThat(statusOf(alreadyDecided)).isEqualTo(MutationStatus.READY_FOR_PUBLICATION);
+        assertThat(mutations.findById(alreadyDecided).orElseThrow().getDecidedBy()).isEqualTo(OTHER_DECIDER);
+
+        // De wél beslisbare aanbieding raakt de actie precies wel, en even veel als de lijst toont.
+        long visibleOpen = queries.getBundleMutations(scenario.bundleId(), null, null, null, null,
+                hashes.get(open), 0, 50).totalElements();
+        GroupDecisionView view = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.REJECT, DECIDER,
+                "Deze wel", new DecisionFilter(null, null, null, null, hashes.get(open)));
+        assertThat(view.affectedCount()).isEqualTo(visibleOpen).isEqualTo(1L);
+        assertThat(statusOf(open)).isEqualTo(MutationStatus.REJECTED);
+        assertThat(decisionCount(scenario.bundleId())).isEqualTo(2L);
+    }
+
+    /**
+     * Een onbekende of ongeldige hash raakt 0 mutaties en is <b>geen</b> fout — precies zoals de
+     * gefilterde lijst dan leeg is (beslissingslog C4). Wat hier nooit mag gebeuren, is dat de filter
+     * wegvalt en de actie de hele bundel beslist: daarom wordt élke variant hier op 0 én op "niets
+     * gewijzigd" gecontroleerd.
+     */
+    @Test
+    void anUnknownOrInvalidIdentityHashAffectsNothingAndIsNoError() {
+        Scenario scenario = creationScenario("HASHEMPTY", 4);
+        List<ImportMutation> content = contentMutations(scenario.batchId());
+
+        for (String value : List.of("0".repeat(64), "ZZ", "abc", "geen-hash", "0x1234", "ab cd",
+                "1".repeat(63), "1".repeat(200))) {
+            GroupDecisionView view = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE,
+                    DECIDER, "Onbekende hash", new DecisionFilter(null, null, null, null, value));
+            assertThat(view.affectedCount()).as("hash %s", value).isZero();
+            assertThat(view.decisionId()).as("hash %s", value).isNull();
+            // De echo blijft volledig: de aanvrager ziet waarop hij werkelijk gefilterd heeft.
+            assertThat(view.selectionFilter())
+                    .isEqualTo("identityHash=" + value.trim().toLowerCase(Locale.ROOT));
+            // Ook gecombineerd met een filter die op zich wél zou raken, blijft het resultaat 0.
+            assertThat(decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
+                            "Onbekende hash met batch",
+                            new DecisionFilter(scenario.batchId(), null, null, null, value)).affectedCount())
+                    .as("hash %s met batchId", value).isZero();
+        }
+
+        assertThat(decisionCount(scenario.bundleId())).isZero();
+        for (ImportMutation before : content) {
+            ImportMutation stored = mutations.findById(before.getId()).orElseThrow();
+            assertThat(stored.getStatus()).isEqualTo(MutationStatus.AWAITING_APPROVAL);
+            assertThat(stored.getDecisionId()).isNull();
+            assertThat(stored.getDecidedBy()).isNull();
+        }
+    }
+
     // --- (e) Een lege filter wordt geweigerd -------------------------------------------------------
 
     @Test
     void anEmptyFilterIsRefusedAndWritesNothing() {
         Scenario scenario = creationScenario("EMPTYFILTER", 5);
 
-        for (DecisionFilter empty : List.of(new DecisionFilter(null, null, null, null),
-                new DecisionFilter(null, null, "   ", null))) {
+        for (DecisionFilter empty : List.of(new DecisionFilter(null, null, null, null, null),
+                new DecisionFilter(null, null, "   ", null, null),
+                new DecisionFilter(null, null, null, null, "   "))) {
             assertThatThrownBy(() -> decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE,
                     DECIDER, "Alles", empty))
                     .isInstanceOf(BadRequestException.class)
@@ -428,7 +636,7 @@ class BundleGroupDecisionTest {
         jdbc.update("update import_mutation set status = 'PLANNED' where id in (?, ?)", plannedOne, plannedTwo);
 
         GroupDecisionView view = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
-                "Volledige batch nagekeken", new DecisionFilter(scenario.batchId(), null, null, null));
+                "Volledige batch nagekeken", new DecisionFilter(scenario.batchId(), null, null, null, null));
 
         assertThat(view.affectedCount()).isEqualTo(5L);
         for (ImportMutation before : content) {
@@ -451,7 +659,7 @@ class BundleGroupDecisionTest {
         // En met een filter die één bronstatus vastpint, staat die wél op de regel.
         Scenario pinned = creationScenario("MIXED-PINNED", 3);
         decisions.decideGroup(pinned.bundleId(), BundleDecisionKind.APPROVE, DECIDER, "Enkel de wachtende",
-                new DecisionFilter(null, MutationStatus.PLANNED, null, null));
+                new DecisionFilter(null, MutationStatus.PLANNED, null, null, null));
         // Geen enkele PLANNED-mutatie: niets geraakt, dus ook geen regel.
         assertThat(decisionCount(pinned.bundleId())).isZero();
         assertThat(contentMutations(pinned.batchId()))
@@ -480,7 +688,7 @@ class BundleGroupDecisionTest {
 
         GroupDecisionView view = decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
                 "Prijsronde bevestigd", new DecisionFilter(null, null, BULK_PRICE_INCIDENT,
-                        MutationActionType.UPDATE));
+                        MutationActionType.UPDATE, null));
 
         assertThat(view.affectedCount()).isEqualTo(5L);
         assertThat(view.selectionFilter()).isEqualTo("statusReason=BULK_PRICE_INCIDENT;actionType=UPDATE");
@@ -502,7 +710,7 @@ class BundleGroupDecisionTest {
         bundles.saveAndFlush(bundle);
 
         assertThatThrownBy(() -> decisions.decideGroup(scenario.bundleId(), BundleDecisionKind.APPROVE, DECIDER,
-                "Alsnog", new DecisionFilter(scenario.batchId(), null, null, null)))
+                "Alsnog", new DecisionFilter(scenario.batchId(), null, null, null, null)))
                 .isInstanceOf(ConflictException.class)
                 .hasFieldOrPropertyWithValue("code", BundleDecisionService.CODE_BUNDLE_NOT_ASSEMBLING);
         assertThat(decisionCount(scenario.bundleId())).isZero();
@@ -513,7 +721,7 @@ class BundleGroupDecisionTest {
     @Test
     void anUnknownBundleIsNotFound() {
         assertThatThrownBy(() -> decisions.decideGroup(UNKNOWN_ID, BundleDecisionKind.APPROVE, DECIDER, null,
-                new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null)))
+                new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null, null)))
                 .isInstanceOf(NotFoundException.class)
                 .hasFieldOrPropertyWithValue("code", BundleDecisionService.CODE_BUNDLE_NOT_FOUND);
     }

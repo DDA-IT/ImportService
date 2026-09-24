@@ -90,6 +90,11 @@ public class CatalogImportBundleController {
      * is {@code APPROVE} of {@code REJECT}; {@code reason} is verplicht bij een afkeuring.
      * {@code filter} moet minstens één veld dragen — een lege filter is 400
      * {@code DECISION_FILTER_REQUIRED}, nooit "dan maar de hele bundel".
+     * <p>
+     * {@code filter} draagt sinds bouwstap C5 dezelfde vijf velden als de queryparameters van
+     * {@code GET /bundles/{id}/mutations}: {@code batchId}, {@code status}, {@code statusReason},
+     * {@code actionType} en {@code identityHash}. Additief: een body zonder {@code identityHash} gedraagt
+     * zich exact zoals voorheen.
      */
     public record DecideGroupRequest(BundleDecisionKind decisionKind, String decidedBy, String reason,
                                      DecisionFilter filter) {
@@ -255,6 +260,12 @@ public class CatalogImportBundleController {
      * {@code IMPORT_MARKER} of een mutatie die al een beslissing draagt. Een herziening blijft daarom
      * exclusief het individuele pad hierboven. Een herhaalde, identieke aanroep is veilig: ze vindt
      * niets meer.
+     * <p>
+     * De filter is dezelfde als die van {@code GET /bundles/{id}/mutations}, inclusief
+     * {@code identityHash} (bouwstap C5): {@code affectedCount} is dus nooit groter dan het
+     * {@code totalElements} van die lijst met dezelfde filter. Een ongeldige of onbekende
+     * {@code identityHash} levert {@code affectedCount = 0} op en geen fout — net zoals die lijst dan
+     * leeg is.
      */
     @PostMapping("/{bundleId}/decisions")
     GroupDecisionView decideGroup(@PathVariable("bundleId") long bundleId,

@@ -56,7 +56,7 @@ class BundleGroupDecisionHttpTest {
         Mockito.when(decisionService.decideGroup(eq(BUNDLE_ID), eq(BundleDecisionKind.APPROVE),
                         eq("an.janssens@example.test"), eq("Nagekeken"),
                         eq(new DecisionFilter(7L, MutationStatus.AWAITING_APPROVAL, "BULK_PRICE_INCIDENT",
-                                MutationActionType.UPDATE))))
+                                MutationActionType.UPDATE, null))))
                 .thenReturn(new GroupDecisionView(3L, 25L,
                         "batchId=7;status=AWAITING_APPROVAL;statusReason=BULK_PRICE_INCIDENT;actionType=UPDATE"));
 

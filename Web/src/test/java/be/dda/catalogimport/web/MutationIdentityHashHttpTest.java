@@ -55,6 +55,10 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * identiteitshash uit twee <b>verschillende</b> batches — precies de wijzigingsgroep
  * {@code (identity_hash)} die over paginagrenzen heen te tonen moet zijn, en waarvoor een groepering in
  * de UI per constructie te kort zou komen (par. 11.5).
+ * <p>
+ * Deel (c) hoort bij <b>bouwstap C5</b> (beslissingslog 24/09): dezelfde filter in de groepsactie
+ * {@code POST /bundles/{id}/decisions}, op dezelfde fixture. Dat die twee hier naast elkaar staan is het
+ * punt zelf — par. 10.4 punt 1 eist dat de groepsactie exact beslist wat de gefilterde lijst toont.
  */
 @SpringBootTest(properties = {
         "catalogimport.screening.stage-batch-size=50",
@@ -67,6 +71,8 @@ class MutationIdentityHashHttpTest {
     private static final AtomicInteger SEQUENCE = new AtomicInteger();
     private static final String HEADER = "LEVERANCIER;GROEP;REFERENTIE;PRIJS;OMSCHRIJVING\n";
     private static final String CREATOR = "jan.peeters@example.test";
+    /** De beslisser van de groepsactie in de C5-tests. */
+    private static final String DECIDER = "an.janssens@example.test";
     private static final String BUNDLE_URL = "/api/catalog-import/bundles/{id}/mutations";
     private static final String BATCH_URL = "/api/catalog-import/batches/{id}/mutations";
     /** 64 hex-tekens die in geen enkele fixture voorkomen: geldige hex, onbekende waarde. */
@@ -261,6 +267,102 @@ class MutationIdentityHashHttpTest {
                 .param("size", "1").param("page", "5"));
         assertThat(JsonPath.<Integer>read(beyond, "$.totalElements")).isEqualTo(2);
         assertThat(JsonPath.<List<Object>>read(beyond, "$.content")).isEmpty();
+    }
+
+    // --- (c) Dezelfde filter in de groepsactie (bouwstap C5) ---------------------------------------
+
+    /**
+     * Bouwstap C5 (beslissingslog 24/09, ontwerp scherm 3 par. 10.4 punt 1): {@code filter.identityHash}
+     * bindt op de body van {@code POST /bundles/{id}/decisions} en selecteert exact dezelfde mutaties als
+     * {@code GET /bundles/{id}/mutations?identityHash=} — hier de wijzigingsgroep van één aanbieding over
+     * <b>twee</b> batches. Zonder dat zou de knop meer beslissen dan het scherm laat zien.
+     */
+    @Test
+    void theGroupDecisionDecidesExactlyWhatTheFilteredListShows() throws Exception {
+        Scenario s = scenario("DECIDE");
+        List<Map<String, Object>> all = rows(body(get(BUNDLE_URL, s.bundleId()).param("size", "50")));
+        String hash = hashOf(all, s.firstBatchId(), "R1");
+        String otherHash = hashOf(all, s.firstBatchId(), "R2");
+
+        // Wat het scherm toont met deze filter: twee voorstellen, uit twee leveringen.
+        String visible = body(get(BUNDLE_URL, s.bundleId()).param("identityHash", hash));
+        int totalElements = JsonPath.read(visible, "$.totalElements");
+        assertThat(totalElements).isEqualTo(2);
+
+        String decided = body(post("/api/catalog-import/bundles/{id}/decisions", s.bundleId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"" + DECIDER + "\","
+                        + "\"reason\":\"Deze aanbieding nagekeken\","
+                        + "\"filter\":{\"identityHash\":\"" + hash.toUpperCase() + "\"}}"));
+
+        // De invariant: nooit meer dan de lijst toont, en hier exact even veel (alles is beslisbaar).
+        assertThat(JsonPath.<Integer>read(decided, "$.affectedCount")).isEqualTo(totalElements);
+        assertThat(JsonPath.<Number>read(decided, "$.decisionId")).isNotNull();
+        assertThat(JsonPath.<String>read(decided, "$.selectionFilter")).isEqualTo("identityHash=" + hash);
+
+        // De twee mutaties van de groep staan nu goedgekeurd, elk met haar eigen audit.
+        String after = body(get(BUNDLE_URL, s.bundleId()).param("identityHash", hash));
+        assertThat(JsonPath.<List<String>>read(after, "$.content[*].status"))
+                .containsOnly("READY_FOR_PUBLICATION");
+        assertThat(JsonPath.<List<String>>read(after, "$.content[*].decidedBy")).containsOnly(DECIDER);
+        // De andere aanbieding uit dezelfde batches is niet aangeraakt.
+        String untouched = body(get(BUNDLE_URL, s.bundleId()).param("identityHash", otherHash));
+        assertThat(JsonPath.<Integer>read(untouched, "$.totalElements")).isEqualTo(2);
+        assertThat(JsonPath.<List<String>>read(untouched, "$.content[*].status"))
+                .containsOnly("AWAITING_APPROVAL");
+        // Geen beslisser op die regels: ze dragen geen beslissing.
+        assertThat(untouched).doesNotContain(DECIDER);
+
+        // Het register draagt de volledige toegepaste filter, inclusief de hash.
+        String register = body(get("/api/catalog-import/bundles/{id}/decisions", s.bundleId()));
+        assertThat(JsonPath.<List<String>>read(register, "$.content[*].selectionFilter"))
+                .containsExactly("identityHash=" + hash);
+        assertThat(JsonPath.<List<String>>read(register, "$.content[*].decisionScope")).containsExactly("GROUP");
+        assertThat(JsonPath.<List<Integer>>read(register, "$.content[*].affectedCount")).containsExactly(2);
+
+        // Herhaling: niets meer te beslissen, geen tweede regel in het register.
+        String repeated = body(post("/api/catalog-import/bundles/{id}/decisions", s.bundleId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"" + DECIDER + "\","
+                        + "\"filter\":{\"identityHash\":\"" + hash + "\"}}"));
+        assertThat(JsonPath.<Integer>read(repeated, "$.affectedCount")).isZero();
+        assertThat(JsonPath.<List<Object>>read(
+                body(get("/api/catalog-import/bundles/{id}/decisions", s.bundleId())), "$.content")).hasSize(1);
+    }
+
+    /**
+     * Een ongeldige of onbekende hash in de groepsactie: {@code affectedCount = 0}, geen 400 en geen 500,
+     * en — het belangrijkste — de filter valt <b>niet</b> weg. Zou ze wegvallen, dan zou een verkeerd
+     * geplakte hash met één klik de hele bundel goedkeuren.
+     */
+    @Test
+    void anInvalidIdentityHashInTheGroupDecisionAffectsNothing() throws Exception {
+        Scenario s = scenario("DECIDEBAD");
+
+        for (String value : List.of(UNKNOWN_HASH, "zz", "abc", "geen-hash", "1".repeat(63))) {
+            mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", s.bundleId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"" + DECIDER + "\","
+                                    + "\"filter\":{\"identityHash\":\"" + value + "\"}}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.affectedCount").value(0))
+                    .andExpect(jsonPath("$.decisionId").doesNotExist())
+                    .andExpect(jsonPath("$.selectionFilter").value("identityHash=" + value.toLowerCase()));
+        }
+
+        // Alles staat er nog zoals het stond, en het register is leeg.
+        String list = body(get(BUNDLE_URL, s.bundleId()).param("actionType", "CREATE").param("size", "50"));
+        assertThat(JsonPath.<List<String>>read(list, "$.content[*].status")).containsOnly("AWAITING_APPROVAL");
+        assertThat(JsonPath.<List<Object>>read(
+                body(get("/api/catalog-import/bundles/{id}/decisions", s.bundleId())), "$.content")).isEmpty();
+
+        // Een blanco hash is geen filter: zonder ander filterveld blijft dat 400 met stabiele code.
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", s.bundleId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"" + DECIDER + "\","
+                                + "\"filter\":{\"identityHash\":\"   \"}}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DECISION_FILTER_REQUIRED"));
     }
 
     // --- Helpers ----------------------------------------------------------------------------------

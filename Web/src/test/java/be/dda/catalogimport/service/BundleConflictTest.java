@@ -293,9 +293,9 @@ class BundleConflictTest {
     /** Alle wachtende creaties van de bundel goedkeuren; anders blokkeert R-FRZ-02 het bevriezen. */
     private void approveEverythingWaiting(long bundleId) {
         decisions.decideGroup(bundleId, BundleDecisionKind.APPROVE, DECIDER, "Levering nagekeken",
-                new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null));
+                new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null, null));
         decisions.decideGroup(bundleId, BundleDecisionKind.APPROVE, DECIDER, "Levering nagekeken",
-                new DecisionFilter(null, MutationStatus.PLANNED, null, null));
+                new DecisionFilter(null, MutationStatus.PLANNED, null, null, null));
     }
 
     private List<String> identityHashes(long batchId) {
