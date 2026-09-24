@@ -540,7 +540,7 @@ tweede goedkeurder (fase 4-ontwerp §13 benoemt dat risico letterlijk). Ontwerp:
    `DecisionFilter` wél aanvaardt, wordt in deze slice **niet** aangeboden, omdat
    `GET /bundles/{id}/mutations` er niet op kan filteren en de gebruiker dus niet kan zien waarvoor hij
    tekent (§16.1, met een voorstel voor een kleine backenduitbreiding).
-3. De dialoog toont het aantal betrokken regels (`totalElements` van de huidige lijst) en de zin:
+3. De dialoog toont het aantal betrokken regels (`totalElements` van de huidige lijst, gebruikt als bovengrens omdat er geen droogloop-endpoint bestaat) en de zin:
    *"Deze actie raakt nooit een geblokkeerde mutatie, een identiteitsincident, de importmarkering of een
    mutatie die al een beslissing draagt."* — dat is wat de backend garandeert en wat de gebruiker moet
    weten om het getal te kunnen duiden.
@@ -550,6 +550,10 @@ tweede goedkeurder (fase 4-ontwerp §13 benoemt dat risico letterlijk). Ontwerp:
    bewust geen beslissingsregel geschreven."*
 6. **Geen typ-bevestiging** hier: een groepsbeslissing is binnen `ASSEMBLING` per mutatie te herzien.
    Wel de reden-eis van de backend (verplicht bij afkeuren).
+
+> **Important technical constraint discovered** (F9, 2026-09-24)
+>
+> De backend (Spring/Jackson) negeert onbekende JSON-velden in `DecideGroupRequest.filter` in plaats van ze te weigeren. Een filterveld dat de client meestuurt maar de server niet kent, valt dus stil weg — voor de groepsactie betekent dat een bredere selectie dan de gebruiker ziet. Clientzijdig afgevangen in `Frontend/src/features/bundles/groupDecisionFilter.ts` (`toDecisionFilter` neemt elk veld expliciet over; een nieuw veld in `MutationFilter` dat daar niet wordt overgenomen, laat de typecheck falen). Open beslissing: moet `DecisionFilter` serverzijdig onbekende velden weigeren? (contractkeuze, nog niet genomen)
 
 ### 10.5 Bevriezen (`POST /bundles/{id}/freeze`)
 
