@@ -7,6 +7,7 @@ Bijbehorende documenten:
 
 - [`standaardflows.md`](standaardflows.md) — acht standaardflows, stap voor stap.
 - [`begrippen.md`](begrippen.md) — begrippenlijst en statusreferentie.
+- [`csv-importeren.md`](csv-importeren.md) — een CSV-bestand importeren (upload, eisen, probleemoplossing).
 
 Statuslabels in deze handleiding:
 
