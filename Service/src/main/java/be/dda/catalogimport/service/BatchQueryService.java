@@ -76,7 +76,8 @@ public class BatchQueryService {
      * creatiebeleid geoordeeld heeft, naast de reeds bestaande noemer {@code creationScopeCount}.
      * Alle vier {@code null} wanneer ze niet vastgesteld zijn, nooit stil 0.
      */
-    public record BatchDetail(long batchId, long deliveryId, long importLinkId, long definitionRevisionId,
+    public record BatchDetail(long batchId, long deliveryId, long importLinkId, String importLinkCode,
+                              String supplierCode, String libraryCode, long definitionRevisionId,
                               Long taskRunId, int attemptNo, String status, String validationResult,
                               Instant startedAt, Instant finishedAt, long stagedRowCount,
                               long mutationProgressRowNumber,
@@ -93,7 +94,9 @@ public class BatchQueryService {
                               String baselineAcceptReason, Instant createdAt, String createdBy) {
 
         private static BatchDetail of(ImportBatch batch) {
-            return new BatchDetail(batch.getId(), batch.getDelivery().getId(), batch.getImportLink().getId(),
+            ImportLink link = batch.getImportLink();
+            return new BatchDetail(batch.getId(), batch.getDelivery().getId(), link.getId(), link.getCode(),
+                    link.getSupplierOrganisation().getCode(), link.getLibraryCode(),
                     batch.getDefinitionRevision().getId(),
                     batch.getTaskRun() == null ? null : batch.getTaskRun().getId(), batch.getAttemptNo(),
                     batch.getStatus().name(),
@@ -340,7 +343,7 @@ public class BatchQueryService {
 
     /** @throws NotFoundException onbekende batch ({@code BATCH_NOT_FOUND}) */
     public BatchDetail getBatch(long batchId) {
-        return BatchDetail.of(batches.findById(batchId).orElseThrow(() -> notFound(batchId)));
+        return BatchDetail.of(batches.findDetailById(batchId).orElseThrow(() -> notFound(batchId)));
     }
 
     /**

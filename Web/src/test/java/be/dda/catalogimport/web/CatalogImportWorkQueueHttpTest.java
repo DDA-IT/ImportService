@@ -217,6 +217,24 @@ class CatalogImportWorkQueueHttpTest {
                 .andExpect(jsonPath("$.code").value("BATCH_NOT_FOUND"));
     }
 
+    @Test
+    void batchDetailShowsTheLinkCodeSupplierAndLibraryAndKeepsItsExistingFields() throws Exception {
+        Fixture f = fixture("WQ-DET");
+        ImportBatch b = batch(f, ImportBatchStatus.SCREENED, ValidationResult.VALID, 1);
+
+        mockMvc.perform(get("/api/catalog-import/batches/{batchId}", b.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.batchId").value(b.getId()))
+                .andExpect(jsonPath("$.importLinkId").value(f.linkId()))
+                .andExpect(jsonPath("$.importLinkCode").value(f.linkCode()))
+                .andExpect(jsonPath("$.supplierCode").value(f.supplierCode()))
+                .andExpect(jsonPath("$.libraryCode").value("PSARF050"))
+                .andExpect(jsonPath("$.status").value("SCREENED"))
+                .andExpect(jsonPath("$.validationResult").value("VALID"))
+                .andExpect(jsonPath("$.attemptNo").value(1))
+                .andExpect(jsonPath("$.deliveryId").value(b.getDelivery().getId()));
+    }
+
     // --- GET /import-links --------------------------------------------------------------------------
 
     @Test

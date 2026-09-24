@@ -25,6 +25,14 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, Long> 
     List<ImportBatch> findByDeliveryIdOrderByAttemptNoAsc(Long deliveryId);
 
     /**
+     * De batch met koppeling en leverancier al geladen (beide {@code LAZY}, open-in-view staat uit):
+     * {@code BatchQueryService.BatchDetail} toont de koppelingslabels zonder tweede aanroep.
+     */
+    @Query("select b from ImportBatch b join fetch b.importLink il join fetch il.supplierOrganisation "
+            + "where b.id = :id")
+    Optional<ImportBatch> findDetailById(@Param("id") Long id);
+
+    /**
      * Heeft deze koppeling een open (niet-terminale) batch? {@code open_marker} is {@code TRUE} zolang
      * de status niet terminaal is en {@code null} zodra ze dat wel is (zie {@link ImportBatch}), dus dit
      * is exact "een batch die nog loopt of nog op verwerking wacht".
