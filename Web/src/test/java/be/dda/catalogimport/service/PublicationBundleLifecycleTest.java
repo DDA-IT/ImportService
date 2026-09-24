@@ -108,27 +108,29 @@ class PublicationBundleLifecycleTest {
 
     @Test
     void createIsIdempotentOnBundleReferenceWithTheSameScope() {
-        BundleReference first = bundleService.createBundle("BND-IDEM", "Eerste beschrijving",
+        String idemRef = bundleRef("IDEM");
+        BundleReference first = bundleService.createBundle(idemRef, "Eerste beschrijving",
                 PublicationTargetMode.SIMULATION, null, null, CREATOR);
-        BundleReference second = bundleService.createBundle("BND-IDEM", "Eerste beschrijving",
-                PublicationTargetMode.SIMULATION, null, null, "an.janssens@example.test");
+        BundleReference second = bundleService.createBundle(idemRef, "Eerste beschrijving",
+                PublicationTargetMode.SIMULATION, null, null, "an.janssels@example.test");
 
         assertThat(second.id()).isEqualTo(first.id());
-        assertThat(bundles.findByBundleReference("BND-IDEM")).hasValueSatisfying(
+        assertThat(bundles.findByBundleReference(idemRef)).hasValueSatisfying(
                 bundle -> assertThat(bundle.getCreatedBy()).isEqualTo(CREATOR));
     }
 
     @Test
     void aSecondCreateWithTheSameReferenceButADifferentScopeIsAConflict() {
-        bundleService.createBundle("BND-SCOPE", "Beschrijving A", PublicationTargetMode.SIMULATION, null, null,
+        String scopeRef = bundleRef("SCOPE");
+        bundleService.createBundle(scopeRef, "Beschrijving A", PublicationTargetMode.SIMULATION, null, null,
                 CREATOR);
 
-        assertThatThrownBy(() -> bundleService.createBundle("BND-SCOPE", "Beschrijving A",
+        assertThatThrownBy(() -> bundleService.createBundle(scopeRef, "Beschrijving A",
                 PublicationTargetMode.TRIAL_LIBRARY, null, null, CREATOR))
                 .isInstanceOf(ConflictException.class)
                 .hasFieldOrPropertyWithValue("code", PublicationBundleService.CODE_REFERENCE_REUSED);
 
-        assertThatThrownBy(() -> bundleService.createBundle("BND-SCOPE", "Beschrijving B",
+        assertThatThrownBy(() -> bundleService.createBundle(scopeRef, "Beschrijving B",
                 PublicationTargetMode.SIMULATION, null, null, CREATOR))
                 .isInstanceOf(ConflictException.class)
                 .hasFieldOrPropertyWithValue("code", PublicationBundleService.CODE_REFERENCE_REUSED);
@@ -136,12 +138,12 @@ class PublicationBundleLifecycleTest {
 
     @Test
     void createRefusesAMissingTargetModeAndAnInvalidCreatedBy() {
-        assertThatThrownBy(() -> bundleService.createBundle("BND-BAD", null, null, null, null, CREATOR))
+        assertThatThrownBy(() -> bundleService.createBundle(bundleRef("BAD"), null, null, null, null, CREATOR))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> bundleService.createBundle("BND-BAD2", null, PublicationTargetMode.SIMULATION,
+        assertThatThrownBy(() -> bundleService.createBundle(bundleRef("BAD2"), null, PublicationTargetMode.SIMULATION,
                 null, null, "system"))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> bundleService.createBundle("BND-BAD3", null, PublicationTargetMode.SIMULATION,
+        assertThatThrownBy(() -> bundleService.createBundle(bundleRef("BAD3"), null, PublicationTargetMode.SIMULATION,
                 null, null, ""))
                 .isInstanceOf(IllegalArgumentException.class);
     }
@@ -154,7 +156,7 @@ class PublicationBundleLifecycleTest {
         Fixture b = fixture("MULTI-B");
         long batchA = screenedBatch(a, "REF-1", fiveRows());
         long batchB = screenedBatch(b, "REF-1", fiveRows());
-        BundleReference bundle = bundleService.createBundle("BND-MULTI", null, PublicationTargetMode.SIMULATION,
+        BundleReference bundle = bundleService.createBundle(bundleRef("MULTI"), null, PublicationTargetMode.SIMULATION,
                 null, null, CREATOR);
 
         List<Membership> added = bundleService.addBatches(bundle.id(), List.of(batchA, batchB), CREATOR);
@@ -170,9 +172,9 @@ class PublicationBundleLifecycleTest {
     void aBatchThatIsAlreadyActiveInAnotherBundleIsRefused() {
         Fixture f = fixture("ACTIVE");
         long batchId = screenedBatch(f, "REF-1", fiveRows());
-        BundleReference bundleA = bundleService.createBundle("BND-ACT-A", null, PublicationTargetMode.SIMULATION,
+        BundleReference bundleA = bundleService.createBundle(bundleRef("ACT-A"), null, PublicationTargetMode.SIMULATION,
                 null, null, CREATOR);
-        BundleReference bundleB = bundleService.createBundle("BND-ACT-B", null, PublicationTargetMode.SIMULATION,
+        BundleReference bundleB = bundleService.createBundle(bundleRef("ACT-B"), null, PublicationTargetMode.SIMULATION,
                 null, null, CREATOR);
         bundleService.addBatches(bundleA.id(), List.of(batchId), CREATOR);
 
@@ -191,7 +193,7 @@ class PublicationBundleLifecycleTest {
                 + "ACME;G1;R1;1,50;Boormachine\n" + "ACME;G1;R1;2,00;Nog een boormachine\n").batchId();
         assertThat(batches.findById(blockedBatch).orElseThrow().getStatus()).isEqualTo(ImportBatchStatus.BLOCKED);
 
-        BundleReference bundle = bundleService.createBundle("BND-BLK", null, PublicationTargetMode.SIMULATION,
+        BundleReference bundle = bundleService.createBundle(bundleRef("BLK"), null, PublicationTargetMode.SIMULATION,
                 null, null, CREATOR);
         assertThatThrownBy(() -> bundleService.addBatches(bundle.id(), List.of(blockedBatch), CREATOR))
                 .isInstanceOf(ConflictException.class)
@@ -206,7 +208,7 @@ class PublicationBundleLifecycleTest {
         baseline.acceptBaseline(batchId, CREATOR, "Nulmeting");
         assertThat(batches.findById(batchId).orElseThrow().getStatus()).isEqualTo(ImportBatchStatus.BASELINE_ACCEPTED);
 
-        BundleReference bundle = bundleService.createBundle("BND-BLA", null, PublicationTargetMode.SIMULATION,
+        BundleReference bundle = bundleService.createBundle(bundleRef("BLA"), null, PublicationTargetMode.SIMULATION,
                 null, null, CREATOR);
         assertThatThrownBy(() -> bundleService.addBatches(bundle.id(), List.of(batchId), CREATOR))
                 .isInstanceOf(ConflictException.class)
@@ -222,7 +224,7 @@ class PublicationBundleLifecycleTest {
         long secondBatch = screenedBatch(f, "REF-2", fiveRows());
         assertThat(batches.findById(secondBatch).orElseThrow().getContentMutationCount()).isZero();
 
-        BundleReference bundle = bundleService.createBundle("BND-MARKER", null, PublicationTargetMode.SIMULATION,
+        BundleReference bundle = bundleService.createBundle(bundleRef("MARKER"), null, PublicationTargetMode.SIMULATION,
                 null, null, CREATOR);
         List<Membership> added = bundleService.addBatches(bundle.id(), List.of(secondBatch), CREATOR);
 
@@ -235,7 +237,7 @@ class PublicationBundleLifecycleTest {
     void removingAMembershipWithoutDecisionsWorksAndFreesTheBatch() {
         Fixture f = fixture("REMOVE-OK");
         long batchId = screenedBatch(f, "REF-1", fiveRows());
-        BundleReference bundle = bundleService.createBundle("BND-REMOVE-OK", null, PublicationTargetMode.SIMULATION,
+        BundleReference bundle = bundleService.createBundle(bundleRef("REMOVE-OK"), null, PublicationTargetMode.SIMULATION,
                 null, null, CREATOR);
         bundleService.addBatches(bundle.id(), List.of(batchId), CREATOR);
 
@@ -246,7 +248,7 @@ class PublicationBundleLifecycleTest {
         assertThat(bundleBatches.findByBatchIdAndActiveMarkerIsNotNull(batchId)).isEmpty();
 
         // De batch is weer vrij: ze kan nu aan een andere bundel toegevoegd worden.
-        BundleReference other = bundleService.createBundle("BND-REMOVE-OTHER", null, PublicationTargetMode.SIMULATION,
+        BundleReference other = bundleService.createBundle(bundleRef("REMOVE-OTHER"), null, PublicationTargetMode.SIMULATION,
                 null, null, CREATOR);
         List<Membership> added = bundleService.addBatches(other.id(), List.of(batchId), CREATOR);
         assertThat(added).singleElement().satisfies(m -> assertThat(m.active()).isTrue());
@@ -262,7 +264,7 @@ class PublicationBundleLifecycleTest {
     void removingABatchWithADecidedMutationIsRefused() {
         Fixture f = fixture("REMOVE-DEC");
         long batchId = screenedBatch(f, "REF-1", fiveRows());
-        BundleReference bundle = bundleService.createBundle("BND-REMOVE-DEC", null, PublicationTargetMode.SIMULATION,
+        BundleReference bundle = bundleService.createBundle(bundleRef("REMOVE-DEC"), null, PublicationTargetMode.SIMULATION,
                 null, null, CREATOR);
         bundleService.addBatches(bundle.id(), List.of(batchId), CREATOR);
 
@@ -292,7 +294,7 @@ class PublicationBundleLifecycleTest {
         assertThat(before.content()).extracting(PublicationBundleService.BundleCandidate::batchId)
                 .contains(candidateBatch);
 
-        BundleReference bundle = bundleService.createBundle("BND-CAND", null, PublicationTargetMode.SIMULATION,
+        BundleReference bundle = bundleService.createBundle(bundleRef("CAND"), null, PublicationTargetMode.SIMULATION,
                 null, null, CREATOR);
         bundleService.addBatches(bundle.id(), List.of(candidateBatch), CREATOR);
 
@@ -306,7 +308,7 @@ class PublicationBundleLifecycleTest {
     void getBundleShowsLiveCountersWhileAssembling() {
         Fixture f = fixture("LIVE");
         long batchId = screenedBatch(f, "REF-1", fiveRows());
-        BundleReference bundle = bundleService.createBundle("BND-LIVE", null, PublicationTargetMode.SIMULATION,
+        BundleReference bundle = bundleService.createBundle(bundleRef("LIVE"), null, PublicationTargetMode.SIMULATION,
                 null, null, CREATOR);
         bundleService.addBatches(bundle.id(), List.of(batchId), CREATOR);
 
@@ -351,6 +353,10 @@ class PublicationBundleLifecycleTest {
     }
 
     private record ScreeningResult(long batchId, ScreeningOutcome outcome) {
+    }
+
+    private String bundleRef(String prefix) {
+        return "BND-" + prefix + "-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet();
     }
 
     private Fixture fixture(String prefix) {

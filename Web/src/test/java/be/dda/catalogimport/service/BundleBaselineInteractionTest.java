@@ -101,7 +101,7 @@ class BundleBaselineInteractionTest {
     void acceptBaselineOnABatchWithAnActiveBundleMembershipIsRefusedAndWritesNothing() {
         Fixture f = fixture("INBUNDLE");
         long batchId = screenedBatch(f, "REF-1");
-        BundleReference bundle = bundleService.createBundle("BND-BASELINE", null,
+        BundleReference bundle = bundleService.createBundle(bundleRef("BASELINE"), null,
                 be.dda.catalogimport.domain.PublicationTargetMode.SIMULATION, null, null, ACCEPTED_BY);
         bundleService.addBatches(bundle.id(), List.of(batchId), ACCEPTED_BY);
 
@@ -121,7 +121,7 @@ class BundleBaselineInteractionTest {
     void acceptBaselineWorksAgainAfterTheMembershipIsRemoved() {
         Fixture f = fixture("REACCEPT");
         long batchId = screenedBatch(f, "REF-1");
-        BundleReference bundle = bundleService.createBundle("BND-REACCEPT", null,
+        BundleReference bundle = bundleService.createBundle(bundleRef("REACCEPT"), null,
                 be.dda.catalogimport.domain.PublicationTargetMode.SIMULATION, null, null, ACCEPTED_BY);
         bundleService.addBatches(bundle.id(), List.of(batchId), ACCEPTED_BY);
 
@@ -161,6 +161,10 @@ class BundleBaselineInteractionTest {
         ScreeningOutcome outcome = screening.screen(batchId);
         assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
         return batchId;
+    }
+
+    private String bundleRef(String prefix) {
+        return "BND-" + prefix + "-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet();
     }
 
     private Fixture fixture(String prefix) {

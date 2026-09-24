@@ -62,21 +62,22 @@ class PublicationBundleSchemaTest {
 
     @Test
     void persistsABundleAndAppliesTheDocumentedIdempotencyKey() {
+        String bundleReference = bundleRef("OK");
         PublicationBundle bundle = bundles.saveAndFlush(
-                new PublicationBundle("BND-OK", PublicationTargetMode.SIMULATION, "tester@example.test"));
+                new PublicationBundle(bundleReference, PublicationTargetMode.SIMULATION, "tester@example.test"));
 
         PublicationBundle found = bundles.findById(bundle.getId()).orElseThrow();
         assertThat(found.getStatus()).isEqualTo(PublicationBundleStatus.ASSEMBLING);
-        assertThat(found.getIdempotencyKey()).isEqualTo("bundle:BND-OK");
+        assertThat(found.getIdempotencyKey()).isEqualTo("bundle:" + bundleReference);
         assertThat(found.getCreatedAt()).isNotNull();
         assertThat(found.getBatchCount()).isNull();
-        assertThat(bundles.findByBundleReference("BND-OK")).isPresent();
-        assertThat(bundles.findByIdempotencyKey("bundle:BND-OK")).isPresent();
+        assertThat(bundles.findByBundleReference(bundleReference)).isPresent();
+        assertThat(bundles.findByIdempotencyKey("bundle:" + bundleReference)).isPresent();
     }
 
     @Test
     void refusesABundleWithoutAnExplicitTargetModeBecauseThereIsNoDefault() {
-        PublicationBundle bundle = new PublicationBundle("BND-NOMODE", null, "tester@example.test");
+        PublicationBundle bundle = new PublicationBundle(bundleRef("NOMODE"), null, "tester@example.test");
 
         assertThatThrownBy(() -> bundles.saveAndFlush(bundle))
                 .isInstanceOf(DataIntegrityViolationException.class);
@@ -84,17 +85,18 @@ class PublicationBundleSchemaTest {
 
     @Test
     void rejectsTwoBundlesWithTheSameBundleReference() {
-        bundles.saveAndFlush(new PublicationBundle("BND-DUP", PublicationTargetMode.SIMULATION, "tester@example.test"));
+        String duplicateRef = bundleRef("DUP");
+        bundles.saveAndFlush(new PublicationBundle(duplicateRef, PublicationTargetMode.SIMULATION, "tester@example.test"));
 
         assertThatThrownBy(() -> bundles.saveAndFlush(
-                new PublicationBundle("BND-DUP", PublicationTargetMode.TRIAL_LIBRARY, "tester@example.test")))
+                new PublicationBundle(duplicateRef, PublicationTargetMode.TRIAL_LIBRARY, "tester@example.test")))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
     void refusesAFrozenBundleWithoutFrozenByOrContentHash() {
         PublicationBundle bundle = bundles.saveAndFlush(
-                new PublicationBundle("BND-FRZ-BAD", PublicationTargetMode.SIMULATION, "tester@example.test"));
+                new PublicationBundle(bundleRef("FRZ-BAD"), PublicationTargetMode.SIMULATION, "tester@example.test"));
         bundle.setStatus(PublicationBundleStatus.FROZEN);
 
         // Status FROZEN gezet zonder de gecombineerde recordFreeze-aanroep -> ck_publication_bundle_frozen.
@@ -105,7 +107,7 @@ class PublicationBundleSchemaTest {
     @Test
     void acceptsAFrozenBundleWithFrozenByAtAndContentHashAllPresent() {
         PublicationBundle bundle = bundles.saveAndFlush(
-                new PublicationBundle("BND-FRZ-OK", PublicationTargetMode.SIMULATION, "tester@example.test"));
+                new PublicationBundle(bundleRef("FRZ-OK"), PublicationTargetMode.SIMULATION, "tester@example.test"));
         bundle.recordFreeze("freezer@example.test", Instant.now(), "Alle mutaties beoordeeld",
                 sha256("bundle-content"));
 
@@ -118,7 +120,7 @@ class PublicationBundleSchemaTest {
     @Test
     void refusesACancelledBundleWithoutACancelledReason() {
         PublicationBundle bundle = bundles.saveAndFlush(
-                new PublicationBundle("BND-CNC-BAD", PublicationTargetMode.SIMULATION, "tester@example.test"));
+                new PublicationBundle(bundleRef("CNC-BAD"), PublicationTargetMode.SIMULATION, "tester@example.test"));
         bundle.setStatus(PublicationBundleStatus.CANCELLED);
 
         assertThatThrownBy(() -> bundles.saveAndFlush(bundle))
@@ -128,7 +130,7 @@ class PublicationBundleSchemaTest {
     @Test
     void acceptsACancelledBundleWithTheFullCancellationAudit() {
         PublicationBundle bundle = bundles.saveAndFlush(
-                new PublicationBundle("BND-CNC-OK", PublicationTargetMode.SIMULATION, "tester@example.test"));
+                new PublicationBundle(bundleRef("CNC-OK"), PublicationTargetMode.SIMULATION, "tester@example.test"));
         bundle.recordCancellation("canceller@example.test", Instant.now(), "Foutieve koppeling geselecteerd");
 
         assertThatCode(() -> bundles.saveAndFlush(bundle)).doesNotThrowAnyException();
@@ -143,9 +145,9 @@ class PublicationBundleSchemaTest {
         Scenario s = scenario("PBB");
         ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
         PublicationBundle bundleA = bundles.saveAndFlush(
-                new PublicationBundle("PBB-A", PublicationTargetMode.SIMULATION, "tester@example.test"));
+                new PublicationBundle(bundleRef("PBB-A"), PublicationTargetMode.SIMULATION, "tester@example.test"));
         PublicationBundle bundleB = bundles.saveAndFlush(
-                new PublicationBundle("PBB-B", PublicationTargetMode.SIMULATION, "tester@example.test"));
+                new PublicationBundle(bundleRef("PBB-B"), PublicationTargetMode.SIMULATION, "tester@example.test"));
 
         PublicationBundleBatch membership = bundleBatches.saveAndFlush(
                 new PublicationBundleBatch(bundleA, batch, s.link(), "tester@example.test"));
@@ -173,7 +175,7 @@ class PublicationBundleSchemaTest {
         Scenario s = scenario("PBBDUP");
         ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
         PublicationBundle bundle = bundles.saveAndFlush(
-                new PublicationBundle("PBBDUP-1", PublicationTargetMode.SIMULATION, "tester@example.test"));
+                new PublicationBundle(bundleRef("PBBDUP"), PublicationTargetMode.SIMULATION, "tester@example.test"));
         PublicationBundleBatch first = bundleBatches.saveAndFlush(
                 new PublicationBundleBatch(bundle, batch, s.link(), "tester@example.test"));
         first.recordRemoval("remover@example.test", Instant.now(), "Opnieuw testen");
@@ -190,7 +192,7 @@ class PublicationBundleSchemaTest {
         Scenario s = scenario("PBBPART");
         ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
         PublicationBundle bundle = bundles.saveAndFlush(
-                new PublicationBundle("PBBPART-1", PublicationTargetMode.SIMULATION, "tester@example.test"));
+                new PublicationBundle(bundleRef("PBBPART"), PublicationTargetMode.SIMULATION, "tester@example.test"));
         PublicationBundleBatch membership = bundleBatches.saveAndFlush(
                 new PublicationBundleBatch(bundle, batch, s.link(), "tester@example.test"));
 
@@ -205,7 +207,7 @@ class PublicationBundleSchemaTest {
     @Test
     void refusesAMutationScopedDecisionWithoutAMutationReference() {
         PublicationBundle bundle = bundles.saveAndFlush(
-                new PublicationBundle("DECMUT-1", PublicationTargetMode.SIMULATION, "tester@example.test"));
+                new PublicationBundle(bundleRef("DECMUT"), PublicationTargetMode.SIMULATION, "tester@example.test"));
 
         PublicationDecision decision = new PublicationDecision(bundle, null, BundleDecisionKind.APPROVE,
                 BundleDecisionScope.MUTATION, 1, "decider@example.test", "Goedgekeurd");
@@ -219,8 +221,9 @@ class PublicationBundleSchemaTest {
         Scenario s = scenario("DECGRP");
         ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
         PublicationBundle bundle = bundles.saveAndFlush(
-                new PublicationBundle("DECGRP-1", PublicationTargetMode.SIMULATION, "tester@example.test"));
-        ImportMutation mutation = mutations.saveAndFlush(createMutation(batch, "DECGRP:1:H1:OFFER"));
+                new PublicationBundle(bundleRef("DECGRP"), PublicationTargetMode.SIMULATION, "tester@example.test"));
+        String mutationKey = "DECGRP" + Long.toString(System.nanoTime(), 36) + ":1:H1:OFFER";
+        ImportMutation mutation = mutations.saveAndFlush(createMutation(batch, mutationKey));
 
         PublicationDecision decision = new PublicationDecision(bundle, mutation, BundleDecisionKind.APPROVE,
                 BundleDecisionScope.GROUP, 5, "decider@example.test", "Groepsactie");
@@ -234,8 +237,9 @@ class PublicationBundleSchemaTest {
         Scenario s = scenario("DECOK");
         ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
         PublicationBundle bundle = bundles.saveAndFlush(
-                new PublicationBundle("DECOK-1", PublicationTargetMode.SIMULATION, "tester@example.test"));
-        ImportMutation mutation = mutations.saveAndFlush(createMutation(batch, "DECOK:1:H1:OFFER"));
+                new PublicationBundle(bundleRef("DECOK"), PublicationTargetMode.SIMULATION, "tester@example.test"));
+        String mutationKey = "DECOK" + Long.toString(System.nanoTime(), 36) + ":1:H1:OFFER";
+        ImportMutation mutation = mutations.saveAndFlush(createMutation(batch, mutationKey));
 
         PublicationDecision decision = decisions.saveAndFlush(new PublicationDecision(bundle, mutation,
                 BundleDecisionKind.APPROVE, BundleDecisionScope.MUTATION, 1, "decider@example.test",
@@ -253,7 +257,8 @@ class PublicationBundleSchemaTest {
     void refusesAMutationWithOnlyOneOfTheFourDecideFieldsFilled() {
         Scenario s = scenario("MDECPART");
         ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
-        ImportMutation mutation = mutations.saveAndFlush(createMutation(batch, "MDECPART:1:H1:OFFER"));
+        String mutationKey = "MDECPART" + Long.toString(System.nanoTime(), 36) + ":1:H1:OFFER";
+        ImportMutation mutation = mutations.saveAndFlush(createMutation(batch, mutationKey));
 
         assertThatThrownBy(() -> jdbc.update("update import_mutation set decided_by = ? where id = ?",
                         "sneaky", mutation.getId()))
@@ -264,7 +269,8 @@ class PublicationBundleSchemaTest {
     void refusesARejectedMutationWithoutADecisionReference() {
         Scenario s = scenario("MREJNODEC");
         ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
-        ImportMutation mutation = mutations.saveAndFlush(createMutation(batch, "MREJNODEC:1:H1:OFFER"));
+        String mutationKey = "MREJNODEC" + Long.toString(System.nanoTime(), 36) + ":1:H1:OFFER";
+        ImportMutation mutation = mutations.saveAndFlush(createMutation(batch, mutationKey));
         mutation.setStatus(MutationStatus.REJECTED);
 
         // ck_import_mutation_rejected_decided: REJECTED vereist decision_id, dus ook decided_by/at/from.
@@ -277,8 +283,9 @@ class PublicationBundleSchemaTest {
         Scenario s = scenario("MREJOK");
         ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
         PublicationBundle bundle = bundles.saveAndFlush(
-                new PublicationBundle("MREJOK-1", PublicationTargetMode.SIMULATION, "tester@example.test"));
-        ImportMutation mutation = mutations.saveAndFlush(createMutation(batch, "MREJOK:1:H1:OFFER"));
+                new PublicationBundle(bundleRef("MREJOK"), PublicationTargetMode.SIMULATION, "tester@example.test"));
+        String mutationKey = "MREJOK" + Long.toString(System.nanoTime(), 36) + ":1:H1:OFFER";
+        ImportMutation mutation = mutations.saveAndFlush(createMutation(batch, mutationKey));
         PublicationDecision decision = decisions.saveAndFlush(new PublicationDecision(bundle, mutation,
                 BundleDecisionKind.REJECT, BundleDecisionScope.MUTATION, 1, "decider@example.test",
                 "Prijs klopt niet met de leveranciersfactuur"));
@@ -296,6 +303,11 @@ class PublicationBundleSchemaTest {
     }
 
     // --- Helpers ---------------------------------------------------------------------------------
+
+    private String bundleRef(String prefix) {
+        long nanoSeq = System.nanoTime();
+        return "BND-" + prefix + "-" + Long.toString(nanoSeq, 36);
+    }
 
     private ImportMutation createMutation(ImportBatch batch, String idempotencyKey) {
         ImportMutation mutation = new ImportMutation(batch, MutationActionType.CREATE,
@@ -338,14 +350,15 @@ class PublicationBundleSchemaTest {
 
     /** Volledige keten tot en met levering, zodat batches aangemaakt kunnen worden. */
     private Scenario scenario(String prefix) {
-        ImportDefinition definition = definition(prefix);
+        String unique = prefix + "-" + Long.toString(System.nanoTime(), 36);
+        ImportDefinition definition = definition(unique);
         ImportDefinitionRevision revision = revisions.saveAndFlush(newRevision(definition, 1));
         SourceOrganisation supplier = sourceOrganisations.saveAndFlush(
-                new SourceOrganisation(prefix + "-SUP", prefix + "-SUP BV", SourceOrganisationType.SUPPLIER));
+                new SourceOrganisation(unique + "-SUP", unique + "-SUP BV", SourceOrganisationType.SUPPLIER));
         ImportLink link = links.saveAndFlush(
-                new ImportLink(prefix + "-LINK", prefix + "-LINK koppeling", definition, supplier, "PSARF050"));
-        CatalogImportTask task = tasks.saveAndFlush(new CatalogImportTask(link, prefix + "-taak", TaskTriggerType.MANUAL));
-        Delivery delivery = deliveries.saveAndFlush(new Delivery(task, "manual:" + prefix, Instant.now()));
+                new ImportLink(unique + "-LINK", unique + "-LINK koppeling", definition, supplier, "PSARF050"));
+        CatalogImportTask task = tasks.saveAndFlush(new CatalogImportTask(link, unique + "-taak", TaskTriggerType.MANUAL));
+        Delivery delivery = deliveries.saveAndFlush(new Delivery(task, "manual:" + unique, Instant.now()));
         return new Scenario(revision, link, delivery);
     }
 
