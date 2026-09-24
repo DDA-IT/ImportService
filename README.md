@@ -41,6 +41,8 @@ Oudere documenten over lokale `LibraryOffer`-/`SupplierCatalog`-publicatie zijn 
 gemarkeerd. De huidige `accept-baseline` blijft een geauditeerde nulmeting van de lokale bronstaat en
 is geen goedkeuring of bevestiging van een Prodis-publicatie.
 
+Een Nederlandstalige gebruikers- en beheerdershandleiding staat in [`docs/handleiding/README.md`](docs/handleiding/README.md).
+
 ## Vereisten
 
 Java 21 en Maven 3.9+. PostgreSQL is de standaarddatabase (`CATALOG_DB_URL`, `CATALOG_DB_USERNAME`,
