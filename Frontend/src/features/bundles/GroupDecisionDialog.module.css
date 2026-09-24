@@ -1,0 +1,105 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.explanation,
+.gateReason,
+.filterEmpty {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.filterList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1) var(--spacing-4);
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.filterEntry {
+  display: flex;
+  gap: var(--spacing-1);
+}
+
+.filterEntry dt {
+  color: var(--color-text-secondary);
+}
+
+.filterEntry dt::after {
+  content: ':';
+}
+
+.filterEntry dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+}
+
+.primaryButton,
+.dangerButton {
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+  cursor: pointer;
+}
+
+.primaryButton {
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+}
+
+.dangerButton {
+  border: 1px solid var(--color-danger);
+  color: var(--color-danger);
+}
+
+.primaryButton:disabled,
+.dangerButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  border-color: var(--color-border-dark);
+  color: var(--color-text-secondary);
+}
+
+.dialogBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  font-size: 0.875rem;
+}
+
+.dialogBody p {
+  margin: 0;
+}
+
+.count {
+  font-size: 1rem;
+}
+
+.warning {
+  color: var(--color-warning);
+}

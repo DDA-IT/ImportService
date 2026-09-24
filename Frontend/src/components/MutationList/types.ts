@@ -16,8 +16,11 @@
 import type { ReactNode } from 'react';
 import type { MutationActionType, MutationRow, MutationStatus, PageResult } from '../../api/types.ts';
 
-/** De filter- en paginatoestand die het component aan zijn bron doorgeeft. */
-export type MutationQuery = {
+/**
+ * De toegepaste filter van de lijst, zonder paginering: alleen ondersteunde, niet-lege velden. Dit is
+ * exact wat (samen met `page`/`size`) naar `source.fetchPage` gaat.
+ */
+export type MutationFilter = {
   status?: MutationStatus;
   batchId?: number;
   actionType?: MutationActionType;
@@ -25,9 +28,31 @@ export type MutationQuery = {
   statusReason?: string;
   /** Hexadecimale identiteitshash, hoofdletterongevoelig (C4); de sleutel van de wijzigingsgroep. */
   identityHash?: string;
+};
+
+/** De filter- en paginatoestand die het component aan zijn bron doorgeeft. */
+export type MutationQuery = MutationFilter & {
   /** 0-gebaseerd, zoals de backend. */
   page: number;
   size: number;
+};
+
+/**
+ * Wat een ouder in de `toolbar`-slot van de lijst te zien krijgt (bouwstap F9, ontwerp §10.4 punt 1).
+ *
+ * `filter` is **hetzelfde object** waaruit de lijst haar eigen query bouwt — geen kopie, geen tweede
+ * filterformulier. Een groepsactie die hierop steunt, kan dus geen andere selectie versturen dan wat de
+ * lijst toont.
+ *
+ * @property listedCount `totalElements` van de lijst met precies deze filter, of `null` zolang die
+ *   niet vaststaat (nog aan het laden, of het laatste verzoek faalde). Bewust nooit het getal van een
+ *   vorige filter: `useQuery` houdt oude gegevens vast tijdens het herladen.
+ * @property reload laadt de huidige pagina opnieuw (bv. na een groepsbeslissing)
+ */
+export type MutationListToolbarContext = {
+  filter: MutationFilter;
+  listedCount: number | null;
+  reload: () => void;
 };
 
 /** De filtervelden die een bron kan ondersteunen; alleen deze verschijnen in de filterbalk. */
@@ -76,4 +101,9 @@ export type MutationListProps = {
   emptyMessage?: string;
   /** Na een geslaagde rijactie: de ouder ververst zijn eigen gegevens (tellers, andere tabbladen). */
   onAfterAction?: () => void;
+  /**
+   * Optionele slot boven de tabel, gevoed met de **toegepaste** filter van deze lijst (bouwstap F9).
+   * Het component weet niet wat de ouder ermee doet (§11.3); scherm (3) plaatst er de groepsactie.
+   */
+  toolbar?: (context: MutationListToolbarContext) => ReactNode;
 };

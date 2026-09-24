@@ -82,7 +82,9 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   },
   DECISION_FILTER_REQUIRED: {
     title: 'Filter ontbreekt',
-    explanation: 'Een groepsbeslissing vereist minstens één filterveld (batch, status of actietype).',
+    explanation:
+      'Een groepsbeslissing vereist minstens één filterveld (batch, status, soort, statusreden of ' +
+      'wijzigingsgroep).',
   },
   BUNDLE_EMPTY: {
     title: 'Bundel is leeg',

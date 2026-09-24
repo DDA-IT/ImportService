@@ -261,12 +261,18 @@ export type FreezePreflight = {
   crossBundleConflicts: string[];
 };
 
-// be.dda.catalogimport.service.BundleDecisionService.DecisionFilter (request)
+/**
+ * be.dda.catalogimport.service.BundleDecisionService.DecisionFilter (request). Sinds bouwstap C5
+ * dezelfde vijf velden als de queryparameters van `GET /bundles/{id}/mutations`, zodat de groepsactie
+ * exact beslist over wat de gefilterde lijst toont (`docs/decisions.md` 2026-09-24). `identityHash` is
+ * hexadecimaal en hoofdletterongevoelig; een ongeldige of onbekende hash raakt 0 mutaties, geen fout.
+ */
 export type DecisionFilter = {
   batchId?: number;
   status?: MutationStatus;
   statusReason?: string;
   actionType?: MutationActionType;
+  identityHash?: string;
 };
 
 // be.dda.catalogimport.service.PublicationBundleService.BundleReference

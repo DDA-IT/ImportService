@@ -22,6 +22,9 @@
  * - **`null` is "—", nooit 0** (§9.3): "niet vastgesteld" en "nul" zijn verschillende dingen.
  * - **Geen groepering aan de clientkant** (§11.5): op `identityHash` klikken zet het serverzijdige
  *   filter, zodat de hele wijzigingsgroep uit de server komt en niet uit één opgehaalde pagina.
+ * - **Eén bron van waarheid voor de filter** (F9, §10.4 punt 1): de optionele `toolbar`-slot krijgt
+ *   exact het filterobject waaruit ook de query naar de bron gebouwd wordt, plus het aantal dat de
+ *   lijst voor díe filter toont. Zo kan een groepsactie geen andere selectie versturen dan de lijst.
  */
 
 import { useState } from 'react';
@@ -34,7 +37,7 @@ import { DataTable, type DataTableColumn } from '../DataTable.tsx';
 import { Pager } from '../Pager.tsx';
 import { StatusBadge } from '../StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
-import type { MutationListProps, MutationQuery, MutationRowAction } from './types.ts';
+import type { MutationFilter, MutationListProps, MutationQuery, MutationRowAction } from './types.ts';
 import styles from './MutationList.module.css';
 
 /** Hoeveel tekens van de identiteitshash zichtbaar zijn; de volledige waarde staat in de tooltip. */
@@ -99,6 +102,7 @@ export function MutationList({
   initialQuery,
   emptyMessage = 'Geen mutaties gevonden.',
   onAfterAction,
+  toolbar,
 }: MutationListProps) {
   const { actor } = useActor();
   const supports = (name: keyof FilterState) => source.supportedFilters.includes(name);
@@ -112,13 +116,17 @@ export function MutationList({
   const [pendingAction, setPendingAction] = useState<{ action: MutationRowAction; row: MutationRow } | null>(null);
 
   /**
-   * De query die naar de bron gaat: enkel de filters die deze bron ondersteunt (§11.3 punt 5), lege
-   * waarden weggelaten zodat een blanco filter nooit als parameter meereist.
+   * De toegepaste filter: enkel de filters die deze bron ondersteunt (§11.3 punt 5), lege waarden
+   * weggelaten zodat een blanco filter nooit als parameter meereist.
+   *
+   * Eén bron van waarheid (F9, ontwerp §10.4 punt 1): de query naar de bron én de `toolbar`-slot
+   * krijgen allebei dit ene object. Er bestaat geen tweede plek die een filter samenstelt.
    */
-  const query: MutationQuery = buildQuery();
+  const filter: MutationFilter = buildFilter();
+  const query: MutationQuery = { ...filter, page, size };
 
-  function buildQuery(): MutationQuery {
-    const next: MutationQuery = { page, size };
+  function buildFilter(): MutationFilter {
+    const next: MutationFilter = {};
     if (supports('status') && applied.status !== '') {
       next.status = applied.status as NonNullable<MutationQuery['status']>;
     }
@@ -157,7 +165,15 @@ export function MutationList({
     query.size,
   ].join('|');
 
-  const list = useQuery(key, (signal) => source.fetchPage(query, signal));
+  // Het resultaat draagt de sleutel waarvoor het geladen werd. `useQuery` houdt de vorige gegevens vast
+  // tijdens het herladen (en zet `loading` pas in een effect), dus zonder deze sleutel zou de toolbar
+  // één render lang het aantal van een vorige filter kunnen tonen naast de nieuwe filter.
+  const list = useQuery(key, (signal) => source.fetchPage(query, signal).then((page) => ({ key, page })));
+  const current = list.data?.page ?? null;
+  const listedCount =
+    list.data !== null && list.data.key === key && !list.loading && list.error === null
+      ? list.data.page.totalElements
+      : null;
 
   const runner = useAction(
     (action: MutationRowAction, row: MutationRow, input: { actor: string; reason: string | null }) =>
@@ -447,21 +463,23 @@ export function MutationList({
         </p>
       )}
 
-      {list.error !== null && <ErrorBanner error={list.error} />}
-      {list.loading && list.data === null && <p className={styles.loading}>Bezig met laden…</p>}
+      {toolbar?.({ filter, listedCount, reload: list.reload })}
 
-      {list.data !== null && (
+      {list.error !== null && <ErrorBanner error={list.error} />}
+      {list.loading && current === null && <p className={styles.loading}>Bezig met laden…</p>}
+
+      {current !== null && (
         <>
           <DataTable
             columns={columns}
-            rows={list.data.content}
+            rows={current.content}
             rowKey={(row) => row.id}
             emptyMessage={emptyMessage}
           />
           <Pager
-            page={list.data.page}
-            size={list.data.size}
-            totalElements={list.data.totalElements}
+            page={current.page}
+            size={current.size}
+            totalElements={current.totalElements}
             onPageChange={setPage}
             onSizeChange={(next) => {
               setSize(next);

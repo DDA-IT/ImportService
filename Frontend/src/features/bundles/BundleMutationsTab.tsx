@@ -14,7 +14,8 @@
  *   het append-only register blijven staan;
  * - `idempotent: true` wordt gemeld ("er is geen tweede regel geschreven"), niet stilgehouden.
  *
- * De groepsactie (§10.4) hoort bij bouwstap F9 en staat hier bewust nog niet.
+ * De groepsactie (§10.4, bouwstap F9) zit in de `toolbar`-slot van de lijst: `GroupDecisionDialog` krijgt
+ * daar exact de toegepaste filter en het aantal van de lijst. Dit tabblad stelt zelf geen filter samen.
  */
 
 import { useState } from 'react';
@@ -23,6 +24,7 @@ import type { MutationRow } from '../../api/types.ts';
 import { MutationList } from '../../components/MutationList/MutationList.tsx';
 import type { MutationRowAction, MutationSource } from '../../components/MutationList/types.ts';
 import { mutationDecisionGate } from './bundlePolicy.ts';
+import { GroupDecisionDialog } from './GroupDecisionDialog.tsx';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
 import styles from './BundleMutationsTab.module.css';
 
@@ -138,6 +140,20 @@ export function BundleMutationsTab() {
         rowActions={rowActions}
         emptyMessage="Deze bundel bevat (met deze filter) geen mutaties."
         onAfterAction={reloadBundle}
+        toolbar={({ filter, listedCount, reload }) => (
+          <GroupDecisionDialog
+            bundleId={bundle.id}
+            bundleStatus={bundle.status}
+            filter={filter}
+            listedCount={listedCount}
+            onDecided={(message) => {
+              setNotice(message);
+              // Expliciete invalidatie (§5): de lijst zelf en de tellers van de bundel.
+              reload();
+              reloadBundle();
+            }}
+          />
+        )}
       />
     </div>
   );

@@ -7,7 +7,13 @@
  * ook wanneer een poort hier "toegestaan" zei (A44).
  */
 
-import type { MutationActionType, MutationStatus, PublicationBundleStatus } from '../../api/types.ts';
+import type {
+  DecisionFilter,
+  MutationActionType,
+  MutationStatus,
+  PublicationBundleStatus,
+} from '../../api/types.ts';
+import { isEmptyDecisionFilter } from './groupDecisionFilter.ts';
 
 export type Gate = { allowed: true } | { allowed: false; reason: string };
 
@@ -142,4 +148,62 @@ export function mutationDecisionGate(
 
   // Overige statussen: EXPIRED, SKIPPED, RECORDED, IN_PROGRESS, PUBLISHED, TECHNICALLY_FAILED.
   return denied('Deze mutatie staat in een status waarin goedkeuren of afkeuren niet mogelijk is (MUTATION_NOT_DECIDABLE).');
+}
+
+/** De twee statussen die een groepsactie raakt — spiegel van `BundleDecisionService.toSelection`. */
+const GROUP_DECIDABLE_STATUSES: readonly MutationStatus[] = ['PLANNED', 'AWAITING_APPROVAL'];
+/** De twee soorten die een groepsactie raakt — spiegel van `BundleDecisionService.toSelection`. */
+const GROUP_DECIDABLE_ACTION_TYPES: readonly MutationActionType[] = ['CREATE', 'UPDATE'];
+
+/**
+ * §10.4 — mag de groepsactie aangeboden worden met déze (zichtbare) lijstfilter, binnen een bundel met
+ * `bundleStatus`? `listedCount` is het aantal dat de lijst voor precies deze filter toont, of `null`
+ * zolang dat niet vaststaat.
+ *
+ * Spiegel van de backend, nooit de bron van waarheid: een 400/409 van de server wordt altijd getoond.
+ * De poort weigert wat de server toch zou weigeren (lege filter: `DECISION_FILTER_REQUIRED`; een
+ * `status` buiten `PLANNED`/`AWAITING_APPROVAL` of een `actionType` buiten `CREATE`/`UPDATE`: 400
+ * zonder code), zodat de gebruiker de reden vóór de klik ziet. De filter zelf wordt nooit aangepast:
+ * wat de lijst toont is wat er verstuurd wordt, of er wordt niets verstuurd.
+ */
+export function groupDecisionGate(
+  bundleStatus: PublicationBundleStatus,
+  filter: DecisionFilter,
+  listedCount: number | null,
+): Gate {
+  const bundleGate = bundleActionGate(bundleStatus, 'GROUP_DECISION');
+  if (!bundleGate.allowed) {
+    return bundleGate;
+  }
+
+  if (isEmptyDecisionFilter(filter)) {
+    return denied(
+      'Zet eerst minstens één filter in de lijst; een groepsactie over de hele bundel bestaat niet ' +
+        '(DECISION_FILTER_REQUIRED).',
+    );
+  }
+
+  if (filter.status !== undefined && !GROUP_DECIDABLE_STATUSES.includes(filter.status)) {
+    return denied(
+      `De lijst is gefilterd op status ${filter.status}; een groepsactie raakt alleen PLANNED of ` +
+        'AWAITING_APPROVAL. Pas de statusfilter aan.',
+    );
+  }
+
+  if (filter.actionType !== undefined && !GROUP_DECIDABLE_ACTION_TYPES.includes(filter.actionType)) {
+    return denied(
+      `De lijst is gefilterd op soort ${filter.actionType}; een groepsactie raakt alleen CREATE of ` +
+        'UPDATE. Pas de soortfilter aan.',
+    );
+  }
+
+  if (listedCount === null) {
+    return denied('Het aantal mutaties voor deze filter is nog niet gekend (de lijst laadt nog, of het laden mislukte).');
+  }
+
+  if (listedCount === 0) {
+    return denied('De lijst toont met deze filter geen mutaties; er is niets te beslissen.');
+  }
+
+  return ALLOWED;
 }
