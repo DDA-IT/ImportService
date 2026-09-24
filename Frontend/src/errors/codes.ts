@@ -5,7 +5,18 @@
 
 import type { ApiError } from '../api/http';
 
-export type CodeEntry = { title: string; explanation: string; whatNow?: string };
+export type CodeEntry = {
+  title: string;
+  explanation: string;
+  whatNow?: string;
+  /**
+   * De servertekst (`error`) van deze code draagt concrete gegevens die de Nederlandse uitleg niet kan
+   * bevatten — de conflictvoorbeelden (tot tien) of het aantal betrokken mutaties. Die tekst wordt dan
+   * volledig en letterlijk mee getoond (§10.5: "de UI toont die melding volledig en leesbaar"), nooit
+   * samengevat of ingekort.
+   */
+  showBackendDetail?: true;
+};
 
 /**
  * Alle stabiele backendcodes relevant voor dit scherm, uit
@@ -95,11 +106,13 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     title: 'Er wachten nog mutaties op een beslissing',
     explanation: 'Bevriezen mag die vraag niet stilzwijgend beantwoorden.',
     whatNow: 'Beoordeel eerst de mutaties met status AWAITING_APPROVAL.',
+    showBackendDetail: true,
   },
   SOURCE_STATE_CHANGED_SINCE_SCREENING: {
     title: 'Bronstaat is veranderd sinds de screening',
     explanation: 'De bronstaat is verschoven sinds de screening van een batch in deze bundel.',
     whatNow: 'Screen de betrokken levering opnieuw.',
+    showBackendDetail: true,
   },
   BUNDLE_OFFER_CONFLICT: {
     title: 'Conflict tussen aanbiedingen',
@@ -107,18 +120,23 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
       'Twee publiceerbare mutaties in deze bundel raken dezelfde aanbieding. De backend geeft hieronder ' +
       'tot tien voorbeelden.',
     whatNow: 'Keur er één af, of publiceer/annuleer eerst de andere bundel.',
+    showBackendDetail: true,
   },
   OFFER_ALREADY_IN_ANOTHER_BUNDLE: {
     title: 'Aanbieding zit al in een andere bundel',
+    // Spiegel van PublicationBundleDao.findCrossBundleOfferConflicts: elke andere bundel die niet
+    // CANCELLED is telt mee — dus ook een bundel die nog in opbouw is, niet enkel een bevroren.
     explanation:
-      'Een aanbieding in deze bundel is al bevroren in een andere bundel. De backend geeft hieronder tot ' +
-      'tien voorbeelden.',
-    whatNow: 'Publiceer of annuleer eerst de andere bundel.',
+      'Een aanbieding in deze bundel staat ook publiceerbaar in een andere bundel die niet geannuleerd ' +
+      'is (in opbouw of bevroren). De backend geeft hieronder tot tien voorbeelden.',
+    whatNow: 'Keur één kant af, of publiceer/annuleer eerst de andere bundel.',
+    showBackendDetail: true,
   },
   BUNDLE_CONTENT_CHANGED_DURING_FREEZE: {
     title: 'Inhoud is veranderd tijdens het bevriezen',
     explanation: 'De inhoud van de bundel is tussen het laden en het bevestigen van deze actie gewijzigd.',
     whatNow: 'Laad de bundel opnieuw en probeer opnieuw te bevriezen.',
+    showBackendDetail: true,
   },
   BUNDLE_NOT_CANCELLABLE: {
     title: 'Bundel kan niet geannuleerd worden',
@@ -128,6 +146,7 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     title: 'Inhoud is veranderd tijdens het annuleren',
     explanation: 'De inhoud van de bundel is tussen het laden en het bevestigen van deze actie gewijzigd.',
     whatNow: 'Laad de bundel opnieuw en probeer opnieuw te annuleren.',
+    showBackendDetail: true,
   },
 };
 
@@ -165,12 +184,17 @@ function technicalLine(code: string | null, status: number, path: string): strin
 
 /**
  * Vertaalt een `ApiError` naar de Nederlandse weergave, volgens de vijf regels van §4.
+ *
+ * `detail` is de letterlijke, volledige servertekst voor een bekende code met `showBackendDetail`
+ * (bv. de conflictvoorbeelden van `BUNDLE_OFFER_CONFLICT`), anders `null`. Additief: bestaande
+ * aanroepers die `detail` niet lezen, gedragen zich ongewijzigd.
  */
 export function describe(error: ApiError): {
   title: string;
   explanation: string;
   whatNow: string | null;
   technical: string;
+  detail: string | null;
 } {
   const technical = technicalLine(error.code, error.status, error.path);
 
@@ -186,6 +210,7 @@ export function describe(error: ApiError): {
             'type fout.',
       whatNow: 'Raadpleeg het serverlogboek voor de precieze oorzaak.',
       technical,
+      detail: null,
     };
   }
 
@@ -193,7 +218,14 @@ export function describe(error: ApiError): {
   if (error.code !== null) {
     const known = CODE_MESSAGES[error.code];
     if (known) {
-      return { title: known.title, explanation: known.explanation, whatNow: known.whatNow ?? null, technical };
+      return {
+        title: known.title,
+        explanation: known.explanation,
+        whatNow: known.whatNow ?? null,
+        technical,
+        // Volledig en letterlijk, nooit ingekort: de voorbeelden zijn precies wat de gebruiker nodig heeft.
+        detail: known.showBackendDetail === true ? error.backendMessage : null,
+      };
     }
 
     const family = FAMILY_FALLBACKS.find((f) => f.match(error.code!));
@@ -203,6 +235,7 @@ export function describe(error: ApiError): {
       explanation,
       whatNow: null,
       technical,
+      detail: null,
     };
   }
 
@@ -214,6 +247,7 @@ export function describe(error: ApiError): {
         error.backendMessage ?? 'De server wees dit verzoek af, maar leverde geen verdere toelichting.',
       whatNow: 'De server levert hier geen stabiele foutcode; dit is de letterlijke ontwikkelaarstekst.',
       technical,
+      detail: null,
     };
   }
 
@@ -224,5 +258,6 @@ export function describe(error: ApiError): {
     explanation: error.backendMessage ?? 'De server leverde geen verdere toelichting bij deze fout.',
     whatNow: null,
     technical,
+    detail: null,
   };
 }

@@ -17,6 +17,7 @@ import type {
   DecideMutationRequest,
   DecisionRow,
   FreezeBundleRequest,
+  FreezePreflight,
   GroupDecisionView,
   Membership,
   MutationActionType,
@@ -180,6 +181,14 @@ export function freeze(bundleId: number, body: FreezeBundleRequest, signal?: Abo
     body: JSON.stringify(body),
     signal,
   });
+}
+
+/**
+ * GET /bundles/{bundleId}/freeze-check — CatalogImportBundleController.freezeCheck (bouwstap C3).
+ * Momentopname zonder slot: `freezable: true` is nooit een garantie; `freeze` blijft de waarheid.
+ */
+export function freezeCheck(bundleId: number, signal?: AbortSignal): Promise<FreezePreflight> {
+  return request<FreezePreflight>(`/bundles/${bundleId}/freeze-check`, { signal });
 }
 
 /** POST /bundles/{bundleId}/cancel — CatalogImportBundleController.cancel */

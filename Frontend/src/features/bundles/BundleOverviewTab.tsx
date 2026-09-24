@@ -2,18 +2,22 @@
  * `/bundles/:bundleId` (index) — stand, tellers, audit en de actieknoppen. Zie
  * `docs/design/frontend-scherm3-bundel-design.md` §8, §9.1, §9.3, §10.5, §10.6.
  *
- * De knoppen werken in deze bouwstap (F7) nog niet — bevriezen/annuleren volgen in F10 — maar hebben
- * al wel de juiste poort: een verboden actie wordt **uitgeschakeld getoond met de reden erbij**, nooit
- * verborgen (§9.1). Een toegestane actie is in F7 nog uitgeschakeld met een eigen, aparte reden ("volgt
- * in een latere bouwstap"), zodat een knop nooit iets aanbiedt wat vandaag niet werkt.
+ * De actieknoppen bevriezen en annuleren (F10) openen `FreezeDialog`/`CancelDialog`; een verboden actie
+ * wordt **uitgeschakeld getoond met de reden erbij**, nooit verborgen (§9.1). Na een geslaagde actie
+ * staat de melding hier, en wordt de bundel herladen (§5: het antwoord is bewijs, niet de enige bron).
+ *
+ * De twee tellers die het bevriezen bepalen — hoeveel `PLANNED` er op naam van de bevriezer goedgekeurd
+ * wordt en hoeveel `AWAITING_APPROVAL` het bevriezen blokkeert — komen van `BundleDetail` zelf
+ * (bouwstap C2, `docs/decisions.md` 2026-09-23 V4: `countPlanned`/`countUndecided`), zodat de UI per
+ * constructie toont wat de server zal doen. Niet meer via twee `size=1`-lijstaanroepen (§9.3): die
+ * telden ook identiteitsincidenten met dezelfde status mee en konden dus van de server afwijken.
  */
 
 import { useState } from 'react';
-import * as bundlesApi from '../../api/bundles.ts';
-import { useQuery } from '../../hooks/useQuery.ts';
 import { bundleActionGate } from './bundlePolicy.ts';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
-import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import { CancelDialog } from './CancelDialog.tsx';
+import { FreezeDialog } from './FreezeDialog.tsx';
 import styles from './BundleOverviewTab.module.css';
 
 /** "—" met een tooltip voor een niet-vastgestelde teller (`null`), nooit `0` (§9.3). */
@@ -32,35 +36,40 @@ function formatDateTime(iso: string | null): string {
   return iso === null ? '—' : new Date(iso).toLocaleString('nl-BE');
 }
 
-const NOT_YET_IMPLEMENTED = 'Nog niet beschikbaar: deze knop krijgt zijn werking in een latere bouwstap.';
+type OpenDialog = 'freeze' | 'cancel' | null;
 
 export function BundleOverviewTab() {
-  const { bundle } = useBundleDetailContext();
+  const { bundle, reloadBundle } = useBundleDetailContext();
   const [copied, setCopied] = useState(false);
+  const [openDialog, setOpenDialog] = useState<OpenDialog>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const isAssembling = bundle.status === 'ASSEMBLING';
 
-  // §9.3: het aantal nog te beslissen mutaties staat in géén teller op BundleDetail. Twee goedkope
-  // aanroepen met size=1 en `totalElements`, uitsluitend zolang de bundel ASSEMBLING is.
-  const plannedKey = isAssembling ? `bundle-planned-count:${bundle.id}` : 'skip-planned';
-  const planned = useQuery(plannedKey, (signal) =>
-    isAssembling
-      ? bundlesApi
-          .bundleMutations(bundle.id, { status: 'PLANNED', page: 0, size: 1 }, signal)
-          .then((result) => result.totalElements)
-      : Promise.resolve(null),
-  );
-  const awaitingKey = isAssembling ? `bundle-awaiting-count:${bundle.id}` : 'skip-awaiting';
-  const awaiting = useQuery(awaitingKey, (signal) =>
-    isAssembling
-      ? bundlesApi
-          .bundleMutations(bundle.id, { status: 'AWAITING_APPROVAL', page: 0, size: 1 }, signal)
-          .then((result) => result.totalElements)
-      : Promise.resolve(null),
-  );
-
   const freezeGate = bundleActionGate(bundle.status, 'FREEZE');
   const cancelGate = bundleActionGate(bundle.status, 'CANCEL');
+
+  // Een aankondiging, geen blokkade: de knop blijft aan zodat de voorvlucht (de bron van de blokkades,
+  // inclusief de conflicten die hier niet te zien zijn) bekeken kan worden. De dialoog blokkeert.
+  const undecided = isAssembling ? bundle.awaitingApprovalCount : null;
+  const freezeHint =
+    undecided !== null && undecided > 0
+      ? `Er ${undecided === 1 ? 'wacht' : 'wachten'} nog ${undecided} ${undecided === 1 ? 'mutatie' : 'mutaties'} ` +
+        'op een beslissing (AWAITING_APPROVAL); de voorvlucht zal bevriezen blokkeren ' +
+        '(BUNDLE_HAS_UNDECIDED_MUTATIONS).'
+      : 'Keurt de resterende PLANNED-mutaties goed op uw naam en legt de bundel vast. Eerst volgt een voorvlucht.';
+
+  function openDialogFor(dialog: Exclude<OpenDialog, null>) {
+    setNotice(null);
+    setOpenDialog(dialog);
+  }
+
+  /** Na een geslaagde bevriezing/annulering: melden, sluiten, en expliciet herladen (§5). */
+  function handleCompleted(message: string) {
+    setOpenDialog(null);
+    setNotice(message);
+    reloadBundle();
+  }
 
   async function handleCopyHash() {
     if (bundle.contentHash === null) {
@@ -78,6 +87,12 @@ export function BundleOverviewTab() {
 
   return (
     <div className={styles.tab}>
+      {notice !== null && (
+        <p className={styles.resultNotice} role="status">
+          {notice}
+        </p>
+      )}
+
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Tellers</h2>
         {!isAssembling && (
@@ -155,15 +170,15 @@ export function BundleOverviewTab() {
           {isAssembling && (
             <>
               <div className={styles.counter}>
-                <dt>Wacht op beslissing (PLANNED)</dt>
+                <dt>Wordt bij bevriezen goedgekeurd (PLANNED)</dt>
                 <dd>
-                  {planned.error !== null ? '—' : <Count value={planned.data ?? null} />}
+                  <Count value={bundle.plannedCount} />
                 </dd>
               </div>
               <div className={styles.counter}>
-                <dt>Wacht op goedkeuring (AWAITING_APPROVAL)</dt>
+                <dt>Wacht op beslissing (AWAITING_APPROVAL)</dt>
                 <dd>
-                  {awaiting.error !== null ? '—' : <Count value={awaiting.data ?? null} />}
+                  <Count value={bundle.awaitingApprovalCount} />
                 </dd>
               </div>
             </>
@@ -222,22 +237,43 @@ export function BundleOverviewTab() {
         <h2 className={styles.sectionTitle}>Acties</h2>
         <div className={styles.actions}>
           <div className={styles.actionRow}>
-            <button type="button" className={styles.actionButton} disabled title={freezeGate.allowed ? NOT_YET_IMPLEMENTED : freezeGate.reason}>
+            <button
+              type="button"
+              className={styles.actionButton}
+              disabled={!freezeGate.allowed}
+              title={freezeGate.allowed ? undefined : freezeGate.reason}
+              onClick={() => openDialogFor('freeze')}
+            >
               Bevriezen
             </button>
-            <p className={styles.actionReason}>{freezeGate.allowed ? NOT_YET_IMPLEMENTED : freezeGate.reason}</p>
+            <p className={styles.actionReason}>{freezeGate.allowed ? freezeHint : freezeGate.reason}</p>
           </div>
           <div className={styles.actionRow}>
-            <button type="button" className={styles.actionButton} disabled title={cancelGate.allowed ? NOT_YET_IMPLEMENTED : cancelGate.reason}>
+            <button
+              type="button"
+              className={styles.actionButton}
+              disabled={!cancelGate.allowed}
+              title={cancelGate.allowed ? undefined : cancelGate.reason}
+              onClick={() => openDialogFor('cancel')}
+            >
               Annuleren
             </button>
-            <p className={styles.actionReason}>{cancelGate.allowed ? NOT_YET_IMPLEMENTED : cancelGate.reason}</p>
+            <p className={styles.actionReason}>
+              {cancelGate.allowed
+                ? 'Laat de niet-afgeronde mutaties definitief vervallen en geeft de batches vrij.'
+                : cancelGate.reason}
+            </p>
           </div>
         </div>
       </section>
 
-      {planned.error !== null && <ErrorBanner error={planned.error} />}
-      {awaiting.error !== null && <ErrorBanner error={awaiting.error} />}
+      {/* Pas gemount bij het openen: elke opening begint met een verse voorvlucht en zonder oude fout. */}
+      {openDialog === 'freeze' && (
+        <FreezeDialog bundle={bundle} onClose={() => setOpenDialog(null)} onFrozen={handleCompleted} />
+      )}
+      {openDialog === 'cancel' && (
+        <CancelDialog bundle={bundle} onClose={() => setOpenDialog(null)} onCancelled={handleCompleted} />
+      )}
     </div>
   );
 }

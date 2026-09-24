@@ -5,7 +5,9 @@
  * §10.6) — die wrijving bestaat alleen voor de acties die niet meer ongedaan te maken zijn.
  *
  * Bevestigen is geblokkeerd (de knop is uit) zolang: de actornaam ongeldig is, een verplichte reden
- * ontbreekt, of de typ-bevestiging niet exact overeenkomt.
+ * ontbreekt, de typ-bevestiging niet exact overeenkomt, of de aanroeper een externe blokkade meegeeft
+ * (`confirmBlockedReason`, bv. een voorvlucht die nog laadt of een blokkade meldt). In dat laatste
+ * geval staat de reden als tekst bij de knop — nooit een uitgeschakelde knop zonder uitleg (§9.1).
  */
 
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -31,6 +33,11 @@ export type ConfirmDialogProps = {
   pending?: boolean;
   /** Een eerdere serverfout op deze actie (bv. een `ErrorBanner`), getoond binnen de dialoog. */
   error?: ReactNode;
+  /**
+   * Een blokkade van buiten de dialoog (bv. de voorvlucht van het bevriezen). Niet-`null` = bevestigen
+   * is onmogelijk, met deze reden zichtbaar bij de knop. Weggelaten of `null` = geen externe blokkade.
+   */
+  confirmBlockedReason?: string | null;
   onConfirm: (input: { actor: string; reason: string | null }) => void;
   onCancel: () => void;
 };
@@ -46,6 +53,7 @@ export function ConfirmDialog({
   variant = 'primary',
   pending = false,
   error,
+  confirmBlockedReason = null,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -74,7 +82,8 @@ export function ConfirmDialog({
       ? `Typ exact "${typedConfirmationText}" om te bevestigen.`
       : null;
 
-  const canConfirm = actorError === null && reasonError === null && typedConfirmationError === null;
+  const canConfirm =
+    actorError === null && reasonError === null && typedConfirmationError === null && confirmBlockedReason === null;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -145,6 +154,12 @@ export function ConfirmDialog({
         )}
 
         {error !== undefined && <div className={styles.error}>{error}</div>}
+
+        {confirmBlockedReason !== null && (
+          <p className={styles.blockedReason} data-testid="confirm-blocked-reason">
+            {confirmBlockedReason}
+          </p>
+        )}
 
         <div className={styles.actions}>
           <button type="button" className={styles.cancelButton} onClick={onCancel} disabled={pending}>

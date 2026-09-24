@@ -470,9 +470,12 @@ vastgesteld"*; nooit als `0`. Concreet op het overzichtstabblad:
   Screen de levering opnieuw."* Bij FROZEN is hij `null` en wordt hij niet getoond.
 - `contentHash` wordt bij FROZEN getoond, afgekort tot de eerste 16 tekens met een kopieerknop voor de
   volledige waarde. Hij wordt nooit geïnterpreteerd, alleen weergegeven.
-- Het aantal **nog te beslissen** mutaties staat in géén teller (zie §16.2). Het overzicht haalt het op
-  met twee goedkope aanroepen `GET /bundles/{id}/mutations?status=AWAITING_APPROVAL&size=1` en
-  `...?status=PLANNED&size=1` en gebruikt `totalElements`. Dat is precies het getal dat bepaalt of
+- Het aantal **nog te beslissen** mutaties staat sinds beslissing C2 (2026-09-23, zie §16.2) in twee
+  tellers op `BundleDetail`: `plannedCount` ("Wordt bij bevriezen goedgekeurd (PLANNED)") en
+  `awaitingApprovalCount` ("Wacht op beslissing (AWAITING_APPROVAL)"). Deze tellers vervangen de vorige
+  twee `size=1`-aanroepen op `/bundles/{id}/mutations?status=AWAITING_APPROVAL&size=1` en
+  `...?status=PLANNED&size=1`, omdat die lijstmethode ook incidentmutaties met dezelfde status meetelde
+  en zo afweek van de backendtellingen in `countPlanned`/`countUndecided`. Dat is precies het getal dat bepaalt of
   bevriezen kan (`BUNDLE_HAS_UNDECIDED_MUTATIONS`) en hoeveel `PLANNED`-mutaties bij het bevriezen
   automatisch goedgekeurd worden op naam van de bevriezer.
 
@@ -564,7 +567,7 @@ aanvaardt daarna niets meer. Bewust niet-idempotent.
 Voorvlucht (de dialoog laadt eerst `GET /bundles/{id}` opnieuw en toont):
 
 - het aantal `PLANNED` dat **mee-goedgekeurd wordt op uw naam** — het belangrijkste getal in de hele
-  dialoog, opgehaald zoals in §9.3;
+  dialoog, nu direct uit de teller `plannedCount` van `BundleDetail` (beslissing C2, 2026-09-23);
 - het aantal `AWAITING_APPROVAL`: is dat > 0, dan is de bevriesknop uit met de reden erbij (de backend
   zou `BUNDLE_HAS_UNDECIDED_MUTATIONS` geven);
 - `batchCount = 0` → uit, reden `BUNDLE_EMPTY`;
@@ -578,11 +581,22 @@ Bevestiging: `frozenBy` (zichtbaar/bewerkbaar), `reason` (verplicht), **en de ge
 `bundleReference` overtypen**. Die wrijving is er alleen bij bevriezen en annuleren, om één reden: dat
 zijn de twee acties die binnen de applicatie niet meer ongedaan te maken zijn.
 
-Conflicten (`BUNDLE_OFFER_CONFLICT`, `OFFER_ALREADY_IN_ANOTHER_BUNDLE`) zijn **niet** vooraf te
-voorspellen — er is geen endpoint dat ze berekent (§16.3). De backend zet tot tien voorbeelden in de
-foutmelding; de UI toont die melding volledig en leesbaar (met behoud van regelafbrekingen), plus de
-uitleg *"Twee publiceerbare mutaties op dezelfde aanbieding: keur er één af, of publiceer/annuleer eerst
-de andere bundel."*
+Conflictcontrole (beslissing C3, 2026-09-23): `POST /bundles/{id}/freeze-check` levert een droogloop
+aan zonder slot, met het `PLANNED`-aantal, blokkadecodes en tot tien voorbeelden van conflicten
+(`BUNDLE_OFFER_CONFLICT`, `OFFER_ALREADY_IN_ANOTHER_BUNDLE`). Als `staleMutationCount > 0` in het
+antwoord staat, wordt dat als blokkade getoond, omdat de server het bevriezen zal weigeren met
+`SOURCE_STATE_CHANGED_SINCE_SCREENING`. De echte `POST /bundles/{id}/freeze` blijft de waarheid. De
+backend zet tot tien voorbeelden in een eventuele foutmelding; de UI toont die melding volledig en
+leesbaar (met behoud van regelafbrekingen), plus de uitleg *"Twee publiceerbare mutaties op dezelfde
+aanbieding: keur er één af, of publiceer/annuleer eerst de andere bundel."*
+
+> **Important technical constraint discovered** (F10, 2026-09-24)
+>
+> De voorgaande punten over tellers (twee `size=1`-aanroepen in §9.3) en conflictvoorspelling (geen
+> endpoint in §10.5) zijn beide achterhaald door C2 en C3 (decisions.md 2026-09-23). Het aantal
+> mutaties dat bij annuleren vervalt (§10.6), wordt in de frontend berekend via zes lijstaanroepen in
+> `expiringMutations.ts`, omdat de backend `countExpirableMutations` niet via REST blootstelt. Het
+> definitieve aantal staat op de CANCEL-regel in het beslissingsregister.
 
 ### 10.6 Annuleren (`POST /bundles/{id}/cancel`)
 
@@ -834,15 +848,16 @@ Rapport aan de mens na **F5** (fundament af) en na **F10** (het onomkeerbare dee
    wachtte", bv. `BULK_PRICE_INCIDENT`) kan in de UI niet getoond en dus niet aangeboden worden.
    **Voorstel:** een additieve `statusReason`-queryparameter op `GET /bundles/{id}/mutations` (en, voor
    scherm 2, op `GET /batches/{id}/mutations`). Klein, additief, breekt niets.
-2. **Geen teller voor `PLANNED` en `AWAITING_APPROVAL`** op `BundleDetail` — `BundleMutationTotals`
-   zegt in commentaar zelf "hebben geen eigen teller op de bundel". Juist die twee bepalen of bevriezen
-   kan en hoeveel er bij het bevriezen automatisch goedgekeurd wordt op naam van de bevriezer. De UI
-   behelpt zich met twee `size=1`-aanroepen op `totalElements`. **Voorstel:** twee tellers additief
-   toevoegen aan het live-deel van `BundleDetail` (niet aan de bevroren rij — die is vastgesteld).
-3. **Geen voorspelling van de conflictcontrole.** `BUNDLE_OFFER_CONFLICT` en
-   `OFFER_ALREADY_IN_ANOTHER_BUNDLE` blijken pas bij het bevriezen. Een "kan deze bundel bevroren
-   worden?"-endpoint (droogloop) zou de zwaarste actie van het scherm voorspelbaar maken. Vandaag toont
-   de UI alleen de 409 met haar tot tien voorbeelden. Niet blokkerend, wel de grootste gebruiksruwheid.
+2. **Tellers voor `PLANNED` en `AWAITING_APPROVAL` op `BundleDetail`** — vervangen door **beslissing C2**
+   (2026-09-23). `BundleDetail` levert nu `plannedCount` en `awaitingApprovalCount` op het live
+   ASSEMBLING-deel; die tellers bepalen of bevriezen kan en hoeveel er bij het bevriezen automatisch
+   goedgekeurd wordt op naam van de bevriezer. Dit vervangt de vorige UI-werkwijze met twee `size=1`-
+   aanroepen op `totalElements`.
+3. **Voorspelling van de conflictcontrole** — vervangen door **beslissing C3** (2026-09-23). De
+   `FreezeDialog` doet een voorvlucht via `GET /bundles/{id}/freeze-check`, die een droogloop
+   teruglevert met het `PLANNED`-aantal, blokkadecodes en tot tien conflictvoorbeelden. Een verschoven
+   bronstaat (`staleMutationCount > 0`) wordt als blokkade getoond, omdat de server het bevriezen
+   weigert. De echte `POST /bundles/{id}/freeze` blijft de bron van waarheid.
 4. **`identity_hash` staat niet in `MutationRow`**, waardoor de wijzigingsgroep `(batch_id, identity_hash)`
    in de UI niet te tonen is (§11.5).
 5. **Geen naam of code bij `importLinkId`.** `BundleBatchRow` en `BundleCandidate` geven alleen een

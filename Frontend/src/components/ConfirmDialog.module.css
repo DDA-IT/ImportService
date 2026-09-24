@@ -89,3 +89,9 @@
   background: var(--color-danger);
   color: white;
 }
+
+.blockedReason {
+  margin: var(--spacing-2) 0 0 0;
+  font-size: 0.875rem;
+  color: var(--status-rejected-text);
+}

@@ -8,6 +8,10 @@ import { describe, expect, it } from 'vitest';
 import {
   BUNDLE_ACTIONS,
   bundleActionGate,
+  cancelGate,
+  freezeBlockerReason,
+  freezeBlockers,
+  freezeGate,
   isRevisionStatus,
   mutationDecisionGate,
   type BundleAction,
@@ -16,6 +20,7 @@ import {
   MUTATION_ACTION_TYPES,
   MUTATION_STATUSES,
   PUBLICATION_BUNDLE_STATUSES,
+  type FreezePreflight,
   type PublicationBundleStatus,
 } from '../api/types.ts';
 
@@ -205,5 +210,140 @@ describe('mutationDecisionGate — §9.2 beslisbaarheid per mutatie', () => {
     expect(count).toBe(
       PUBLICATION_BUNDLE_STATUSES.length * MUTATION_STATUSES.length * MUTATION_ACTION_TYPES.length * 2,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// F10 — de poorten van bevriezen (§10.5, voorvlucht C3) en annuleren (§10.6)
+// ---------------------------------------------------------------------------------------------------
+
+function preflight(overrides: Partial<FreezePreflight> = {}): FreezePreflight {
+  return {
+    freezable: true,
+    blockerCodes: [],
+    batchCount: 2,
+    plannedCount: 7,
+    awaitingApprovalCount: 0,
+    staleMutationCount: 0,
+    inBundleConflicts: [],
+    crossBundleConflicts: [],
+    ...overrides,
+  };
+}
+
+function reasonOf(gate: ReturnType<typeof freezeGate>): string {
+  return gate.allowed ? '' : gate.reason;
+}
+
+describe('freezeBlockerReason / freezeBlockers — §10.5 blokkades vooraf', () => {
+  it('F10.P1: elke bekende blokkadecode krijgt een leesbare reden met de code letterlijk erin', () => {
+    const codes = [
+      'BUNDLE_NOT_ASSEMBLING',
+      'BUNDLE_EMPTY',
+      'BUNDLE_HAS_UNDECIDED_MUTATIONS',
+      'SOURCE_STATE_CHANGED_SINCE_SCREENING',
+      'BUNDLE_OFFER_CONFLICT',
+      'OFFER_ALREADY_IN_ANOTHER_BUNDLE',
+    ];
+    for (const code of codes) {
+      expect(freezeBlockerReason(code, preflight())).toContain(code);
+    }
+  });
+
+  it('F10.P2: de AWAITING_APPROVAL-blokkade noemt het aantal, enkelvoud en meervoud', () => {
+    expect(freezeBlockerReason('BUNDLE_HAS_UNDECIDED_MUTATIONS', preflight({ awaitingApprovalCount: 3 }))).toContain(
+      '3 mutaties',
+    );
+    expect(freezeBlockerReason('BUNDLE_HAS_UNDECIDED_MUTATIONS', preflight({ awaitingApprovalCount: 1 }))).toContain(
+      '1 mutatie ',
+    );
+  });
+
+  it('F10.P3: een onbekende code (latere backenduitbreiding) wordt nooit weggelaten, maar letterlijk getoond', () => {
+    expect(freezeBlockerReason('BUNDLE_SOMETHING_NEW', preflight())).toContain('BUNDLE_SOMETHING_NEW');
+  });
+
+  it('F10.P4: behoudt de volgorde van de server en geeft één reden per code', () => {
+    const reasons = freezeBlockers(
+      preflight({
+        freezable: false,
+        blockerCodes: ['BUNDLE_HAS_UNDECIDED_MUTATIONS', 'SOURCE_STATE_CHANGED_SINCE_SCREENING', 'BUNDLE_OFFER_CONFLICT'],
+        awaitingApprovalCount: 2,
+        staleMutationCount: 4,
+      }),
+    );
+    expect(reasons).toHaveLength(3);
+    expect(reasons[0]).toContain('BUNDLE_HAS_UNDECIDED_MUTATIONS');
+    expect(reasons[1]).toContain('SOURCE_STATE_CHANGED_SINCE_SCREENING');
+    expect(reasons[1]).toContain('4 mutaties');
+    expect(reasons[2]).toContain('BUNDLE_OFFER_CONFLICT');
+  });
+
+  it('F10.P5: een tegenstrijdig antwoord (niet bevriesbaar, zonder code) is nooit "geen blokkade"', () => {
+    expect(freezeBlockers(preflight({ freezable: false, blockerCodes: [] }))).toHaveLength(1);
+    expect(freezeBlockers(preflight())).toEqual([]);
+  });
+});
+
+describe('freezeGate — §10.5 spiegel van de voorvlucht', () => {
+  it('F10.P6: zonder (geslaagde) voorvlucht is bevriezen uit, met reden', () => {
+    const gate = freezeGate('ASSEMBLING', null);
+    expect(gate.allowed).toBe(false);
+    expect(reasonOf(gate)).toContain('voorvlucht');
+  });
+
+  it('F10.P7: een bevriesbare voorvlucht bij ASSEMBLING laat bevriezen toe, ook met 0 PLANNED', () => {
+    expect(freezeGate('ASSEMBLING', preflight())).toEqual({ allowed: true });
+    expect(freezeGate('ASSEMBLING', preflight({ plannedCount: 0 }))).toEqual({ allowed: true });
+  });
+
+  it('F10.P8: een openstaande AWAITING_APPROVAL blokkeert vooraf, met de reden en de code', () => {
+    const gate = freezeGate(
+      'ASSEMBLING',
+      preflight({ freezable: false, blockerCodes: ['BUNDLE_HAS_UNDECIDED_MUTATIONS'], awaitingApprovalCount: 3 }),
+    );
+    expect(gate.allowed).toBe(false);
+    expect(reasonOf(gate)).toContain('BUNDLE_HAS_UNDECIDED_MUTATIONS');
+    expect(reasonOf(gate)).toContain('3 mutaties');
+  });
+
+  it('F10.P9: elke blokkadecode blokkeert, ook een onbekende', () => {
+    for (const code of ['BUNDLE_EMPTY', 'SOURCE_STATE_CHANGED_SINCE_SCREENING', 'OFFER_ALREADY_IN_ANOTHER_BUNDLE', 'X_NEW']) {
+      expect(freezeGate('ASSEMBLING', preflight({ freezable: false, blockerCodes: [code] })).allowed).toBe(false);
+    }
+  });
+
+  it('F10.P10: buiten ASSEMBLING wint de statusmatrix, ook als de voorvlucht "bevriesbaar" zou zeggen', () => {
+    for (const status of PUBLICATION_BUNDLE_STATUSES.filter((s) => s !== 'ASSEMBLING')) {
+      const gate = freezeGate(status, preflight());
+      expect(gate.allowed).toBe(false);
+      expect(reasonOf(gate)).toEqual(reasonOf(bundleActionGate(status, 'FREEZE')));
+    }
+  });
+});
+
+describe('cancelGate — §10.6', () => {
+  it('F10.P11: ASSEMBLING en FROZEN met een vastgesteld aantal laten annuleren toe, ook bij 0', () => {
+    for (const status of ['ASSEMBLING', 'FROZEN'] as const) {
+      expect(cancelGate(status, 12)).toEqual({ allowed: true });
+      expect(cancelGate(status, 0)).toEqual({ allowed: true });
+    }
+  });
+
+  it('F10.P12: zolang het aantal dat vervalt niet vaststaat, is annuleren uit, met reden', () => {
+    const gate = cancelGate('FROZEN', null);
+    expect(gate.allowed).toBe(false);
+    expect(gate.allowed ? '' : gate.reason).toContain('niet vastgesteld');
+  });
+
+  it('F10.P13: CANCELLED en de Fase 5-statussen weigeren annuleren, met de reden van de statusmatrix', () => {
+    const cancelled = cancelGate('CANCELLED', 3);
+    expect(cancelled.allowed).toBe(false);
+    expect(cancelled.allowed ? '' : cancelled.reason).toContain('BUNDLE_NOT_CANCELLABLE');
+    for (const status of FASE5_STATUSES) {
+      const gate = cancelGate(status, 3);
+      expect(gate.allowed).toBe(false);
+      expect(gate.allowed ? '' : gate.reason).toContain(status);
+    }
   });
 });

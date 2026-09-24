@@ -34,3 +34,29 @@
   font-size: 0.8125rem;
   color: var(--color-text-secondary);
 }
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.detailLabel {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+/* Volledig en leesbaar (§10.5): regelafbrekingen blijven staan, lange sleutels breken af in plaats van
+   buiten de dialoog te lopen, en er is geen maximumhoogte die de voorbeelden zou verbergen. */
+.detailText {
+  margin: 0;
+  padding: var(--spacing-2);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+  font-family: monospace;
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

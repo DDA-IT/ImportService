@@ -117,7 +117,21 @@
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border-dark);
   background: var(--color-surface);
+  cursor: pointer;
+}
+
+.actionButton:disabled {
   cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.resultNotice {
+  margin: 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-info);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: 0.875rem;
 }
 
 .actionReason {

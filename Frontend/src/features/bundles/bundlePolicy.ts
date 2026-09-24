@@ -9,6 +9,7 @@
 
 import type {
   DecisionFilter,
+  FreezePreflight,
   MutationActionType,
   MutationStatus,
   PublicationBundleStatus,
@@ -205,5 +206,101 @@ export function groupDecisionGate(
     return denied('De lijst toont met deze filter geen mutaties; er is niets te beslissen.');
   }
 
+  return ALLOWED;
+}
+
+function mutationsCount(count: number): string {
+  return `${count} ${count === 1 ? 'mutatie' : 'mutaties'}`;
+}
+
+/**
+ * §10.5 — de leesbare reden per blokkadecode uit de voorvlucht (`GET /bundles/{id}/freeze-check`,
+ * bouwstap C3). Elke reden draagt de code letterlijk, zodat de gebruiker de 409 herkent die de server
+ * zou geven. Een onbekende code (latere backenduitbreiding) wordt nooit weggelaten: ze blokkeert en
+ * wordt letterlijk getoond.
+ */
+export function freezeBlockerReason(code: string, preflight: FreezePreflight): string {
+  switch (code) {
+    case 'BUNDLE_NOT_ASSEMBLING':
+      return 'De bundel is niet meer in opbouw; alleen een bundel met status ASSEMBLING kan bevroren worden (BUNDLE_NOT_ASSEMBLING).';
+    case 'BUNDLE_EMPTY':
+      return 'De bundel heeft geen actieve batch; een lege bundel kan niet bevroren worden (BUNDLE_EMPTY).';
+    case 'BUNDLE_HAS_UNDECIDED_MUTATIONS':
+      return (
+        `Er ${preflight.awaitingApprovalCount === 1 ? 'wacht' : 'wachten'} nog ` +
+        `${mutationsCount(preflight.awaitingApprovalCount)} op een expliciete beslissing ` +
+        '(AWAITING_APPROVAL). Bevriezen mag die vraag niet stilzwijgend beantwoorden: beoordeel ze eerst ' +
+        '(BUNDLE_HAS_UNDECIDED_MUTATIONS).'
+      );
+    case 'SOURCE_STATE_CHANGED_SINCE_SCREENING':
+      return (
+        `De bronstaat is verschoven sinds de screening (${mutationsCount(preflight.staleMutationCount)}); ` +
+        'screen de levering opnieuw (SOURCE_STATE_CHANGED_SINCE_SCREENING).'
+      );
+    case 'BUNDLE_OFFER_CONFLICT':
+      return (
+        'Dezelfde aanbieding staat publiceerbaar in meer dan één batch van deze bundel; keur er één af ' +
+        '(BUNDLE_OFFER_CONFLICT).'
+      );
+    case 'OFFER_ALREADY_IN_ANOTHER_BUNDLE':
+      return (
+        'Een aanbieding staat ook publiceerbaar in een andere, niet-geannuleerde bundel; keur één kant af, ' +
+        'of publiceer/annuleer eerst de andere bundel (OFFER_ALREADY_IN_ANOTHER_BUNDLE).'
+      );
+    default:
+      return `De server meldt een blokkade die dit scherm niet kent (${code}).`;
+  }
+}
+
+/** Alle blokkades uit de voorvlucht, in de volgorde van de server (R-FRZ), elk met een leesbare reden. */
+export function freezeBlockers(preflight: FreezePreflight): string[] {
+  const reasons = preflight.blockerCodes.map((code) => freezeBlockerReason(code, preflight));
+  if (reasons.length === 0 && !preflight.freezable) {
+    // Tegenstrijdig antwoord (niet bevriesbaar, maar zonder code): nooit als "toegestaan" lezen.
+    reasons.push('De voorvlucht meldt dat bevriezen niet kan, zonder een reden te geven.');
+  }
+  return reasons;
+}
+
+/**
+ * §10.5 — mag de bevriesknop in de dialoog aan? `preflight` is het antwoord van de voorvlucht, of
+ * `null` zolang dat niet (succesvol) geladen is.
+ *
+ * Spiegel van de backend, nooit de bron van waarheid (A44): de voorvlucht is een momentopname zonder
+ * slot, `POST /freeze` controleert alles opnieuw en elke 409 wordt getoond. Zonder voorvlucht is
+ * bevriezen uit: het aantal `PLANNED` dat op naam van de bevriezer goedgekeurd wordt, is het
+ * belangrijkste getal van de dialoog en moet in beeld staan vóór er getekend wordt.
+ */
+export function freezeGate(bundleStatus: PublicationBundleStatus, preflight: FreezePreflight | null): Gate {
+  const bundleGate = bundleActionGate(bundleStatus, 'FREEZE');
+  if (!bundleGate.allowed) {
+    return bundleGate;
+  }
+  if (preflight === null) {
+    return denied('De voorvlucht is nog niet geladen (of het laden mislukte); zonder voorvlucht kan niet bevroren worden.');
+  }
+  const blockers = freezeBlockers(preflight);
+  if (blockers.length > 0) {
+    return denied(`Kan niet bevriezen: ${blockers.join(' ')}`);
+  }
+  return ALLOWED;
+}
+
+/**
+ * §10.6 — mag de annuleerknop in de dialoog aan? `expirableCount` is het aantal mutaties dat bij het
+ * annuleren vervalt, of `null` zolang dat niet vastgesteld is. Zonder dat getal wordt er niet
+ * getekend: de dialoog moet het vóór de bevestiging tonen.
+ */
+export function cancelGate(bundleStatus: PublicationBundleStatus, expirableCount: number | null): Gate {
+  const bundleGate = bundleActionGate(bundleStatus, 'CANCEL');
+  if (!bundleGate.allowed) {
+    return bundleGate;
+  }
+  if (expirableCount === null) {
+    return denied(
+      'Het aantal mutaties dat vervalt is nog niet vastgesteld (het tellen loopt nog, of mislukte); zonder dat ' +
+        'getal kan niet geannuleerd worden.',
+    );
+  }
   return ALLOWED;
 }
