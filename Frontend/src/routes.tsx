@@ -3,6 +3,7 @@ import { BundleListPage } from './features/bundles/BundleListPage.tsx';
 import { BundleDetailPage } from './features/bundles/BundleDetailPage.tsx';
 import { BundleOverviewTab } from './features/bundles/BundleOverviewTab.tsx';
 import { BundleBatchesTab } from './features/bundles/BundleBatchesTab.tsx';
+import { BundleMutationsTab } from './features/bundles/BundleMutationsTab.tsx';
 import { WorkQueuePage } from './features/workqueue/WorkQueuePage.tsx';
 
 /* Placeholder pages for now */
@@ -11,15 +12,6 @@ function NotFoundPage() {
     <div style={{ padding: '2rem', textAlign: 'center' }}>
       <h1>404 — Pagina niet gevonden</h1>
       <p>De pagina die u zoekt, bestaat niet.</p>
-    </div>
-  );
-}
-
-/* Bouwstap F8 (herbruikbaar mutatielijst-component) volgt nog. */
-function BundleMutationsPage() {
-  return (
-    <div style={{ padding: '2rem' }}>
-      <p>Mutaties tabblad (nog niet geïmplementeerd — bouwstap F8)</p>
     </div>
   );
 }
@@ -48,7 +40,7 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: <BundleOverviewTab /> },
       { path: 'batches', element: <BundleBatchesTab /> },
-      { path: 'mutations', element: <BundleMutationsPage /> },
+      { path: 'mutations', element: <BundleMutationsTab /> },
       { path: 'decisions', element: <BundleDecisionsPage /> },
     ],
   },

@@ -15,6 +15,7 @@ import type {
   ImportBatchStatus,
   MutationActionType,
   MutationRow,
+  MutationStatus,
   PageResult,
   ValidationResult,
 } from './types.ts';
@@ -50,13 +51,33 @@ export function batchSummary(params: { importLinkId?: number }, signal?: AbortSi
   return request<BatchSummary>(`/batches/summary${query}`, { signal });
 }
 
-/** GET /batches/{batchId}/mutations — CatalogImportBatchController.mutations */
+/**
+ * GET /batches/{batchId}/mutations — CatalogImportBatchController.mutations
+ *
+ * Draagt sinds bouwstap C1 ook `status` en `statusReason` (exacte, hoofdlettergevoelige gelijkheid) en
+ * sinds C4 `identityHash` (hoofdletterongevoelig). Deze lijst kent géén `batchId`-filter: de batch
+ * staat al in het pad. Lege filters worden niet meegestuurd.
+ */
 export function batchMutations(
   batchId: number,
-  params: { actionType?: MutationActionType; page?: number; size?: number },
+  params: {
+    status?: MutationStatus;
+    statusReason?: string;
+    actionType?: MutationActionType;
+    identityHash?: string;
+    page?: number;
+    size?: number;
+  },
   signal?: AbortSignal,
 ): Promise<PageResult<MutationRow>> {
-  const query = toQueryString({ actionType: params.actionType, page: params.page, size: params.size });
+  const query = toQueryString({
+    status: params.status,
+    statusReason: params.statusReason,
+    actionType: params.actionType,
+    identityHash: params.identityHash,
+    page: params.page,
+    size: params.size,
+  });
   return request<PageResult<MutationRow>>(`/batches/${batchId}/mutations${query}`, { signal });
 }
 

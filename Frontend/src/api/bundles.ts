@@ -95,16 +95,31 @@ export function removeBatch(
   });
 }
 
-/** GET /bundles/{bundleId}/mutations — CatalogImportBundleController.mutations */
+/**
+ * GET /bundles/{bundleId}/mutations — CatalogImportBundleController.mutations
+ *
+ * `statusReason` (bouwstap C1, exacte hoofdlettergevoelige gelijkheid) en `identityHash` (bouwstap C4,
+ * hoofdletterongevoelig, de sleutel van de wijzigingsgroep) zijn additief. Lege of weggelaten filters
+ * worden door `toQueryString` niet meegestuurd; een onbekende reden of hash geeft een lege pagina, geen
+ * fout.
+ */
 export function bundleMutations(
   bundleId: number,
-  params: { status?: MutationStatus; batchId?: number; actionType?: MutationActionType } & Page,
+  params: {
+    status?: MutationStatus;
+    batchId?: number;
+    actionType?: MutationActionType;
+    statusReason?: string;
+    identityHash?: string;
+  } & Page,
   signal?: AbortSignal,
 ): Promise<PageResult<MutationRow>> {
   const query = toQueryString({
     status: params.status,
     batchId: params.batchId,
     actionType: params.actionType,
+    statusReason: params.statusReason,
+    identityHash: params.identityHash,
     page: params.page,
     size: params.size,
   });

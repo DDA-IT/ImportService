@@ -90,6 +90,15 @@ export type ImportBatchStatus = (typeof IMPORT_BATCH_STATUSES)[number];
 export const VALIDATION_RESULTS = ['VALID', 'VALID_WITH_WARNINGS', 'REVIEW_REQUIRED', 'BLOCKING'] as const;
 export type ValidationResult = (typeof VALIDATION_RESULTS)[number];
 
+// be.dda.catalogimport.domain.CreationOutcome (het oordeel van het creatiebeleid; `null` zolang pass
+// E4b niet gedraaid heeft — nooit stil `AUTOMATIC`)
+export const CREATION_OUTCOMES = ['AUTOMATIC', 'INITIAL_LOAD', 'THRESHOLD_EXCEEDED'] as const;
+export type CreationOutcome = (typeof CREATION_OUTCOMES)[number];
+
+// be.dda.catalogimport.domain.TaskTriggerType
+export const TASK_TRIGGER_TYPES = ['MANUAL', 'SCHEDULED'] as const;
+export type TaskTriggerType = (typeof TASK_TRIGGER_TYPES)[number];
+
 // be.dda.catalogimport.service.BundleQueryService.BundleSummary
 export type BundleSummary = {
   id: number;
@@ -125,6 +134,18 @@ export type BundleDetail = BundleSummary & {
   staleMutationCount: number | null;
   /** Hexadecimale bundelhash; alleen gevuld zodra de bundel (ooit) FROZEN is geweest. */
   contentHash: string | null;
+  /**
+   * Bouwstap C2: het aantal `PLANNED`-mutaties dat het bevriezen in bulk goedkeurt op naam van de
+   * bevriezer (`PublicationBundleDao.countPlanned`). Alleen live gevuld bij ASSEMBLING; `null` bij
+   * FROZEN/CANCELLED — dan is het geen levend getal meer en wordt het als "—" getoond, nooit als 0.
+   */
+  plannedCount: number | null;
+  /**
+   * Bouwstap C2: het aantal mutaties dat nog op een beslissing wacht (`countUndecided`) — de
+   * blokkadevoorwaarde van het bevriezen (`BUNDLE_HAS_UNDECIDED_MUTATIONS`). Alleen live gevuld bij
+   * ASSEMBLING; `null` bij FROZEN/CANCELLED.
+   */
+  awaitingApprovalCount: number | null;
 };
 
 // be.dda.catalogimport.service.BundleQueryService.BundleBatchRow
@@ -183,6 +204,13 @@ export type MutationRow = {
   decidedAt: string | null;
   decidedFromStatus: string | null;
   decisionId: number | null;
+  /**
+   * Bouwstap C4: de identiteitshash als hexadecimale tekst in kleine letters — de sleutel van de
+   * wijzigingsgroep `(batchId, identityHash)`. `null` wanneer de kolom leeg is, wat per definitie zo
+   * is voor de `IMPORT_MARKER`. De UI interpreteert deze waarde nooit; ze toont hem en kan er
+   * serverzijdig op filteren (`?identityHash=`), zie §11.5 en `docs/decisions.md` 2026-09-24.
+   */
+  identityHash: string | null;
 };
 
 // be.dda.catalogimport.service.BundleQueryService.DecisionRow
@@ -213,6 +241,24 @@ export type GroupDecisionView = {
   decisionId: number | null;
   affectedCount: number;
   selectionFilter: string;
+};
+
+/**
+ * be.dda.catalogimport.service.BundleFreezeService.FreezePreflight — de droogloop van het bevriezen
+ * (`GET /bundles/{id}/freeze-check`, bouwstap C3). Een MOMENTOPNAME ZONDER SLOT: `freezable: true` is
+ * nooit een garantie, `POST /bundles/{id}/freeze` controleert alles opnieuw en blijft de waarheid.
+ * `blockerCodes` zijn de stabiele foutcodes die `freeze` zou geven; de conflictlijsten bevatten
+ * hoogstens tien leesbare voorbeelden. Wordt door F10 (`FreezeDialog`) gebruikt.
+ */
+export type FreezePreflight = {
+  freezable: boolean;
+  blockerCodes: string[];
+  batchCount: number;
+  plannedCount: number;
+  awaitingApprovalCount: number;
+  staleMutationCount: number;
+  inBundleConflicts: string[];
+  crossBundleConflicts: string[];
 };
 
 // be.dda.catalogimport.service.BundleDecisionService.DecisionFilter (request)
@@ -320,6 +366,60 @@ export type AcceptBaselineRequest = {
   reason: string;
 };
 
+/**
+ * be.dda.catalogimport.service.BatchQueryService.BatchDetail — de volledige stand van één batch
+ * (`GET /batches/{id}`), gebruikt door het batchdetailscherm (A-F1). `importLinkCode`/`supplierCode`/
+ * `libraryCode` zijn additief toegevoegd in bouwstap A-B1 zodat de UI niet "koppeling #7" hoeft te
+ * tonen (§16.5 van het scherm-3-ontwerp). Elke `number | null`-teller betekent "niet vastgesteld" en
+ * wordt als "—" getoond, nooit als 0.
+ */
+export type BatchDetail = {
+  batchId: number;
+  deliveryId: number;
+  importLinkId: number;
+  /** A-B1: de code van de koppeling, bv. `LNK-1`. */
+  importLinkCode: string;
+  /** A-B1: de code van de leverancierorganisatie van die koppeling. */
+  supplierCode: string;
+  /** A-B1: de doelbibliotheek van die koppeling, bv. `PSARF012`. */
+  libraryCode: string;
+  definitionRevisionId: number;
+  taskRunId: number | null;
+  attemptNo: number;
+  status: ImportBatchStatus;
+  validationResult: ValidationResult | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  stagedRowCount: number;
+  mutationProgressRowNumber: number;
+  rawRecordCount: number | null;
+  validRecordCount: number | null;
+  rejectedRecordCount: number | null;
+  filteredOutCount: number | null;
+  errorBeforeFilterCount: number | null;
+  duplicateIdentityCount: number | null;
+  newCount: number | null;
+  changedCount: number | null;
+  unchangedCount: number | null;
+  identityIncidentCount: number | null;
+  contentMutationCount: number | null;
+  bulkIncidentCount: number | null;
+  criticalLineCount: number | null;
+  criticalIssueCount: number | null;
+  warningCount: number | null;
+  awaitingApprovalCount: number | null;
+  creationOutcome: CreationOutcome | null;
+  creationScopeCount: number | null;
+  creationCandidateCount: number | null;
+  blockedCode: string | null;
+  blockedReason: string | null;
+  baselineAcceptedBy: string | null;
+  baselineAcceptedAt: string | null;
+  baselineAcceptReason: string | null;
+  createdAt: string;
+  createdBy: string | null;
+};
+
 // be.dda.catalogimport.service.BatchQueryService.BatchRow (Scherm 0, D14, bouwstap S0-B1)
 export type BatchRow = {
   batchId: number;
@@ -373,4 +473,25 @@ export type ImportLinkRow = {
   supplierName: string;
   libraryCode: string;
   active: boolean;
+};
+
+/**
+ * be.dda.catalogimport.service.TaskQueryService.TaskRow — alleen-lezen takenlijst (`GET /tasks`,
+ * bouwstap B-B1): laat de UI kiezen op welke taak een levering geüpload wordt. `triggerType` staat
+ * erbij omdat een niet-`MANUAL`-taak door de intake geweigerd wordt (`TASK_NOT_MANUAL`); zo'n taak
+ * wordt uitgeschakeld mét reden getoond. `lastRunStartedAt`/`lastRunFinishedAt` zijn `null` zonder
+ * run. Wordt door B-F1 (uploadscherm) gebruikt.
+ */
+export type TaskRow = {
+  id: number;
+  name: string;
+  active: boolean;
+  triggerType: TaskTriggerType;
+  preventConcurrentRuns: boolean;
+  importLinkId: number;
+  importLinkCode: string;
+  supplierCode: string;
+  libraryCode: string;
+  lastRunStartedAt: string | null;
+  lastRunFinishedAt: string | null;
 };
