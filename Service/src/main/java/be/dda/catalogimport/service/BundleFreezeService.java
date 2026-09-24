@@ -16,6 +16,7 @@ import be.dda.catalogimport.domain.PublicationBundleStatus;
 import be.dda.catalogimport.domain.PublicationDecision;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.StringJoiner;
@@ -23,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -142,6 +144,20 @@ public class BundleFreezeService {
                                    Long autoApproveDecisionId, long freezeDecisionId) {
     }
 
+    /**
+     * Uitkomst van {@link #checkFreeze}: een MOMENTOPNAME ZONDER SLOT. {@code freezable = true} is nooit
+     * een garantie; {@code freeze} controleert alles opnieuw in zijn eigen transactie.
+     *
+     * @param blockerCodes        de stabiele foutcodes die {@code freeze} zou geven, in de volgorde van
+     *                            R-FRZ; leeg als er niets blokkeert
+     * @param inBundleConflicts   leesbare voorbeelden (hoogstens {@value #CONFLICT_SAMPLE_LIMIT})
+     * @param crossBundleConflicts leesbare voorbeelden (hoogstens {@value #CONFLICT_SAMPLE_LIMIT})
+     */
+    public record FreezePreflight(boolean freezable, List<String> blockerCodes, long batchCount, long plannedCount,
+                                  long awaitingApprovalCount, long staleMutationCount,
+                                  List<String> inBundleConflicts, List<String> crossBundleConflicts) {
+    }
+
     private final PublicationBundleRepository bundles;
     private final PublicationBundleBatchRepository bundleBatches;
     private final PublicationDecisionRepository decisions;
@@ -212,6 +228,65 @@ public class BundleFreezeService {
         });
     }
 
+    /**
+     * Read-only droogloop van {@link #freeze}: leest dezelfde controles (dezelfde queries, dezelfde
+     * conflictlimiet) maar werpt niets en schrijft niets, ook geen slot.
+     * <p>
+     * <b>Dit is een MOMENTOPNAME ZONDER SLOT.</b> {@code freeze} controleert alles opnieuw binnen zijn
+     * eigen transactie; {@code freezable = true} is dus nooit een garantie dat een bevriezing daarna
+     * slaagt. Een niet-{@code ASSEMBLING} bundel of een lege bundel geeft enkel die ene blokkade (freeze
+     * stopt daar ook); daarna worden alle overige blokkades samen gemeld, terwijl {@code freeze} enkel de
+     * eerste werpt.
+     *
+     * @throws NotFoundException {@link #CODE_BUNDLE_NOT_FOUND}
+     */
+    @Transactional(readOnly = true)
+    public FreezePreflight checkFreeze(long bundleId) {
+        PublicationBundle bundle = bundles.findById(bundleId).orElseThrow(
+                () -> new NotFoundException(CODE_BUNDLE_NOT_FOUND, "Bundle " + bundleId + " not found"));
+        long activeBatches = bundleBatches.countByBundleIdAndActiveMarkerIsNotNull(bundleId);
+        long planned = dao.countPlanned(bundleId);
+        long undecided = dao.countUndecided(bundleId);
+        long stale = dao.countStaleMutations(bundleId);
+        List<String> blockers = new ArrayList<>();
+        List<String> inBundleExamples = List.of();
+        List<String> crossBundleExamples = List.of();
+        if (bundle.getStatus() != PublicationBundleStatus.ASSEMBLING) {
+            blockers.add(CODE_BUNDLE_NOT_ASSEMBLING);
+        } else if (activeBatches == 0) {
+            blockers.add(CODE_BUNDLE_EMPTY);
+        } else {
+            if (undecided > 0) {
+                blockers.add(CODE_BUNDLE_HAS_UNDECIDED_MUTATIONS);
+            }
+            if (stale > 0) {
+                blockers.add(CODE_SOURCE_STATE_CHANGED);
+            }
+            inBundleExamples = dao.findInBundleOfferConflicts(bundleId, CONFLICT_SAMPLE_LIMIT).stream()
+                    .map(BundleFreezeService::describeInBundle).toList();
+            crossBundleExamples = dao.findCrossBundleOfferConflicts(bundleId, CONFLICT_SAMPLE_LIMIT).stream()
+                    .map(BundleFreezeService::describeCrossBundle).toList();
+            if (!inBundleExamples.isEmpty()) {
+                blockers.add(CODE_BUNDLE_OFFER_CONFLICT);
+            }
+            if (!crossBundleExamples.isEmpty()) {
+                blockers.add(CODE_OFFER_ALREADY_IN_ANOTHER_BUNDLE);
+            }
+        }
+        return new FreezePreflight(blockers.isEmpty(), List.copyOf(blockers), activeBatches, planned, undecided,
+                stale, inBundleExamples, crossBundleExamples);
+    }
+
+    private static String describeInBundle(InBundleOfferConflict conflict) {
+        return describe(conflict.offer()) + " in " + conflict.batchCount() + " batches (e.g. "
+                + conflict.firstBatchId() + " and " + conflict.lastBatchId() + ")";
+    }
+
+    private static String describeCrossBundle(CrossBundleOfferConflict conflict) {
+        return describe(conflict.offer()) + " (batch " + conflict.batchId() + " here, batch "
+                + conflict.otherBatchId() + " in bundle " + conflict.otherBundleId() + ")";
+    }
+
     /** Het resultaat van de bulkgoedkeuring; {@code decisionId} is null zodra er niets te doen viel. */
     private record AutoApproval(Long decisionId, long affectedCount) {
     }
@@ -264,8 +339,7 @@ public class BundleFreezeService {
         if (!inBundle.isEmpty()) {
             StringJoiner examples = new StringJoiner(", ");
             for (InBundleOfferConflict conflict : inBundle) {
-                examples.add(describe(conflict.offer()) + " in " + conflict.batchCount() + " batches (e.g. "
-                        + conflict.firstBatchId() + " and " + conflict.lastBatchId() + ")");
+                examples.add(describeInBundle(conflict));
             }
             throw new ConflictException(CODE_BUNDLE_OFFER_CONFLICT, "Bundle " + bundleId + " contains the same "
                     + "offer in more than one batch, which would make the last import silently win: " + examples
@@ -276,8 +350,7 @@ public class BundleFreezeService {
         if (!crossBundle.isEmpty()) {
             StringJoiner examples = new StringJoiner(", ");
             for (CrossBundleOfferConflict conflict : crossBundle) {
-                examples.add(describe(conflict.offer()) + " (batch " + conflict.batchId() + " here, batch "
-                        + conflict.otherBatchId() + " in bundle " + conflict.otherBundleId() + ")");
+                examples.add(describeCrossBundle(conflict));
             }
             throw new ConflictException(CODE_OFFER_ALREADY_IN_ANOTHER_BUNDLE, "Bundle " + bundleId + " contains "
                     + "offers that are also publishable in another open or frozen bundle: " + examples

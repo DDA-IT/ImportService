@@ -277,6 +277,16 @@ public class CatalogImportBundleController {
     }
 
     /**
+     * Read-only droogloop van {@code freeze}: MOMENTOPNAME ZONDER SLOT, {@code freezable = true} is nooit
+     * een garantie. Een niet-{@code ASSEMBLING} bundel is geen fout maar {@code freezable = false}.
+     * 404 {@code BUNDLE_NOT_FOUND} bij een onbekende bundel.
+     */
+    @GetMapping("/{bundleId}/freeze-check")
+    BundleFreezeService.FreezePreflight freezeCheck(@PathVariable("bundleId") long bundleId) {
+        return freezeService.checkFreeze(bundleId);
+    }
+
+    /**
      * Annuleert de bundel (bouwstap 4f): vanuit {@code ASSEMBLING} <b>of</b> {@code FROZEN} (beslissingslog
      * 22/09, keuze 4) — dit is de enige bundelactie die vanuit twee statussen mag. Laat elke nog
      * niet-terminale mutatie van de actieve leden vervallen ({@code EXPIRED}), geeft die leden vrij (weer
