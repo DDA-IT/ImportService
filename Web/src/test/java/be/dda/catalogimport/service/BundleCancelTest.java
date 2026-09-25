@@ -350,6 +350,50 @@ class BundleCancelTest {
         assertThat(cancelled.awaitingApprovalCount()).isNull();
     }
 
+    // --- (f2) expirableCount op BundleDetail (stap C7) -------------------------------------------------
+
+    @Test
+    void expirableCountIsLiveAtAssemblingAndFrozenAndNullAtCancelled() {
+        Scenario scenario = creationScenario("EXPCNT", 5);
+        List<ImportMutation> content = contentMutations(scenario.batchId());
+        decisions.reject(scenario.bundleId(), content.get(0).getId(), DECIDER, "Referentie niet gevonden");
+
+        // ASSEMBLING: vier open mutaties (de afgekeurde en de marker tellen niet mee).
+        assertThat(queries.getBundle(scenario.bundleId()).expirableCount()).isEqualTo(4L);
+
+        // Het getal is gelijk aan wat het annuleren zelf zal vaststellen.
+        BundleCancelView view = cancellationService.cancel(scenario.bundleId(), CANCELLER, CANCEL_REASON);
+        assertThat(view.expiredMutationCount()).isEqualTo(4L);
+
+        // CANCELLED: geen levend getal meer.
+        assertThat(queries.getBundle(scenario.bundleId()).expirableCount()).isNull();
+    }
+
+    @Test
+    void expirableCountAtFrozenCountsTheApprovedMutations() {
+        Scenario scenario = updateScenario("EXPFRZ");
+        freezeService.freeze(scenario.bundleId(), FREEZER, FREEZE_REASON);
+
+        BundleDetail frozen = queries.getBundle(scenario.bundleId());
+        assertThat(frozen.status()).isEqualTo("FROZEN");
+        assertThat(frozen.expirableCount()).isEqualTo(5L);
+    }
+
+    @Test
+    void expirableCountIsZeroNotNullWhenNothingIsLeftToExpire() {
+        Scenario scenario = creationScenario("EXPZERO", 2);
+        for (ImportMutation mutation : contentMutations(scenario.batchId())) {
+            decisions.reject(scenario.bundleId(), mutation.getId(), DECIDER, "Alles afgekeurd");
+        }
+
+        assertThat(queries.getBundle(scenario.bundleId()).expirableCount()).isEqualTo(0L);
+    }
+
+    @Test
+    void expirableCountOfAnUnknownBundleIsNotFound() {
+        assertThatThrownBy(() -> queries.getBundle(9_999_999L)).isInstanceOf(NotFoundException.class);
+    }
+
     // --- (g) Financiële onveranderlijkheid, ook bij EXPIRED ------------------------------------------
 
     @Test

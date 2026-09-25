@@ -3,9 +3,9 @@
  * `docs/design/frontend-scherm3-bundel-design.md` §10.6.
  *
  * Wat hier aantoonbaar gemaakt wordt:
- * - de dialoog toont het aantal mutaties dat vervalt, geteld met exact de selectie van
- *   `PublicationBundleDao.EXPIRABLE_TAIL` (CREATE/UPDATE × PLANNED/AWAITING_APPROVAL/READY_FOR_PUBLICATION);
- * - een gedeeltelijke telling wordt nooit als totaal getoond, en zonder telling kan niet geannuleerd worden;
+ * - de dialoog toont het aantal mutaties dat vervalt uit `BundleDetail.expirableCount` (backendtelling, C7),
+ *   zonder lijstaanroepen;
+ * - zonder getal (null) kan niet geannuleerd worden; 0 is een geldig getal;
  * - de typ-bevestiging werkt; sluiten verstuurt niets;
  * - een fout geeft geen succesmelding; het happy path herlaadt de bundel.
  *
@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
-import type { BundleDetail, MutationRow, PageResult } from '../api/types';
+import type { BundleDetail } from '../api/types';
 import { BundleOverviewTab } from '../features/bundles/BundleOverviewTab';
 
 const REFERENCE = 'BND-2026-001';
@@ -52,6 +52,7 @@ function bundle(overrides: Partial<BundleDetail> = {}): BundleDetail {
     contentHash: null,
     plannedCount: 3,
     awaitingApprovalCount: 3,
+    expirableCount: 10,
     ...overrides,
   };
 }
@@ -66,6 +67,7 @@ function frozenBundle(): BundleDetail {
     contentHash: 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
     plannedCount: null,
     awaitingApprovalCount: null,
+    expirableCount: 12,
   });
 }
 
@@ -79,16 +81,12 @@ function cancelledBundle(): BundleDetail {
     staleMutationCount: null,
     plannedCount: null,
     awaitingApprovalCount: null,
+    expirableCount: null,
   });
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-}
-
-function countPage(totalElements: number): PageResult<MutationRow> {
-  // `size=1`-telling: enkel `totalElements` telt, de inhoud doet er niet toe.
-  return { content: [], page: 0, size: 1, totalElements, totalPages: totalElements === 0 ? 0 : totalElements };
 }
 
 function renderOverview(detail: BundleDetail) {
@@ -119,12 +117,6 @@ function posts() {
   return fetchCalls().filter((call) => call.method === 'POST');
 }
 
-/** De queryparameters van elke telaanroep op de mutatielijst. */
-function countQueries(): Array<Record<string, string>> {
-  return fetchCalls()
-    .filter((call) => call.method === 'GET' && call.url.includes('/bundles/42/mutations'))
-    .map((call) => Object.fromEntries(new URL(call.url, 'http://localhost').searchParams.entries()));
-}
 
 async function openCancelDialog(): Promise<HTMLElement> {
   fireEvent.click(await screen.findByRole('button', { name: 'Annuleren' }));
@@ -133,6 +125,11 @@ async function openCancelDialog(): Promise<HTMLElement> {
 
 function waitForCount(dialog: HTMLElement): Promise<HTMLElement> {
   return within(dialog).findByTestId('cancel-expiring-count');
+}
+
+/** Er is geen enkele GET meer: het getal komt uit `BundleDetail.expirableCount` (C7). */
+function gets() {
+  return fetchCalls().filter((call) => call.method === 'GET');
 }
 
 function fillConfirmation(dialog: HTMLElement, typed: string = REFERENCE, reason = 'Verkeerde levering') {
@@ -145,39 +142,15 @@ function confirmButton(dialog: HTMLElement): HTMLElement {
   return within(dialog).getByRole('button', { name: 'Bundel annuleren' });
 }
 
-/** Het getal naast een statuslabel in de uitsplitsing van de dialoog. */
-function figureFor(dialog: HTMLElement, status: string): string | null | undefined {
-  return within(dialog).getByText(status, { selector: 'dt' }).nextElementSibling?.textContent;
-}
-
 describe('CancelDialog (F10, §10.6)', () => {
   const originalFetch = global.fetch;
-  /** `totalElements` per `status/actionType`; ontbrekend = 0. */
-  let counts: Record<string, number>;
-  /** Een combinatie waarvoor de telling faalt (500), of `null`. */
-  let failingCount: string | null;
   let cancelResponse: () => Response;
 
   beforeEach(() => {
-    counts = {
-      'PLANNED/CREATE': 2,
-      'PLANNED/UPDATE': 1,
-      'AWAITING_APPROVAL/UPDATE': 3,
-      'READY_FOR_PUBLICATION/CREATE': 4,
-    };
-    failingCount = null;
     cancelResponse = () => jsonResponse(cancelledBundle());
     global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
       const method = init?.method ?? 'GET';
-      if (method === 'GET' && url.includes('/bundles/42/mutations')) {
-        const params = new URL(url, 'http://localhost').searchParams;
-        const key = `${params.get('status')}/${params.get('actionType')}`;
-        if (key === failingCount) {
-          return Promise.resolve(new Response('', { status: 500 }));
-        }
-        return Promise.resolve(jsonResponse(countPage(counts[key] ?? 0)));
-      }
       if (method === 'POST' && url.endsWith('/bundles/42/cancel')) {
         return Promise.resolve(cancelResponse());
       }
@@ -200,9 +173,6 @@ describe('CancelDialog (F10, §10.6)', () => {
     expect(total.textContent).toContain('10 mutaties');
     expect(total.textContent).toContain('vervallen (EXPIRED)');
     expect(total.textContent).toContain('nooit meer herleefd');
-    expect(figureFor(dialog, 'PLANNED')).toBe('3');
-    expect(figureFor(dialog, 'AWAITING_APPROVAL')).toBe('3');
-    expect(figureFor(dialog, 'READY_FOR_PUBLICATION')).toBe('4');
 
     // De letterlijke zin uit §10.6.
     expect(
@@ -211,58 +181,42 @@ describe('CancelDialog (F10, §10.6)', () => {
     expect(posts()).toHaveLength(0);
   });
 
-  it('F10.C2: telt exact de selectie van EXPIRABLE_TAIL — altijd per soort, zodat incidenten nooit meetellen', async () => {
+  it('F10.C2: geen enkele lijstaanroep meer — het getal komt uit BundleDetail.expirableCount (C7)', async () => {
     renderOverview(bundle());
     const dialog = await openCancelDialog();
     await waitForCount(dialog);
 
-    const queries = countQueries();
-    expect(queries).toHaveLength(6);
-    const pairs = queries.map((query) => `${query.status}/${query.actionType}`).sort();
-    expect(pairs).toEqual(
-      [
-        'AWAITING_APPROVAL/CREATE',
-        'AWAITING_APPROVAL/UPDATE',
-        'PLANNED/CREATE',
-        'PLANNED/UPDATE',
-        'READY_FOR_PUBLICATION/CREATE',
-        'READY_FOR_PUBLICATION/UPDATE',
-      ].sort(),
-    );
-    for (const query of queries) {
-      expect(query.size).toBe('1');
-      expect(query.page).toBe('0');
-    }
+    expect(gets()).toHaveLength(0);
+    expect(within(dialog).queryByRole('button', { name: 'Opnieuw tellen' })).not.toBeInTheDocument();
   });
 
   it('F10.C3: enkelvoud bij precies één vervallende mutatie', async () => {
-    counts = { 'READY_FOR_PUBLICATION/UPDATE': 1 };
-    renderOverview(bundle());
+    renderOverview(bundle({ expirableCount: 1 }));
     const dialog = await openCancelDialog();
 
     const total = await waitForCount(dialog);
     expect(total.textContent).toContain('1 mutatie vervalt');
   });
 
-  it('F10.C4: mislukt één telling, dan geen gedeeltelijk totaal en geen annulering', async () => {
-    failingCount = 'AWAITING_APPROVAL/UPDATE';
-    renderOverview(bundle());
+  it('F10.C4: ontbreekt het getal (null), dan geen getal getoond en geen annulering', async () => {
+    renderOverview(bundle({ expirableCount: null }));
     const dialog = await openCancelDialog();
 
-    expect(await within(dialog).findByText('Onverwachte serverfout')).toBeInTheDocument();
     expect(within(dialog).queryByTestId('cancel-expiring-count')).not.toBeInTheDocument();
     fillConfirmation(dialog);
     expect(confirmButton(dialog)).toBeDisabled();
     expect(within(dialog).getByTestId('confirm-blocked-reason').textContent).toContain('niet vastgesteld');
     fireEvent.submit(dialog);
     expect(posts()).toHaveLength(0);
+  });
 
-    // Opnieuw tellen herstelt het, zonder iets te versturen.
-    failingCount = null;
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Opnieuw tellen' }));
-    expect((await waitForCount(dialog)).textContent).toContain('10 mutaties');
+  it('F10.C4b: 0 vervallende mutaties is een geldig getal (geen null): getoond en annuleren toegelaten', async () => {
+    renderOverview(bundle({ expirableCount: 0 }));
+    const dialog = await openCancelDialog();
+
+    expect((await waitForCount(dialog)).textContent).toContain('0 mutaties vervallen');
+    fillConfirmation(dialog);
     expect(confirmButton(dialog)).toBeEnabled();
-    expect(posts()).toHaveLength(0);
   });
 
   it('F10.C5: een verkeerde typ-bevestiging verstuurt niets', async () => {
@@ -305,7 +259,6 @@ describe('CancelDialog (F10, §10.6)', () => {
     const { reloadBundle } = renderOverview(bundle());
     const dialog = await openCancelDialog();
     await waitForCount(dialog);
-    const countLoadsBefore = countQueries().length;
     fillConfirmation(dialog);
     fireEvent.click(confirmButton(dialog));
 
@@ -314,9 +267,8 @@ describe('CancelDialog (F10, §10.6)', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(reloadBundle).not.toHaveBeenCalled();
-    // Geen herhaling van het annuleren; wel een verse telling (een lezing).
+    // Geen herhaling van het annuleren.
     expect(posts()).toHaveLength(1);
-    await waitFor(() => expect(countQueries().length).toBeGreaterThan(countLoadsBefore));
   });
 
   it('F10.C8: een 400 zonder code (ontbrekende reden aan serverkant) wordt letterlijk getoond, geen succes', async () => {
@@ -353,13 +305,10 @@ describe('CancelDialog (F10, §10.6)', () => {
   });
 
   it('F10.C10: een bevroren bundel kan geannuleerd worden; de telling vindt de goedgekeurde mutaties', async () => {
-    counts = { 'READY_FOR_PUBLICATION/CREATE': 8, 'READY_FOR_PUBLICATION/UPDATE': 4 };
     renderOverview(frozenBundle());
     const dialog = await openCancelDialog();
 
     expect((await waitForCount(dialog)).textContent).toContain('12 mutaties');
-    expect(figureFor(dialog, 'READY_FOR_PUBLICATION')).toBe('12');
-    expect(figureFor(dialog, 'PLANNED')).toBe('0');
     fillConfirmation(dialog);
     expect(confirmButton(dialog)).toBeEnabled();
   });

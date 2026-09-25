@@ -22,8 +22,16 @@ import be.dda.catalogimport.service.PublicationBundleService;
 import be.dda.catalogimport.service.PublicationBundleService.BundleCandidate;
 import be.dda.catalogimport.service.PublicationBundleService.BundleReference;
 import be.dda.catalogimport.service.PublicationBundleService.Membership;
+import be.dda.catalogimport.service.BadRequestException;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -114,6 +122,36 @@ public class CatalogImportBundleController {
      * een reden.
      */
     public record CancelBundleRequest(String cancelledBy, String reason) {
+    }
+
+    /** Stap C6: foutcode voor een onbekend veld in de groepsactie (topniveau of filter). */
+    public static final String CODE_DECISION_FILTER_UNKNOWN_FIELD = "DECISION_FILTER_UNKNOWN_FIELD";
+
+    private static final Set<String> GROUP_TOP_LEVEL_FIELDS = Set.of("decisionKind", "decidedBy", "reason", "filter");
+    private static final Set<String> GROUP_FILTER_FIELDS =
+            Set.of("batchId", "status", "statusReason", "actionType", "identityHash");
+    private static final ObjectMapper STRICT_MAPPER = new ObjectMapper();
+
+    /** Whitelist op de ruwe JSON (beslissing C6, optie A): enkel dit endpoint weigert onbekende velden. */
+    private static void rejectUnknownFields(JsonNode body) {
+        if (body == null || !body.isObject()) {
+            return;
+        }
+        checkFields(body, GROUP_TOP_LEVEL_FIELDS, "");
+        JsonNode filter = body.get("filter");
+        if (filter != null && filter.isObject()) {
+            checkFields(filter, GROUP_FILTER_FIELDS, "filter.");
+        }
+    }
+
+    private static void checkFields(JsonNode node, Set<String> allowed, String prefix) {
+        for (Iterator<String> names = node.fieldNames(); names.hasNext(); ) {
+            String name = names.next();
+            if (!allowed.contains(name)) {
+                throw new BadRequestException(CODE_DECISION_FILTER_UNKNOWN_FIELD,
+                        "Unknown field in group decision request: " + prefix + name);
+            }
+        }
     }
 
     private final PublicationBundleService bundleService;
@@ -269,7 +307,17 @@ public class CatalogImportBundleController {
      */
     @PostMapping("/{bundleId}/decisions")
     GroupDecisionView decideGroup(@PathVariable("bundleId") long bundleId,
-                                  @RequestBody DecideGroupRequest request) {
+                                  @RequestBody JsonNode body) {
+        rejectUnknownFields(body);
+        DecideGroupRequest request;
+        try {
+            request = STRICT_MAPPER.treeToValue(body, DecideGroupRequest.class);
+        } catch (JsonProcessingException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Malformed group decision request", e);
+        }
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing request body");
+        }
         return decisionService.decideGroup(bundleId, request.decisionKind(), request.decidedBy(),
                 request.reason(), request.filter());
     }

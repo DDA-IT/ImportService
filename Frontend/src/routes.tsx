@@ -5,6 +5,7 @@ import { BundleOverviewTab } from './features/bundles/BundleOverviewTab.tsx';
 import { BundleBatchesTab } from './features/bundles/BundleBatchesTab.tsx';
 import { BundleMutationsTab } from './features/bundles/BundleMutationsTab.tsx';
 import { BundleDecisionsTab } from './features/bundles/BundleDecisionsTab.tsx';
+import { BatchDetailPage } from './features/batches/BatchDetailPage.tsx';
 import { WorkQueuePage } from './features/workqueue/WorkQueuePage.tsx';
 
 /* Placeholder pages for now */
@@ -35,6 +36,10 @@ export const routes: RouteObject[] = [
       { path: 'mutations', element: <BundleMutationsTab /> },
       { path: 'decisions', element: <BundleDecisionsTab /> },
     ],
+  },
+  {
+    path: '/batches/:batchId',
+    element: <BatchDetailPage />,
   },
   {
     path: '*',

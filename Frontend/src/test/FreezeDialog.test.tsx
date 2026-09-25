@@ -53,6 +53,7 @@ function bundle(overrides: Partial<BundleDetail> = {}): BundleDetail {
     contentHash: null,
     plannedCount: 7,
     awaitingApprovalCount: 0,
+    expirableCount: 0,
     ...overrides,
   };
 }

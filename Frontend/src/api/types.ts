@@ -146,6 +146,11 @@ export type BundleDetail = BundleSummary & {
    * ASSEMBLING; `null` bij FROZEN/CANCELLED.
    */
   awaitingApprovalCount: number | null;
+  /**
+   * Bouwstap C7: het aantal mutaties dat bij annuleren `EXPIRED` wordt (`countExpirableMutations`, dezelfde
+   * selectie als het annuleren zelf). Gevuld bij ASSEMBLING én FROZEN; `null` bij CANCELLED. Een momentopname.
+   */
+  expirableCount: number | null;
 };
 
 // be.dda.catalogimport.service.BundleQueryService.BundleBatchRow
@@ -453,6 +458,112 @@ export type BatchRow = {
   blockedCode: string | null;
   baselineAcceptedBy: string | null;
   baselineAcceptedAt: string | null;
+};
+
+/**
+ * be.dda.catalogimport.service.BatchQueryService.IssueRow (A-F2). `rowNumber` is `null` voor een
+ * leverings-/structuurprobleem; de rijen zijn voorbeelden, geen volledige telling.
+ */
+export type IssueRow = {
+  id: number;
+  rowNumber: number | null;
+  issueCode: string;
+  fieldName: string | null;
+  severity: string;
+  issueDomain: string;
+  controlLevel: string;
+  impactScope: string;
+  handlingStatus: string;
+  sourceValue: string | null;
+  expectedValue: string | null;
+  message: string | null;
+  issueGroupId: number | null;
+  createdAt: string;
+};
+
+/**
+ * be.dda.catalogimport.service.BatchQueryService.IssueGroupRow (A-F2). `occurrenceCount` is het
+ * werkelijke aantal; `recordedSampleCount` het aantal bewaarde voorbeeldrijen. `scopeRecordCount` en
+ * `sharePercent` zijn `null` als de scope onbekend is (nooit een geraden noemer).
+ */
+export type IssueGroupRow = {
+  id: number;
+  issueCode: string;
+  signature: string;
+  severity: string;
+  issueDomain: string;
+  controlLevel: string;
+  impactScope: string;
+  incidentKind: string;
+  occurrenceCount: number;
+  recordedSampleCount: number;
+  scopeRecordCount: number | null;
+  sharePercent: number | null;
+  bulkIncident: boolean;
+  priceComponentCode: string | null;
+  deviationDirection: string | null;
+  dominantFactor: number | null;
+  referenceType: string | null;
+  patternDescription: string | null;
+  firstRowNumber: number | null;
+  firstDetectedAt: string;
+  lastDetectedAt: string;
+  handlingStatus: string;
+};
+
+// be.dda.catalogimport.service.DeliveryView.FileView
+export type DeliveryFileView = {
+  sequenceNumber: number;
+  fileName: string;
+  contentHash: string;
+  hashAlgorithm: string;
+  byteSize: number;
+};
+
+/** be.dda.catalogimport.service.DeliveryView.BatchView — status en tellers van de laatste batch. */
+export type DeliveryBatchView = {
+  batchId: number;
+  status: string;
+  validationResult: string | null;
+  attemptNo: number;
+  rawRecordCount: number | null;
+  validRecordCount: number | null;
+  rejectedRecordCount: number | null;
+  filteredOutCount: number | null;
+  errorBeforeFilterCount: number | null;
+  duplicateIdentityCount: number | null;
+  newCount: number | null;
+  changedCount: number | null;
+  unchangedCount: number | null;
+  contentMutationCount: number | null;
+  criticalLineCount: number | null;
+  criticalIssueCount: number | null;
+  warningCount: number | null;
+  awaitingApprovalCount: number | null;
+  creationOutcome: string | null;
+  creationScopeCount: number | null;
+  creationCandidateCount: number | null;
+  blockedCode: string | null;
+  blockedReason: string | null;
+};
+
+/** be.dda.catalogimport.service.DeliveryView (`GET /deliveries/{id}`). Het archiefpad wordt niet blootgesteld. */
+export type DeliveryView = {
+  deliveryId: number;
+  taskId: number;
+  taskRunId: number | null;
+  idempotencyKey: string;
+  receivedAt: string;
+  expectedFileCount: number | null;
+  actualFileCount: number;
+  expectedRecordCount: number | null;
+  actualRecordCount: number | null;
+  expectedByteSize: number | null;
+  actualByteSize: number;
+  completenessProven: boolean;
+  manifestReference: string | null;
+  files: DeliveryFileView[];
+  batch: DeliveryBatchView | null;
 };
 
 // be.dda.catalogimport.service.BatchQueryService.StatusCount

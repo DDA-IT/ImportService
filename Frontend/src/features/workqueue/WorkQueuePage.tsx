@@ -6,11 +6,11 @@
  * uit `GET /batches`. Geen enkele schrijfactie op dit scherm (accept-baseline en bundel-opname horen
  * op scherm (2)/(3) — expliciete scope-grens uit de beslissing).
  *
- * Er bestaat nog geen batch-detailroute in de frontend, dus een rij linkt (nog) niet door — dat is
- * geen omissie van deze slice maar een expliciet gerapporteerde beperking (zie het bouwrapport).
+ * Elke rij linkt door naar het batchdetail `/batches/:batchId` (A-F1).
  */
 
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import * as batchesApi from '../../api/batches.ts';
 import * as importLinksApi from '../../api/importLinks.ts';
 import { IMPORT_BATCH_STATUSES, VALIDATION_RESULTS } from '../../api/types.ts';
@@ -68,6 +68,7 @@ function dateInputToInstantEndExclusive(value: string): string | undefined {
 }
 
 const COLUMNS: readonly DataTableColumn<BatchRow>[] = [
+  { key: 'batchId', header: 'Batch', render: (row) => <Link to={`/batches/${row.batchId}`}>#{row.batchId}</Link> },
   { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> },
   {
     key: 'validationResult',

@@ -994,3 +994,45 @@ filteren (§10.4 punt 2) — sinds C1 kan dat wel.
 zonder beslissing). F9-bouwvolgorde: C5 → F9 → F10 → F11.
 
 **Bron:** mens / bouwer-zwaar-bevinding F8 (risico 2 en 3) / `docs/design/frontend-scherm3-bundel-design.md` §10.4, §16.1
+
+---
+
+## 2026-09-24 — Onbekende velden in de groepsactie weigeren (stap C6)
+
+**Vraag:** Jackson negeert onbekende JSON-velden (Spring Boot-default `FAIL_ON_UNKNOWN_PROPERTIES = false`). Bij
+`POST /bundles/{id}/decisions` valt een filterveld dat de server niet kent dus stil weg, en raakt de groepsactie meer
+mutaties dan de gebruiker ziet (ontdekking F9). `@JsonIgnoreProperties(ignoreUnknown = false)` kan de globale default
+niet strenger maken. Opties: A gericht op dit ene endpoint, B globaal, C niets.
+
+**Beslissing (mens, 2026-09-24):** A. Enkel `POST /bundles/{id}/decisions` weigert onbekende velden, op topniveau én
+in `filter`, via een expliciete controle in de Web-laag (whitelist op de ruwe JSON of een strenge `ObjectReader`).
+Antwoord: 400 via `BadRequestException` met de nieuwe code `DECISION_FILTER_UNKNOWN_FIELD` en de veldnaam in `error`,
+plus een entry in `Frontend/src/errors/codes.ts`. `DecisionFilter` in Service blijft vrij van Jackson. De globale
+Jackson-configuratie blijft ongewijzigd (de contracttest `AcceptBaselineReviewFlowTest` r.260-278 blijft geldig).
+
+**Bron:** mens / denker-zwaar (open punten scherm 3) / `docs/design/frontend-scherm3-bundel-design.md` §10.4
+
+---
+
+## 2026-09-24 — `expirableCount` op `BundleDetail` (stap C7)
+
+**Vraag:** `CancelDialog` telt het aantal mutaties dat bij annuleren vervalt met zes lijstaanroepen
+(`expiringMutations.ts`), een spiegel in de UI van `PublicationBundleDao.EXPIRABLE_TAIL`. Hetzelfde patroon is voor
+`plannedCount` verworpen (V4/C2).
+
+**Beslissing (mens, 2026-09-24):** nu bouwen. Additief veld `expirableCount` op `BundleDetail`, gevuld door de
+backendtelling (`countExpirableMutations`) bij ASSEMBLING én FROZEN, `null` bij CANCELLED. `CancelDialog` gebruikt dat
+veld; de zes lijstaanroepen en `expiringMutations.ts` vervallen.
+
+**Bron:** mens / denker-zwaar (open punten scherm 3) / `docs/design/frontend-scherm3-bundel-design.md` §10.6
+
+---
+
+## 2026-09-24 — Koppelingsnaam in `BundleBatchesTab` (§16.5)
+
+**Vraag:** `BundleBatchesTab` toont `#importLinkId` terwijl `GET /import-links` al bestaat (S0-B3).
+
+**Beslissing (mens, 2026-09-24):** de naam van de koppeling tonen via de bestaande `importLinks`-API, zoals Scherm 0
+dat doet. Het design (§10.4 punt 2, §16.1, §16.4) wordt voorlopig niet bijgewerkt.
+
+**Bron:** mens / denker-zwaar (open punten scherm 3) / `docs/design/frontend-scherm3-bundel-design.md` §16.5

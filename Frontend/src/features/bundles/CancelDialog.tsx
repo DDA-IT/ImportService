@@ -5,8 +5,8 @@
  * leden wordt `EXPIRED` en wordt nooit meer herleefd; de batches komen vrij voor `accept-baseline` of een
  * andere bundel. Binnen de applicatie niet ongedaan te maken, dus:
  *
- * 1. **Voorvlucht**: bij het openen wordt het aantal mutaties dat vervalt vastgesteld
- *    (`expiringMutations.ts`); zolang dat getal er niet is, is annuleren uit (`cancelGate`).
+ * 1. **Voorvlucht**: het aantal mutaties dat vervalt komt van de backend (`BundleDetail.expirableCount`, C7);
+ *    zolang dat getal ontbreekt (`null`), is annuleren uit (`cancelGate`).
  * 2. **Typ-bevestiging** zoals bij bevriezen: actor + verplichte reden + `bundleReference` overtypen.
  * 3. **Geen stille success, geen retry**: een fout (bv. 409 `BUNDLE_NOT_CANCELLABLE`) blijft in de open
  *    dialoog staan met haar stabiele code; alleen de telling (een lezing) wordt daarna opnieuw geladen.
@@ -19,9 +19,7 @@ import * as bundlesApi from '../../api/bundles.ts';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
-import { useQuery } from '../../hooks/useQuery.ts';
 import { cancelGate } from './bundlePolicy.ts';
-import { EXPIRING_STATUSES, loadExpiringCounts } from './expiringMutations.ts';
 import styles from './ClosingDialogs.module.css';
 
 export type CancelDialogProps = {
@@ -55,12 +53,11 @@ function resultMessage(result: BundleDetail): string {
 }
 
 export function CancelDialog({ bundle, onClose, onCancelled }: CancelDialogProps) {
-  const counts = useQuery(`cancel-expiring:${bundle.id}`, (signal) => loadExpiringCounts(bundle.id, signal));
   const runner = useAction((body: CancelBundleRequest) => bundlesApi.cancel(bundle.id, body));
 
-  // Zelfde regel als bij de voorvlucht van het bevriezen: alleen een telling die nu geldt, telt.
-  const current = !counts.loading && counts.error === null ? counts.data : null;
-  const gate = cancelGate(bundle.status, current === null ? null : current.total);
+  // De telling komt van de backend (`BundleDetail.expirableCount`); ontbreekt ze, dan is annuleren uit.
+  const expirable = bundle.expirableCount;
+  const gate = cancelGate(bundle.status, expirable);
 
   async function handleConfirm(input: { actor: string; reason: string | null }) {
     if (!gate.allowed || input.reason === null) {
@@ -68,9 +65,7 @@ export function CancelDialog({ bundle, onClose, onCancelled }: CancelDialogProps
     }
     const result = await runner.execute({ cancelledBy: input.actor, reason: input.reason });
     if (result === undefined) {
-      // Mislukt: de dialoog blijft open met de foutmelding (inclusief de stabiele backendcode). De telling
-      // wordt opnieuw gelezen (een lezing, nooit een herhaling van het annuleren).
-      counts.reload();
+      // Mislukt: de dialoog blijft open met de foutmelding (inclusief de stabiele backendcode).
       return;
     }
     onCancelled(resultMessage(result), result);
@@ -82,36 +77,16 @@ export function CancelDialog({ bundle, onClose, onCancelled }: CancelDialogProps
       title={`Bundel ${bundle.bundleReference} annuleren`}
       body={
         <div className={styles.body}>
-          {counts.loading && <p className={styles.muted}>Het aantal mutaties dat vervalt wordt geteld…</p>}
-          {!counts.loading && counts.error !== null && <ErrorBanner error={counts.error} />}
-          {current !== null && (
-            <>
-              <p className={styles.keyFigure} data-testid="cancel-expiring-count">
-                <strong>{mutations(current.total)}</strong> {current.total === 1 ? 'vervalt' : 'vervallen'} (EXPIRED) en{' '}
-                {current.total === 1 ? 'wordt' : 'worden'} nooit meer herleefd.
-              </p>
-              <dl className={styles.figures} aria-label="Mutaties die vervallen">
-                {EXPIRING_STATUSES.map((status) => (
-                  <div key={status} className={styles.figure}>
-                    <dt>{status}</dt>
-                    <dd>{current.byStatus[status]}</dd>
-                  </div>
-                ))}
-              </dl>
-            </>
+          {expirable !== null && (
+            <p className={styles.keyFigure} data-testid="cancel-expiring-count">
+              <strong>{mutations(expirable)}</strong> {expirable === 1 ? 'vervalt' : 'vervallen'} (EXPIRED) en{' '}
+              {expirable === 1 ? 'wordt' : 'worden'} nooit meer herleefd.
+            </p>
           )}
           <p className={styles.muted}>
-            Het getal is een momentopname; het annuleren telt zelf opnieuw en schrijft het werkelijke aantal in
-            het beslissingsregister.
+            Het getal is een momentopname (van het laden van de bundel); het annuleren telt zelf opnieuw en
+            schrijft het werkelijke aantal in het beslissingsregister.
           </p>
-          <button
-            type="button"
-            className={styles.recheckButton}
-            onClick={counts.reload}
-            disabled={counts.loading || runner.pending}
-          >
-            Opnieuw tellen
-          </button>
           <p>
             Elke niet-afgeronde mutatie (PLANNED, AWAITING_APPROVAL, READY_FOR_PUBLICATION) van de actieve batches
             vervalt; afgekeurde, geblokkeerde en overgeslagen mutaties, identiteitsincidenten en de importmarkering

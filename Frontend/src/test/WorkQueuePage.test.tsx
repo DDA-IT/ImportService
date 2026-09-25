@@ -8,7 +8,16 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { WorkQueuePage } from '../features/workqueue/WorkQueuePage';
+
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <WorkQueuePage />
+    </MemoryRouter>,
+  );
+}
 
 const SUMMARY_RESPONSE = {
   total: 7,
@@ -104,7 +113,7 @@ describe('WorkQueuePage', () => {
   });
 
   it('S0-F1.1: toont de telblokken, inclusief een eigen tegel voor "niet vastgesteld"', async () => {
-    render(<WorkQueuePage />);
+    renderPage();
 
     const tiles = await screen.findByTestId('summary-tiles');
     expect(within(tiles).getByText('Totaal')).toBeInTheDocument();
@@ -122,8 +131,14 @@ describe('WorkQueuePage', () => {
     expect(within(notEstablishedTile as HTMLElement).getByText('2')).toBeInTheDocument();
   });
 
+  it('A-F1: elke rij linkt door naar het batchdetail', async () => {
+    renderPage();
+    const link = await screen.findByRole('link', { name: '#101' });
+    expect(link).toHaveAttribute('href', '/batches/101');
+  });
+
   it('S0-F1.2: geeft de statusfilter door als querystringparameter aan GET /batches', async () => {
-    render(<WorkQueuePage />);
+    renderPage();
     await waitFor(() => expect(screen.getByText('LNK-1')).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'BLOCKED' } });
@@ -135,7 +150,7 @@ describe('WorkQueuePage', () => {
   });
 
   it('S0-F1.3: geeft de koppelingsfilter door op basis van het gekozen import-link-id', async () => {
-    render(<WorkQueuePage />);
+    renderPage();
     await waitFor(() => expect(screen.getByText('LNK-1')).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText('Koppeling'), { target: { value: '2' } });
@@ -147,7 +162,7 @@ describe('WorkQueuePage', () => {
   });
 
   it('S0-F1.4: geeft het datumbereik door als createdFrom/createdTo', async () => {
-    render(<WorkQueuePage />);
+    renderPage();
     await waitFor(() => expect(screen.getByText('LNK-1')).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText('Aangemaakt vanaf'), { target: { value: '2026-09-01' } });
@@ -182,7 +197,7 @@ describe('WorkQueuePage', () => {
       return Promise.reject(new Error(`Onverwachte URL in test: ${url}`));
     }) as unknown as typeof fetch;
 
-    render(<WorkQueuePage />);
+    renderPage();
     await waitFor(() => expect(screen.getByText('1-50 van 120')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: 'Volgende' }));

@@ -32,6 +32,10 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     title: 'Batch niet gevonden',
     explanation: 'Deze batch (levering) bestaat niet (meer).',
   },
+  DELIVERY_NOT_FOUND: {
+    title: 'Levering niet gevonden',
+    explanation: 'Deze levering bestaat niet (meer).',
+  },
   BATCH_NOT_IN_BUNDLE: {
     title: 'Batch zit niet in deze bundel',
     explanation: 'De opgevraagde batch is geen (actief) lid van deze bundel.',
@@ -96,6 +100,13 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     explanation:
       'Een groepsbeslissing vereist minstens één filterveld (batch, status, soort, statusreden of ' +
       'wijzigingsgroep).',
+  },
+  DECISION_FILTER_UNKNOWN_FIELD: {
+    title: 'Onbekend filterveld',
+    explanation:
+      'De groepsbeslissing bevat een veld dat de server niet kent; ze is geweigerd zodat ze niet ' +
+      'meer mutaties raakt dan je ziet.',
+    showBackendDetail: true,
   },
   BUNDLE_EMPTY: {
     title: 'Bundel is leeg',

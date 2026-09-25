@@ -84,6 +84,10 @@ public class BundleQueryService {
      * {@code plannedCount} (het aantal dat het bevriezen in bulk goedkeurt, {@code countPlanned}) en
      * {@code awaitingApprovalCount} (de blokkadevoorwaarde van het bevriezen, {@code countUndecided}) zijn
      * enkel live gevuld bij {@code ASSEMBLING}; {@code null} bij FROZEN/CANCELLED (geen levend getal meer).
+     * <p>
+     * {@code expirableCount} (stap C7) is het aantal mutaties dat bij annuleren {@code EXPIRED} wordt
+     * ({@code countExpirableMutations}, dezelfde selectie als het annuleren zelf): live gevuld bij
+     * {@code ASSEMBLING} én {@code FROZEN} (beide zijn annuleerbaar); {@code null} bij {@code CANCELLED}.
      */
     public record BundleDetail(long id, String bundleReference, String description, String status,
                                String targetMode, Instant targetMoment, String publicationPolicy,
@@ -93,9 +97,10 @@ public class BundleQueryService {
                                Long readyCount, Long rejectedCount, Long blockedCount, Long expiredCount,
                                Long identityIncidentCount, Long bulkIncidentCount, Long criticalIssueCount,
                                Long warningCount, Long staleMutationCount, String contentHash,
-                               Long plannedCount, Long awaitingApprovalCount) {
+                               Long plannedCount, Long awaitingApprovalCount,
+                               Long expirableCount) {
 
-        private static BundleDetail frozen(PublicationBundle bundle) {
+        private static BundleDetail frozen(PublicationBundle bundle, Long expirableCount) {
             return new BundleDetail(bundle.getId(), bundle.getBundleReference(), bundle.getDescription(),
                     bundle.getStatus().name(), bundle.getTargetMode().name(), bundle.getTargetMoment(),
                     bundle.getPublicationPolicy(), bundle.getCreatedBy(), bundle.getCreatedAt(),
@@ -104,12 +109,12 @@ public class BundleQueryService {
                     bundle.getContentMutationCount(), bundle.getReadyCount(), bundle.getRejectedCount(),
                     bundle.getBlockedCount(), bundle.getExpiredCount(), bundle.getIdentityIncidentCount(),
                     bundle.getBulkIncidentCount(), bundle.getCriticalIssueCount(), bundle.getWarningCount(), null,
-                    hex(bundle.getContentHash()), null, null);
+                    hex(bundle.getContentHash()), null, null, expirableCount);
         }
 
         private static BundleDetail live(PublicationBundle bundle, List<MutationStatusCount> counts,
                                          long activeBatchCount, long staleCount, long plannedCount,
-                                         long awaitingApprovalCount) {
+                                         long awaitingApprovalCount, long expirableCount) {
             BundleMutationTotals totals = BundleMutationTotals.of(counts);
             return new BundleDetail(bundle.getId(), bundle.getBundleReference(), bundle.getDescription(),
                     bundle.getStatus().name(), bundle.getTargetMode().name(), bundle.getTargetMoment(),
@@ -122,7 +127,8 @@ public class BundleQueryService {
                     // CANCELLED en leest deze weergave de vastgestelde rij. Gedrag van 4b, ongewijzigd.
                     totals.blockedCount(), bundle.getExpiredCount(), totals.identityIncidentCount(),
                     bundle.getBulkIncidentCount(), bundle.getCriticalIssueCount(), bundle.getWarningCount(),
-                    staleCount, hex(bundle.getContentHash()), plannedCount, awaitingApprovalCount);
+                    staleCount, hex(bundle.getContentHash()), plannedCount, awaitingApprovalCount,
+                    expirableCount);
         }
 
         /** De bundelhash als hexadecimale tekst; binaire bytes horen niet in een JSON-antwoord. */
@@ -196,9 +202,11 @@ public class BundleQueryService {
             long activeBatchCount = bundleBatches.countByBundleIdAndActiveMarkerIsNotNull(bundleId);
             long stale = dao.countStaleMutations(bundleId);
             return BundleDetail.live(bundle, counts, activeBatchCount, stale, dao.countPlanned(bundleId),
-                    dao.countUndecided(bundleId));
+                    dao.countUndecided(bundleId), dao.countExpirableMutations(bundleId));
         }
-        return BundleDetail.frozen(bundle);
+        Long expirable = bundle.getStatus() == PublicationBundleStatus.FROZEN
+                ? dao.countExpirableMutations(bundleId) : null;
+        return BundleDetail.frozen(bundle, expirable);
     }
 
     /**

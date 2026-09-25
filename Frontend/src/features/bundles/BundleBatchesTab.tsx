@@ -10,7 +10,8 @@
 
 import { useState } from 'react';
 import * as bundlesApi from '../../api/bundles.ts';
-import type { BundleBatchRow, BundleCandidate } from '../../api/types.ts';
+import * as importLinksApi from '../../api/importLinks.ts';
+import type { BundleBatchRow, BundleCandidate, ImportLinkRow } from '../../api/types.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { useAction } from '../../hooks/useAction.ts';
 import { useActor, validateActorName } from '../../actor/ActorContext.tsx';
@@ -38,6 +39,22 @@ function Count({ value }: { value: number | null }) {
   return <>{value}</>;
 }
 
+/**
+ * Geeft het leesbare label voor een koppeling terug via de bestaande
+ * `GET /import-links`-API. Valt terug op `#id` als het label niet gevonden wordt.
+ * Zie §16.5 van het scherm-3-ontwerp.
+ */
+function getImportLinkLabel(importLinkId: number, links: ImportLinkRow[] | undefined): string {
+  if (!links) {
+    return `#${importLinkId}`;
+  }
+  const link = links.find((l) => l.id === importLinkId);
+  if (!link) {
+    return `#${importLinkId}`;
+  }
+  return link.code;
+}
+
 export function BundleBatchesTab() {
   const { bundle, reloadBundle } = useBundleDetailContext();
   const { actor } = useActor();
@@ -58,6 +75,9 @@ export function BundleBatchesTab() {
   const candidates = useQuery(candidatesKey, (signal) =>
     bundlesApi.candidates({ page: candidatesPage, size: candidatesSize }, signal),
   );
+
+  const linksKey = 'import-links:all';
+  const links = useQuery(linksKey, (signal) => importLinksApi.listImportLinks({ size: 200 }, signal));
 
   const addGate = bundleActionGate(bundle.status, 'ADD_BATCHES');
   const removeGate = bundleActionGate(bundle.status, 'REMOVE_BATCH');
@@ -114,7 +134,7 @@ export function BundleBatchesTab() {
 
   const memberColumns: readonly DataTableColumn<BundleBatchRow>[] = [
     { key: 'batchId', header: 'Batch', render: (row) => row.batchId },
-    { key: 'importLinkId', header: 'Koppeling', render: (row) => `#${row.importLinkId}` },
+    { key: 'importLinkId', header: 'Koppeling', render: (row) => getImportLinkLabel(row.importLinkId, links.data?.content) },
     { key: 'batchStatus', header: 'Batchstatus', render: (row) => <StatusBadge status={row.batchStatus} /> },
     {
       key: 'batchContentMutationCount',
@@ -174,7 +194,7 @@ export function BundleBatchesTab() {
       ),
     },
     { key: 'batchId', header: 'Batch', render: (row) => row.batchId },
-    { key: 'importLinkId', header: 'Koppeling', render: (row) => `#${row.importLinkId}` },
+    { key: 'importLinkId', header: 'Koppeling', render: (row) => getImportLinkLabel(row.importLinkId, links.data?.content) },
     { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> },
     {
       key: 'validationResult',

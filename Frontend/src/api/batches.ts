@@ -10,9 +10,13 @@ import { request, toQueryString } from './http.ts';
 import type {
   AcceptBaselineRequest,
   BaselineAcceptance,
+  BatchDetail,
   BatchRow,
   BatchSummary,
+  DeliveryView,
   ImportBatchStatus,
+  IssueGroupRow,
+  IssueRow,
   MutationActionType,
   MutationRow,
   MutationStatus,
@@ -52,7 +56,40 @@ export function batchSummary(params: { importLinkId?: number }, signal?: AbortSi
 }
 
 /**
- * GET /batches/{batchId}/mutations — CatalogImportBatchController.mutations
+ * GET /batches/{batchId}/issues — CatalogImportBatchController.issues (A-F2). De rijen zijn
+ * **voorbeelden** (begrensd per foutcode); het werkelijke aantal staat alleen in `issueGroups`.
+ */
+export function batchIssues(
+  batchId: number,
+  params: { issueGroupId?: number; page?: number; size?: number },
+  signal?: AbortSignal,
+): Promise<PageResult<IssueRow>> {
+  const query = toQueryString({ issueGroupId: params.issueGroupId, page: params.page, size: params.size });
+  return request<PageResult<IssueRow>>(`/batches/${batchId}/issues${query}`, { signal });
+}
+
+/** GET /batches/{batchId}/issue-groups — CatalogImportBatchController.issueGroups (A-F2) */
+export function batchIssueGroups(
+  batchId: number,
+  params: { page?: number; size?: number },
+  signal?: AbortSignal,
+): Promise<PageResult<IssueGroupRow>> {
+  const query = toQueryString({ page: params.page, size: params.size });
+  return request<PageResult<IssueGroupRow>>(`/batches/${batchId}/issue-groups${query}`, { signal });
+}
+
+/** GET /deliveries/{deliveryId} — CatalogImportDeliveryController.delivery (A-F2) */
+export function getDelivery(deliveryId: number, signal?: AbortSignal): Promise<DeliveryView> {
+  return request<DeliveryView>(`/deliveries/${deliveryId}`, { signal });
+}
+
+/** GET /batches/{batchId} — CatalogImportBatchController.batch (batchdetail, A-F1) */
+export function getBatch(batchId: number, signal?: AbortSignal): Promise<BatchDetail> {
+  return request<BatchDetail>(`/batches/${batchId}`, { signal });
+}
+
+/**
+ * GET /batches/{batchId}/mutations —CatalogImportBatchController.mutations
  *
  * Draagt sinds bouwstap C1 ook `status` en `statusReason` (exacte, hoofdlettergevoelige gelijkheid) en
  * sinds C4 `identityHash` (hoofdletterongevoelig). Deze lijst kent géén `batchId`-filter: de batch

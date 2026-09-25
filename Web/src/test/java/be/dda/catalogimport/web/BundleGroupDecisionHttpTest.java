@@ -104,6 +104,56 @@ class BundleGroupDecisionHttpTest {
                 .andExpect(jsonPath("$.error").value("A group decision requires at least one filter field"));
     }
 
+    /** C6: een onbekend filterveld is 400 met de nieuwe code, en de service wordt niet aangeroepen. */
+    @Test
+    void anUnknownFilterFieldAnswersFourHundredWithTheUnknownFieldCode() throws Exception {
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", BUNDLE_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"an\","
+                                + "\"filter\":{\"batchid\":7}}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DECISION_FILTER_UNKNOWN_FIELD"))
+                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("filter.batchid")));
+        Mockito.verifyNoInteractions(decisionService);
+    }
+
+    @Test
+    void oneUnknownFieldAmongValidOnesIsStillRejected() throws Exception {
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", BUNDLE_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"an\","
+                                + "\"filter\":{\"batchId\":7,\"status\":\"AWAITING_APPROVAL\",\"colour\":\"red\"}}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DECISION_FILTER_UNKNOWN_FIELD"))
+                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("filter.colour")));
+        Mockito.verifyNoInteractions(decisionService);
+    }
+
+    @Test
+    void anUnknownTopLevelFieldIsRejected() throws Exception {
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", BUNDLE_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"an\",\"batchId\":7,"
+                                + "\"filter\":{\"batchId\":7}}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DECISION_FILTER_UNKNOWN_FIELD"));
+        Mockito.verifyNoInteractions(decisionService);
+    }
+
+    /** Een ontbrekende filter is niet C6's zaak: de service blijft DECISION_FILTER_REQUIRED beslissen. */
+    @Test
+    void aMissingFilterStillReachesTheServiceAndKeepsItsOwnCode() throws Exception {
+        Mockito.when(decisionService.decideGroup(Mockito.anyLong(), Mockito.any(), Mockito.any(), Mockito.any(),
+                        Mockito.any()))
+                .thenThrow(new BadRequestException(BundleDecisionService.CODE_DECISION_FILTER_REQUIRED, "required"));
+
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", BUNDLE_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"an\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DECISION_FILTER_REQUIRED"));
+    }
+
     /** Het bestaande 400-antwoord zonder code blijft exact zoals het was. */
     @Test
     void anOrdinaryIllegalArgumentStillAnswersFourHundredWithoutACode() throws Exception {
