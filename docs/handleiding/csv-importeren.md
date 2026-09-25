@@ -17,7 +17,7 @@ multipart-bestand via `POST /api/catalog-import/tasks/{taskId}/deliveries`
 Het "pad" is dus het pad op **uw eigen machine**, dat u aan `curl` (`-F "file=@pad"`) of aan het uploadscherm
 meegeeft. Een server-side inbox/pad-import en een scheduler bestaan niet (uitgesteld, zie README sectie 1).
 
-Status: upload via API **Alleen via API**; uploadscherm **In aanbouw** (zie 4.4).
+Status: upload via API **Alleen via API**; uploadscherm **Beschikbaar** (zie 4.4, lokaal via frontend `npm run dev`).
 
 ## 2. Voorbereiding (checklist)
 
@@ -148,12 +148,77 @@ verifiëren**); de `curl.exe`-variant volgt de bewezen bash-aanroep.
 - Een fout pad geeft een curl-fout ("Failed to open/read local data") en er wordt niets verstuurd.
 - Zet geen `Content-Type: application/json` mee; `-F` regelt `multipart/form-data` zelf.
 
-### 4.4 Uploadscherm — **In aanbouw** (bouwstap B-F1)
+### 4.4 Uploadscherm (bouwstap B-F1)
 
-Het scherm bestaat nog niet. Het komt met: een taak kiezen (uit `GET /tasks`), een bestand kiezen, een
-**deterministische** `deliveryReference` (afgeleid van bestandsnaam of inhoud, geen tijdstempel), en geen
-voortgangsbalk maar **twee benoemde fasen met een tijdteller** (uploaden; screenen). Tot dan: sectie 4.1
-of 4.2.
+**Beschikbaar**: frontend lokaal via `npm run dev`, route `/upload`.
+
+Het scherm biedt een webformulier voor het uploaden van een CSV-bestand. Stappen:
+
+1. **Voorbereiding:** Backend draait (poort 8081, profiel `local` en `demo` voor de demogegevens). Frontend
+   draait lokaal (`npm run dev`, poort 5173).
+2. **Scherm openen:** Browse naar `http://localhost:5173/upload`.
+3. **Taak kiezen:** Vervolgkeuzelijst met beschikbare taken. Alleen taken met trigger type `MANUAL` zijn kiesbaar;
+   niet-manuele taken staan grijs met reden ("niet manueel" / "inactief"). Het scherm maakt **geen** taak aan —
+   dat gebeurt bij de inrichting van de koppeling (flow 1 en 1B van [`standaardflows.md`](standaardflows.md)).
+4. **Bestand kiezen:** Klik "Selecteer bestand" en kies uw CSV. De bestandsnaam moet max. 500 tekens zijn.
+5. **Referentie bepalen:** De `deliveryReference` wordt **automatisch afgeleid** van bestandsnaam en inhoud.
+   De hash wordt berekend van de bestandsinhoud (deterministische SHA-256, eerste 12 hexadecimale tekens).
+   Vorm: `<bestandsnaam>#<hash>`, zodat het geheel max. 190 tekens is. U kunt de referentie aanpassen;
+   hetzelfde bestand met dezelfde referentie heruploden is veilig (idempotent, zie sectie 5 en flow 3 van
+   [`standaardflows.md`](standaardflows.md)).
+6. **Verwachtingen (optioneel):** Vul in hoeveel datalijnen u verwacht (`expectedRecordCount`) en hoe groot het
+   bestand moet zijn in bytes (`expectedByteSize`). Wijkt het af, dan wordt de levering geblokkeerd met
+   `RECORD_COUNT_MISMATCH` of `BYTE_SIZE_MISMATCH`.
+7. **Actor:** De naam "Geüpload door" komt van de actorbalk bovenaan (u vult dat eenmalig in, wordt opgeslagen
+   in de sessie).
+8. **Uploaden:** Klik "Uploaden". De knop staat uit zolang de upload en screening nog bezig zijn.
+
+**Twee fasen met tijdteller:**
+
+- **Fase 1 — Uploaden:** het bestand wordt naar de server gestuurd.
+- **Fase 2 — Screenen:** de server leest en beoordeelt elke regel.
+
+Beide fasen lopen in één HTTP-verzoek (synchroon). Er is geen voortgangsbalk — de voortgang is principieel niet
+meetbaar. Dit kan minuten duren bij grote bestanden. **Laat het tabblad open.**
+
+**Herstelroute bij netwerkfout:**
+
+Valt de verbinding weg: herhaal met **dezelfde referentie** en **hetzelfde bestand**. De server antwoordt dan
+met HTTP 200 en de bestaande levering, zonder opnieuw te screenen. Wijzig de referentie niet.
+
+**Foutmeldingen:**
+
+| Fout | Oorzaak | Wat te doen |
+| --- | --- | --- |
+| "Taak niet gevonden" | `taskId` bestaat niet | taak opnieuw kiezen |
+| "Taak is niet manueel" | geselecteerde taak is niet `MANUAL` | een manuele taak kiezen |
+| "Geen actieve revisie" | de definitie van deze taak heeft geen actieve revisie | revisie activeren (beheerder/setup) |
+| "Referentie is al gebruikt voor een ander bestand" (HTTP 409) | dezelfde `deliveryReference` met ander bestand | nieuwe referentie kiezen |
+| "Bestand te groot" (HTTP 413) | bestand groter dan limiet (standaard 1 GB, `CATALOG_MAX_UPLOAD_SIZE`) | bestand splitsen of limiet verhogen |
+| "Onverwachte serverfout" (HTTP 500) | technische fout op de server | serverlog lezen; herhaal met dezelfde referentie (veilig) |
+| "Geen verbinding" (netwerk/status 0) | verzoek kon niet verstuurd of antwoord niet ontvangen | herhaal met dezelfde referentie (veilig idempotent) |
+
+**Na succes:**
+
+Het scherm toont het resultaat: `Levering #{id}` en `Batch #{id}`. Klik de batchnummer door naar het
+batchdetail (`/batches/{id}`, **Beschikbaar** — `Frontend/src/features/upload/UploadPage.tsx`,
+`<Link to={/batches/${delivery.batchId}}>`; zie README 4.2); via API: `curl $A/batches/{id}`, zie sectie 6
+van [`README.md`](README.md).
+
+De batch staat op status `SCREENED` (gereed), `BLOCKED` (levering onbruikbaar) of `FAILED` (technische fout).
+Tellers: ruwe records, geldige, afgewezen, dubbele identiteiten, nieuw, gewijzigd, ongewijzigd,
+inhoudsmutaties.
+
+**Vervolg:**
+
+Een `SCREENED` batch kan op twee manieren verder, en nooit op allebei (zie sectie 7 van `README.md`):
+- **accept-baseline** — nulmeting van de bronstaat (geen publicatie).
+- **Opnemen in een publicatiebundel** — voorbereiding voor publicatie.
+
+Beide acties staan **niet** op het uploadscherm zelf, maar wel op het batchdetail waar u via de batchlink
+hierboven terechtkomt (**Beschikbaar** — `Frontend/src/features/batches/BatchActions.tsx`): een `SCREENED`
+batch toont daar de knoppen "Aanvaarden als nulmeting" en "Opnemen in bundel", elk met een verplichte reden
+en een typ-bevestiging. Alternatief: de API (flow 4 en 5 van [`standaardflows.md`](standaardflows.md)).
 
 ## 5. De `deliveryReference`
 
@@ -196,7 +261,7 @@ curl -s "$A/deliveries/$DELIVERY_ID"
 ```
 
 **Scherm 0 (werkvoorraad)** op `http://localhost:5173/` — **Beschikbaar**, alleen-lezen: de batch staat
-bovenaan (nieuwste eerst). Doorklikken naar een batchdetail kan nog niet (**In aanbouw**).
+bovenaan (nieuwste eerst). Doorklikken naar het batchdetail werkt (**Beschikbaar**, zie boven).
 
 Verwacht voor `levering-1.csv` (echt gedraaid via het scenario): 7 regels, 6 geldig, 1 afgewezen (prijs
 `abc`), `INITIAL_LOAD`; identieke herupload geeft 200 met dezelfde batch. Voor `levering-2.csv` **na**

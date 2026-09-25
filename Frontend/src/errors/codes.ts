@@ -57,9 +57,33 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
       'Deze actie mag alleen zolang de bundel de status ASSEMBLING heeft. Deze bundel is al bevroren, ' +
       'geannuleerd of verder in het proces.',
   },
+  BUNDLE_NOT_FROZEN: {
+    title: 'Bundel is nog niet bevroren',
+    explanation: 'De PSIMPORT-preview is enkel beschikbaar voor een bundel met de status FROZEN.',
+    whatNow: 'Bevries de bundel eerst, of kies een bevroren bundel.',
+  },
   BATCH_ALREADY_IN_BUNDLE: {
     title: 'Batch zit al in een bundel',
     explanation: 'Deze batch is al lid van deze of een andere bundel en kan niet nogmaals toegevoegd worden.',
+  },
+  BATCH_IN_PUBLICATION_BUNDLE: {
+    title: 'Batch zit in een publicatiebundel',
+    explanation:
+      'Aanvaarden als nulmeting (accept-baseline) en opname in een bundel sluiten elkaar per batch uit. ' +
+      'Deze batch is al lid van een niet-geannuleerde bundel en kan daarom niet als nulmeting aanvaard worden.',
+    whatNow: 'Werk de batch af via de bundel, of annuleer de bundel; daarna is accept-baseline weer mogelijk.',
+  },
+  BATCH_NOT_ACCEPTABLE: {
+    title: 'Batch kan niet aanvaard worden',
+    explanation:
+      'Aanvaarden als nulmeting kan alleen vanuit de status SCREENED, en één keer per batch. Deze batch is ' +
+      'al aanvaard of nog niet (of niet meer) gescreend.',
+    whatNow: 'Laad de batch opnieuw en controleer de status.',
+  },
+  BATCH_NOT_RESUMABLE: {
+    title: 'Batch kan niet hervat worden',
+    explanation: 'Hervatten (continue) kan alleen vanuit de status MUTATING. Deze batch staat in een andere status.',
+    whatNow: 'Laad de batch opnieuw en controleer de status.',
   },
   BATCH_NOT_BUNDLEABLE: {
     title: 'Batch is niet bundelbaar',
@@ -153,6 +177,33 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     title: 'Bundel kan niet geannuleerd worden',
     explanation: 'Deze bundel staat in een status waarin annuleren niet meer mogelijk is.',
   },
+  TASK_NOT_FOUND: {
+    title: 'Taak niet gevonden',
+    explanation: 'De gekozen taak bestaat niet (meer).',
+    whatNow: 'Laad de takenlijst opnieuw en kies een bestaande taak.',
+  },
+  TASK_NOT_MANUAL: {
+    title: 'Taak is niet manueel',
+    explanation: 'Alleen een taak met trigger MANUAL neemt een handmatig geüploade levering aan.',
+    whatNow: 'Kies een manuele taak.',
+  },
+  NO_ACTIVE_REVISION: {
+    title: 'Geen actieve revisie',
+    explanation: 'De importdefinitie van deze taak heeft geen actieve revisie; een levering kan dus niet gescreend worden.',
+    whatNow: 'Activeer eerst een revisie (materialisatie van het sjabloon).',
+  },
+  TASK_RUN_IN_PROGRESS: {
+    title: 'Er loopt al een uitvoering voor deze taak',
+    explanation: 'Deze taak laat geen gelijktijdige uitvoeringen toe en er loopt er al een.',
+    whatNow: 'Wacht tot de lopende uitvoering klaar is. Was dat uw eigen upload die wegviel? Herhaal dan met dezelfde referentie.',
+  },
+  DELIVERY_REFERENCE_REUSED_WITH_DIFFERENT_CONTENT: {
+    title: 'Referentie is al gebruikt voor een ander bestand',
+    explanation:
+      'Bij deze taak bestaat al een levering met deze referentie, maar met een andere bestandsinhoud. ' +
+      'Er is niets opgeslagen.',
+    whatNow: 'Geef dit bestand een nieuwe referentie.',
+  },
   BUNDLE_CONTENT_CHANGED_DURING_CANCEL: {
     title: 'Inhoud is veranderd tijdens het annuleren',
     explanation: 'De inhoud van de bundel is tussen het laden en het bevestigen van deze actie gewijzigd.',
@@ -245,6 +296,18 @@ export function describe(error: ApiError): {
       title: `Geweigerd (${error.code})`,
       explanation,
       whatNow: null,
+      technical,
+      detail: null,
+    };
+  }
+
+  // 413 zonder code: `MaxUploadSizeExceededException` heeft geen handler die een code levert
+  // (zie ontdekking in docs/decisions.md 2026-09-23); enkel de status is betrouwbaar.
+  if (error.status === 413 && error.code === null) {
+    return {
+      title: 'Bestand te groot',
+      explanation: 'De server weigert dit bestand omdat het groter is dan de toegelaten uploadgrootte.',
+      whatNow: 'Splits het bestand, of vraag de beheerder de limiet (CATALOG_MAX_UPLOAD_SIZE) te verhogen.',
       technical,
       detail: null,
     };

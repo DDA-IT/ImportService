@@ -5,8 +5,8 @@ Stand: 2026-09-24. Wordt bijgewerkt zodra de resterende schermen klaar zijn. Hoo
 
 ## Lees dit eerst
 
-- **UI-route** staat alleen bij een flow als het scherm bestaat (zie sectie 4 van de hoofdhandleiding).
-  Anders staat er alleen de **API-route**.
+- **UI-route** staat bij een flow als het scherm bestaat (zie sectie 4 van de hoofdhandleiding).
+  Anders staat er alleen de **API-route**. Sommige schermen zijn nog in aanbouw.
 - Alle API-voorbeelden zijn afgeleid van `scripts/scenario/manual-upload-scenario.sh` en de bestanden
   `scripts/scenario/levering-1.csv` en `levering-2.csv`. Er draaide bij het schrijven geen backend.
   De getallen zijn **afgeleid uit de CSV-bestanden en de code**, niet uit een opgeslagen uitvoer van het
@@ -32,11 +32,11 @@ een unieke suffix (`SFX`, standaard een tijdstempel) in codes zodat u het herhaa
 | Flow | Onderwerp | Status |
 | --- | --- | --- |
 | [1](#flow-1--nieuwe-leverancier-of-koppeling-inrichten) | Nieuwe leverancier/koppeling inrichten | Alleen via API (achter de setup-vlag) |
-| [2](#flow-2--handmatig-een-csv-uploaden-en-het-resultaat-lezen) | CSV uploaden en resultaat lezen | Alleen via API (uploadscherm in aanbouw) |
+| [2](#flow-2--handmatig-een-csv-uploaden-en-het-resultaat-lezen) | CSV uploaden en resultaat lezen | Frontend beschikbaar op `/upload`; ook via API |
 | [3](#flow-3--herupload-en-idempotentie) | Herupload en idempotentie | Alleen via API |
-| [4](#flow-4--eerste-levering-aanvaarden-als-nulmeting-en-daarna-een-delta-levering) | Nulmeting en delta-levering | Alleen via API |
-| [5](#flow-5--batch-in-een-publicatiebundel-beslissen-controleren-bevriezen-annuleren) | Bundel, beslissen, bevriezen, annuleren | Deels beschikbaar in de UI |
-| [6](#flow-6--een-geblokkeerde-of-mislukte-batch-onderzoeken-en-hervatten) | Geblokkeerd/mislukt onderzoeken en hervatten | Alleen via API |
+| [4](#flow-4--eerste-levering-aanvaarden-als-nulmeting-en-daarna-een-delta-levering) | Nulmeting en delta-levering | Frontend beschikbaar (batchdetail); ook via API |
+| [5](#flow-5--batch-in-een-publicatiebundel-beslissen-controleren-bevriezen-annuleren) | Bundel, beslissen, bevriezen, annuleren | Beschikbaar in de UI |
+| [6](#flow-6--een-geblokkeerde-of-mislukte-batch-onderzoeken-en-hervatten) | Geblokkeerd/mislukt onderzoeken en hervatten | Frontend beschikbaar (batchdetail, `continue`); ook via API |
 | [7](#flow-7--de-werkvoorraad-gebruiken) | Werkvoorraad gebruiken | Beschikbaar |
 | [8](#flow-8--back-up-en-hersteltest-draaien) | Back-up en hersteltest | Scripts (ops) |
 
@@ -142,7 +142,7 @@ heb ik niet nagelezen: **nog te verifiëren**. Zie `docs/design/sjabloon-materia
 
 ## Flow 2 — Handmatig een CSV uploaden en het resultaat lezen
 
-**Status: Alleen via API.** Het uploadscherm is in aanbouw.
+**Status: Frontend beschikbaar** op route `/upload` (lokaal via `npm run dev`). **Ook via API** (flow stappen 2+ werken zoals eerder).
 
 **Doel:** een leveranciersbestand laten screenen en het oordeel lezen.
 
@@ -220,7 +220,9 @@ aanvaard of gepubliceerd.
 
 ## Flow 3 — Herupload en idempotentie
 
-**Status: Alleen via API.**
+**Status: Alleen via API** (deze uitleg volgt de rauwe API-aanroepen). Hetzelfde gedrag geldt ook via het
+uploadscherm (`/upload`): opnieuw uploaden met dezelfde referentie en hetzelfde bestand is daar de
+gedocumenteerde herstelroute (zie csv-importeren.md §4.4).
 
 **Doel:** weten wat er gebeurt als u hetzelfde bestand nog eens aanbiedt, bijvoorbeeld na een afgebroken
 verzoek.
@@ -251,7 +253,8 @@ gecorrigeerde bestand een nieuwe referentie); veronderstellen dat een 200 een ni
 
 ## Flow 4 — Eerste levering aanvaarden als nulmeting en daarna een delta-levering
 
-**Status: Alleen via API.** (accept-baseline in de UI is in aanbouw.)
+**Status: Frontend beschikbaar** (accept-baseline staat op het batchdetail, `/batches/:batchId`, zie
+README 4.2). **Ook via API.**
 
 **Doel:** de bronstaat vastleggen zodat een volgende levering enkel de verschillen toont.
 
@@ -319,9 +322,9 @@ regels `unchangedCount`. (Demo-voorbeeld in het hoofd-`README.md`: 10 ongewijzig
 
 ## Flow 5 — Batch in een publicatiebundel, beslissen, controleren, bevriezen, annuleren
 
-**Status: Deels beschikbaar in de UI.** Beschikbaar: bundel aanmaken, batches toevoegen/verwijderen,
-mutatielijst met filters, individueel goedkeuren/afkeuren. Alleen via API: groepsbeslissing,
-freeze-check, bevriezen, annuleren, beslissingsregister (de dialogen zijn in aanbouw).
+**Status: Beschikbaar in de UI.** Bundel aanmaken, batches toevoegen/verwijderen, mutatielijst met
+filters, individueel en groepsgewijs goedkeuren/afkeuren, freeze-check + bevriezen, annuleren en het
+beslissingsregister werken allemaal in het scherm (zie README 4.3–4.4). Ook via API.
 
 **Doel:** de mutaties van een batch beoordelen en de bundel bevriezen ("klaar voor publicatie").
 Publiceren zelf bestaat nog niet (Fase 5).
@@ -374,7 +377,9 @@ staat op de mutatie en als een regel in het register. Dezelfde beslissing door d
 200 met `idempotent: true`, geen tweede regel. Een herziening (bv. een eerdere afkeuring goedkeuren)
 vraagt een reden en laat beide regels staan.
 
-**Groepsbeslissing (alleen via API)** — één handeling over een gefilterde selectie:
+**Groepsbeslissing** — UI: bundel → tabblad **Mutaties** → groepsactie in de werkbalk boven de lijst,
+werkt met exact de toegepaste lijstfilter (`GroupDecisionDialog.tsx`). API: één handeling over een
+gefilterde selectie:
 
 ```bash
 # alle PLANNED mutaties van de bundel goedkeuren
@@ -404,6 +409,9 @@ In het scenario: het `PLANNED`-filter keurt de ene `UPDATE` (S-1) goed. De `CREA
 `AWAITING_APPROVAL` en moet apart beslist worden (zie 5.4).
 
 ### 5.3 Vooraf controleren met de freeze-check
+
+UI: bundel → tabblad **Overzicht** → knop **Bevriezen** opent `FreezeDialog`, die de voorvlucht meteen
+laadt en toont. API:
 
 ```bash
 curl $A/bundles/$BID/freeze-check
@@ -441,12 +449,14 @@ geen leden of beslissingen meer bij. `frozenBy` en `reason` zijn verplicht.
 Wat bevriezen **niet** belet: `BLOCKED`-mutaties en identiteitsincidenten (die hebben in Fase 4 geen
 beslispad).
 
-Bekijken: `curl $A/bundles/$BID` en het register: `curl $A/bundles/$BID/decisions`. Dat register is
-alleen-toevoegen: een herziening voegt een regel toe.
+Bekijken: `curl $A/bundles/$BID` (of het tabblad **Beslissingen**, zie README 4.3) en het register:
+`curl $A/bundles/$BID/decisions`. Dat register is alleen-toevoegen: een herziening voegt een regel toe.
 
 ### 5.5 Annuleren (onomkeerbaar)
 
-Annuleren kan vanuit `ASSEMBLING` **en** vanuit `FROZEN` (zolang Fase 5 niet begonnen is met publiceren):
+UI: bundel → tabblad **Overzicht** → knop **Annuleren** opent `CancelDialog` (telt eerst hoeveel
+mutaties vervallen). API: annuleren kan vanuit `ASSEMBLING` **en** vanuit `FROZEN` (zolang Fase 5 niet
+begonnen is met publiceren):
 
 ```bash
 curl -X POST $A/bundles/$BID/cancel -H "$J" -d '{"cancelledBy":"uw.naam","reason":"verkeerde batch"}'
@@ -454,7 +464,7 @@ curl -X POST $A/bundles/$BID/cancel -H "$J" -d '{"cancelledBy":"uw.naam","reason
 
 Effect: elke niet-terminale mutatie van de actieve leden wordt `EXPIRED`, de batches komen **vrij** (weer
 bruikbaar voor `accept-baseline` of een andere bundel), de bundel wordt `CANCELLED`. Een tweede annulering
-is 409 `BUNDLE_NOT_CANCELLABLE`. De UI-knop bestaat nog niet werkend (uitgeschakeld).
+is 409 `BUNDLE_NOT_CANCELLABLE`.
 
 **Veelvoorkomende fouten:**
 
@@ -476,7 +486,8 @@ is 409 `BUNDLE_NOT_CANCELLABLE`. De UI-knop bestaat nog niet werkend (uitgeschak
 
 ## Flow 6 — Een geblokkeerde of mislukte batch onderzoeken en hervatten
 
-**Status: Alleen via API.** (Batchdetail en `continue`-knop zijn in aanbouw.)
+**Status: Frontend beschikbaar** (batchdetail `/batches/:batchId` toont status, `blockedCode`, issues en
+foutgroepen; een batch op `MUTATING` toont de knop **Batch hervatten**, zie README 4.2). Ook via API.
 
 **Doel:** begrijpen waarom een batch niet `SCREENED` is en wat u eraan kunt doen.
 
@@ -552,8 +563,7 @@ batches met een hoge teller bij "wacht op goedkeuring".
 `status`, `validationResult`, `importLinkId`, `createdFrom`, `createdTo`, `page`, `size`, vast gesorteerd op
 `id` aflopend) en `curl $A/batches/summary` (optioneel `?importLinkId=`).
 
-**Beperking:** een rij in de tabel linkt nog niet door naar een batchdetail (in aanbouw). Noteer het
-`batchId` en gebruik de API (flow 2, 6).
+Een rij in de tabel linkt door naar het batchdetail (`/batches/:batchId`, zie README 4.2 en flow 2/6).
 
 ---
 

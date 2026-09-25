@@ -1036,3 +1036,106 @@ veld; de zes lijstaanroepen en `expiringMutations.ts` vervallen.
 dat doet. Het design (§10.4 punt 2, §16.1, §16.4) wordt voorlopig niet bijgewerkt.
 
 **Bron:** mens / denker-zwaar (open punten scherm 3) / `docs/design/frontend-scherm3-bundel-design.md` §16.5
+
+---
+
+## 2026-09-25 — Fase 5: opknipping, volgorde en vier beslissingen voor 5-AUTH/5-PERM
+
+**Vraag:** Hoe wordt Fase 5 (Keycloak, rechten via Prodis, publicatie naar ProDisWebbase/Pervasive) opgeknipt,
+in welke volgorde, en welke §6-keuzes gelden voor identiteit, loginflow, rechtenbron en actiemapping?
+
+**Beslissing:** Fase 5 in drie sporen: **5-AUTH** (Keycloak + geverifieerde identiteit) → **5-PERM** (rechten via
+Prodis) → **5-PUB** (a SIMULATION → b TRIAL_LIBRARY → c PRODUCTION). **5-AUTH eerst.** PRODUCTION (en TRIAL) blijven
+dicht tot het verwerkingscontract van 252 IMPORT/1179 (leeg = behoud of wissen, deletecodes, resultaat/OUT02) bewezen is.
+De publicatievragen (doelmodus/`publication_run`, bron van de te publiceren waarden, adapterplaats) worden pas bij 5-PUB
+aan de mens voorgelegd.
+
+Door de mens beantwoord (alle conform de aanbeveling):
+1. **Q1 (identiteit/datamodel):** bestaande `*_by`-kolommen krijgen `preferred_username`; additieve, nullable
+   `*_by_subject`-kolommen (Keycloak `sub`) op de tabellen waar ondertekend wordt. Oude rijen blijven `NULL` =
+   "vóór Fase 5, niet geverifieerd". Geen hernoeming, geen aparte actortabel.
+2. **Q2 (loginflow/contract):** BFF — `Web` doet `oauth2Login` met sessiecookie en levert de SPA later statisch uit
+   (Prodis-patroon). Actorvelden in requests blijven voorlopig optioneel; indien meegestuurd moeten ze gelijk zijn aan de
+   tokenidentiteit, anders 400 `ACTOR_FIELD_MISMATCH`. Nooit stil negeren; verwijderen in een latere, aangekondigde stap.
+3. **Q3 (rechtenbron):** token relay naar het bestaande Prodis-endpoint `GET /api/account`; geen nieuw
+   machine-to-machine-contract en nooit aansluiten op `hasDdaProdisApiBypass()`. Fail-closed als Prodis onbereikbaar is.
+   Voorwaarde: het CatalogImport-token mag audience `account` dragen; Prodis seedt `catalogImport.read/.manage/.approve`.
+4. **A2 (actiemapping):** `read` = alle GET's; `manage` = upload, `continue`, setup/materialisatie/bookmark-PUT, bundel
+   aanmaken, batches toevoegen/verwijderen; `approve` = accept-baseline, beslissingen, bevriezen, annuleren, publiceren
+   (alle modi).
+
+**Aannames (doorwerken tenzij herroepen):** zelfde Keycloak-realm als Prodis met een eigen CatalogImport-client; `system`
+blijft verboden als ondertekenaar; één instantie, publicatie serieel per bibliotheek; eerste publicatiescope BASE_PRICE +
+percentages + DESCRIPTION; `accept-baseline` blijft bestaan naast `state_origin = PUBLISHED`; setup-API-vlag blijft extra
+bescherming tot er een scherm-1a-ontwerp is.
+
+**Extern, door de mens op te vragen (blokkeert 5-PUB-b/c, niet 5-AUTH):** verwerkingscontract 252 IMPORT/1179 + OUT02;
+adapterplaats/toegang Pervasive; Keycloak-client + `PermissionRight`-seed in Prodis; controlebibliotheek voor proef.
+
+**Important technical constraint discovered (nog terug te schrijven naar een fase5-design):** de WebBase-uitvoerder
+(`ProDisWebbase/.../ImportDefinitionRepositoryImpl.java:93-96`) zet lege/onleesbare numerieke waarden stil op 0 en
+converteert bedragen via `float`; `Prodis1232Impl.createImportFile` wist bij elke run alle `PSIMP{bib}*`-bestanden;
+`import_mutation` draagt buiten basisprijs/referenties geen nieuwe veldwaarden (omschrijving/percentages enkel in staging,
+7 dagen retentie).
+
+**Bron:** denker-zwaar (`Fase 5 intake en ontwerpvoorstel`, 2026-09-25) / mens (Q1-Q3, A2) /
+`business-analyse-leveranciersbibliotheken.md` §14.23, §14.25-§14.26, §16.5, §16.7-§16.8; decisions 2026-09-18
+(permissies, publicatiedoel), 2026-09-22 (publicatiebreedte)
+
+---
+
+## 2026-09-25 — Fase 5-AUTH: ontwerp bindend (V1, V2, G1)
+
+**Vraag:** Het denker-zwaar-ontwerp voor 5-AUTH (`docs/design/fase5-auth-design.md`) liet drie punten open: (V1) hoe
+lokaal/demo en scripts werken zonder bypass, (V2) hoe snel ingetrokken toegang ingaat, (G1) of ook de configuratietabellen
+een `*_by_subject` krijgen.
+
+**Beslissing:** `docs/design/fase5-auth-design.md` is bindend. Door de mens beantwoord (alle conform aanbeveling):
+- **V1 = A1:** geen omzeiling, geen `local-noauth`-profiel. Lokaal draait altijd de Prodis-Keycloak (realm `prodis`, client
+  `catalog-import`); tests zonder Keycloak via een testconfiguratie die niet in het artefact zit. curl-voorbeelden en het
+  scenarioscript worden herschreven naar een browsersessie of voorlopig handmatig (stap 5A-7). Bearer-tokens voor scripts
+  enkel via een latere, aparte beslissing.
+- **V2 = B1:** toegang blijft tot de sessie-idle-timeout (30 min) tot 5-PERM; geen back-channel logout in 5-AUTH.
+- **G1 = ja:** ook de configuratietabellen (definitie, revisie, mapping, filter, kritiekheid, bookmarks) krijgen een
+  `*_by_subject` (changeset 007-4, stap 5A-6); 18 kolommen op 12 tabellen. `NULL` betekent overal "geen geverifieerde
+  identiteit".
+
+Kernkeuzes uit het ontwerp: BFF met `spring-boot-starter-oauth2-client`, geen resource-server; `/api/**` geeft 401 JSON
+`AUTHENTICATION_REQUIRED` (geen redirect); CSRF via cookie + header, token alleen uit de header; `CurrentActor` in Web als
+enige lezer van de SecurityContext, Service krijgt `ActorIdentity` via additieve overloads (geen Spring Security in Service);
+foutcodes `ACTOR_FIELD_MISMATCH` (400), `SYSTEM_ACTOR_FORBIDDEN`/`ACTOR_IDENTITY_INVALID`/`CSRF_TOKEN_INVALID` (403);
+`GET /me` met `permissions: null` als haakje voor 5-PERM; subject nooit in API-antwoorden. Bouwstappen 5A-1 … 5A-7 strikt
+sequentieel; 5-AUTH wordt als geheel uitgerold.
+
+**Externe voorwaarde (C7):** voor de handmatige acceptatie (5A-3) is een Keycloak-client `catalog-import` in de lokale
+realm nodig, met redirect-URI's `http://localhost:8081/login/oauth2/code/keycloak` en
+`http://localhost:5173/login/oauth2/code/keycloak`. De geautomatiseerde tests hebben hem niet nodig.
+
+**Bron:** denker-zwaar (`Ontwerp 5-AUTH Keycloak identiteit`) / mens (V1, V2, G1) / `docs/design/fase5-auth-design.md`
+
+
+## 2026-09-25 — Read-only PSIMPORT-preview van een bevroren bundel (slice 1)
+**Vraag:** Mag er vóór Fase 5 een droge PSIMPORT-projectie komen om de uitgaande data lokaal te testen, terwijl 5-PUB dicht blijft?
+**Beslissing:** Ja, door de mens beantwoord (alle vier conform aanbeveling):
+- **Toegestaan als PREVIEW:** `GET /api/catalog-import/bundles/{id}/psimport-preview` (`?format=json|csv`, gepagineerd, vaste sortering
+  `batch_id asc, m.id asc`). Alleen FROZEN bundels (409 `BUNDLE_NOT_FROZEN`); alleen mutaties met status `READY_FOR_PUBLICATION` en
+  `actionType` CREATE/UPDATE. Geen afleverregister, geen outbox, geen schrijfactie naar ProDisWebbase, geen migratie; `ARIMP_Verwerken`,
+  `ARIMP_DELETE`, `ARIMP_Record` en `ARIMP_Nummer` krijgen nooit een waarde (`NOT_CONTRACTED`). 5-PUB blijft dicht.
+- **Veldnamen:** interne codes (`import_field_catalog.code`) zijn leidend; de h.26-naam is enkel label.
+- **Scope slice 1:** alleen wat `import_mutation` draagt (identiteit, basisprijs, valuta, referenties). Omschrijving en percentages uit
+  staging zijn een latere, aparte slice.
+- **Toegang:** vrij lezen zoals `GET /bundles`, niet achter `catalogimport.setup-api.enabled`.
+- **Antwoord:** elk antwoord draagt `previewOnly: true`, `contractStatus: "UNVERIFIED_FIELD_INVENTORY"`, `previewSpecVersion`,
+  `bundleContentHash` (hex van `publication_bundle.content_hash`; geen nieuwe hash persisteren) en `generatedAt`. Elk veld is
+  `{value, state}` met `state` VALUE | NOT_MAPPED | NOT_AVAILABLE_IN_MUTATION | NOT_CONTRACTED | UNKNOWN; nooit stil 0, "" of een
+  aangenomen valuta (`base_price_currency = null` geeft `UNKNOWN` en rijvlag `complete = false`); bedragen als string
+  (`toPlainString()`). Dezelfde bevroren bundel geeft twee keer een identiek antwoord, met uitzondering van `generatedAt` (opvraagtijdstip).
+- **Lagen:** `PsimportPreviewController` (Web) -> `PsimportPreviewService` (`@Transactional(readOnly = true)`) -> `PsimportPreviewDao`
+  (JDBC-projectie, zelfde patroon als het `identity_hash`-pad uit C4).
+
+> **Important technical constraint discovered:** omschrijving en VKP-percentages zijn niet reconstrueerbaar uit `import_mutation`
+> (die draagt enkel `before/after_base_price`, `base_price_currency`, identiteitsvelden en `before/after_reference_value`); ze staan
+> in batch-gebonden staging (`import_candidate_stage.description`, `import_candidate_price.percentage`). Terugschrijven naar
+> `docs/design/fase4-publication-bundle-design.md` nog niet gedaan (wacht op akkoord van de mens, AGENT.md §5).
+
+**Bron:** denker-zwaar (`Denker: PSIMPORT-projectie ST-13`) / mens (vier keuzes) / Businessanalyse_artikelimport_en_prijsacceptatie-2.md §15.6-15.10 + h.26, docs/decisions.md 2026-09-18, 2026-09-22 en 2026-09-25

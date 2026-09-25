@@ -9,6 +9,7 @@ function App() {
           <h1 style={{ fontSize: '1.5rem', margin: '0 0 var(--spacing-4) 0' }}>CatalogImport</h1>
           <nav style={{ display: 'flex', gap: 'var(--spacing-4)' }}>
             <a href="/">Werkvoorraad</a>
+            <a href="/upload">Levering uploaden</a>
             <a href="/bundles">Publicatiebundels</a>
           </nav>
         </div>

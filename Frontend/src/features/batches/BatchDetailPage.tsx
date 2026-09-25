@@ -16,6 +16,7 @@ import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { MutationList } from '../../components/MutationList/MutationList.tsx';
 import type { MutationSource } from '../../components/MutationList/types.ts';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import { BatchActions } from './BatchActions.tsx';
 import { BatchDeliverySection } from './BatchDeliverySection.tsx';
 import { BatchIssueGroupsSection } from './BatchIssueGroupsSection.tsx';
 import { BatchIssuesSection } from './BatchIssuesSection.tsx';
@@ -150,7 +151,7 @@ export function BatchDetailPage() {
   const validId = Number.isInteger(batchId) && batchId > 0;
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
 
-  const { data, error, loading } = useQuery(`batch-detail:${params.batchId ?? ''}`, (signal) =>
+  const { data, error, loading, reload } = useQuery(`batch-detail:${params.batchId ?? ''}`, (signal) =>
     validId ? batchesApi.getBatch(batchId, signal) : Promise.reject(new Error('invalid batch id')),
   );
 
@@ -179,6 +180,7 @@ export function BatchDetailPage() {
       {validId && data !== null && error === null && (
         <>
           <BatchOverview batch={data} />
+          <BatchActions batch={data} onChanged={reload} />
           <BatchDeliverySection deliveryId={data.deliveryId} />
           <BatchIssueGroupsSection
             batchId={batchId}

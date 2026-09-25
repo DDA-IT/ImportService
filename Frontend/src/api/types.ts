@@ -612,3 +612,23 @@ export type TaskRow = {
   lastRunStartedAt: string | null;
   lastRunFinishedAt: string | null;
 };
+
+/**
+ * be.dda.catalogimport.web.CatalogImportDeliveryController.UploadResponse (`POST /tasks/{id}/deliveries`).
+ * Tellers zijn `null` wanneer de screening er niet aan toegekomen is — nooit als 0 lezen. `status` is
+ * `SCREENED`, `BLOCKED` (met `blockedCode`) of `FAILED` (ook dan HTTP 201).
+ */
+export type UploadResponse = {
+  deliveryId: number;
+  batchId: number;
+  status: string;
+  blockedCode: string | null;
+  rawRecordCount: number | null;
+  validRecordCount: number | null;
+  rejectedRecordCount: number | null;
+  duplicateIdentityCount: number | null;
+  newCount: number | null;
+  changedCount: number | null;
+  unchangedCount: number | null;
+  contentMutationCount: number | null;
+};

@@ -118,6 +118,25 @@ export function batchMutations(
   return request<PageResult<MutationRow>>(`/batches/${batchId}/mutations${query}`, { signal });
 }
 
+/**
+ * Antwoord van `POST /batches/{id}/continue` (`DeliveryScreeningService.ScreeningOutcome`). Alleen de velden
+ * die de UI toont zijn getypt; de tellers zijn `null` = niet vastgesteld (nooit 0).
+ */
+export type ContinueOutcome = {
+  batchId: number;
+  status: ImportBatchStatus;
+  blockedCode: string | null;
+  blockedReason: string | null;
+};
+
+/**
+ * POST /batches/{batchId}/continue — CatalogImportBatchController.resume. Geen body en geen actorveld: de
+ * actie wordt niet op naam vastgelegd.
+ */
+export function continueBatch(batchId: number, signal?: AbortSignal): Promise<ContinueOutcome> {
+  return request<ContinueOutcome>(`/batches/${batchId}/continue`, { method: 'POST', signal });
+}
+
 /** POST /batches/{batchId}/accept-baseline — CatalogImportBatchController.acceptBaseline */
 export function acceptBaseline(
   batchId: number,

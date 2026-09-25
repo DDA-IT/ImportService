@@ -1,12 +1,15 @@
 # Demo-profiel: een lokale speeltuin om de applicatie met de hand uit te proberen.
 #
-# WAARSCHUWING. Dit profiel zet de setup-API aan (catalogimport.setup-api.enabled). Die API kent geen
-# authenticatie of autorisatie (Fase 5) en kan importdefinities en hun drempels bepalen. Gebruik dit
-# profiel uitsluitend op een ontwikkelmachine met wegwerpgegevens, nooit in productie.
+# WAARSCHUWING. Dit profiel zet de setup-API aan (catalogimport.setup-api.enabled). Die API vereist sinds
+# 5-AUTH een login, maar kent nog geen rechten per actie (5-PERM): elke aangemelde gebruiker kan
+# importdefinities en hun drempels bepalen. Gebruik dit profiel uitsluitend op een ontwikkelmachine met
+# wegwerpgegevens, nooit in productie.
 #
 # Start: mvn -pl Web -am spring-boot:run -Dspring-boot.run.profiles=demo
 # Bij het opstarten maakt DemoDataSeeder een volledige voorbeeldketen en logt hij de taskId.
 # Het profiel verbindt met dezelfde PostgreSQL-database als application-local.yml (catalog_import).
+# Login loopt, net als lokaal, via de Prodis-Keycloak (geen omzeiling, 5-AUTH V1 = A1); zet
+# CATALOG_OIDC_CLIENT_SECRET in je omgeving (het secret heeft nergens een default).
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/catalog_import
@@ -15,6 +18,15 @@ spring:
     driver-class-name: org.postgresql.Driver
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            client-id: ${CATALOG_OIDC_CLIENT_ID:catalog-import}
+        provider:
+          keycloak:
+            issuer-uri: ${CATALOG_OIDC_ISSUER_URI:http://localhost:9080/realms/prodis}
 catalogimport:
   setup-api:
     # Alleen hier true. application.yml laat de vlag bewust weg, zodat elke andere omgeving uit staat.
@@ -22,3 +34,9 @@ catalogimport:
   archive:
     # Eigen archiefmap, zodat een demoproef nooit in de map van het local-profiel schrijft.
     root: ${java.io.tmpdir}/catalogimport-demo-archive
+server:
+  servlet:
+    session:
+      cookie:
+        # Lokaal over http: een secure-cookie zou de browser nooit terugsturen.
+        secure: false

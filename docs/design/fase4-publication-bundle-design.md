@@ -152,6 +152,10 @@ where m.action_type in ('CREATE','UPDATE')
 `POST /bundles/{id}/decisions` (groepsactie), `POST /bundles/{id}/freeze`,
 `POST /bundles/{id}/cancel`.
 
+> **Important technical constraint discovered (2026-09-24 — Frontend scherm 3, §18)**
+>
+> `beforeBasePrice` en `afterBasePrice` (`BigDecimal`-velden op `MutationRow`) worden zonder expliciete Jackson-configuratie als JSON-**getal** geserialiseerd (niet als string). `JSON.parse` in de browser zet dat om naar IEEE-754-double, waardoor achterliggende nullen verloren gaan (`12.3400` → `12.34`) en bij meer dan ~15 significante cijfers de precisie verliest. Dit is een onzichtbaar, niet-herstelbaar verlies in geldwaarden. **Zie `docs/design/frontend-scherm3-bundel-design.md` §18 voor de mitigation:** de frontend rekent nooit met bedragen en toont geen berekend prijsverschil. Wil men ooit exacte weergave inclusief schaal, dan moet dit als string geserialiseerd worden — dat is een contractwijziging en dus een aparte beslissing.
+
 Bewust GEEN automatisch verzamelen bij aanmaken — een expliciete batchlijst is reproduceerbaar en
 auditbaar; de volgorde waarin screenings toevallig eindigen mag nooit de bundelinhoud bepalen
 (h. 17.3). Foutcodes: `BUNDLE_NOT_FOUND`, `MUTATION_NOT_IN_BUNDLE`,
@@ -400,3 +404,38 @@ requestveld, zelfde validatie als `acceptedBy`; Fase 5 vervangt door Keycloak-id
 - Fase 4 (Publicatiebundel) is hiermee compleet: bundel aanmaken/samenstellen (4a-4b), individueel en
   in groep goedkeuren/afkeuren (4c-4d), bevriezen met conflict-/baselinecontrole (4e), annuleren met
   vrijgave (4f).
+
+## 16. Aanvullingen na Fase 4 — PSIMPORT-preview van een bevroren bundel (geïmplementeerd, mens akkoord)
+
+Bron: `docs/decisions.md`, 2026-09-25 ("Read-only PSIMPORT-preview van een bevroren bundel (slice 1)"). Dit is geen Fase 5:
+5-PUB blijft dicht en er wordt niets naar ProDisWebbase geschreven.
+
+- `GET /api/catalog-import/bundles/{id}/psimport-preview` (`?format=json|csv`, `page`, `size`): read-only projectie van een
+  **FROZEN** bundel (anders 409 `BUNDLE_NOT_FROZEN`; onbekende bundel 404 `BUNDLE_NOT_FOUND`). Alleen mutaties met status
+  `READY_FOR_PUBLICATION` en `action_type` CREATE/UPDATE binnen de actieve bundelbatches; vaste sortering
+  `batch_id asc, m.id asc`. Geen migratie, geen afleverregister, geen outbox, geen persistente hash.
+- Lagen: `PsimportPreviewController` (Web) -> `PsimportPreviewService` (`@Transactional(readOnly = true)`) ->
+  `PsimportPreviewDao` (JDBC-projectie). `PsimportPreviewMapper` en `PsimportPreviewCsvSerializer` zijn pure, database-vrije
+  klassen in Service.
+- Elk antwoord draagt `previewOnly: true`, `contractStatus: "UNVERIFIED_FIELD_INVENTORY"`, `previewSpecVersion`,
+  `bundleContentHash` (hex van `publication_bundle.content_hash`) en `generatedAt`. Twee keer dezelfde bevroren bundel geeft een
+  identiek antwoord, behalve `generatedAt` (opvraagtijdstip).
+- Elk veld is `{code, label, value, state}` met `state` VALUE | NOT_MAPPED | NOT_AVAILABLE_IN_MUTATION | NOT_CONTRACTED | UNKNOWN.
+  Interne codes zijn leidend, het h.26-label (Businessanalyse artikelimport en prijsacceptatie 2, h.26) is enkel weergave.
+  Nooit een stille 0, lege tekst of aangenomen valuta: ontbrekende data geeft `UNKNOWN` en de rij `complete = false`
+  (`base_price_currency = null` of `after_base_price = null`). Bedragen als string (`toPlainString()`).
+  `PROCESS`, `DELETE`, `RECORD` en `NUMBER` zijn altijd `NOT_CONTRACTED` zonder waarde.
+- CSV: banner met `#`, vaste header, kolommen `<CODE>` en `<CODE>.state` in een vaste volgorde, RFC 4180-escaping en een
+  voorafgaande apostrof bij waarden die met `=`, `+`, `-` of `@` beginnen (formule-injectie).
+- Toegang: vrij lezen, zoals `GET /bundles`.
+
+> **Important technical constraint discovered**
+>
+> Een PSIMPORT-projectie van omschrijving en VKP-percentages is niet reconstrueerbaar uit `import_mutation`: die tabel draagt
+> enkel `before/after_base_price`, `base_price_currency`, de identiteitsvelden en `before/after_reference_value`. Omschrijving
+> staat in `import_candidate_stage.description` en percentages in `import_candidate_price.percentage`; beide zijn batch-gebonden
+> staging. Een preview die deze velden toont, zou dus aan stagingretentie hangen in plaats van aan de bevroren bundel. Daarom
+> zijn ze in slice 1 `NOT_AVAILABLE_IN_MUTATION`; opname is een latere, aparte slice.
+
+- Gedekt door `PsimportPreviewMapperTest` en `PsimportPreviewCsvSerializerTest` (database-vrij) en `PsimportPreviewHttpTest`
+  (PostgreSQL).

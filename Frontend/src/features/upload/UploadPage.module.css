@@ -1,0 +1,120 @@
+.page {
+  padding: var(--spacing-4) 0 var(--spacing-8) 0;
+}
+
+.title {
+  margin: 0 0 var(--spacing-4) 0;
+}
+
+.form {
+  max-width: 36rem;
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.input,
+.select {
+  width: 100%;
+  padding: var(--spacing-2);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.actorRow {
+  margin-bottom: var(--spacing-4);
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.note {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+}
+
+.validationError {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--status-rejected-bg);
+  color: var(--status-rejected-text);
+  font-size: 0.875rem;
+}
+
+.submit {
+  padding: var(--spacing-2) var(--spacing-4);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: white;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.progress {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+}
+
+.phases {
+  margin: var(--spacing-2) 0;
+  padding-left: var(--spacing-4);
+}
+
+.timer {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.result {
+  max-width: 36rem;
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.counters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  margin: var(--spacing-3) 0;
+}
+
+.counter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  min-width: 7rem;
+}
+
+.counter dt {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+
+.counter dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.loading {
+  color: var(--color-text-secondary);
+}

@@ -6,6 +6,7 @@ import { BundleBatchesTab } from './features/bundles/BundleBatchesTab.tsx';
 import { BundleMutationsTab } from './features/bundles/BundleMutationsTab.tsx';
 import { BundleDecisionsTab } from './features/bundles/BundleDecisionsTab.tsx';
 import { BatchDetailPage } from './features/batches/BatchDetailPage.tsx';
+import { UploadPage } from './features/upload/UploadPage.tsx';
 import { WorkQueuePage } from './features/workqueue/WorkQueuePage.tsx';
 
 /* Placeholder pages for now */
@@ -40,6 +41,10 @@ export const routes: RouteObject[] = [
   {
     path: '/batches/:batchId',
     element: <BatchDetailPage />,
+  },
+  {
+    path: '/upload',
+    element: <UploadPage />,
   },
   {
     path: '*',

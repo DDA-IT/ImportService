@@ -91,6 +91,10 @@ READY_FOR_PUBLICATION, IN_PROGRESS, PUBLISHED, TECHNICALLY_FAILED, REJECTED, EXP
 SKIPPED, RECORDED. Fase 2 zet alleen PLANNED, RECORDED, SKIPPED.
 UPDATE = enkel hash-/domeinniveau + voor/na-basisprijs (geen veldniveau-diff; Fase 3).
 
+> **Important technical constraint discovered (2026-09-24 — C4 uitgevoerd)**
+>
+> `identity_hash` is in de JPA-entiteit `ImportMutation` bewust niet gemapt (databasespecifiek binair type; enkel voor set-based SQL). De waarde verlaat de database alleen via een gerichte query (`MutationDao.findIdentityHashes`) die byte-vergelijking doet (geen `encode(...,'hex')`). Deze grens (binaire hash blijft in de database, alleen hex-representatie naar de applicatie voor filters) blijft standhouden ook wanneer later endpoints zoals `GET /batches/{id}/mutations?identityHash=` filter-ondersteuning krijgen.
+
 `idempotency_key`:
 - inhoudelijk: `<delivery_id>:<definition_revision_id>:<identity_hash_hex>:OFFER`
 - marker: `<delivery_id>:<definition_revision_id>:MARKER`
@@ -220,6 +224,14 @@ geen actieve revisie ⇒ 409 `NO_ACTIVE_REVISION`; geen prijsveld ⇒ 409
 requestvelden; Keycloak/Prodis-permissies in Fase 5). `ApiExceptionHandler`: `NotFoundException`
 →404, `ConflictException`→409 (Service-module, stabiele `code`); responsbody krijgt extra veld
 `code` naast `error` (additief; melden in rapport).
+
+> **Important technical constraint discovered (2026-09-24 — Frontend batchdetail)**
+>
+> `MaxUploadSizeExceededException` (door Spring gegenereerd wanneer de upload groter is dan `max-file-size` of `max-request-size`) is niet in `ApiExceptionHandler` afgevangen. Een te grote upload geeft dus een 413 Payload Too Large zonder `code`-veld, terwijl het antwoord normaal altijd `{error, code}` bevat. Dit maakt de client-side foutafhandeling incoherent.
+
+> **Important technical constraint discovered (2026-09-24 — Frontend batchdetail, V2)**
+>
+> `POST /api/catalog-import/batches/{id}/continue` is de enige schrijfactie (mutatiegeneratie hervatten na onderbrekking) zonder request-body. Daardoor staat niet op naam vast wie de hervatting uitvoert — geen `continuedBy` audit-veld. In Fase 2/3/4 is dit geen probleem (geen authenticatie). Zodra Fase 5 geverifieerde identiteiten invoert, zal dit een gat in de audittrail vormen.
 
 ## 11. Tests (allemaal in `Web/src/test`, `mvn -pl Web -am test`, unieke codes per test wegens gedeelde H2)
 

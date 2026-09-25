@@ -36,9 +36,22 @@ type ErrorBody = { error?: unknown; code?: unknown };
  * als `T`. Geen retry, geen timeout (zie §3.2 voor de motivering).
  */
 export async function request<T>(path: string, init: RequestInit & { signal?: AbortSignal } = {}): Promise<T> {
+  return (await requestWithStatus<T>(path, init)).body;
+}
+
+/**
+ * Zoals {@link request}, maar levert ook de HTTP-statuscode af (nodig waar 200 en 201 verschillende
+ * betekenis hebben, zoals bij `POST /tasks/{taskId}/deliveries`: 201 = nieuwe levering, 200 = idempotente
+ * herhaling). Een `FormData`-body krijgt bewust géén `Content-Type`: de browser zet zelf
+ * `multipart/form-data` mét de boundary.
+ */
+export async function requestWithStatus<T>(
+  path: string,
+  init: RequestInit & { signal?: AbortSignal } = {},
+): Promise<{ status: number; body: T }> {
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
-  if (init.body !== undefined && init.body !== null) {
+  if (init.body !== undefined && init.body !== null && !(init.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -51,7 +64,7 @@ export async function request<T>(path: string, init: RequestInit & { signal?: Ab
   }
 
   if (response.status === 204) {
-    return null as T;
+    return { status: 204, body: null as T };
   }
 
   if (!response.ok) {
@@ -66,7 +79,7 @@ export async function request<T>(path: string, init: RequestInit & { signal?: Ab
     throw new ApiError(response.status, code, backendMessage, path);
   }
 
-  return (await response.json()) as T;
+  return { status: response.status, body: (await response.json()) as T };
 }
 
 /**

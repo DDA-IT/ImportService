@@ -13,4 +13,6 @@ import java.util.Map;
     @ExceptionHandler(BadRequestException.class) ResponseEntity<Map<String,String>> badRequest(BadRequestException error) { return ResponseEntity.badRequest().body(Map.of("error", error.getMessage(), "code", error.getCode())); }
     @ExceptionHandler(NotFoundException.class) ResponseEntity<Map<String,String>> notFound(NotFoundException error) { return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", error.getMessage(), "code", error.getCode())); }
     @ExceptionHandler(ConflictException.class) ResponseEntity<Map<String,String>> conflict(ConflictException error) { return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", error.getMessage(), "code", error.getCode())); }
+    // Fase 5-AUTH (additief): de aangemelde gebruiker mag dit niet, bv. ACTOR_IDENTITY_INVALID.
+    @ExceptionHandler(ActorNotAllowedException.class) ResponseEntity<Map<String,String>> forbidden(ActorNotAllowedException error) { return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", error.getMessage(), "code", error.getCode())); }
 }

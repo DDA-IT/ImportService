@@ -148,11 +148,34 @@ Toont alle batches, nieuwste eerst.
 - **Filters**: status, eindoordeel, koppeling, "aangemaakt vanaf" en "aangemaakt tot en met".
 - **Tabel**: status, eindoordeel, koppeling, aangemaakt op, kritieke issues, "wacht op goedkeuring" en
   blokkeerreden. Een teller die niet vastgesteld is, staat als "—".
-- Een rij klikt **niet** door naar een batchdetail (dat scherm bestaat nog niet, zie sectie 5).
+- Een rij klikt door naar het batchdetail (`/batches/:batchId`, zie 4.2); dat scherm bestaat en werkt
+  (`Frontend/src/features/workqueue/WorkQueuePage.tsx`, kolom `batchId` met `<Link to={/batches/${row.batchId}}>`).
 
 Er is geen enkele schrijfactie op dit scherm.
 
-### 4.2 Scherm 3 — Publicatiebundels (`/bundles`) — **Beschikbaar** (deels)
+### 4.2 Scherm (2) — Batchdetail (`/batches/:batchId`) — **Beschikbaar**
+
+Alleen-lezen overzicht van een batch, plus de acties die vanaf een `SCREENED`- of `MUTATING`-batch horen
+(`Frontend/src/features/batches/BatchDetailPage.tsx`, `BatchActions.tsx`, `BatchDeliverySection.tsx`,
+`BatchIssueGroupsSection.tsx`, `BatchIssuesSection.tsx`).
+
+- **Stand**: status, eindoordeel (of "niet vastgesteld"), blokkeercode/-reden, koppeling, levering, poging,
+  tijdstippen, creatiebeleid, alle tellers (`—` bij `null`), en — na `accept-baseline` — wie de nulmeting
+  aanvaardde, wanneer en met welke reden.
+- **Levering**: een aparte sectie met de leveringsgegevens (`BatchDeliverySection`).
+- **Foutgroepen en issues**: `BatchIssueGroupsSection` en `BatchIssuesSection`; een groep selecteren filtert
+  de issues.
+- **Mutaties**: dezelfde herbruikbare mutatielijst als op het bundelscherm, gefilterd op deze batch.
+- **Acties** (`BatchActions.tsx`), alleen zichtbaar in de bijpassende status:
+  - Bij `SCREENED`: **Aanvaarden als nulmeting** (`accept-baseline`) en **Opnemen in bundel**. Beide via een
+    bevestigingsdialoog met een verplichte reden en het overtypen van een vaste bevestigingstekst
+    (`BASELINE` resp. de bundelreferentie). Een batch die al in een bundel zit of al aanvaard is, geeft de
+    bekende 409-foutcodes.
+  - Bij `MUTATING`: **Batch hervatten** (`continue`), met een expliciete vermelding dat deze actie niet op
+    naam wordt vastgelegd (het endpoint heeft geen actorveld).
+- Er is geen doorklik naar een setup-/beheerscherm: die bestaat nog niet (zie sectie 5).
+
+### 4.3 Scherm 3 — Publicatiebundels (`/bundles`) — **Beschikbaar**
 
 **Bundellijst** (`/bundles`) — Beschikbaar. Lijst met filter op status, gepagineerd, nieuwste eerst. Hier
 kunt u ook een **nieuwe bundel** aanmaken: bundelreferentie (verplicht), omschrijving, **doelmodus** (verplicht,
@@ -164,15 +187,15 @@ scope wordt geweigerd (`BUNDLE_REFERENCE_REUSED_WITH_DIFFERENT_SCOPE`).
 
 | Tabblad | Status | Wat u doet |
 | --- | --- | --- |
-| **Overzicht** | Beschikbaar (knoppen: In aanbouw) | Tellers (batches, mutaties, gereed, afgekeurd, geblokkeerd, identiteitsincidenten, vervallen, bulkincidenten, kritieke issues, waarschuwingen; zolang de bundel `ASSEMBLING` is ook "wacht op beslissing (PLANNED)" en "wacht op goedkeuring (AWAITING_APPROVAL)"), audit (wie/wanneer/waarom), bundelhash na bevriezen. De knoppen **Bevriezen** en **Annuleren** zijn er, maar staan nog uitgeschakeld. |
+| **Overzicht** | Beschikbaar | Tellers (batches, mutaties, gereed, afgekeurd, geblokkeerd, identiteitsincidenten, vervallen, bulkincidenten, kritieke issues, waarschuwingen; zolang de bundel `ASSEMBLING` is ook "wacht op beslissing (PLANNED)" en "wacht op goedkeuring (AWAITING_APPROVAL)"), audit (wie/wanneer/waarom), bundelhash na bevriezen. De knoppen **Bevriezen** en **Annuleren** werken: elk opent een dialoog met een voorvlucht/telling, blokkades met reden, en een verplichte typ-bevestiging van de bundelreferentie (`FreezeDialog.tsx`, `CancelDialog.tsx`). Een niet-toegestane actie staat uitgeschakeld mét reden, niet verborgen. |
 | **Leden** | Beschikbaar | Leden van de bundel zien (ook verwijderde, met reden), een lid **verwijderen** (reden verplicht) en **kandidaten toevoegen** (batches selecteren en toevoegen). Alles-of-niets: als één batch niet kan, wordt er geen enkele toegevoegd. |
-| **Mutaties** | Beschikbaar | Mutatielijst met filters, per rij **goedkeuren** of **afkeuren** (zie 4.3). |
-| **Beslissingen** | **In aanbouw** | Placeholdertekst ("nog niet geïmplementeerd"). Het register is wel bereikbaar via de API. |
+| **Mutaties** | Beschikbaar | Mutatielijst met filters, per rij **goedkeuren** of **afkeuren**, plus de groepsbeslissing (zie 4.4). |
+| **Beslissingen** | Beschikbaar | Alleen-lezen, gepagineerd register van beslissingen: tijdstip, soort, bereik (mutatie/groep/bundel), beslisser, aantal, statusovergang, filter en reden (`BundleDecisionsTab.tsx`). |
 
 Een toegestane actie die verboden is in de huidige toestand staat uitgeschakeld mét reden, niet verborgen.
 Elke fout uit de backend toont de stabiele foutcode (zie sectie 8).
 
-### 4.3 De mutatielijst: filters en wijzigingsgroep — **Beschikbaar**
+### 4.4 De mutatielijst: filters, wijzigingsgroep en groepsbeslissing — **Beschikbaar**
 
 Op het tabblad **Mutaties** kunt u filteren op:
 
@@ -194,22 +217,22 @@ frontend rekent er nooit mee en berekent geen prijsverschil.
 altijd verplicht). Een herziening keert een eerdere beslissing om; beide regels blijven in het register.
 Dezelfde beslissing door dezelfde persoon opnieuw is idempotent (geen tweede regel; het scherm meldt dat).
 
-**Let op:** de knop voor een **groepsbeslissing** bestaat nog niet in het scherm (sectie 5).
+**Groepsbeslissing** (`GroupDecisionDialog.tsx`, in de werkbalk van de mutatielijst): beslist in één
+bevestiging over **alle** mutaties die aan de toegepaste lijstfilter voldoen, niet enkel de zichtbare
+pagina. Het aantal uit de lijst (`totalElements`) staat vóór de bevestiging in beeld als bovengrens; het
+werkelijke aantal kan lager zijn (bv. omdat een mutatie al beslist is of geblokkeerd staat) en dat wordt
+gemeld. Groepsafkeuren vraagt altijd een reden; groepsgoedkeuren niet. Er is geen typ-bevestiging, wel de
+waarschuwing dat één bevestiging op uw naam over veel mutaties tegelijk beslist.
 
 ## 5. Nog in aanbouw
 
-Volgens de bouwvolgorde in `docs/decisions.md` (2026-09-23, "batchdetail, scherm (2) ... en de
-§16-uitbreidingen") en de code in `Frontend/src/routes.tsx` bestaan de volgende onderdelen nog niet.
+Op basis van de code in `Frontend/src/` (geen `setup`/`template`-scherm gevonden onder
+`Frontend/src/features/`) bestaan de volgende onderdelen nog niet. Alle schermen uit sectie 4
+(werkvoorraad, batchdetail, bundeloverzicht/leden/mutaties/beslissingen, uploadscherm) zijn intussen
+gebouwd, gerouteerd (`Frontend/src/routes.tsx`) en werkend — zie sectie 4 voor wat elk scherm doet.
 
 | Onderdeel | Status | Wat er komt | Tussentijdse route (API) |
 | --- | --- | --- | --- |
-| **Batchdetail** (`/batches/:batchId`), incl. doorklik vanaf de werkvoorraad, problemen en foutgroepen | In aanbouw | Alleen-lezen weergave van een batch: tellers, eindoordeel, issues, foutgroepen, levering | `GET /batches/{id}`, `/issues`, `/issue-groups`, `/mutations`, `GET /deliveries/{id}` (flow 2 en 6) |
-| **Uploadscherm** (scherm 2) | In aanbouw | CSV uploaden met twee benoemde fasen en tijdteller; idempotente herhaling als herstelroute | `POST /tasks/{taskId}/deliveries` (flow 2 en 3) |
-| **accept-baseline** en **bundel-opname vanaf de batch** (typ-bevestiging) | In aanbouw | Beide keuzes op het batchscherm | `POST /batches/{id}/accept-baseline`; bundel-opname bestaat al op het tabblad **Leden** van een bundel |
-| **`continue`** (hervatten van een batch op `MUTATING`) | In aanbouw | Knop met vermelding dat de actie niet op naam wordt vastgelegd | `POST /batches/{id}/continue` (flow 6) |
-| **Groepsbeslissing-dialoog** | In aanbouw | Beslissen over een gefilterde selectie, met dezelfde filter als de lijst | `POST /bundles/{id}/decisions` (flow 5) |
-| **Bevriezen- en annuleren-dialogen** | In aanbouw (knoppen staan al, uitgeschakeld) | Voorvlucht (freeze-check), blokkades vooraf, typ-bevestiging van de bundelreferentie | `GET /bundles/{id}/freeze-check`, `POST /bundles/{id}/freeze`, `POST /bundles/{id}/cancel` |
-| **Beslissingsregister** (tabblad Beslissingen) | In aanbouw | Alleen-lezen register van beslissingen | `GET /bundles/{id}/decisions` |
 | **Inrichting** (bronorganisatie, definitie, koppeling, taak) | **Alleen via API**, achter de setup-vlag | Een productiewaardig beheerscherm komt pas na Fase 5/Keycloak | Setup-API (flow 1) |
 | **Sjabloon/materialisatiewizard** | **Alleen via API**, achter de setup-vlag | Nog geen scherm | `/api/catalog-import/templates/...` (flow 1) |
 | **Publiceren naar Prodis** | Niet gebouwd (Fase 5) | — | — |
@@ -335,8 +358,8 @@ Kort:
    geannuleerde) bundel kan niet aanvaard worden (409 `BATCH_IN_PUBLICATION_BUNDLE`); een aanvaarde batch
    (`BASELINE_ACCEPTED`) kan niet in een bundel (409 `BATCH_NOT_BUNDLEABLE`, want alleen `SCREENED` mag).
    Binnen de applicatie is die keuze onomkeerbaar. Een geannuleerde bundel geeft haar batches weer vrij.
-2. **Bevriezen en annuleren zijn onomkeerbaar.** Het scherm vraagt (zodra de dialogen er zijn) een
-   typ-bevestiging van de bundelreferentie.
+2. **Bevriezen en annuleren zijn onomkeerbaar.** Het scherm vraagt een typ-bevestiging van de
+   bundelreferentie (`FreezeDialog.tsx`, `CancelDialog.tsx`, zie 4.3).
 3. **`accept-baseline` kan maar één keer** per batch en alleen vanuit `SCREENED` (409
    `BATCH_NOT_ACCEPTABLE` anders). `acceptedBy` en `reason` zijn verplicht; `acceptedBy` mag niet `system`
    zijn. Ook wachtende creaties (`AWAITING_APPROVAL`) worden dan `SKIPPED`: de aanvaarding *is* de

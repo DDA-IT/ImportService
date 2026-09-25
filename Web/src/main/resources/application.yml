@@ -17,12 +17,30 @@ spring:
       # zou zo'n upload weigeren nog voor de service iets ziet. Per omgeving te verlagen.
       max-file-size: ${CATALOG_MAX_UPLOAD_SIZE:1GB}
       max-request-size: ${CATALOG_MAX_UPLOAD_SIZE:1GB}
+  # Fase 5-AUTH (docs/design/fase5-auth-design.md par. 2.3): login via Keycloak (BFF, sessiecookie).
+  # Client-id, secret en issuer komen altijd uit de omgeving; het secret heeft nergens een default en hoort
+  # nooit in de repo. SecurityConfiguration weigert op te starten zonder bruikbaar secret.
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            provider: keycloak
+            client-id: ${CATALOG_OIDC_CLIENT_ID}
+            client-secret: ${CATALOG_OIDC_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            scope: openid, profile, email
+        provider:
+          keycloak:
+            issuer-uri: ${CATALOG_OIDC_ISSUER_URI}
+            user-name-attribute: preferred_username
 # catalogimport.archive.root (bronarchief van leveringen) is verplicht en heeft bewust geen default:
 # zet het per omgeving (application-local.yml voor lokaal gebruik).
 #
 # catalogimport.setup-api.enabled staat hier BEWUST NIET: zonder die vlag bestaat de setup-API
 # (/api/catalog-import/setup/**) niet en antwoordt elk setup-pad met 404. Die API kan importdefinities
-# en hun drempels bepalen en kent nog geen authenticatie (Fase 5); alleen het demo-profiel zet ze aan.
+# en hun drempels bepalen; ze vereist sinds 5-AUTH een login, maar kent nog geen rechten per actie
+# (5-PERM). Alleen het demo-profiel zet ze aan.
 catalogimport:
   screening:
     # Aantal rijen per microbatch-transactie tijdens het stagen (design par. 2 en par. 9 stap C).
@@ -48,6 +66,15 @@ catalogimport:
 server:
   error:
     include-message: never
+  servlet:
+    session:
+      # Sessie-idle-timeout = hoe lang ingetrokken toegang nog doorwerkt tot 5-PERM (beslissing V2 = B1).
+      timeout: ${CATALOG_SESSION_TIMEOUT:30m}
+      cookie:
+        http-only: true
+        # lax, niet strict: de Keycloak-callback is een top-level GET en moet de sessiecookie meedragen.
+        same-site: lax
+        secure: ${CATALOG_SESSION_COOKIE_SECURE:true}
 management:
   endpoints:
     web:
