@@ -1,5 +1,6 @@
 package be.dda.catalogimport.web;
 
+import static be.dda.catalogimport.testsupport.TestActors.as;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -107,7 +108,7 @@ class BundleHttpTest {
         // Aanmaken: 200, en idempotent bij een herhaalde aanroep met dezelfde scope.
         String bundleReference = "BND-HTTP-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet();
         String createBody = createBundleBody(bundleReference, "SIMULATION", CREATOR);
-        String created = mockMvc.perform(post("/api/catalog-import/bundles")
+        String created = mockMvc.perform(post("/api/catalog-import/bundles").with(as(CREATOR))
                         .contentType(MediaType.APPLICATION_JSON).content(createBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.bundleReference").value(bundleReference))
@@ -116,7 +117,7 @@ class BundleHttpTest {
                 .andExpect(jsonPath("$.created").value(true))
                 .andReturn().getResponse().getContentAsString();
         long bundleId = ((Number) JsonPath.read(created, "$.id")).longValue();
-        mockMvc.perform(post("/api/catalog-import/bundles")
+        mockMvc.perform(post("/api/catalog-import/bundles").with(as(CREATOR))
                         .contentType(MediaType.APPLICATION_JSON).content(createBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(bundleId))
@@ -131,7 +132,7 @@ class BundleHttpTest {
                 .andExpect(jsonPath("$.content").isArray());
 
         // Batches toevoegen.
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", bundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", bundleId).with(as(CREATOR))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"batchIds\":[" + batchId + "],\"addedBy\":\"" + CREATOR + "\"}"))
                 .andExpect(status().isOk())
@@ -164,6 +165,7 @@ class BundleHttpTest {
         String groupBody = "{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"" + DECIDER + "\","
                 + "\"reason\":\"Eerste levering nagekeken\",\"filter\":{\"batchId\":" + batchId + "}}";
         String groupResponse = mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", bundleId)
+                        .with(as(DECIDER))
                         .contentType(MediaType.APPLICATION_JSON).content(groupBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.affectedCount").value(3))
@@ -182,14 +184,15 @@ class BundleHttpTest {
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         long firstMutationId = ((Number) JsonPath.read(firstMutationBody, "$.content[0].id")).longValue();
         mockMvc.perform(post("/api/catalog-import/bundles/{id}/mutations/{mid}/approve", bundleId, firstMutationId)
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .with(as(DECIDER)).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"decidedBy\":\"" + DECIDER + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.idempotent").value(true));
 
-        // Bevriezen.
+        // Bevriezen. Sinds 5A-2 moet de aangemelde gebruiker overeenkomen met frozenBy: deze test tekent
+        // bewust met vier verschillende namen in één flow, dus de bevriezer meldt zich expliciet aan.
         String freezeBody = "{\"frozenBy\":\"" + FREEZER + "\",\"reason\":\"Eerste ronde goedgekeurd\"}";
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/freeze", bundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/freeze", bundleId).with(as(FREEZER))
                         .contentType(MediaType.APPLICATION_JSON).content(freezeBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("FROZEN"))
@@ -197,7 +200,7 @@ class BundleHttpTest {
                 .andExpect(jsonPath("$.contentHash").isString());
 
         // Batches toevoegen op een bevroren bundel: 409.
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", bundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", bundleId).with(as(CREATOR))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"batchIds\":[" + batchId + "],\"addedBy\":\"" + CREATOR + "\"}"))
                 .andExpect(status().isConflict())
@@ -205,30 +208,30 @@ class BundleHttpTest {
 
         // Annuleren van de bevroren bundel.
         String cancelBody = "{\"cancelledBy\":\"" + CANCELLER + "\",\"reason\":\"Leverancier trok de levering in\"}";
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/cancel", bundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/cancel", bundleId).with(as(CANCELLER))
                         .contentType(MediaType.APPLICATION_JSON).content(cancelBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELLED"))
                 .andExpect(jsonPath("$.cancelledBy").value(CANCELLER));
 
         // Een tweede annulering: 409.
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/cancel", bundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/cancel", bundleId).with(as(CANCELLER))
                         .contentType(MediaType.APPLICATION_JSON).content(cancelBody))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("BUNDLE_NOT_CANCELLABLE"));
 
         // De batch is vrij: opnieuw toevoegen aan een NIEUWE bundel en die gewoon bevriezen.
         String secondReference = "BND-HTTP2-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet();
-        String secondCreated = mockMvc.perform(post("/api/catalog-import/bundles")
+        String secondCreated = mockMvc.perform(post("/api/catalog-import/bundles").with(as(CREATOR))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBundleBody(secondReference, "SIMULATION", CREATOR)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         long secondBundleId = ((Number) JsonPath.read(secondCreated, "$.id")).longValue();
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", secondBundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", secondBundleId).with(as(CREATOR))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"batchIds\":[" + batchId + "],\"addedBy\":\"" + CREATOR + "\"}"))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/freeze", secondBundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/freeze", secondBundleId).with(as(FREEZER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"frozenBy\":\"" + FREEZER + "\",\"reason\":\"Tweede ronde, niets meer open\"}"))
                 .andExpect(status().isOk())
@@ -250,32 +253,39 @@ class BundleHttpTest {
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("BUNDLE_NOT_FOUND"));
         mockMvc.perform(get("/api/catalog-import/bundles/{id}/decisions", unknown))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("BUNDLE_NOT_FOUND"));
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", unknown)
+        // 5A-4: idem voor alle overige schrijfendpoints; de aanroeper meldt zich aan onder de naam die hij
+        // in het request meestuurt, zodat enkel de 404 nog wordt bewezen.
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", unknown).with(as(CREATOR))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"batchIds\":[1],\"addedBy\":\"" + CREATOR + "\"}"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("BUNDLE_NOT_FOUND"));
         mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches/{bid}/remove", unknown, 1L)
+                        .with(as(CREATOR))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"removedBy\":\"" + CREATOR + "\",\"reason\":\"Toch niet\"}"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("BUNDLE_NOT_FOUND"));
         mockMvc.perform(post("/api/catalog-import/bundles/{id}/mutations/{mid}/approve", unknown, 1L)
+                        .with(as(DECIDER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"decidedBy\":\"" + DECIDER + "\"}"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("BUNDLE_NOT_FOUND"));
         mockMvc.perform(post("/api/catalog-import/bundles/{id}/mutations/{mid}/reject", unknown, 1L)
+                        .with(as(DECIDER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"decidedBy\":\"" + DECIDER + "\",\"reason\":\"Nee\"}"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("BUNDLE_NOT_FOUND"));
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", unknown)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", unknown).with(as(DECIDER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"" + DECIDER + "\","
                                 + "\"filter\":{\"batchId\":1}}"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("BUNDLE_NOT_FOUND"));
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/freeze", unknown)
+        // 5A-2: de actorcontrole gebeurt vóór de service, dus vóór de 404. Zonder .with(as(FREEZER)) zou
+        // dit een 400 ACTOR_FIELD_MISMATCH geven en niets meer over de 404 bewijzen.
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/freeze", unknown).with(as(FREEZER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"frozenBy\":\"" + FREEZER + "\",\"reason\":\"Nagekeken\"}"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("BUNDLE_NOT_FOUND"));
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/cancel", unknown)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/cancel", unknown).with(as(CANCELLER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"cancelledBy\":\"" + CANCELLER + "\",\"reason\":\"Nagekeken\"}"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("BUNDLE_NOT_FOUND"));
@@ -288,7 +298,7 @@ class BundleHttpTest {
         Fixture f = fixture("PAGE");
         long batchId = uploadAndScreen(f, "REF-1", rows(5, 100));
         long bundleId = createBundle("BND-PAGE-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet(), CREATOR);
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", bundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", bundleId).with(as(CREATOR))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"batchIds\":[" + batchId + "],\"addedBy\":\"" + CREATOR + "\"}"))
                 .andExpect(status().isOk());
@@ -335,13 +345,18 @@ class BundleHttpTest {
 
     @Test
     void creatingABundleWithoutARequiredFieldIsA400() throws Exception {
-        mockMvc.perform(post("/api/catalog-import/bundles").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"bundleReference\":\"BND-BAD\",\"targetMode\":\"SIMULATION\"}"))
+        // Sinds 5A-4 is createdBy optioneel (de naam komt uit de login): een ontbrekende createdBy is geen
+        // 400 meer. De overige verplichte velden blijven dat wel.
+        mockMvc.perform(post("/api/catalog-import/bundles").with(as(CREATOR))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"bundleReference\":\"BND-BAD\"}"))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(post("/api/catalog-import/bundles").contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(post("/api/catalog-import/bundles").with(as(CREATOR))
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"bundleReference\":\"BND-BAD\",\"createdBy\":\"" + CREATOR + "\"}"))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(post("/api/catalog-import/bundles").contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(post("/api/catalog-import/bundles").with(as(CREATOR))
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"targetMode\":\"SIMULATION\",\"createdBy\":\"" + CREATOR + "\"}"))
                 .andExpect(status().isBadRequest());
     }
@@ -350,36 +365,49 @@ class BundleHttpTest {
     @Test
     void reusingABundleReferenceWithADifferentScopeIsA409() throws Exception {
         String reference = "BND-SCOPE-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet();
-        mockMvc.perform(post("/api/catalog-import/bundles").contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(post("/api/catalog-import/bundles").with(as(CREATOR))
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content(createBundleBody(reference, "SIMULATION", CREATOR)))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/api/catalog-import/bundles").contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(post("/api/catalog-import/bundles").with(as(CREATOR))
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content(createBundleBody(reference, "TRIAL_LIBRARY", CREATOR)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("BUNDLE_REFERENCE_REUSED_WITH_DIFFERENT_SCOPE"));
     }
 
-    // --- Bevriezen en annuleren: ontbrekende gegevens zijn 400 ---------------------------------------
+    // --- Bevriezen en annuleren: ontbrekende gegevens worden geweigerd -------------------------------
 
+    /**
+     * Elke variant wordt geweigerd zonder de bundel aan te raken. Sinds 5A-2 is enkel {@code reason} nog
+     * een verplicht requestveld bij {@code freeze}: {@code frozenBy} mag ontbreken, want de naam komt uit
+     * de aangemelde gebruiker (die bundel is hier leeg, vandaar 409 {@code BUNDLE_EMPTY}).
+     */
     @Test
-    void freezeAndCancelWithoutARequiredFieldAreBothA400() throws Exception {
+    void freezeAndCancelWithoutARequiredFieldAreRefusedWithoutChangingTheBundle() throws Exception {
         long bundleId = createBundle("BND-REQ-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet(), CREATOR);
 
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/freeze", bundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/freeze", bundleId).with(as(FREEZER))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"frozenBy\":\"" + FREEZER + "\"}"))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/freeze", bundleId)
+        // Sinds 5A-2 is een ontbrekende frozenBy géén 400 meer maar de normale gang van zaken (de naam
+        // komt uit de login); deze bundel is leeg, dus het blijft bij 409 BUNDLE_EMPTY en er verandert
+        // niets aan de bundel. Dat laatste is wat deze test bewijst.
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/freeze", bundleId).with(as(FREEZER))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Nagekeken\"}"))
-                .andExpect(status().isBadRequest());
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/cancel", bundleId)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("BUNDLE_EMPTY"));
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/cancel", bundleId).with(as(CANCELLER))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"cancelledBy\":\"" + CANCELLER + "\"}"))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/cancel", bundleId)
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Nagekeken\"}"))
+        // Sinds 5A-4 is cancelledBy optioneel (de naam komt uit de login): enkel reason blijft verplicht,
+        // dus een lege body is nog steeds 400 - en de bundel blijft onaangeroerd.
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/cancel", bundleId).with(as(CANCELLER))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isBadRequest());
 
         // Niets van dit alles heeft de bundel gewijzigd: nog steeds gewoon annuleerbaar.
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/cancel", bundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/cancel", bundleId).with(as(CANCELLER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"cancelledBy\":\"" + CANCELLER + "\",\"reason\":\"Nagekeken\"}"))
                 .andExpect(status().isOk())
@@ -394,7 +422,8 @@ class BundleHttpTest {
     }
 
     private long createBundle(String reference, String createdBy) throws Exception {
-        String body = mockMvc.perform(post("/api/catalog-import/bundles").contentType(MediaType.APPLICATION_JSON)
+        String body = mockMvc.perform(post("/api/catalog-import/bundles").with(as(createdBy))
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content(createBundleBody(reference, "SIMULATION", createdBy)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         return ((Number) JsonPath.read(body, "$.id")).longValue();
@@ -410,7 +439,7 @@ class BundleHttpTest {
                 .file(new MockMultipartFile("file", "levering.csv", "text/csv",
                         csv.toString().getBytes(StandardCharsets.UTF_8)))
                 .param("deliveryReference", reference)
-                .param("uploadedBy", "tester@example.test"));
+                .param("uploadedBy", "tester@example.test").with(as("tester@example.test")));
         String body = upload.andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("SCREENED")).andReturn().getResponse().getContentAsString();
         return ((Number) JsonPath.read(body, "$.batchId")).longValue();

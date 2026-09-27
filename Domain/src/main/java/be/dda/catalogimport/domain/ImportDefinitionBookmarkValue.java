@@ -79,6 +79,13 @@ public class ImportDefinitionBookmarkValue {
     @Column(name = "filled_by", nullable = false, length = 100)
     private String filledBy;
 
+    /**
+     * OIDC-subject van wie de waarde vastzette (Fase 5-AUTH, changeset 007-4); {@code null} = geen
+     * geverifieerde identiteit. {@code filled_by} is NOT NULL, dus er is geen koppelcheck.
+     */
+    @Column(name = "filled_by_subject", length = 255)
+    private String filledBySubject;
+
     protected ImportDefinitionBookmarkValue() {
         // JPA
     }
@@ -90,6 +97,18 @@ public class ImportDefinitionBookmarkValue {
         this.dataType = dataType;
         this.valueText = valueText;
         this.filledBy = filledBy;
+    }
+
+    /**
+     * Zoals hierboven, met het geverifieerde OIDC-subject van wie invult (Fase 5-AUTH, 5A-6).
+     *
+     * @param filledBySubject {@code null} = geen geverifieerde identiteit
+     */
+    public ImportDefinitionBookmarkValue(ImportDefinitionRevision definitionRevision, String bookmarkName,
+                                         BookmarkDataType dataType, String valueText, String filledBy,
+                                         String filledBySubject) {
+        this(definitionRevision, bookmarkName, dataType, valueText, filledBy);
+        this.filledBySubject = filledBySubject;
     }
 
     @PrePersist
@@ -145,5 +164,14 @@ public class ImportDefinitionBookmarkValue {
 
     public void setFilledBy(String filledBy) {
         this.filledBy = filledBy;
+    }
+
+    public String getFilledBySubject() {
+        return filledBySubject;
+    }
+
+    /** Fase 5-AUTH (5A-6): {@code null} = geen geverifieerde identiteit; nooit afgeleid uit de naam. */
+    public void setFilledBySubject(String filledBySubject) {
+        this.filledBySubject = filledBySubject;
     }
 }

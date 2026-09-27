@@ -3,6 +3,7 @@ package be.dda.catalogimport.service.support;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import be.dda.catalogimport.domain.CurrencyOrigin;
 import be.dda.catalogimport.domain.DiscountCodeState;
 import be.dda.catalogimport.domain.FieldDataType;
 import be.dda.catalogimport.domain.FieldOwner;
@@ -90,7 +91,10 @@ class CandidateNormaliserTest {
         assertThat(candidate.supplierReference()).isEqualTo("R-1");
         assertThat(candidate.description()).isEqualTo("Boormachine");
         assertThat(candidate.basePrice().toPlainString()).isEqualTo("12.500000");
-        assertThat(candidate.basePriceCurrency()).isNull(); // nooit stil EUR veronderstellen
+        // Valuta-standaard: geen muntveld en geen vaste valuta op de koppeling ⇒ EUR, maar altijd met
+        // een zichtbare herkomst. De aanname is expliciet, niet stil.
+        assertThat(candidate.basePriceCurrency()).isEqualTo("EUR");
+        assertThat(candidate.basePriceCurrencyOrigin()).isEqualTo(CurrencyOrigin.SYSTEM_DEFAULT);
         assertThat(candidate.identityHash()).hasSize(32);
         assertThat(candidate.articleFingerprint()).hasSize(32);
         assertThat(candidate.priceFingerprint()).hasSize(32);
@@ -525,19 +529,165 @@ class CandidateNormaliserTest {
     }
 
     @Test
-    void readsTheCurrencyFromTheDeclaredSourceFieldAndNeverAssumesEuro() {
+    void readsTheCurrencyFromTheDeclaredSourceFieldAndNeverGuessesIt() {
         NormalisedCandidate withCurrency = candidate(currencyRow("EUR"), withCurrencyField());
 
         assertThat(withCurrency.basePriceCurrency()).isEqualTo("EUR");
+        assertThat(withCurrency.basePriceCurrencyOrigin()).isEqualTo(CurrencyOrigin.SOURCE);
         assertThat(hex(withCurrency.priceFingerprint()))
                 .isEqualTo("1e342ba81ce51a7af83c011621435e710941a589a08115b8d5e2387f3665b8ae");
-        // Zonder muntveld blijft de munt onbekend; dat is iets anders dan EUR.
-        assertThat(candidate(mappedRow("A1", "B1"), versionTwo(), mappingConfig()).basePriceCurrency())
-                .isNull();
+        // Zonder muntveld geldt de systeemstandaard - met een zichtbare herkomst, nooit stil.
+        NormalisedCandidate withoutField = candidate(mappedRow("A1", "B1"), versionTwo(), mappingConfig());
+        assertThat(withoutField.basePriceCurrency()).isEqualTo("EUR");
+        assertThat(withoutField.basePriceCurrencyOrigin()).isEqualTo(CurrencyOrigin.SYSTEM_DEFAULT);
 
         Result unusable = normaliser.normalise(currencyRow("eur"), withCurrencyField());
         assertThat(unusable).isInstanceOf(RowIssue.class);
         assertThat(((RowIssue) unusable).code()).isEqualTo(PriceRules.CODE_PRICE_CURRENCY_MISMATCH);
+    }
+
+    // --- Valuta-standaard (docs/design/valuta-standaard-design.md par. 1 en 4) --------------------
+
+    /**
+     * De volgorde van de effectieve munt: bronveld, dan de vaste valuta van de koppeling, dan
+     * {@code EUR}. Elke uitkomst draagt haar herkomst, zodat een aangenomen euro altijd van een
+     * geleverde te onderscheiden blijft (AGENT.md par. 2 principe 8).
+     */
+    @Test
+    void resolvesTheEffectiveCurrencyFromTheSourceFieldThenTheLinkDefaultThenTheSystemDefault() {
+        NormalisedCandidate source = candidate(currencyRow("GBP"), withCurrencyField());
+        assertThat(source.basePriceCurrency()).isEqualTo("GBP");
+        assertThat(source.basePriceCurrencyOrigin()).isEqualTo(CurrencyOrigin.SOURCE);
+
+        NormalisedCandidate link = candidate(row("ACME", "G1", "R-1", null, "1,50", null),
+                threePartWithLinkDefault("USD"));
+        assertThat(link.basePriceCurrency()).isEqualTo("USD");
+        assertThat(link.basePriceCurrencyOrigin()).isEqualTo(CurrencyOrigin.LINK_DEFAULT);
+
+        NormalisedCandidate system = candidate(row("ACME", "G1", "R-1", null, "1,50", null),
+                threePart(null));
+        assertThat(system.basePriceCurrency()).isEqualTo("EUR");
+        assertThat(system.basePriceCurrencyOrigin()).isEqualTo(CurrencyOrigin.SYSTEM_DEFAULT);
+
+        // Een bronveld wint altijd van de vaste valuta van de koppeling; de koppelingswaarde is enkel
+        // een terugval, nooit een overschrijving van wat de leverancier stuurde.
+        NormalisedCandidate both = candidate(currencyRow("GBP"), withCurrencyFieldAndLinkDefault("USD"));
+        assertThat(both.basePriceCurrency()).isEqualTo("GBP");
+        assertThat(both.basePriceCurrencyOrigin()).isEqualTo(CurrencyOrigin.SOURCE);
+    }
+
+    /**
+     * Een gemapt muntveld met een onbruikbare waarde blijft de regel <b>verwerpen</b>. De standaard
+     * geldt uitsluitend voor een <i>ontbrekend veld</i>: een leverancier die {@code eur}, {@code EURO}
+     * of {@code 123} stuurt, krijgt nooit stilzwijgend EUR op zijn bedragen.
+     */
+    @Test
+    void rejectsAnUnusableOrEmptyMappedCurrencyInsteadOfFallingBackToTheDefault() {
+        for (String unusable : List.of("eur", "EURO", "123", "", "   ")) {
+            Result result = normaliser.normalise(currencyRow(unusable), withCurrencyField());
+            assertThat(result).as(unusable).isInstanceOf(RowIssue.class);
+            assertThat(((RowIssue) result).code()).as(unusable)
+                    .isEqualTo(PriceRules.CODE_PRICE_CURRENCY_MISMATCH);
+            assertThat(((RowIssue) result).fieldName()).as(unusable).isEqualTo(CURRENCY_COLUMN);
+        }
+        // Ook niet wanneer de koppeling een vaste valuta draagt: die is een terugval voor een
+        // ontbrekend veld, geen reparatie van een geleverde waarde.
+        Result withFallback = normaliser.normalise(currencyRow("eur"),
+                withCurrencyFieldAndLinkDefault("USD"));
+        assertThat(withFallback).isInstanceOf(RowIssue.class);
+        assertThat(((RowIssue) withFallback).code()).isEqualTo(PriceRules.CODE_PRICE_CURRENCY_MISMATCH);
+    }
+
+    /**
+     * <b>Hash-pinning, het hart van bouwstap V-2.</b> Er komt bewust géén canonicalisatieversie 3
+     * (beslissingslog 26/09): een versiebump zit vooraan in élke canonieke tekst, óók die van
+     * {@code identity_hash}, en zou elke bestaande aanbieding als {@code NEW} laten terugkomen.
+     * <p>
+     * Een {@code SYSTEM_DEFAULT}-euro wordt daarom in de canonieke prijstekst geschreven als de
+     * bestaande "niet gemapt"-markering — exact wat de oude code voor {@code currency = null} deed.
+     * Dat wordt hier op drie manieren tegelijk bewezen, want elke manier apart is te makkelijk te
+     * omzeilen:
+     * <ol>
+     *   <li>tegen de <b>vastgepinde hexwaarden</b> uit de tijd vóór deze wijziging;</li>
+     *   <li>tegen de <b>onafhankelijk herberekende</b> canonieke tekst van het oude gedrag
+     *       ({@code canonical(version, bedrag, null)}), via dezelfde hashfunctie;</li>
+     *   <li>voor versie 1 én versie 2.</li>
+     * </ol>
+     * Zonder deze pin zou elke bestaande bronstaatrij als {@code CHANGED} uit de delta komen en zou
+     * een volledige catalogus onterecht als gewijzigd gepubliceerd worden.
+     */
+    @Test
+    void keepsTheVersionOneAndTwoFingerprintsByteIdenticalForAnAssumedSystemDefaultEuro() {
+        NormalisedCandidate versionOne = candidate(row("ACME", "G1", "R-1", null, "1,50", "Boormachine"),
+                threePart(DESCRIPTION));
+        NormalisedCandidate versionTwo = candidate(mappedRow("A1", "B1"), versionTwo(), mappingConfig());
+
+        assertThat(versionOne.basePriceCurrencyOrigin()).isEqualTo(CurrencyOrigin.SYSTEM_DEFAULT);
+        assertThat(versionTwo.basePriceCurrencyOrigin()).isEqualTo(CurrencyOrigin.SYSTEM_DEFAULT);
+
+        // (1) De hexwaarden van vóór de valuta-standaard, letterlijk overgenomen uit de bestaande
+        // pintests hierboven.
+        assertThat(hex(versionOne.identityHash()))
+                .isEqualTo("dff236898555b53c1cc5d938b32aea5a7eb40352eef59d7e03e3422db13ae3ba");
+        assertThat(hex(versionOne.priceFingerprint()))
+                .isEqualTo("a69bed13cadfe6a3868f53f3fb3f90f8eea9c1bcd2240b77fb45c010de227f39");
+        assertThat(hex(versionOne.combinedFingerprint()))
+                .isEqualTo("8d41d04385229e381addd8e615f5989cc7882fde949ba508be54a20bb6216875");
+        assertThat(hex(versionTwo.priceFingerprint()))
+                .isEqualTo("12f8cd1cae0b1aa9b0a6f4a29835e1f6e0a55f845823d42777f486e2b192e2c8");
+
+        // (2) Onafhankelijk herberekend: exact de canonieke prijstekst die de OUDE code voor
+        // currency = null opbouwde.
+        assertThat(versionOne.priceFingerprint()).isEqualTo(
+                ImportValueRules.sha256Utf8(ImportValueRules.canonical(1, "1.500000", null)));
+        assertThat(versionTwo.priceFingerprint()).isEqualTo(
+                ImportValueRules.sha256Utf8(ImportValueRules.canonical(2, "1.500000", null)));
+    }
+
+    /**
+     * Het spiegelbeeld van de pin: een <b>bewust ingestelde</b> valuta is wél zichtbaar in de delta.
+     * Een koppeling die {@code EUR} als vaste valuta instelt, krijgt dus een andere prijsvingerafdruk
+     * dan een koppeling die op de systeemstandaard terugvalt — anders zou een beheerder niet kunnen
+     * zien dat de munt voortaan vastligt. Een bronmunt {@code EUR} en een vaste valuta {@code EUR}
+     * leveren wél dezelfde vingerafdruk: de vingerafdruk gaat over de waarde, de herkomst is de
+     * audittrail ernaast.
+     */
+    @Test
+    void makesAnExplicitlyConfiguredCurrencyVisibleInThePriceFingerprint() {
+        NormalisedCandidate systemDefault = candidate(row("ACME", "G1", "R-1", null, "1,50", null),
+                threePartVersionTwo(null));
+        NormalisedCandidate linkDefault = candidate(row("ACME", "G1", "R-1", null, "1,50", null),
+                threePartVersionTwo("EUR"));
+        NormalisedCandidate fromSource = candidate(currencyRow("EUR"), withCurrencyField());
+
+        assertThat(linkDefault.basePriceCurrency()).isEqualTo("EUR");
+        assertThat(linkDefault.basePriceCurrencyOrigin()).isEqualTo(CurrencyOrigin.LINK_DEFAULT);
+        assertThat(linkDefault.priceFingerprint()).isNotEqualTo(systemDefault.priceFingerprint());
+        assertThat(linkDefault.combinedFingerprint()).isNotEqualTo(systemDefault.combinedFingerprint());
+        // De identiteit hangt niet van de munt af en blijft hoe dan ook gelijk.
+        assertThat(linkDefault.identityHash()).isEqualTo(systemDefault.identityHash());
+
+        assertThat(hex(linkDefault.priceFingerprint()))
+                .isEqualTo("1e342ba81ce51a7af83c011621435e710941a589a08115b8d5e2387f3665b8ae");
+        assertThat(fromSource.priceFingerprint()).isEqualTo(linkDefault.priceFingerprint());
+        assertThat(systemDefault.priceFingerprint()).isNotEqualTo(fromSource.priceFingerprint());
+    }
+
+    /** R-PRI-06: een prijscomponent erft de effectieve munt van de basisprijs, ook de aangenomen euro. */
+    @Test
+    void letsEveryPriceComponentInheritTheEffectiveCurrency() {
+        ImportMappingConfig config = mappingConfig(priceField("AKP_PCT", "AKP", 1, PRICE_COLUMN));
+
+        NormalisedCandidate assumed = candidate(priceRow("0,75"), versionTwo(), config);
+        assertThat(assumed.priceComponents()).isNotEmpty()
+                .allSatisfy(component -> assertThat(component.currency()).isEqualTo("EUR"));
+
+        NormalisedCandidate fixed = candidate(priceRow("0,75"), versionTwoWithLinkDefault("USD"), config);
+        assertThat(fixed.priceComponents()).isNotEmpty()
+                .allSatisfy(component -> assertThat(component.currency()).isEqualTo("USD"));
+        // De componentmunt zit niet in de prijsvingerafdruk; enkel de basismunt doet dat. De
+        // vingerafdruk verschilt dus omdat de BASISmunt verschilt, niet omdat de component erfde.
+        assertThat(fixed.priceFingerprint()).isNotEqualTo(assumed.priceFingerprint());
     }
 
     /** R-PRI-02: een basisprijs 0 verwerpt de regel, tenzij de revisie ze uitdrukkelijk toelaat. */
@@ -689,6 +839,42 @@ class CandidateNormaliserTest {
                 FieldReferenceKind.HEADER_NAME, null, IdentityProfileKind.THREE_PART,
                 SUPPLIER, GROUP, REFERENCE, null, PRICE, null, 2,
                 new PricePolicy(CURRENCY_COLUMN, false, false, PriceRules.DEFAULT_DERIVATION_TOLERANCE));
+    }
+
+    /** Muntveld én een vaste valuta op de koppeling: het bronveld hoort te winnen. */
+    private static SourceStructureConfig withCurrencyFieldAndLinkDefault(String linkDefaultCurrency) {
+        return new SourceStructureConfig("CSV", StandardCharsets.UTF_8, ';', '"', true, 1,
+                FieldReferenceKind.HEADER_NAME, null, IdentityProfileKind.THREE_PART,
+                SUPPLIER, GROUP, REFERENCE, null, PRICE, null, 2,
+                new PricePolicy(CURRENCY_COLUMN, false, false, PriceRules.DEFAULT_DERIVATION_TOLERANCE,
+                        linkDefaultCurrency));
+    }
+
+    /** Versie 1, geen muntveld, wél een vaste valuta op de koppeling. */
+    private static SourceStructureConfig threePartWithLinkDefault(String linkDefaultCurrency) {
+        return new SourceStructureConfig("CSV", StandardCharsets.UTF_8, ';', '"', true, 1,
+                FieldReferenceKind.HEADER_NAME, null, IdentityProfileKind.THREE_PART,
+                SUPPLIER, GROUP, REFERENCE, null, PRICE, null, 1,
+                new PricePolicy(null, false, false, PriceRules.DEFAULT_DERIVATION_TOLERANCE,
+                        linkDefaultCurrency));
+    }
+
+    /** Versie 2 zonder muntveld en zonder omschrijving; {@code null} = geen vaste valuta. */
+    private static SourceStructureConfig threePartVersionTwo(String linkDefaultCurrency) {
+        return new SourceStructureConfig("CSV", StandardCharsets.UTF_8, ';', '"', true, 1,
+                FieldReferenceKind.HEADER_NAME, null, IdentityProfileKind.THREE_PART,
+                SUPPLIER, GROUP, REFERENCE, null, PRICE, null, 2,
+                new PricePolicy(null, false, false, PriceRules.DEFAULT_DERIVATION_TOLERANCE,
+                        linkDefaultCurrency));
+    }
+
+    /** Exact {@link #versionTwo()}, met een vaste valuta op de koppeling erbij. */
+    private static SourceStructureConfig versionTwoWithLinkDefault(String linkDefaultCurrency) {
+        return new SourceStructureConfig("CSV", StandardCharsets.UTF_8, ';', '"', true, 1,
+                FieldReferenceKind.HEADER_NAME, null, IdentityProfileKind.THREE_PART,
+                SUPPLIER, GROUP, REFERENCE, null, PRICE, DESCRIPTION, 2,
+                new PricePolicy(null, false, false, PriceRules.DEFAULT_DERIVATION_TOLERANCE,
+                        linkDefaultCurrency));
     }
 
     /** Fase 2-configuratie waarin de beheerder een basisprijs 0 uitdrukkelijk toelaat (R-PRI-02). */

@@ -164,6 +164,7 @@ class TemplateBookmarkDeclarationTest {
                         .content("{\"targetFieldCode\":\"EAN\",\"sourceReference\":\"ean\",\"sequenceNumber\":1}"))
                 .andExpect(status().isCreated());
         mockMvc.perform(post(SETUP + "/revisions/{id}/activate", template.revisionId())
+                        .with(be.dda.catalogimport.testsupport.TestActors.as(USER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"approvedBy\":\"" + USER + "\"}"))
                 .andExpect(status().isOk())
@@ -216,10 +217,15 @@ class TemplateBookmarkDeclarationTest {
     private record TemplateRevision(long definitionId, long revisionId) {
     }
 
+    /**
+     * Sinds 5A-6 controleert de Web-laag {@code createdBy} tegen de aangemelde gebruiker; het verzoek
+     * meldt zich daarom aan als {@link #USER} (anders 400 {@code ACTOR_FIELD_MISMATCH}).
+     */
     private org.springframework.test.web.servlet.RequestBuilder declareRequest(TemplateRevision template,
                                                                                 String body) {
         return post(TEMPLATES + "/{definitionId}/revisions/{revisionId}/bookmarks", template.definitionId(),
-                template.revisionId()).contentType(MediaType.APPLICATION_JSON).content(body);
+                template.revisionId()).with(be.dda.catalogimport.testsupport.TestActors.as(USER))
+                .contentType(MediaType.APPLICATION_JSON).content(body);
     }
 
     private org.springframework.test.web.servlet.RequestBuilder usageRequest(TemplateRevision template,

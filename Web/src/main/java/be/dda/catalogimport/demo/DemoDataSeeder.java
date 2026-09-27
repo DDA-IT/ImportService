@@ -94,7 +94,7 @@ public class DemoDataSeeder implements ApplicationRunner {
                 false, null, null, null, null, null, null, null, CREATED_BY));
         setup.activateRevision(revision.id(), CREATED_BY);
         LinkView link = setup.createLink(new CreateLinkCommand(definition.id(), LINK_CODE, "Demo koppeling",
-                ORGANISATION_CODE, LIBRARY_CODE, null));
+                ORGANISATION_CODE, LIBRARY_CODE, null, null));
         TaskView task = setup.createTask(new CreateTaskCommand(link.id(), TASK_NAME, true));
         LOG.info("Demoketen aangemaakt: organisatie {}, definitie {} (id {}), revisie {} ACTIVE, koppeling {} "
                         + "(bibliotheek {}), taak '{}'.", ORGANISATION_CODE, DEFINITION_CODE, definition.id(),
@@ -136,24 +136,24 @@ public class DemoDataSeeder implements ApplicationRunner {
     }
 
     /**
-     * Logt de {@code taskId} en een kant-en-klaar {@code curl}-commando. Er wordt geen bestandsinhoud
-     * en geen geheim gelogd; enkel de id's die de gebruiker nodig heeft.
+     * Logt de {@code taskId} en hoe de demoketen sinds 5-AUTH gebruikt wordt (via een aangemelde
+     * browsersessie; een {@code curl} zonder sessie geeft 401). Er wordt geen bestandsinhoud en geen geheim
+     * gelogd; enkel de id's die de gebruiker nodig heeft.
      */
     private void logHowToUse(long taskId) {
         LOG.info("""
 
                         ===============================================================================
                         Demoketen klaar. taskId = {}
-                        Upload de eerste voorbeeldlevering (vanuit de projectmap):
+                        Meld u aan via de Frontend (http://localhost:5173, Keycloak) en upload de eerste
+                        voorbeeldlevering (docs/samples/01-eerste-levering.csv) op het scherm "Levering uploaden"
+                        met taak {}.
 
-                          curl -F "file=@docs/samples/01-eerste-levering.csv" \\
-                               -F "deliveryReference=REF-01" -F "uploadedBy=demo@example.test" \\
-                               http://localhost:{}/api/catalog-import/tasks/{}/deliveries
-
-                        Overzicht van de configuratie: http://localhost:{}/api/catalog-import/setup/overview
-                        H2-console: http://localhost:{}/h2-console (jdbc:h2:mem:catalogimport, gebruiker sa)
-                        LET OP: de setup-API staat in dit profiel AAN en kent geen authenticatie.
+                        Overzicht van de configuratie (in de aangemelde browser):
+                        http://localhost:{}/api/catalog-import/setup/overview
+                        LET OP: de setup-API staat in dit profiel AAN. Een login is nodig, maar rechten per
+                        actie (5-PERM) bestaan nog niet.
                         ===============================================================================""",
-                taskId, port, taskId, port, port);
+                taskId, taskId, port);
     }
 }

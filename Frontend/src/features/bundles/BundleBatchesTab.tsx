@@ -11,10 +11,11 @@
 import { useState } from 'react';
 import * as bundlesApi from '../../api/bundles.ts';
 import * as importLinksApi from '../../api/importLinks.ts';
-import type { BundleBatchRow, BundleCandidate, ImportLinkRow } from '../../api/types.ts';
+import { PERMISSION_MANAGE, type BundleBatchRow, type BundleCandidate, type ImportLinkRow } from '../../api/types.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { useAction } from '../../hooks/useAction.ts';
-import { useActor, validateActorName } from '../../actor/ActorContext.tsx';
+import { useActor } from '../../actor/ActorContext.tsx';
+import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { DataTable, type DataTableColumn } from '../../components/DataTable.tsx';
 import { Pager } from '../../components/Pager.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
@@ -79,8 +80,9 @@ export function BundleBatchesTab() {
   const linksKey = 'import-links:all';
   const links = useQuery(linksKey, (signal) => importLinksApi.listImportLinks({ size: 200 }, signal));
 
-  const addGate = bundleActionGate(bundle.status, 'ADD_BATCHES');
-  const removeGate = bundleActionGate(bundle.status, 'REMOVE_BATCH');
+  const manageGate = usePermissionGate(PERMISSION_MANAGE);
+  const addGate = withPermission(manageGate, bundleActionGate(bundle.status, 'ADD_BATCHES'));
+  const removeGate = withPermission(manageGate, bundleActionGate(bundle.status, 'REMOVE_BATCH'));
 
   const addAction = useAction(() =>
     bundlesApi.addBatches(bundle.id, { batchIds: [...selected], addedBy: actor }),
@@ -210,8 +212,6 @@ export function BundleBatchesTab() {
     { key: 'finishedAt', header: 'Afgerond op', render: (row) => formatDateTime(row.finishedAt) },
   ];
 
-  const actorError = validateActorName(actor);
-
   return (
     <div className={styles.tab}>
       <section className={styles.section}>
@@ -270,15 +270,13 @@ export function BundleBatchesTab() {
 
         <div className={styles.addRow}>
           <p>
-            Toegevoegd door: <strong>{actor === '' ? '(nog niet ingevuld)' : actor}</strong> — wijzig dit
-            hierboven bij "Ingelogd als".
+            Toegevoegd door: <strong>{actor}</strong>
           </p>
-          {actorError !== null && <p className={styles.gateReason}>{actorError}</p>}
           {addAction.error !== null && <ErrorBanner error={addAction.error} />}
           <button
             type="button"
             className={styles.addButton}
-            disabled={!addGate.allowed || selected.size === 0 || actorError !== null || addAction.pending}
+            disabled={!addGate.allowed || selected.size === 0 || addAction.pending}
             title={addGate.allowed ? undefined : addGate.reason}
             onClick={handleAdd}
           >

@@ -43,7 +43,7 @@ BASELINE_ACCEPTED.
 varchar(200) not null; `identity_discount_code` varchar(200) NULL (null ⇔ THREE_PART,
 "" ⇔ gemapt maar leeg); `identity_discount_state` varchar(20) (`NOT_USED`/`EMPTY`/`VALUE`);
 `identity_hash` `${hash.type}`; `base_price` numeric(24,6) not null (nooit 0 bij parsefout:
-rij wordt dan niet gestaged); `base_price_currency` varchar(3) null (nooit EUR veronderstellen);
+rij wordt dan niet gestaged); `base_price_currency` varchar(3) null. In Fase 2 niet gebruikt; in Fase 3 gevuld volgens de valuta-standaard (`docs/design/valuta-standaard-design.md` §1-4);
 `description` varchar(1000) null; `article_fingerprint`, `price_fingerprint`,
 `combined_fingerprint` `${hash.type}`; `mutation_key_prefix` varchar(160) =
 `<delivery_id>:<revision_id>:<identity_hash_hex>`; `classification` varchar(30) null
@@ -292,7 +292,7 @@ na Fase 3.
 - TaskRun-status bij een BLOCKED batch is `COMPLETED` (de uitvoering verliep normaal; het oordeel
   staat op `import_batch`); technische fout ⇒ `FAILED`. Een BLOCKED batch behoudt staging en issues;
   enkel FAILED ruimt ze op.
-- `base_price_currency` blijft in Fase 2 altijd null (geen muntveld in de bronconfiguratie).
+- `base_price_currency` blijft in Fase 2 altijd null. In Fase 3 wordt het gevuld volgens de valuta-standaard: herkomst SOURCE (bronveld), LINK_DEFAULT (vaste waarde per koppeling), of SYSTEM_DEFAULT (EUR); zie `docs/design/valuta-standaard-design.md`.
 - Uploadlimiet configureerbaar via `CATALOG_MAX_UPLOAD_SIZE` (default 1GB); `-parameters` staat aan
   in de root-pom.
 
@@ -332,3 +332,39 @@ na Fase 3.
   0-gebaseerd, default 50, max 200; mutatielijst zonder hashkolommen.
 - Bekend restrisico: twee gelijktijdige accepts van dezelfde batch kunnen voor de verliezer een
   500 (unieke bronstaatconstraint) geven; de actie is herhaalbaar.
+
+## 18. Aanvullingen na Fase 5-AUTH (geïmplementeerd, mens akkoord op terugschrijven 2026-09-26)
+
+Bron: `docs/design/fase5-auth-design.md` §11 (C3, C9) en `docs/design/frontend-scherm3-bundel-design.md` §18.
+
+- Sinds Fase 5-AUTH vereist elk `/api/**`-verzoek een login (BFF, sessiecookie). Voor de upload
+  (`POST /tasks/{taskId}/deliveries`) is `uploadedBy` optioneel geworden: de uploader komt uit de login (token-username in
+  `import_batch.created_by`, OIDC-subject in `import_batch.created_by_subject`); een meegegeven afwijkende naam is
+  400 `ACTOR_FIELD_MISMATCH`, `system` is 403 `SYSTEM_ACTOR_FORBIDDEN`, beide vóór 404/409 en vóór er iets gearchiveerd of
+  geregistreerd wordt. `accept-baseline`: `acceptedBy` idem (`import_batch.baseline_accepted_by_subject`).
+  `POST /batches/{id}/continue` bewaart nog altijd niets, enkel een logregel met username en subject.
+  De Service-intake blijft `requireText` gebruiken voor `uploadedBy` (laat `system` toe); de Web-laag sluit dit af.
+
+> **Important technical constraint discovered** (C3)
+>
+> De `CsrfFilter` loopt vóór de autorisatie. Een CSRF-resolver die op een requestparameter terugvalt (Spring-default) roept
+> `getParameter` aan en laat Tomcat een multipart-body tot 1 GB (`spring.servlet.multipart.max-file-size`) volledig inlezen,
+> ook bij anonieme verzoeken en nog vóór er iets geweigerd wordt. Daarom leest `SecurityConfiguration`
+> (`HeaderOnlySpaCsrfTokenRequestHandler`) het CSRF-token uitsluitend uit de header `X-XSRF-TOKEN`; een requestparameter
+> wordt nooit geraadpleegd.
+
+> **Important technical constraint discovered** (C9)
+>
+> `catalog_reference_state` (changeset 004) heeft geen batch-FK (enkel `source_state_id` en `import_link_id`). De
+> ondertekenaar van een referentierij is daardoor alleen te herleiden via `(import_link_id, accepted_at)` =
+> `import_batch.(import_link_id, baseline_accepted_at)`. Dat werkt alleen omdat `SourceStateBaselineService` in
+> `acceptBaseline` één `acceptedAt`-instant gebruikt voor de chunks én voor `finish`, een fragiele koppeling. Daarom heeft
+> deze tabel (net als `catalog_source_state`, `catalog_price_observation` en `task_run.triggered_by`) bewust geen eigen
+> `*_by_subject`-kolom (changeset 007).
+
+> **Important technical constraint discovered**
+>
+> `POST /tasks/{taskId}/deliveries` archiveert, registreert en screent synchroon binnen één HTTP-verzoek, terwijl
+> `spring.servlet.multipart.max-file-size` op 1 GB staat. Eén upload kan dus minuten of langer duren; de client mag geen
+> timeout zetten en een tussenliggende proxy met een standaardtimeout kan de aanroep afbreken terwijl de server doorwerkt.
+> De idempotente herhaling (zelfde `deliveryReference`/inhoud) is de herstelroute.

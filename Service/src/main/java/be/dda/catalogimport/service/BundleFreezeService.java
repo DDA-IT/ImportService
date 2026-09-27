@@ -7,6 +7,7 @@ import be.dda.catalogimport.dao.PublicationBundleDao.CrossBundleOfferConflict;
 import be.dda.catalogimport.dao.PublicationBundleDao.InBundleOfferConflict;
 import be.dda.catalogimport.dao.PublicationBundleDao.OfferIdentity;
 import be.dda.catalogimport.dao.PublicationBundleRepository;
+import be.dda.catalogimport.dao.PublicationBundleSnapshotDao;
 import be.dda.catalogimport.dao.PublicationDecisionRepository;
 import be.dda.catalogimport.domain.BundleDecisionKind;
 import be.dda.catalogimport.domain.BundleDecisionScope;
@@ -70,6 +71,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li>De <b>handeling bevriezen zelf</b> krijgt een tweede, aparte {@code FREEZE}-regel met dezelfde
  *       reden. Bewust los van de bulkgoedkeuring: wie later het register leest, moet kunnen zien dat
  *       iemand de bundel gesloten heeft, ook wanneer er niets automatisch goed te keuren viel.</li>
+ *   <li>De <b>bundelsnapshot</b> wordt gevuld (ontwerp fase 5-PUB par. 1, bouwstap 5P-2): één rij per
+ *       te publiceren mutatie met de omschrijving en haar prijscomponenten uit de kandidaatstaging.
+ *       Dit gebeurt ná de bulkgoedkeuring — pas dan staat definitief vast welke mutaties
+ *       {@code READY_FOR_PUBLICATION} zijn — en vóór de bundelhash. Ontbreekt de staging van ook maar
+ *       één mutatie, dan wordt de hele bevriezing geweigerd
+ *       ({@link #CODE_SNAPSHOT_SOURCE_MISSING}).</li>
  *   <li>De tien tellers uit ontwerp par. 2 worden vastgesteld en op de rij bewaard. Vanaf dan toont
  *       {@code GET /bundles/{id}} die bevroren getallen in plaats van live te tellen: dat zijn de
  *       getallen waarvoor getekend is.</li>
@@ -87,11 +94,27 @@ import org.springframework.transaction.support.TransactionTemplate;
  * er gedeeltelijke voortgang bewaard blijft (ontwerp par. 9, A27). Een tweede geslaagde poging is geen
  * herhaling maar een conflict: de bundel is dan niet meer {@code ASSEMBLING}.
  *
+ * <h2>Geverifieerde identiteit (Fase 5-AUTH, bouwstap 5A-2)</h2>
+ * {@link #freeze(long, ActorIdentity, String)} bewaart naast de naam ook het OIDC-subject van de
+ * bevriezer, op de bundelrij ({@code frozen_by_subject}) en op <b>beide</b> beslissingsregels
+ * ({@code decided_by_subject} op de {@code FREEZE}- en de {@code AUTO_APPROVE_PLANNED}-regel). De
+ * mutatierijen krijgen geen eigen subjectkolom: ze wijzen via {@code decision_id} naar de regel die het
+ * subject al draagt. {@code null} betekent "geen geverifieerde identiteit"; er wordt nooit stil een
+ * subject afgeleid uit een naam.
+ *
  * <h2>Financiële onveranderlijkheid</h2>
  * Bevriezen raakt geen enkel prijsveld. De bulkgoedkeuring loopt via
  * {@link PublicationBundleDao#approvePlanned}, dat letterlijk hetzelfde codepad is als de groepsactie
  * uit 4d en dus dezelfde {@code set}-lijst van vijf kolommen heeft. De bundelhash <b>leest</b> de
- * prijzen alleen. De bundelrij zelf wordt via JPA geschreven en draagt geen financiële velden.
+ * prijzen alleen. De bundelrij zelf wordt via JPA geschreven en draagt geen financiële velden. De
+ * snapshot kopieert bedragen en percentages <b>binnen de database</b> van kolom naar kolom, zonder
+ * herberekening en zonder afronding ({@link PublicationBundleSnapshotDao}).
+ * <p>
+ * <b>{@code content_hash} blijft byte-identiek.</b> Bouwstap 5P-2 raakt
+ * {@link PublicationBundleDao#computeContentHash} en zijn kolomlijst niet aan: dezelfde bundelinhoud
+ * levert exact dezelfde hash op als vóór de snapshot. De snapshot krijgt in 5P-3 een eigen
+ * {@code snapshot_hash}; tot dan blijven {@code snapshot_hash} en {@code snapshot_spec_version}
+ * {@code null}.
  */
 @Service
 public class BundleFreezeService {
@@ -120,6 +143,17 @@ public class BundleFreezeService {
      * Alles is teruggedraaid; de aanroeper leest opnieuw en bevriest opnieuw.
      */
     public static final String CODE_FREEZE_CONTENT_CHANGED = "BUNDLE_CONTENT_CHANGED_DURING_FREEZE";
+    /**
+     * De kandidaatstaging van minstens één te publiceren mutatie bestaat niet meer, dus de
+     * bundelsnapshot zou onvolledig zijn (ontwerp fase 5-PUB par. 1, "Staging weg = blokkeren").
+     * <p>
+     * Er wordt dan <b>niets</b> bevroren: de hele transactie rolt terug en de bundel blijft
+     * {@code ASSEMBLING}. Een half gevulde snapshot zou erger zijn dan geen snapshot — ze zou eruitzien
+     * als een volledig goedkeuringsdossier terwijl er omschrijvingen en prijscomponenten ontbreken, en
+     * de publicatie zou die gaten stilzwijgend als "leeg" of "0" kunnen lezen. Herstel de staging (of
+     * screen de levering opnieuw) en bevries daarna.
+     */
+    public static final String CODE_SNAPSHOT_SOURCE_MISSING = "SNAPSHOT_SOURCE_MISSING";
 
     /** Hoeveel voorbeelden van een conflict in de foutmelding komen; nooit een volledige dump. */
     static final int CONFLICT_SAMPLE_LIMIT = 10;
@@ -141,7 +175,8 @@ public class BundleFreezeService {
      */
     public record BundleFreezeView(long bundleId, String status, String frozenBy, Instant frozenAt,
                                    String frozenReason, String contentHash, long autoApprovedCount,
-                                   Long autoApproveDecisionId, long freezeDecisionId) {
+                                   Long autoApproveDecisionId, long freezeDecisionId,
+                                   String snapshotHash, String snapshotSpecVersion) {
     }
 
     /**
@@ -162,16 +197,19 @@ public class BundleFreezeService {
     private final PublicationBundleBatchRepository bundleBatches;
     private final PublicationDecisionRepository decisions;
     private final PublicationBundleDao dao;
+    private final PublicationBundleSnapshotDao snapshotDao;
     private final TransactionTemplate transaction;
     private final Clock clock;
 
     public BundleFreezeService(PublicationBundleRepository bundles, PublicationBundleBatchRepository bundleBatches,
                                PublicationDecisionRepository decisions, PublicationBundleDao dao,
+                               PublicationBundleSnapshotDao snapshotDao,
                                PlatformTransactionManager transactionManager, Clock clock) {
         this.bundles = bundles;
         this.bundleBatches = bundleBatches;
         this.decisions = decisions;
         this.dao = dao;
+        this.snapshotDao = snapshotDao;
         this.transaction = new TransactionTemplate(transactionManager);
         this.clock = clock;
     }
@@ -180,6 +218,10 @@ public class BundleFreezeService {
      * Bevriest de bundel: controleert alle voorwaarden, keurt de resterende {@code PLANNED}-mutaties in
      * bulk goed, stelt de tellers en de bundelhash vast en sluit de bundel af. Zie de klassedocumentatie
      * voor de volledige volgorde en voor wat er bij een fout halverwege gebeurt.
+     * <p>
+     * <b>Zonder geverifieerde identiteit</b> ({@code frozen_by_subject} en {@code decided_by_subject}
+     * blijven {@code null}): alleen voor tests en {@code DemoDataSeeder}. De Web-laag gebruikt
+     * uitsluitend {@link #freeze(long, ActorIdentity, String)}.
      *
      * @param frozenBy verplicht, niet leeg, hoogstens {@value #MAX_ACTOR_LENGTH} tekens, nooit
      *                 {@code system}: een bevriezing is altijd van een mens
@@ -191,10 +233,32 @@ public class BundleFreezeService {
      *                                  {@link #CODE_SOURCE_STATE_CHANGED},
      *                                  {@link #CODE_BUNDLE_OFFER_CONFLICT},
      *                                  {@link #CODE_OFFER_ALREADY_IN_ANOTHER_BUNDLE},
-     *                                  {@link #CODE_FREEZE_CONTENT_CHANGED}
+     *                                  {@link #CODE_FREEZE_CONTENT_CHANGED},
+     *                                  {@link #CODE_SNAPSHOT_SOURCE_MISSING}
      */
     public BundleFreezeView freeze(long bundleId, String frozenBy, String reason) {
-        String freezer = ActorNames.requireActorName(frozenBy, "frozenBy", MAX_ACTOR_LENGTH);
+        return freeze(bundleId, ActorIdentity.unverified(frozenBy), reason);
+    }
+
+    /**
+     * Zoals {@link #freeze(long, String, String)}, maar met de ondertekenaar als {@link ActorIdentity}
+     * (Fase 5-AUTH, bouwstap 5A-2). Additieve overload; de bestaande signatuur blijft ongewijzigd
+     * bestaan, zodat geen enkele bestaande aanroeper of test moest wijzigen.
+     * <p>
+     * De naam blijft langs dezelfde {@link ActorNames#requireActorName}-controle lopen als voorheen: de
+     * Service blijft de laatste verdedigingslinie en kent Spring Security niet. Het subject wordt
+     * doorgegeven zoals het is — {@code null} betekent "geen geverifieerde identiteit" en wordt nooit
+     * afgeleid uit de naam.
+     *
+     * @param actor verplicht; {@code actor.username()} volgt dezelfde regels als {@code frozenBy}
+     *              hierboven, {@code actor.subject()} mag {@code null} zijn
+     */
+    public BundleFreezeView freeze(long bundleId, ActorIdentity actor, String reason) {
+        if (actor == null) {
+            throw new IllegalArgumentException("Missing frozenBy");
+        }
+        String freezer = ActorNames.requireActorName(actor.username(), "frozenBy", MAX_ACTOR_LENGTH);
+        String freezerSubject = actor.subject();
         String motivation = ActorNames.requireText(reason, "reason", MAX_REASON_LENGTH);
 
         return transaction.execute(status -> {
@@ -211,12 +275,19 @@ public class BundleFreezeService {
             requireNoOfferConflicts(bundleId);
 
             Instant frozenAt = clock.instant();
-            AutoApproval autoApproval = approveRemainingPlanned(bundle, freezer, motivation, frozenAt);
-            long freezeDecisionId = recordFreezeDecision(bundle, freezer, motivation, frozenAt);
+            AutoApproval autoApproval =
+                    approveRemainingPlanned(bundle, freezer, freezerSubject, motivation, frozenAt);
+            writeSnapshot(bundleId, frozenAt);
+            long freezeDecisionId = recordFreezeDecision(bundle, freezer, freezerSubject, motivation, frozenAt);
 
             applyCounts(bundle, activeBatches);
             byte[] contentHash = dao.computeContentHash(bundleId);
-            bundle.recordFreeze(freezer, frozenAt, motivation, contentHash);
+            bundle.recordFreeze(freezer, freezerSubject, frozenAt, motivation, contentHash);
+            // 5P-3: enkel bij minstens één snapshotrij; een bundel zonder publiceerbare mutaties houdt beide null.
+            byte[] snapshotHash = snapshotDao.computeSnapshotHash(bundleId);
+            if (snapshotHash != null) {
+                bundle.recordSnapshot(snapshotHash, PublicationBundleSnapshotDao.SNAPSHOT_SPEC_VERSION);
+            }
             bundles.saveAndFlush(bundle);
 
             LOG.info("Bundle {} frozen by {} ({} batches, {} planned mutations auto-approved, decision {}/{}): {}",
@@ -224,7 +295,8 @@ public class BundleFreezeService {
                     freezeDecisionId, motivation);
             return new BundleFreezeView(bundleId, bundle.getStatus().name(), freezer, frozenAt, motivation,
                     HexFormat.of().formatHex(contentHash), autoApproval.affectedCount(), autoApproval.decisionId(),
-                    freezeDecisionId);
+                    freezeDecisionId, snapshotHash == null ? null : HexFormat.of().formatHex(snapshotHash),
+                    bundle.getSnapshotSpecVersion());
         });
     }
 
@@ -372,16 +444,16 @@ public class BundleFreezeService {
      * aantal achteraf niet, dan rolt de <b>hele</b> bevriezing terug: een beslissingsregel die een ander
      * aantal claimt dan ze raakte, is geen audit meer.
      */
-    private AutoApproval approveRemainingPlanned(PublicationBundle bundle, String freezer, String reason,
-                                                 Instant frozenAt) {
+    private AutoApproval approveRemainingPlanned(PublicationBundle bundle, String freezer, String freezerSubject,
+                                                 String reason, Instant frozenAt) {
         long bundleId = bundle.getId();
         long planned = dao.countPlanned(bundleId);
         if (planned == 0) {
             return new AutoApproval(null, 0L);
         }
         PublicationDecision decision = new PublicationDecision(bundle, null,
-                BundleDecisionKind.AUTO_APPROVE_PLANNED, BundleDecisionScope.BUNDLE, planned, freezer, frozenAt,
-                reason);
+                BundleDecisionKind.AUTO_APPROVE_PLANNED, BundleDecisionScope.BUNDLE, planned, freezer,
+                freezerSubject, frozenAt, reason);
         decision.setPreviousStatus(MutationStatus.PLANNED.name());
         decision.setNewStatus(MutationStatus.READY_FOR_PUBLICATION.name());
         decision.setSelectionFilter("status=" + MutationStatus.PLANNED.name());
@@ -397,13 +469,58 @@ public class BundleFreezeService {
     }
 
     /**
+     * Vult de bundelsnapshot (ontwerp fase 5-PUB par. 1, bouwstap 5P-2): één rij per te publiceren
+     * mutatie, met haar omschrijving en haar prijscomponenten uit de kandidaatstaging.
+     *
+     * <h2>Waarom hier en niet eerder of later</h2>
+     * <b>Ná</b> {@link #approveRemainingPlanned}: pas dan staat de verzameling
+     * {@code READY_FOR_PUBLICATION} definitief vast en bevat de snapshot precies de mutaties waarvoor
+     * getekend is — geen enkele meer, geen enkele minder. <b>Vóór</b> {@code computeContentHash} en
+     * {@code recordFreeze}: een blokkade mag geen bevroren bundelrij en geen FREEZE-beslissingsregel
+     * achterlaten. Beide statements lopen in dezelfde transactie als de rest van de bevriezing, dus
+     * "alles of niets" (R-FRZ-09) blijft onverkort gelden.
+     *
+     * <h2>Staging weg = blokkeren</h2>
+     * De snapshot leest {@code import_candidate_stage}/{@code import_candidate_price}, die een kortere
+     * retentie hebben dan een bundel. Ontbreekt de staging van ook maar één mutatie in scope, dan
+     * schrijft de {@code insert ... select} minder rijen dan er mutaties zijn. Dat verschil is het
+     * enige betrouwbare signaal en het wordt <b>altijd</b> gecontroleerd: nooit stil doorgaan met een
+     * halve snapshot, nooit een ontbrekende omschrijving als "leeg" of een ontbrekend bedrag als 0
+     * bewaren (ontwerp par. 1, AGENT.md par. 2 principe 8).
+     * <p>
+     * Een bundel <b>zonder</b> mutaties in scope schrijft 0 rijen bij een verwachting van 0 en blokkeert
+     * dus niet: zo'n bundel gedraagt zich exact als vóór deze bouwstap (de lege bundel wordt al eerder
+     * door {@link #CODE_BUNDLE_EMPTY} tegengehouden, en een bundel met enkel afgekeurde of vastgehouden
+     * mutaties mag bevroren worden — er valt dan enkel niets te publiceren).
+     * <p>
+     * Het aantal <b>prijsrijen</b> is bewust geen blokkeercriterium: een revisie zonder gemapte
+     * prijscomponenten schrijft helemaal geen {@code import_candidate_price}-rijen, en dat is een
+     * geldige toestand en geen ontbrekende bron.
+     */
+    private void writeSnapshot(long bundleId, Instant frozenAt) {
+        long expected = snapshotDao.countInScope(bundleId);
+        int written = snapshotDao.insertSnapshot(bundleId, frozenAt);
+        if (written != expected) {
+            throw new ConflictException(CODE_SNAPSHOT_SOURCE_MISSING, "Bundle " + bundleId + " has " + expected
+                    + " mutation(s) ready for publication but only " + written + " could be snapshotted: the "
+                    + "candidate staging of " + (expected - written) + " mutation(s) is no longer available. "
+                    + "Nothing was frozen; restore the staging or screen the delivery again before freezing this "
+                    + "bundle");
+        }
+        int prices = snapshotDao.insertSnapshotPrices(bundleId);
+        LOG.info("Bundle {} snapshot written: {} mutation row(s), {} price component row(s)", bundleId, written,
+                prices);
+    }
+
+    /**
      * De handeling bevriezen zelf als aparte auditregel ({@code decision_kind = FREEZE}, scope
      * {@code BUNDLE}, {@code affected_count = 1}: ze gaat over deze ene bundel, niet over N mutaties —
      * die staan al op de {@code AUTO_APPROVE_PLANNED}-regel en zouden hier dubbel geteld worden).
      */
-    private long recordFreezeDecision(PublicationBundle bundle, String freezer, String reason, Instant frozenAt) {
+    private long recordFreezeDecision(PublicationBundle bundle, String freezer, String freezerSubject, String reason,
+                                      Instant frozenAt) {
         PublicationDecision decision = new PublicationDecision(bundle, null, BundleDecisionKind.FREEZE,
-                BundleDecisionScope.BUNDLE, 1, freezer, frozenAt, reason);
+                BundleDecisionScope.BUNDLE, 1, freezer, freezerSubject, frozenAt, reason);
         decision.setPreviousStatus(PublicationBundleStatus.ASSEMBLING.name());
         decision.setNewStatus(PublicationBundleStatus.FROZEN.name());
         return decisions.saveAndFlush(decision).getId();

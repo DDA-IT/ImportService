@@ -15,7 +15,8 @@
 import { useRef, useState } from 'react';
 import * as batchesApi from '../../api/batches.ts';
 import * as bundlesApi from '../../api/bundles.ts';
-import type { BatchDetail, BaselineAcceptance } from '../../api/types.ts';
+import { PERMISSION_APPROVE, PERMISSION_MANAGE, type BatchDetail, type BaselineAcceptance } from '../../api/types.ts';
+import { usePermissionGate } from '../../actor/permissions.ts';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
@@ -160,6 +161,7 @@ function AddToBundleDialog({
  * voorkomt een dubbele klik; een fout blijft staan en er is geen automatische retry.
  */
 function ContinueSection({ batchId, onDone }: { batchId: number; onDone: (message: string) => void }) {
+  const manageGate = usePermissionGate(PERMISSION_MANAGE);
   const [confirming, setConfirming] = useState(false);
   const inFlight = useRef(false);
   const runner = useAction(() => batchesApi.continueBatch(batchId));
@@ -189,11 +191,19 @@ function ContinueSection({ batchId, onDone }: { batchId: number; onDone: (messag
         gaat verder waar het stopte.
       </p>
       {!confirming ? (
-        <div className={styles.buttons}>
-          <button type="button" onClick={() => setConfirming(true)}>
-            Batch hervatten
-          </button>
-        </div>
+        <>
+          <div className={styles.buttons}>
+            <button
+              type="button"
+              disabled={!manageGate.allowed}
+              title={manageGate.allowed ? undefined : manageGate.reason}
+              onClick={() => setConfirming(true)}
+            >
+              Batch hervatten
+            </button>
+          </div>
+          {!manageGate.allowed && <p data-testid="permission-reason-manage">{manageGate.reason}</p>}
+        </>
       ) : (
         <div role="group" aria-label="Hervatten bevestigen">
           <p>
@@ -218,6 +228,8 @@ function ContinueSection({ batchId, onDone }: { batchId: number; onDone: (messag
 export function BatchActions({ batch, onChanged }: Props) {
   const [dialog, setDialog] = useState<'baseline' | 'bundle' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const approveGate = usePermissionGate(PERMISSION_APPROVE);
+  const manageGate = usePermissionGate(PERMISSION_MANAGE);
 
   const done = (message: string) => {
     setDialog(null);
@@ -237,13 +249,25 @@ export function BatchActions({ batch, onChanged }: Props) {
             van een bundel, dan geeft de server 409 <code>BATCH_IN_PUBLICATION_BUNDLE</code>.
           </p>
           <div className={styles.buttons}>
-            <button type="button" onClick={() => setDialog('baseline')}>
+            <button
+              type="button"
+              disabled={!approveGate.allowed}
+              title={approveGate.allowed ? undefined : approveGate.reason}
+              onClick={() => setDialog('baseline')}
+            >
               Aanvaarden als nulmeting
             </button>
-            <button type="button" onClick={() => setDialog('bundle')}>
+            <button
+              type="button"
+              disabled={!manageGate.allowed}
+              title={manageGate.allowed ? undefined : manageGate.reason}
+              onClick={() => setDialog('bundle')}
+            >
               Opnemen in bundel
             </button>
           </div>
+          {!approveGate.allowed && <p data-testid="permission-reason-approve">{approveGate.reason}</p>}
+          {!manageGate.allowed && <p data-testid="permission-reason-manage">{manageGate.reason}</p>}
         </>
       )}
       {batch.status === 'MUTATING' && <ContinueSection batchId={batch.batchId} onDone={done} />}

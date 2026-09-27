@@ -78,11 +78,26 @@ public class ImportLinkBookmarkValue {
     @Column(name = "filled_by", nullable = false, length = 100)
     private String filledBy;
 
+    /**
+     * OIDC-subject van wie de waarde voor het eerst invulde (Fase 5-AUTH, changeset 007-4);
+     * {@code null} = geen geverifieerde identiteit. {@code filled_by} is NOT NULL, dus geen koppelcheck.
+     */
+    @Column(name = "filled_by_subject", length = 255)
+    private String filledBySubject;
+
     @Column(name = "updated_at")
     private Instant updatedAt;
 
     @Column(name = "updated_by", length = 100)
     private String updatedBy;
+
+    /**
+     * OIDC-subject van wie de laatste wijziging deed (Fase 5-AUTH, changeset 007-4); {@code null} =
+     * geen geverifieerde identiteit. {@code ck_import_link_bookmark_value_updated_subject} verbiedt een
+     * subject zonder naam.
+     */
+    @Column(name = "updated_by_subject", length = 255)
+    private String updatedBySubject;
 
     protected ImportLinkBookmarkValue() {
         // JPA
@@ -95,6 +110,17 @@ public class ImportLinkBookmarkValue {
         this.dataType = dataType;
         this.valueText = valueText;
         this.filledBy = filledBy;
+    }
+
+    /**
+     * Zoals hierboven, met het geverifieerde OIDC-subject van wie invult (Fase 5-AUTH, 5A-6).
+     *
+     * @param filledBySubject {@code null} = geen geverifieerde identiteit
+     */
+    public ImportLinkBookmarkValue(ImportLink importLink, String bookmarkName, BookmarkDataType dataType,
+                                   String valueText, String filledBy, String filledBySubject) {
+        this(importLink, bookmarkName, dataType, valueText, filledBy);
+        this.filledBySubject = filledBySubject;
     }
 
     @PrePersist
@@ -113,6 +139,18 @@ public class ImportLinkBookmarkValue {
         this.valueText = newValueText;
         this.updatedBy = updatedBy;
         this.updatedAt = updatedAt;
+    }
+
+    /**
+     * Zoals hierboven, met het geverifieerde OIDC-subject van wie wijzigt (Fase 5-AUTH, 5A-6). Het
+     * subject van de <b>eerste</b> invuller blijft staan: hij is niet de auteur van deze wijziging.
+     *
+     * @param updatedBySubject {@code null} = geen geverifieerde identiteit
+     */
+    public void recordChange(String newValueText, String updatedBy, String updatedBySubject,
+                             Instant updatedAt) {
+        recordChange(newValueText, updatedBy, updatedAt);
+        this.updatedBySubject = updatedBySubject;
     }
 
     public Long getId() {
@@ -161,5 +199,18 @@ public class ImportLinkBookmarkValue {
 
     public String getUpdatedBy() {
         return updatedBy;
+    }
+
+    public String getFilledBySubject() {
+        return filledBySubject;
+    }
+
+    /** Fase 5-AUTH (5A-6): {@code null} = geen geverifieerde identiteit; nooit afgeleid uit de naam. */
+    public void setFilledBySubject(String filledBySubject) {
+        this.filledBySubject = filledBySubject;
+    }
+
+    public String getUpdatedBySubject() {
+        return updatedBySubject;
     }
 }

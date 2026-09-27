@@ -237,6 +237,100 @@ class DeliveryScreeningFlowTest {
         assertThat(sourceStateCount(fixture.linkId())).isEqualTo(5L);
     }
 
+    // --- Valuta-standaard, bouwstap V-2 (docs/design/valuta-standaard-design.md par. 1 en 4) -------
+
+    /**
+     * <b>Het compatibiliteitsgeval van de valuta-standaard.</b> Een bronstaat van vóór de wijziging
+     * draagt munt {@code null} ("onbekend"); de staging draagt sindsdien altijd een munt. Een
+     * identieke herlevering mag daardoor géén enkele mutatie en géén enkele prijsobservatie opleveren:
+     * de canonieke prijstekst schrijft een {@code SYSTEM_DEFAULT}-euro als de bestaande "niet
+     * gemapt"-markering, dus de vingerafdrukken blijven byte-identiek.
+     */
+    @Test
+    void anIdenticalRedeliveryAgainstAPreStandardSourceStateWithoutACurrencyProducesNoMutations() {
+        Fixture fixture = fixture("CURNUL");
+        Delivered first = deliver(fixture, "REF-1", csv(FIVE_ROWS));
+        screening.screen(first.batchId());
+        acceptBaseline(fixture, first);
+        // Zet de bronstaat terug op de toestand van vóór de valuta-standaard: munt onbekend.
+        jdbc.update("update catalog_source_state set base_price_currency = null where import_link_id = ?",
+                fixture.linkId());
+        List<Instant> updatedBefore = sourceStateUpdatedAt(fixture.linkId());
+
+        Delivered second = deliver(fixture, "REF-2", csv(FIVE_ROWS));
+        ScreeningOutcome outcome = screening.screen(second.batchId());
+
+        assertThat(outcome.status()).isEqualTo(ImportBatchStatus.SCREENED);
+        assertThat(outcome.unchangedCount()).isEqualTo(5L);
+        assertThat(outcome.changedCount()).isZero();
+        assertThat(outcome.newCount()).isZero();
+        assertThat(outcome.contentMutationCount()).isZero();
+        assertThat(contentMutations(second.batchId())).isEmpty();
+        assertThat(sourceStateUpdatedAt(fixture.linkId())).isEqualTo(updatedBefore);
+        // De staging draagt de aangenomen euro mét herkomst; de bronstaat convergeert pas bij de
+        // eerstvolgende aanvaarding (ontwerp par. 4b: geen backfill).
+        assertThat(stagedCurrencies(second.batchId())).containsOnly("EUR/SYSTEM_DEFAULT");
+        assertThat(jdbc.queryForObject("select count(*) from catalog_price_observation "
+                + "where batch_id = ?", Long.class, second.batchId())).isZero();
+    }
+
+    /**
+     * Dezelfde bronstaat zonder munt, maar nu met één werkelijk gewijzigde regel. Zonder de correctie
+     * in {@code MutationDao.domainMask} zou die rij naast {@code ARTICLE} ook een valse {@code PRICE}
+     * krijgen, louter omdat de munt van {@code null} naar de aangenomen euro ging — een prijswijziging
+     * tonen die er niet is, is precies wat AGENT.md par. 2 principe 8 verbiedt.
+     */
+    @Test
+    void aChangedRowAgainstAPreStandardSourceStateNeverGetsAFalsePriceInItsDomainMask() {
+        Fixture fixture = fixture("CURMSK");
+        Delivered first = deliver(fixture, "REF-1", csv(FIVE_ROWS));
+        screening.screen(first.batchId());
+        acceptBaseline(fixture, first);
+        jdbc.update("update catalog_source_state set base_price_currency = null where import_link_id = ?",
+                fixture.linkId());
+
+        String[] changed = FIVE_ROWS.clone();
+        changed[0] = "ACME;G1;R1;1,50;Boormachine XL";
+        Delivered second = deliver(fixture, "REF-2", csv(changed));
+        ScreeningOutcome outcome = screening.screen(second.batchId());
+
+        assertThat(outcome.changedCount()).isEqualTo(1L);
+        assertThat(outcome.unchangedCount()).isEqualTo(4L);
+        assertThat(contentMutations(second.batchId())).singleElement().satisfies(update -> {
+            assertThat(update.identitySupplierReference()).isEqualTo("R1");
+            assertThat(update.domainMask()).isEqualTo("ARTICLE");
+            assertThat(update.beforeBasePrice()).isEqualByComparingTo("1.50");
+            assertThat(update.afterBasePrice()).isEqualByComparingTo("1.50");
+        });
+    }
+
+    /**
+     * Het spiegelbeeld: een koppeling die een <b>vaste valuta</b> krijgt, ziet die munt wél in de
+     * delta. Dat is geen stille wijziging maar een bewuste instelling, en ze hoort dus zichtbaar te
+     * zijn — zowel in de prijsvingerafdruk als in het domeinmasker.
+     */
+    @Test
+    void aFixedCurrencyOnTheLinkIsVisibleInTheDeltaAndNeverEqualToAnAssumedEuro() {
+        Fixture fixture = fixture("CURLNK");
+        Delivered first = deliver(fixture, "REF-1", csv(FIVE_ROWS));
+        screening.screen(first.batchId());
+        acceptBaseline(fixture, first);
+        jdbc.update("update catalog_source_state set base_price_currency = null where import_link_id = ?",
+                fixture.linkId());
+        ImportLink link = links.findById(fixture.linkId()).orElseThrow();
+        link.setDefaultCurrency("USD");
+        links.saveAndFlush(link);
+
+        Delivered second = deliver(fixture, "REF-2", csv(FIVE_ROWS));
+        ScreeningOutcome outcome = screening.screen(second.batchId());
+
+        assertThat(outcome.changedCount()).isEqualTo(5L);
+        assertThat(outcome.unchangedCount()).isZero();
+        assertThat(stagedCurrencies(second.batchId())).containsOnly("USD/LINK_DEFAULT");
+        assertThat(contentMutations(second.batchId())).hasSize(5)
+                .allSatisfy(update -> assertThat(update.domainMask()).isEqualTo("PRICE"));
+    }
+
     @Test
     void aChangedPriceBecomesOneUpdateWithItsBeforeAndAfterPriceAndAPriceDomainMask() {
         Fixture fixture = fixture("PRICE");
@@ -588,6 +682,13 @@ class DeliveryScreeningFlowTest {
                 fixture.linkId(), delivered.deliveryId(), delivered.batchId(), "tester@example.test",
                 OffsetDateTime.now(ZoneOffset.UTC), OffsetDateTime.now(ZoneOffset.UTC),
                 OffsetDateTime.now(ZoneOffset.UTC), delivered.batchId());
+    }
+
+    /** De effectieve munt én haar herkomst per gestagede regel, als {@code MUNT/HERKOMST}. */
+    private List<String> stagedCurrencies(long batchId) {
+        return jdbc.queryForList("select coalesce(base_price_currency, '-') || '/' "
+                        + "|| coalesce(base_price_currency_origin, '-') from import_candidate_stage "
+                        + "where batch_id = ? order by row_number", String.class, batchId);
     }
 
     private long sourceStateCount(long importLinkId) {

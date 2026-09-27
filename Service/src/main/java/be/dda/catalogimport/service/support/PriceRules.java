@@ -72,7 +72,7 @@ public final class PriceRules {
     public static final BigDecimal DEFAULT_DERIVATION_TOLERANCE = new BigDecimal("0.01");
 
     private static final BigDecimal HUNDRED = new BigDecimal("100");
-    /** Syntactische ISO-4217-vorm: exact drie hoofdletters. Nooit stil omgezet (aanname A22). */
+    /** Syntactische ISO-4217-vorm: exact drie hoofdletters. Nooit stil omgezet of gecorrigeerd. */
     private static final Pattern ISO_4217 = Pattern.compile("[A-Z]{3}");
 
     /** De toestand van één prijscomponent van één kandidaat ({@code import_candidate_price.status}). */
@@ -88,8 +88,9 @@ public final class PriceRules {
      *
      * @param percentage {@code null} voor {@link #BASE_COMPONENT_CODE} (de basisprijs is haar eigen
      *                   basis) en voor een component met status {@link ComponentStatus#NO_BASE_PRICE}
-     * @param currency   {@code null} wanneer de revisie geen muntveld leest; dat is "onbekend" en
-     *                   nooit "EUR"
+     * @param currency   de <b>effectieve</b> munt van de bronregel, geërfd van de basisprijs (R-PRI-06).
+     *                   Sinds de valuta-standaard is die voor een nieuwe kandidaat nooit {@code null};
+     *                   {@code null} blijft mogelijk voor aanroepers buiten de normaliser
      */
     public record PriceComponent(String componentCode, BigDecimal sourceAmount, BigDecimal percentage,
                                  String currency, ComponentStatus status) {
@@ -168,7 +169,7 @@ public final class PriceRules {
         return amount.setScale(AMOUNT_SCALE, RoundingMode.UNNECESSARY);
     }
 
-    // --- Munt (R-PRI-06, aanname A22) ----------------------------------------------------------
+    // --- Munt (R-PRI-06; aanname A22 herzien door de valuta-standaard van 26/09) ----------------
 
     /**
      * De genormaliseerde munt van één bronregel: getrimd en in ISO-4217-<b>vorm</b> (drie
@@ -198,7 +199,8 @@ public final class PriceRules {
      * de volgorde nooit van de mappingvolgorde afhangt.
      *
      * @param basePrice de al getoetste basisprijs ({@link #basePrice})
-     * @param currency  de munt van de bronregel, of {@code null} wanneer de revisie er geen leest
+     * @param currency  de effectieve munt van de bronregel; sinds de valuta-standaard nooit
+     *                  {@code null} voor een kandidaat uit {@code CandidateNormaliser}
      * @throws ImportValueException de bronregel wordt verworpen (0, negatief, munt, reconstructie of
      *                              een overschreden geconfigureerde grens)
      */

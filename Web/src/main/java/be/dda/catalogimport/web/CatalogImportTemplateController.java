@@ -1,5 +1,6 @@
 package be.dda.catalogimport.web;
 
+import be.dda.catalogimport.service.ActorIdentity;
 import be.dda.catalogimport.service.PageResult;
 import be.dda.catalogimport.service.TemplateBookmarkService;
 import be.dda.catalogimport.service.TemplateBookmarkService.AddUsageCommand;
@@ -31,9 +32,18 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <h2>WAARSCHUWING — dit endpoint staat standaard uit en mag nooit in productie aan</h2>
  * Zelfde vlag als {@link CatalogImportSetupController} ({@code catalogimport.setup-api.enabled}, default
- * {@code false}, decisions.md 2026-09-23 Q1): er is nog geen authenticatie (Fase 5), en wie deze
- * endpoints bereikt, kan een sjabloondeclaratie wijzigen die later in leveranciersdefinities
- * gematerialiseerd wordt. Zet de vlag dus uitsluitend aan op een ontwikkelmachine met wegwerpgegevens.
+ * {@code false}, decisions.md 2026-09-23 Q1). Sinds Fase 5-AUTH (5A-1) vereist elk pad hieronder een
+ * login, maar er is nog geen rechtencontrole per actie (5-PERM), en wie deze endpoints bereikt, kan een
+ * sjabloondeclaratie wijzigen die later in leveranciersdefinities gematerialiseerd wordt. Zet de vlag
+ * dus uitsluitend aan op een ontwikkelmachine met wegwerpgegevens.
+ *
+ * <h2>Wie tekent (5A-6)</h2>
+ * {@code declareBookmark} en {@code materialise} roepen {@link CurrentActor#signer} aan <b>vóór</b> de
+ * service: 400 {@code ACTOR_FIELD_MISMATCH} bij een afwijkende {@code createdBy}/{@code materialisedBy},
+ * 403 {@code SYSTEM_ACTOR_FORBIDDEN} voor {@code system} — allebei vóór 404/409 en zonder iets te
+ * schrijven. Beide velden zijn daardoor <b>optioneel</b> geworden ({@code materialisedBy} was verplicht);
+ * bewaard wordt de token-naam plus het OIDC-subject (changeset 007-4). {@code addUsage} heeft geen
+ * {@code *_by}-kolom en vraagt enkel een bruikbare, niet-{@code system} login.
  *
  * <h2>Statuscodes</h2>
  * 201 bij een aangemaakte bookmark/usage-rij en bij een geslaagde materialisatie, 200 bij lezen. 404 met
@@ -67,14 +77,18 @@ public class CatalogImportTemplateController {
 
     private final TemplateBookmarkService templateBookmarks;
     private final TemplateMaterialisationService materialisations;
+    private final CurrentActor currentActor;
 
     public CatalogImportTemplateController(TemplateBookmarkService templateBookmarks,
-                                           TemplateMaterialisationService materialisations) {
+                                           TemplateMaterialisationService materialisations,
+                                           CurrentActor currentActor) {
         this.templateBookmarks = templateBookmarks;
         this.materialisations = materialisations;
+        this.currentActor = currentActor;
     }
 
     /** De sjablonen ({@code usage_type = REUSABLE_TEMPLATE}), gepagineerd. */
+    @RequiresPermission(Permission.READ)
     @GetMapping
     PageResult<TemplateView> templates(@RequestParam(value = "page", required = false) Integer page,
                                        @RequestParam(value = "size", required = false) Integer size) {
@@ -85,6 +99,7 @@ public class CatalogImportTemplateController {
      * De invulset van één sjabloonrevisie voor het scherm, inclusief een {@code problems}-lijst met de
      * fase C-bevindingen — leesbaar zonder te werpen.
      */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/{definitionId}/revisions/{revisionId}/bookmarks")
     BookmarkSetView bookmarks(@PathVariable("definitionId") long definitionId,
                               @PathVariable("revisionId") long revisionId) {
@@ -92,20 +107,26 @@ public class CatalogImportTemplateController {
     }
 
     /** Declareert een nieuwe bookmark; alleen toegelaten op een {@code DRAFT}-sjabloonrevisie. */
+    @RequiresPermission(Permission.MANAGE)
     @PostMapping("/{definitionId}/revisions/{revisionId}/bookmarks")
     @ResponseStatus(HttpStatus.CREATED)
     BookmarkView declareBookmark(@PathVariable("definitionId") long definitionId,
                                  @PathVariable("revisionId") long revisionId,
                                  @RequestBody DeclareBookmarkCommand request) {
-        return templateBookmarks.declareBookmark(definitionId, revisionId, request);
+        ActorIdentity actor = currentActor.signer(request == null ? null : request.createdBy(), "createdBy");
+        return templateBookmarks.declareBookmark(definitionId, revisionId, request, actor);
     }
 
     /** Voegt een toegelaten configuratieplaats (witte lijst) toe aan een bestaande bookmark. */
+    @RequiresPermission(Permission.MANAGE)
     @PostMapping("/{definitionId}/revisions/{revisionId}/bookmarks/{name}/usages")
     @ResponseStatus(HttpStatus.CREATED)
     UsageView addUsage(@PathVariable("definitionId") long definitionId,
                        @PathVariable("revisionId") long revisionId, @PathVariable("name") String name,
                        @RequestBody AddUsageCommand request) {
+        // Geen actorveld en geen *_by-kolom op import_definition_bookmark_usage: enkel een bruikbare,
+        // niet-'system' login is vereist (ontwerp par. 1.1 en par. 3).
+        currentActor.signer(null, "createdBy");
         return templateBookmarks.addUsage(definitionId, revisionId, name, request);
     }
 
@@ -115,6 +136,7 @@ public class CatalogImportTemplateController {
      * bevroren is, hoeveel koppelingen ze al delen, en of ze deelbaar is (met de bookmark die het
      * eventueel verhindert). Deterministisch gesorteerd op code.
      */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/{definitionId}/materialisations")
     PageResult<MaterialisedDefinitionView> materialisations(
             @PathVariable("definitionId") long definitionId,
@@ -133,10 +155,15 @@ public class CatalogImportTemplateController {
      * koppeling: de bestaande definitie en haar revisie blijven ongewijzigd, en
      * {@code definitionCreated} is {@code false} (bouwstap 5d, §6).
      */
+    @RequiresPermission(Permission.MANAGE)
     @PostMapping("/{definitionId}/materialisations")
     @ResponseStatus(HttpStatus.CREATED)
     MaterialisationView materialise(@PathVariable("definitionId") long definitionId,
                                     @RequestBody MaterialiseRequest request) {
-        return materialisations.materialise(definitionId, request);
+        // Vóór de service: 400 ACTOR_FIELD_MISMATCH / 403 SYSTEM_ACTOR_FORBIDDEN gaan vóór 404/409, dus
+        // vóór er ook maar één rij van deze materialisatie ontstaat.
+        ActorIdentity actor =
+                currentActor.signer(request == null ? null : request.materialisedBy(), "materialisedBy");
+        return materialisations.materialise(definitionId, request, actor);
     }
 }

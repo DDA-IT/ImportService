@@ -192,7 +192,8 @@ class CatalogImportTaskHttpTest {
         mockMvc.perform(multipart(TASKS + "/{id}/deliveries", 999_999_999L)
                         .file(new MockMultipartFile("file", "a.csv", "text/csv", "x".getBytes(StandardCharsets.UTF_8)))
                         .param("deliveryReference", "REF-" + System.nanoTime())
-                        .param("uploadedBy", "tester@example.test"))
+                        .param("uploadedBy", "tester@example.test")
+                        .with(be.dda.catalogimport.testsupport.TestActors.as("tester@example.test")))
                 .andExpect(status().isNotFound());
         assertThat(task.getId()).isNotNull();
     }

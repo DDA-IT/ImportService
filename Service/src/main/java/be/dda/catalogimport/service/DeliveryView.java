@@ -13,12 +13,18 @@ import java.util.List;
  * Tellers zijn nullable: {@code null} betekent onbekend en is nooit stil {@code 0}.
  * {@code completenessProven} is in Fase 2 altijd {@code false} (design par. 6, aanname A6).
  * Het interne archiefpad wordt bewust niet blootgesteld.
+ * <p>
+ * {@code sourceKind} is additief toegevoegd bij de tweede ontvangstweg (beslissingslog 2026-09-27, Q2):
+ * {@code UPLOAD} (browser) of {@code LOCAL_DIRECTORY} (beheerde servermap). Nooit {@code null} — de
+ * herkomst van een ontvangen levering is altijd gekend. Ook hier geen pad: enkel de weg, niet de map.
  */
 public record DeliveryView(
         long deliveryId,
         long taskId,
         Long taskRunId,
         String idempotencyKey,
+        // Ontvangstweg: UPLOAD of LOCAL_DIRECTORY (additief, beslissingslog 2026-09-27 Q2).
+        String sourceKind,
         Instant receivedAt,
         Integer expectedFileCount,
         int actualFileCount,
@@ -38,6 +44,7 @@ public record DeliveryView(
                 delivery.getTask().getId(),
                 delivery.getTaskRun() == null ? null : delivery.getTaskRun().getId(),
                 delivery.getIdempotencyKey(),
+                delivery.getSourceKind().name(),
                 delivery.getReceivedAt(),
                 delivery.getExpectedFileCount(),
                 delivery.getActualFileCount(),

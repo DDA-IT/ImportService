@@ -144,8 +144,24 @@ public class PublicationBundleService {
      */
     public BundleReference createBundle(String bundleReference, String description, PublicationTargetMode targetMode,
                                         Instant targetMoment, String publicationPolicy, String createdBy) {
+        return createBundle(bundleReference, description, targetMode, targetMoment, publicationPolicy,
+                ActorIdentity.unverified(createdBy));
+    }
+
+    /**
+     * Zoals {@link #createBundle(String, String, PublicationTargetMode, Instant, String, String)}, met de
+     * aanmaker als {@link ActorIdentity} (Fase 5-AUTH, 5A-4). De String-variant is zonder geverifieerde
+     * identiteit ({@code created_by_subject} blijft {@code null}): alleen voor tests en
+     * {@code DemoDataSeeder}. Bij een idempotente hervinding blijft de oorspronkelijke aanmaker staan.
+     */
+    public BundleReference createBundle(String bundleReference, String description, PublicationTargetMode targetMode,
+                                        Instant targetMoment, String publicationPolicy, ActorIdentity actor) {
+        if (actor == null) {
+            throw new IllegalArgumentException("Missing createdBy");
+        }
         String reference = ActorNames.requireText(bundleReference, "bundleReference", MAX_REFERENCE_LENGTH);
-        String creator = ActorNames.requireActorName(createdBy, "createdBy", MAX_ACTOR_LENGTH);
+        String creator = ActorNames.requireActorName(actor.username(), "createdBy", MAX_ACTOR_LENGTH);
+        String creatorSubject = actor.subject();
         if (targetMode == null) {
             throw new IllegalArgumentException("Missing targetMode");
         }
@@ -158,6 +174,7 @@ public class PublicationBundleService {
                 return BundleReference.of(requireSameScope(existing.get(), targetMode, trimmedDescription), false);
             }
             PublicationBundle bundle = new PublicationBundle(reference, targetMode, creator);
+            bundle.setCreatedBySubject(creatorSubject);
             bundle.setDescription(trimmedDescription);
             bundle.setTargetMoment(targetMoment);
             bundle.setPublicationPolicy(trimmedPolicy);
@@ -197,7 +214,19 @@ public class PublicationBundleService {
      * @throws IllegalArgumentException lege batchlijst, ongeldige {@code addedBy}
      */
     public List<Membership> addBatches(long bundleId, List<Long> batchIds, String addedBy) {
-        String adder = ActorNames.requireActorName(addedBy, "addedBy", MAX_ACTOR_LENGTH);
+        return addBatches(bundleId, batchIds, ActorIdentity.unverified(addedBy));
+    }
+
+    /**
+     * Zoals {@link #addBatches(long, List, String)}, met de ondertekenaar als {@link ActorIdentity}
+     * (Fase 5-AUTH, 5A-4); de String-variant laat {@code added_by_subject} {@code null}.
+     */
+    public List<Membership> addBatches(long bundleId, List<Long> batchIds, ActorIdentity actor) {
+        if (actor == null) {
+            throw new IllegalArgumentException("Missing addedBy");
+        }
+        String adder = ActorNames.requireActorName(actor.username(), "addedBy", MAX_ACTOR_LENGTH);
+        String adderSubject = actor.subject();
         if (batchIds == null || batchIds.isEmpty()) {
             throw new IllegalArgumentException("batchIds must not be empty");
         }
@@ -206,13 +235,14 @@ public class PublicationBundleService {
             requireAssembling(bundle);
             List<Membership> memberships = new ArrayList<>(batchIds.size());
             for (Long batchId : batchIds) {
-                memberships.add(Membership.of(addOneBatch(bundle, batchId, adder)));
+                memberships.add(Membership.of(addOneBatch(bundle, batchId, adder, adderSubject)));
             }
             return memberships;
         });
     }
 
-    private PublicationBundleBatch addOneBatch(PublicationBundle bundle, long batchId, String addedBy) {
+    private PublicationBundleBatch addOneBatch(PublicationBundle bundle, long batchId, String addedBy,
+                                               String addedBySubject) {
         ImportBatch batch = batches.findById(batchId)
                 .orElseThrow(() -> new NotFoundException(CODE_BATCH_NOT_FOUND, "Batch " + batchId + " not found"));
         if (bundleBatches.findByBatchIdAndActiveMarkerIsNotNull(batchId).isPresent()) {
@@ -233,6 +263,7 @@ public class PublicationBundleService {
                     "Batch " + batchId + " has a blocking validation result");
         }
         PublicationBundleBatch membership = new PublicationBundleBatch(bundle, batch, batch.getImportLink(), addedBy);
+        membership.setAddedBySubject(addedBySubject);
         return bundleBatches.saveAndFlush(membership);
     }
 
@@ -245,7 +276,19 @@ public class PublicationBundleService {
      * @throws ConflictException {@link #CODE_BUNDLE_NOT_ASSEMBLING}, {@link #CODE_BATCH_HAS_DECIDED_MUTATIONS}
      */
     public Membership removeBatch(long bundleId, long batchId, String removedBy, String reason) {
-        String remover = ActorNames.requireActorName(removedBy, "removedBy", MAX_ACTOR_LENGTH);
+        return removeBatch(bundleId, batchId, ActorIdentity.unverified(removedBy), reason);
+    }
+
+    /**
+     * Zoals {@link #removeBatch(long, long, String, String)}, met de ondertekenaar als
+     * {@link ActorIdentity} (Fase 5-AUTH, 5A-4); de String-variant laat {@code removed_by_subject} {@code null}.
+     */
+    public Membership removeBatch(long bundleId, long batchId, ActorIdentity actor, String reason) {
+        if (actor == null) {
+            throw new IllegalArgumentException("Missing removedBy");
+        }
+        String remover = ActorNames.requireActorName(actor.username(), "removedBy", MAX_ACTOR_LENGTH);
+        String removerSubject = actor.subject();
         String removalReason = ActorNames.requireText(reason, "reason", MAX_REASON_LENGTH);
         return transaction.execute(status -> {
             PublicationBundle bundle = requireBundleForUpdate(bundleId);
@@ -258,7 +301,7 @@ public class PublicationBundleService {
                 throw new ConflictException(CODE_BATCH_HAS_DECIDED_MUTATIONS, "Batch " + batchId
                         + " has decided mutations and can no longer be removed from bundle " + bundleId);
             }
-            membership.recordRemoval(remover, clock.instant(), removalReason);
+            membership.recordRemoval(remover, removerSubject, clock.instant(), removalReason);
             return Membership.of(bundleBatches.saveAndFlush(membership));
         });
     }

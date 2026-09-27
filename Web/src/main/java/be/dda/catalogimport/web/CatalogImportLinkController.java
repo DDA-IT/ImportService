@@ -1,5 +1,6 @@
 package be.dda.catalogimport.web;
 
+import be.dda.catalogimport.service.ActorIdentity;
 import be.dda.catalogimport.service.LinkBookmarkValueService;
 import be.dda.catalogimport.service.LinkBookmarkValueService.LinkBookmarkValueRow;
 import be.dda.catalogimport.service.LinkBookmarkValueService.LinkBookmarkValues;
@@ -19,9 +20,18 @@ import org.springframework.web.bind.annotation.RestController;
  * Deze controller bestaat alleen wanneer {@code catalogimport.setup-api.enabled=true} staat, exact
  * dezelfde vlag als {@link CatalogImportSetupController} (beslissingslog 23/09, vraag Q1). De default
  * is {@code false} en {@code application.yml} zet de vlag bewust niet; zonder de vlag antwoordt elk
- * pad hieronder met 404. Er is nog geen authenticatie (Fase 5), en een LINK-bookmarkwaarde bepaalt mee
- * wat er gefilterd, gemapt en uiteindelijk gepubliceerd wordt. Zet de vlag dus uitsluitend aan op een
- * ontwikkelmachine met wegwerpgegevens.
+ * pad hieronder met 404. Sinds Fase 5-AUTH (5A-1) vereist elk pad bovendien een login, maar er is nog
+ * geen rechtencontrole per actie (5-PERM), en een LINK-bookmarkwaarde bepaalt mee wat er gefilterd,
+ * gemapt en uiteindelijk gepubliceerd wordt. Zet de vlag dus uitsluitend aan op een ontwikkelmachine
+ * met wegwerpgegevens.
+ *
+ * <h2>Wie tekent (5A-6)</h2>
+ * De PUT roept {@link CurrentActor#signer} aan <b>vóór</b> de service: 400
+ * {@code ACTOR_FIELD_MISMATCH} bij een afwijkende {@code updatedBy}, 403
+ * {@code SYSTEM_ACTOR_FORBIDDEN} voor {@code system} — allebei vóór 404/409 en zonder iets te
+ * schrijven. {@code updatedBy} is daardoor <b>optioneel</b> geworden; bewaard wordt de token-naam plus
+ * het OIDC-subject in {@code filled_by_subject}/{@code updated_by_subject} (changeset 007-4). Het
+ * subject staat in geen enkel antwoord (A6).
  *
  * <h2>Statuscodes</h2>
  * 200 bij beide endpoints. 404 met code {@code LINK_NOT_FOUND} of {@code SOURCE_ORGANISATION_NOT_FOUND}
@@ -46,16 +56,18 @@ public class CatalogImportLinkController {
      *
      * @param value     de nieuwe waarde; {@code ""} is een uitdrukkelijk lege waarde en wordt bewaard,
      *                  een ontbrekend veld wordt geweigerd — die twee zijn nooit hetzelfde (R-BMK-03)
-     * @param updatedBy wie de wijziging doet; niet leeg en nooit {@code system} (autorisatie volgt in
-     *                  Fase 5)
+     * @param updatedBy wie de wijziging doet; sinds 5A-6 optioneel en enkel nog een controle tegen de
+     *                  aangemelde gebruiker — bewaard wordt altijd de naam uit het token
      */
     public record SetBookmarkValueRequest(String value, String updatedBy) {
     }
 
     private final LinkBookmarkValueService bookmarkValues;
+    private final CurrentActor currentActor;
 
-    public CatalogImportLinkController(LinkBookmarkValueService bookmarkValues) {
+    public CatalogImportLinkController(LinkBookmarkValueService bookmarkValues, CurrentActor currentActor) {
         this.bookmarkValues = bookmarkValues;
+        this.currentActor = currentActor;
     }
 
     /**
@@ -63,6 +75,7 @@ public class CatalogImportLinkController {
      * wees: de naam staat in de huidige actieve revisie niet (meer) gedeclareerd, de waarde telt niet
      * als ingevuld en wordt nooit toegepast — ze wordt hier getoond omdat ze auditmateriaal is (§7).
      */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/{linkId}/bookmark-values")
     LinkBookmarkValues bookmarkValues(@PathVariable("linkId") long linkId) {
         return bookmarkValues.list(linkId);
@@ -72,11 +85,12 @@ public class CatalogImportLinkController {
      * Wijzigt (of vult voor het eerst in) één LINK-bookmarkwaarde. Weigert met 409 zolang de koppeling
      * een open batch heeft; de wijziging zelf legt vorige waarde, wie en wanneer samen vast.
      */
+    @RequiresPermission(Permission.MANAGE)
     @PutMapping("/{linkId}/bookmark-values/{name}")
     LinkBookmarkValueRow setBookmarkValue(@PathVariable("linkId") long linkId,
                                           @PathVariable("name") String name,
                                           @RequestBody SetBookmarkValueRequest request) {
-        return bookmarkValues.setValue(linkId, name, request == null ? null : request.value(),
-                request == null ? null : request.updatedBy());
+        ActorIdentity actor = currentActor.signer(request == null ? null : request.updatedBy(), "updatedBy");
+        return bookmarkValues.setValue(linkId, name, request == null ? null : request.value(), actor);
     }
 }

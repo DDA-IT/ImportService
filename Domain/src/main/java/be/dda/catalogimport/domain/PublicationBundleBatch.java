@@ -56,8 +56,16 @@ public class PublicationBundleBatch {
     @Column(name = "added_by", nullable = false, length = 100)
     private String addedBy;
 
+    /** OIDC-subject van wie toevoegde (Fase 5-AUTH, changeset 007-2); {@code null} = geen geverifieerde identiteit. */
+    @Column(name = "added_by_subject", length = 255)
+    private String addedBySubject;
+
     @Column(name = "added_at", nullable = false)
     private Instant addedAt;
+
+    /** OIDC-subject van wie verwijderde (Fase 5-AUTH, changeset 007-2); {@code null} = geen geverifieerde identiteit. */
+    @Column(name = "removed_by_subject", length = 255)
+    private String removedBySubject;
 
     @Column(name = "removed_by", length = 100)
     private String removedBy;
@@ -145,8 +153,32 @@ public class PublicationBundleBatch {
         return activeMarker;
     }
 
-    /** Legt de drie auditgegevens van een verwijdering samen vast; nooit los te zetten. */
+    public String getAddedBySubject() {
+        return addedBySubject;
+    }
+
+    public String getRemovedBySubject() {
+        return removedBySubject;
+    }
+
+    /** Stelt het OIDC-subject van wie de batch toevoegde in (Fase 5-AUTH, 5A-4); {@code null} = niet geverifieerd. */
+    public void setAddedBySubject(String addedBySubject) {
+        this.addedBySubject = addedBySubject;
+    }
+
+    /** Legt de drie auditgegevens van een verwijdering samen vast; nooit los te zetten. Zonder subject. */
     public void recordRemoval(String removedBy, Instant removedAt, String removedReason) {
+        recordRemoval(removedBy, null, removedAt, removedReason);
+    }
+
+    /**
+     * Zoals hierboven, maar met het geverifieerde OIDC-subject van wie verwijdert (Fase 5-AUTH, 5A-4).
+     *
+     * @param removedBySubject {@code null} = geen geverifieerde identiteit
+     */
+    public void recordRemoval(String removedBy, String removedBySubject, Instant removedAt,
+                              String removedReason) {
+        this.removedBySubject = removedBySubject;
         this.removedBy = removedBy;
         this.removedAt = removedAt;
         this.removedReason = removedReason;

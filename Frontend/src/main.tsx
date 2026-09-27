@@ -16,7 +16,7 @@ const router = createBrowserRouter([
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ActorProvider>
+    <ActorProvider onRestorePath={(path) => void router.navigate(path, { replace: true })}>
       <RouterProvider router={router} />
     </ActorProvider>
   </StrictMode>,

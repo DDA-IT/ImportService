@@ -244,7 +244,7 @@ class BundleCancelTest {
         Scenario scenario = creationScenario("BADINPUT", 3);
         long decisionsBefore = decisionCount(scenario.bundleId());
 
-        assertThatThrownBy(() -> cancellationService.cancel(scenario.bundleId(), null, CANCEL_REASON))
+        assertThatThrownBy(() -> cancellationService.cancel(scenario.bundleId(), (String) null, CANCEL_REASON))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> cancellationService.cancel(scenario.bundleId(), "   ", CANCEL_REASON))
                 .isInstanceOf(IllegalArgumentException.class);

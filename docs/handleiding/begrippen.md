@@ -1,6 +1,6 @@
 # CatalogImport — begrippen en statusreferentie
 
-Stand: 2026-09-24. Wordt bijgewerkt zodra de resterende schermen klaar zijn. Hoofdhandleiding:
+Stand: 2026-09-25. Hoofdhandleiding:
 [`README.md`](README.md). Stappen: [`standaardflows.md`](standaardflows.md).
 
 De enumwaarden hieronder komen uit `Domain/src/main/java/be/dda/catalogimport/domain/`. Een waarde die
@@ -19,7 +19,7 @@ De enumwaarden hieronder komen uit `Domain/src/main/java/be/dda/catalogimport/do
 | Begrip | Uitleg |
 | --- | --- |
 | **accept-baseline** | Geauditeerde actie die een `SCREENED` batch aanvaardt als nulmeting van de lokale bronstaat. Geen publicatie. Kan één keer per batch en sluit bundel-opname uit. Verplicht: `acceptedBy` (niet `system`) en `reason`. |
-| **Actor** | De naam die bij een schrijfactie wordt vastgelegd. Er is geen authenticatie: het is een zelf ingetypte naam (in de UI: eenmalig per browsersessie, in `sessionStorage`). |
+| **Actor** | De naam die bij een schrijfactie wordt vastgelegd. Sinds 5-AUTH komt die naam uit de Keycloak-login (`preferred_username`); de actorvelden in een request zijn optioneel en moeten, indien aanwezig, gelijk zijn aan die naam (anders 400 `ACTOR_FIELD_MISMATCH`). |
 | **Aanbieding** | Eén artikel van een leverancier, geïdentificeerd door de aanbiedingsidentiteit. |
 | **Aanbiedingsidentiteit** | Leverancier + leveranciersgroep + leveranciersreferentie, optioneel + kortingscode. Bibliotheek en bronorganisatie zijn scope, geen sleutel. Een lege component verwerpt de regel. |
 | **Archief** | Plaats op het bestandssysteem waar het originele bestand ongewijzigd bewaard wordt, met SHA-256. |
@@ -48,13 +48,18 @@ De enumwaarden hieronder komen uit `Domain/src/main/java/be/dda/catalogimport/do
 | **Koppeling (ImportLink)** | Verbindt een definitie met een leverancier en een bibliotheek. |
 | **Kritieke kolom / kritieke lijn** | Een kolom die de configuratie als kritiek markeert; een afgewezen regel met een fout op zo'n kolom is een kritieke lijn en vraagt beoordeling. |
 | **Levering (Delivery)** | Eén aangeleverd bestand met een `deliveryReference`. |
-| **`deliveryReference`** | Door u gekozen referentie; idempotentiesleutel per taak. |
+| **`deliveryReference`** | Referentie van een levering; idempotentiesleutel per taak. Het uploadscherm stelt `<bestandsnaam>#<12 hex SHA-256>` voor (deterministisch); u kunt ze aanpassen. |
+| **`expirableCount`** | Veld van `BundleDetail`: aantal mutaties dat bij annuleren `EXPIRED` wordt. `null` bij een geannuleerde bundel (niet vastgesteld); 0 is geldig. Getoond in de annuleerdialoog. |
+| **PREVIEW (PSIMPORT-preview)** | `GET /bundles/{id}/psimport-preview`: read-only, niet-contractuele projectie van een `FROZEN` bundel (`previewOnly`, `UNVERIFIED_FIELD_INVENTORY`). Geen echt PSIMPORT-formaat, geen publicatie. |
 | **Mutatie** | Eén voorgestelde wijziging in het mutatieplan van een batch. |
 | **Mutatieplan** | De lijst mutaties van een batch. |
 | **Nulmeting** | Zie *accept-baseline*. |
 | **Publicatiebundel** | Verzameling batches die samen beoordeeld en bevroren wordt. |
 | **Revisie** | Een versie van een definitie: `DRAFT` → `ACTIVE` → `SUPERSEDED`. Een batch is gescreend tegen één vaste revisie. |
-| **Setup-API** | Ontwikkelhulp voor het inrichten van een keten; standaard uit; geen authenticatie. |
+| **Setup-API** | Ontwikkelhulp voor het inrichten van een keten; standaard uit (`catalogimport.setup-api.enabled`); vereist een login en het recht `manage`/`read`; de vlag blijft een aparte, tweede beveiliging (vlag uit = 404). |
+| **Recht** | Toestemming voor een soort actie: `catalogImport.read` (Lezen), `.manage` (Beheren: upload, hervatten, bundel aanmaken) of `.approve` (Goedkeuren: aanvaarden, beslissen, bevriezen, annuleren). `approve` omvat `manage` en `read`; `manage` omvat `read`. Zonder recht: 403 `PERMISSION_DENIED`. |
+| **Rechtenbron** | Waar de rechten van een gebruiker vandaan komen. Nu een lokale YAML-lijst (`catalogimport.permissions.grants`); de koppeling met Prodis is nog niet gebouwd. Onbereikbaar = 503 `PERMISSION_SOURCE_UNAVAILABLE`. Zonder toekenning heeft niemand iets. |
+| **Effectief recht** | Wat u uiteindelijk mag, nadat de hiërarchie is toegepast op de ruwe toekenning; dit geeft `GET /me` terug in `permissions` en het scherm gebruikt het om knoppen uit te schakelen. |
 | **Sjabloon** | Definitie met `usageType = REUSABLE_TEMPLATE`; kan nooit een koppeling of batch krijgen. |
 | **Statusreden (`statusReason`)** | Tekstcode die zegt waarom een mutatie in een status staat. Filter is exact en hoofdlettergevoelig. |
 | **Taak (CatalogImportTask)** | Ingang voor leveringen op een koppeling. Vandaag alleen `MANUAL`. |

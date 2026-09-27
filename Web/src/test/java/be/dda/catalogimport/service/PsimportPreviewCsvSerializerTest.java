@@ -14,7 +14,8 @@ import org.junit.jupiter.api.Test;
 class PsimportPreviewCsvSerializerTest {
 
     private static PsimportPreview preview(long bundleId, List<Row> rows, String contentHash) {
-        return new PsimportPreview(true, "UNVERIFIED_FIELD_INVENTORY", "1", bundleId, contentHash, Instant.now(),
+        return new PsimportPreview(true, "UNVERIFIED_FIELD_INVENTORY", "2", bundleId, contentHash, "1", "beef",
+                Instant.now(),
                 rows, 0, rows.size(), rows.size(), 1);
     }
 
@@ -49,7 +50,7 @@ class PsimportPreviewCsvSerializerTest {
         assertThat(banner).startsWith("# PREVIEW");
         assertThat(banner).contains("previewOnly=true");
         assertThat(banner).contains("contractStatus=UNVERIFIED_FIELD_INVENTORY");
-        assertThat(banner).contains("previewSpecVersion=1");
+        assertThat(banner).contains("previewSpecVersion=2");
         assertThat(banner).contains("bundleContentHash=hash123");
     }
 
@@ -228,6 +229,35 @@ class PsimportPreviewCsvSerializerTest {
         String[] parts = dataRow.split(",");
         // Controleer dat we voldoende kolommen hebben
         assertThat(parts.length).isGreaterThanOrEqualTo(6);
+    }
+
+    @Test
+    void snapshotFieldsAndNotSnapshottedStateAreSerialized() {
+        List<Field> fields = List.of(
+                field("DESCRIPTION", "Omschrijving NED", "Boor, \"XL\"\nregel2", State.VALUE),
+                field("VKP1_PCT", "Prijs 1 %", "125.5", State.VALUE),
+                field("VKP2_PCT", "Prijs 2 %", null, State.NOT_MAPPED));
+        Row snapshotted = row(7L, 41L, "CREATE", true, fields);
+        Row old = row(7L, 42L, "CREATE", false, List.of(
+                field("DESCRIPTION", "Omschrijving NED", null, State.NOT_SNAPSHOTTED),
+                field("VKP1_PCT", "Prijs 1 %", null, State.NOT_SNAPSHOTTED),
+                field("VKP2_PCT", "Prijs 2 %", null, State.NOT_SNAPSHOTTED)));
+
+        String csv = PsimportPreviewCsvSerializer.toCsv(preview(1L, List.of(snapshotted, old), "hash"));
+
+        assertThat(csv).contains("DESCRIPTION,DESCRIPTION.state,VKP1_PCT,VKP1_PCT.state,VKP2_PCT,VKP2_PCT.state");
+        assertThat(csv).contains("\"Boor, \"\"XL\"\"\nregel2\",VALUE,125.5,VALUE,,NOT_MAPPED");
+        assertThat(csv).contains("7,42,CREATE,false,,NOT_SNAPSHOTTED,,NOT_SNAPSHOTTED,,NOT_SNAPSHOTTED");
+    }
+
+    @Test
+    void aDescriptionStartingWithAFormulaCharacterIsNeutralised() {
+        Row row = row(7L, 42L, "CREATE", true, List.of(
+                field("DESCRIPTION", "Omschrijving NED", "=HYPERLINK(\"x\")", State.VALUE)));
+
+        String csv = PsimportPreviewCsvSerializer.toCsv(preview(1L, List.of(row), "hash"));
+
+        assertThat(csv).contains("\"'=HYPERLINK(\"\"x\"\")\",VALUE");
     }
 
     @Test

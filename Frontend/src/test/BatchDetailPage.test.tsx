@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
+import { TEST_IDENTITY } from './testIdentity';
 import { BatchDetailPage } from '../features/batches/BatchDetailPage';
 
 const BATCH = {
@@ -140,7 +141,7 @@ function stubFetch(overrides: Overrides = {}) {
 
 function renderAt(path: string) {
   return render(
-    <ActorProvider>
+    <ActorProvider identity={TEST_IDENTITY}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/batches/:batchId" element={<BatchDetailPage />} />

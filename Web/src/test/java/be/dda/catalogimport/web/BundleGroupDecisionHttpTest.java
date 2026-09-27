@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import be.dda.catalogimport.domain.BundleDecisionKind;
 import be.dda.catalogimport.domain.MutationActionType;
 import be.dda.catalogimport.domain.MutationStatus;
+import be.dda.catalogimport.service.ActorIdentity;
 import be.dda.catalogimport.service.BadRequestException;
 import be.dda.catalogimport.service.BundleCancellationService;
 import be.dda.catalogimport.service.BundleDecisionService;
@@ -40,13 +41,21 @@ class BundleGroupDecisionHttpTest {
     private BundleDecisionService decisionService;
     private MockMvc mockMvc;
 
+    private static final ActorIdentity SIGNER = new ActorIdentity("an.janssens@example.test", "sub-an");
+
     @BeforeEach
     void setUp() {
         decisionService = Mockito.mock(BundleDecisionService.class);
+        CurrentActor currentActor = Mockito.mock(CurrentActor.class);
+        Mockito.when(currentActor.signer(Mockito.any(), Mockito.any())).thenReturn(SIGNER);
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new CatalogImportBundleController(Mockito.mock(PublicationBundleService.class),
                         decisionService, Mockito.mock(BundleFreezeService.class),
-                        Mockito.mock(BundleCancellationService.class), Mockito.mock(BundleQueryService.class)))
+                        Mockito.mock(BundleCancellationService.class), Mockito.mock(BundleQueryService.class),
+                        // 5A-2/5A-4: de controller leest de ondertekenaar uit CurrentActor. Deze standalone
+                        // opzet heeft geen SecurityContext; de stub levert een vaste identiteit. De echte
+                        // controle (mismatch, system, subject bewaard) staat in BundleActorHttpTest.
+                        currentActor))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .build();
     }
@@ -54,7 +63,7 @@ class BundleGroupDecisionHttpTest {
     @Test
     void theRequestBodyBindsToTheTypedFilterAndTheResultIsReturned() throws Exception {
         Mockito.when(decisionService.decideGroup(eq(BUNDLE_ID), eq(BundleDecisionKind.APPROVE),
-                        eq("an.janssens@example.test"), eq("Nagekeken"),
+                        eq(SIGNER), eq("Nagekeken"),
                         eq(new DecisionFilter(7L, MutationStatus.AWAITING_APPROVAL, "BULK_PRICE_INCIDENT",
                                 MutationActionType.UPDATE, null))))
                 .thenReturn(new GroupDecisionView(3L, 25L,
@@ -78,8 +87,8 @@ class BundleGroupDecisionHttpTest {
     /** Niets geraakt: een antwoord zonder beslissingsregel, geen fout. */
     @Test
     void anActionThatAffectedNothingAnswersWithoutADecisionId() throws Exception {
-        Mockito.when(decisionService.decideGroup(Mockito.anyLong(), Mockito.any(), Mockito.any(), Mockito.any(),
-                Mockito.any())).thenReturn(new GroupDecisionView(null, 0L, "batchId=7"));
+        Mockito.when(decisionService.decideGroup(Mockito.anyLong(), Mockito.any(), Mockito.<ActorIdentity>any(),
+                Mockito.any(), Mockito.any())).thenReturn(new GroupDecisionView(null, 0L, "batchId=7"));
 
         mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", BUNDLE_ID)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -91,8 +100,8 @@ class BundleGroupDecisionHttpTest {
 
     @Test
     void anEmptyFilterAnswersFourHundredWithTheStableCode() throws Exception {
-        Mockito.when(decisionService.decideGroup(Mockito.anyLong(), Mockito.any(), Mockito.any(), Mockito.any(),
-                        Mockito.any()))
+        Mockito.when(decisionService.decideGroup(Mockito.anyLong(), Mockito.any(), Mockito.<ActorIdentity>any(),
+                        Mockito.any(), Mockito.any()))
                 .thenThrow(new BadRequestException(BundleDecisionService.CODE_DECISION_FILTER_REQUIRED,
                         "A group decision requires at least one filter field"));
 
@@ -143,8 +152,8 @@ class BundleGroupDecisionHttpTest {
     /** Een ontbrekende filter is niet C6's zaak: de service blijft DECISION_FILTER_REQUIRED beslissen. */
     @Test
     void aMissingFilterStillReachesTheServiceAndKeepsItsOwnCode() throws Exception {
-        Mockito.when(decisionService.decideGroup(Mockito.anyLong(), Mockito.any(), Mockito.any(), Mockito.any(),
-                        Mockito.any()))
+        Mockito.when(decisionService.decideGroup(Mockito.anyLong(), Mockito.any(), Mockito.<ActorIdentity>any(),
+                        Mockito.any(), Mockito.any()))
                 .thenThrow(new BadRequestException(BundleDecisionService.CODE_DECISION_FILTER_REQUIRED, "required"));
 
         mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", BUNDLE_ID)
@@ -157,8 +166,8 @@ class BundleGroupDecisionHttpTest {
     /** Het bestaande 400-antwoord zonder code blijft exact zoals het was. */
     @Test
     void anOrdinaryIllegalArgumentStillAnswersFourHundredWithoutACode() throws Exception {
-        Mockito.when(decisionService.decideGroup(Mockito.anyLong(), Mockito.any(), Mockito.any(), Mockito.any(),
-                Mockito.any())).thenThrow(new IllegalArgumentException("Missing decidedBy"));
+        Mockito.when(decisionService.decideGroup(Mockito.anyLong(), Mockito.any(), Mockito.<ActorIdentity>any(),
+                Mockito.any(), Mockito.any())).thenThrow(new IllegalArgumentException("Missing decidedBy"));
 
         mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", BUNDLE_ID)
                         .contentType(MediaType.APPLICATION_JSON)

@@ -58,7 +58,9 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code BUNDLE_EMPTY}, {@code BUNDLE_HAS_UNDECIDED_MUTATIONS},
  * {@code SOURCE_STATE_CHANGED_SINCE_SCREENING}, {@code BUNDLE_OFFER_CONFLICT},
  * {@code OFFER_ALREADY_IN_ANOTHER_BUNDLE}, {@code BUNDLE_CONTENT_CHANGED_DURING_FREEZE} (freeze, in de
- * praktijk onbereikbaar), {@code BUNDLE_NOT_CANCELLABLE} (cancel op elke status buiten
+ * praktijk onbereikbaar), {@code SNAPSHOT_SOURCE_MISSING} (freeze: de kandidaatstaging van minstens één
+ * te publiceren mutatie bestaat niet meer, dus de bundelsnapshot zou onvolledig zijn — bouwstap 5P-2),
+ * {@code BUNDLE_NOT_CANCELLABLE} (cancel op elke status buiten
  * {@code ASSEMBLING}/{@code FROZEN}, dus ook een tweede annulering), en
  * {@code BUNDLE_CONTENT_CHANGED_DURING_CANCEL} (cancel, in de praktijk onbereikbaar). 400 met code
  * {@code DECISION_FILTER_REQUIRED} bij een lege groepsfilter; 400 zonder code bij een andere ongeldige
@@ -66,8 +68,24 @@ import org.springframework.web.bind.annotation.RestController;
  * batchlijst, ontbrekende reden bij een afkeuring, een herziening, een bevriezing of een annulering,
  * ongeldige paginering).
  * <p>
- * Autorisatie volgt in Fase 5: {@code createdBy}/{@code addedBy}/{@code removedBy}/{@code decidedBy}/
- * {@code frozenBy}/{@code cancelledBy} zijn voorlopig requestvelden.
+ * <b>Geverifieerde identiteit (Fase 5-AUTH).</b> Bouwstap 5A-2 (freeze) en 5A-4 (alle overige
+ * bundelschrijfendpoints) sluiten aan op de aangemelde gebruiker: {@code frozenBy}, {@code createdBy},
+ * {@code addedBy}, {@code removedBy}, {@code decidedBy} en {@code cancelledBy} zijn <b>optionele
+ * controlevelden</b> in plaats van de bron van de naam (400 {@code ACTOR_FIELD_MISMATCH} bij een andere
+ * naam, 403 {@code SYSTEM_ACTOR_FORBIDDEN} voor {@code system}). Die controle gebeurt telkens vóór de
+ * service, dus ook vóór een 404/409 (bv. 400 vóór 404 bij een onbekende bundel). Bewaard wordt de
+ * token-username met het OIDC-subject.
+ * <p>
+ * <b>Rechten per actie (Fase 5-PERM, bouwstap 5B-1).</b> De vijf goedkeurende endpoints —
+ * {@code approve}, {@code reject}, de groepsactie {@code decisions}, {@code freeze} en {@code cancel} —
+ * dragen {@code @RequiresPermission(APPROVE)} (ontwerp par. 1; beslissingslog 2026-09-25 A2). Die check
+ * gebeurt in een interceptor en dus <b>vóór</b> de handler. De volgorde is daardoor: 403
+ * {@code SYSTEM_ACTOR_FORBIDDEN} (enkel bij MANAGE/APPROVE), 503
+ * {@code PERMISSION_SOURCE_UNAVAILABLE}, 403 {@code PERMISSION_DENIED}, en pas daarna 400
+ * {@code ACTOR_FIELD_MISMATCH} / {@code DECISION_FILTER_UNKNOWN_FIELD} en 404/409 (keuze mens
+ * 2026-09-26, V1 "recht eerst"). Dat wijzigt bewust de volgorde uit {@code fase5-auth-design.md}
+ * par. 13.1. De overige endpoints van deze controller zijn nog niet geannoteerd en worden dus nog niet
+ * op rechten gecontroleerd (5B-2/5B-3).
  */
 @RestController
 @RequestMapping("/api/catalog-import/bundles")
@@ -109,17 +127,19 @@ public class CatalogImportBundleController {
     }
 
     /**
-     * Body van {@code POST /bundles/{id}/freeze} (bouwstap 4e). Beide velden zijn verplicht: een
-     * bevriezing is altijd van een mens ({@code frozenBy}, nooit {@code system}) en draagt altijd een
-     * reden (R-FRZ).
+     * Body van {@code POST /bundles/{id}/freeze} (bouwstap 4e). {@code reason} is verplicht (R-FRZ).
+     * <p>
+     * Sinds 5A-2 is {@code frozenBy} <b>optioneel</b> en enkel nog een controle: de naam komt uit de
+     * aangemelde gebruiker (die nooit {@code system} mag zijn). Blanco of afwezig = geen controle;
+     * een andere naam is 400 {@code ACTOR_FIELD_MISMATCH}. Het record zelf is niet gewijzigd.
      */
     public record FreezeBundleRequest(String frozenBy, String reason) {
     }
 
     /**
-     * Body van {@code POST /bundles/{id}/cancel} (bouwstap 4f). Beide velden zijn verplicht: een
-     * annulering is altijd van een mens ({@code cancelledBy}, nooit {@code system}) en draagt altijd
-     * een reden.
+     * Body van {@code POST /bundles/{id}/cancel} (bouwstap 4f). {@code reason} is verplicht: een
+     * annulering draagt altijd een reden. Sinds 5A-4 is {@code cancelledBy} optioneel en enkel een
+     * controle op de aangemelde gebruiker (die nooit {@code system} mag zijn).
      */
     public record CancelBundleRequest(String cancelledBy, String reason) {
     }
@@ -159,18 +179,22 @@ public class CatalogImportBundleController {
     private final BundleFreezeService freezeService;
     private final BundleCancellationService cancellationService;
     private final BundleQueryService queries;
+    private final CurrentActor currentActor;
 
     public CatalogImportBundleController(PublicationBundleService bundleService,
                                          BundleDecisionService decisionService, BundleFreezeService freezeService,
-                                         BundleCancellationService cancellationService, BundleQueryService queries) {
+                                         BundleCancellationService cancellationService, BundleQueryService queries,
+                                         CurrentActor currentActor) {
         this.bundleService = bundleService;
         this.decisionService = decisionService;
         this.freezeService = freezeService;
         this.cancellationService = cancellationService;
         this.queries = queries;
+        this.currentActor = currentActor;
     }
 
     /** Batches die in aanmerking komen om aan een bundel toegevoegd te worden, gepagineerd. */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/candidates")
     PageResult<BundleCandidate> candidates(@RequestParam(value = "importLinkId", required = false) Long importLinkId,
                                            @RequestParam(value = "page", required = false) Integer page,
@@ -183,13 +207,16 @@ public class CatalogImportBundleController {
      * met dezelfde {@code bundleReference} en scope. Een andere scope bij dezelfde referentie is 409
      * {@code BUNDLE_REFERENCE_REUSED_WITH_DIFFERENT_SCOPE}.
      */
+    @RequiresPermission(Permission.MANAGE)
     @PostMapping
     BundleReference create(@RequestBody CreateBundleRequest request) {
         return bundleService.createBundle(request.bundleReference(), request.description(), request.targetMode(),
-                request.targetMoment(), request.publicationPolicy(), request.createdBy());
+                request.targetMoment(), request.publicationPolicy(),
+                currentActor.signer(request.createdBy(), "createdBy"));
     }
 
     /** De bundels, gepagineerd en optioneel beperkt tot één status. */
+    @RequiresPermission(Permission.READ)
     @GetMapping
     PageResult<BundleSummary> list(@RequestParam(value = "status", required = false) PublicationBundleStatus status,
                                    @RequestParam(value = "page", required = false) Integer page,
@@ -198,12 +225,14 @@ public class CatalogImportBundleController {
     }
 
     /** Volledige stand van één bundel, met live tellers zolang ze {@code ASSEMBLING} is. */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/{bundleId}")
     BundleDetail get(@PathVariable("bundleId") long bundleId) {
         return queries.getBundle(bundleId);
     }
 
     /** De lidmaatschappen (actief en verwijderd) van een bundel, gepagineerd. */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/{bundleId}/batches")
     PageResult<BundleBatchRow> batches(@PathVariable("bundleId") long bundleId,
                                        @RequestParam(value = "page", required = false) Integer page,
@@ -212,16 +241,20 @@ public class CatalogImportBundleController {
     }
 
     /** Voegt batches alles-of-niets toe aan een {@code ASSEMBLING}-bundel. */
+    @RequiresPermission(Permission.MANAGE)
     @PostMapping("/{bundleId}/batches")
     List<Membership> addBatches(@PathVariable("bundleId") long bundleId, @RequestBody AddBatchesRequest request) {
-        return bundleService.addBatches(bundleId, request.batchIds(), request.addedBy());
+        return bundleService.addBatches(bundleId, request.batchIds(),
+                currentActor.signer(request.addedBy(), "addedBy"));
     }
 
     /** Verwijdert een batch uit een {@code ASSEMBLING}-bundel; weigert zodra ze besliste mutaties draagt. */
+    @RequiresPermission(Permission.MANAGE)
     @PostMapping("/{bundleId}/batches/{batchId}/remove")
     Membership removeBatch(@PathVariable("bundleId") long bundleId, @PathVariable("batchId") long batchId,
                            @RequestBody RemoveBatchRequest request) {
-        return bundleService.removeBatch(bundleId, batchId, request.removedBy(), request.reason());
+        return bundleService.removeBatch(bundleId, batchId, currentActor.signer(request.removedBy(), "removedBy"),
+                request.reason());
     }
 
     /**
@@ -242,6 +275,7 @@ public class CatalogImportBundleController {
      * kunnen (ontwerp scherm 3 par. 11.5). Een onbekende of ongeldige hexwaarde geeft een lege pagina
      * en geen fout; blanco of afwezig is geen filter.
      */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/{bundleId}/mutations")
     PageResult<MutationRow> mutations(@PathVariable("bundleId") long bundleId,
                                       @RequestParam(value = "status", required = false) MutationStatus status,
@@ -261,6 +295,7 @@ public class CatalogImportBundleController {
      * Append-only: een herziening staat hier als extra regel náást de beslissing die ze herziet, die
      * nooit gewijzigd of verwijderd wordt.
      */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/{bundleId}/decisions")
     PageResult<DecisionRow> decisions(@PathVariable("bundleId") long bundleId,
                                       @RequestParam(value = "page", required = false) Integer page,
@@ -273,19 +308,23 @@ public class CatalogImportBundleController {
      * een herziening van een eerdere afkeuring. Een herhaling door dezelfde beslisser is idempotent:
      * 200 en {@code idempotent = true}, zonder tweede beslissingsregel.
      */
+    @RequiresPermission(Permission.APPROVE)
     @PostMapping("/{bundleId}/mutations/{mutationId}/approve")
     MutationDecisionView approve(@PathVariable("bundleId") long bundleId,
                                  @PathVariable("mutationId") long mutationId,
                                  @RequestBody DecideMutationRequest request) {
-        return decisionService.approve(bundleId, mutationId, request.decidedBy(), request.reason());
+        return decisionService.approve(bundleId, mutationId, currentActor.signer(request.decidedBy(), "decidedBy"),
+                request.reason());
     }
 
     /** Keurt één mutatie af ({@code REJECTED}); {@code reason} is hier altijd verplicht (R-DEC). */
+    @RequiresPermission(Permission.APPROVE)
     @PostMapping("/{bundleId}/mutations/{mutationId}/reject")
     MutationDecisionView reject(@PathVariable("bundleId") long bundleId,
                                 @PathVariable("mutationId") long mutationId,
                                 @RequestBody DecideMutationRequest request) {
-        return decisionService.reject(bundleId, mutationId, request.decidedBy(), request.reason());
+        return decisionService.reject(bundleId, mutationId, currentActor.signer(request.decidedBy(), "decidedBy"),
+                request.reason());
     }
 
     /**
@@ -305,6 +344,7 @@ public class CatalogImportBundleController {
      * {@code identityHash} levert {@code affectedCount = 0} op en geen fout — net zoals die lijst dan
      * leeg is.
      */
+    @RequiresPermission(Permission.APPROVE)
     @PostMapping("/{bundleId}/decisions")
     GroupDecisionView decideGroup(@PathVariable("bundleId") long bundleId,
                                   @RequestBody JsonNode body) {
@@ -318,8 +358,8 @@ public class CatalogImportBundleController {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing request body");
         }
-        return decisionService.decideGroup(bundleId, request.decisionKind(), request.decidedBy(),
-                request.reason(), request.filter());
+        return decisionService.decideGroup(bundleId, request.decisionKind(),
+                currentActor.signer(request.decidedBy(), "decidedBy"), request.reason(), request.filter());
     }
 
     /**
@@ -335,12 +375,19 @@ public class CatalogImportBundleController {
      * 409 met een stabiele {@code code}: {@code BUNDLE_NOT_ASSEMBLING} (ook bij een tweede poging),
      * {@code BUNDLE_EMPTY}, {@code BUNDLE_HAS_UNDECIDED_MUTATIONS},
      * {@code SOURCE_STATE_CHANGED_SINCE_SCREENING}, {@code BUNDLE_OFFER_CONFLICT},
-     * {@code OFFER_ALREADY_IN_ANOTHER_BUNDLE}; 400 bij een ontbrekende {@code frozenBy} of
-     * {@code reason}.
+     * {@code OFFER_ALREADY_IN_ANOTHER_BUNDLE}; 400 bij een ontbrekende {@code reason}.
+     * <p>
+     * <b>Fase 5-AUTH, bouwstap 5A-2.</b> De ondertekenaar komt uit de aangemelde gebruiker, niet uit het
+     * request: {@code frozenBy} is optioneel geworden (was het al als nullable recordveld) en dient nog
+     * enkel als controle. Staat er een andere naam in, dan is dat 400 {@code ACTOR_FIELD_MISMATCH} en
+     * gebeurt er niets; een aangemelde {@code system} krijgt 403 {@code SYSTEM_ACTOR_FORBIDDEN}. Beide
+     * controles gebeuren <b>vóór</b> de service, dus ook vóór de 404 op een onbekende bundel. Bewaard
+     * wordt altijd de naam uit het token, samen met het OIDC-subject.
      */
+    @RequiresPermission(Permission.APPROVE)
     @PostMapping("/{bundleId}/freeze")
     BundleDetail freeze(@PathVariable("bundleId") long bundleId, @RequestBody FreezeBundleRequest request) {
-        freezeService.freeze(bundleId, request.frozenBy(), request.reason());
+        freezeService.freeze(bundleId, currentActor.signer(request.frozenBy(), "frozenBy"), request.reason());
         return queries.getBundle(bundleId);
     }
 
@@ -349,6 +396,7 @@ public class CatalogImportBundleController {
      * een garantie. Een niet-{@code ASSEMBLING} bundel is geen fout maar {@code freezable = false}.
      * 404 {@code BUNDLE_NOT_FOUND} bij een onbekende bundel.
      */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/{bundleId}/freeze-check")
     BundleFreezeService.FreezePreflight freezeCheck(@PathVariable("bundleId") long bundleId) {
         return freezeService.checkFreeze(bundleId);
@@ -364,11 +412,14 @@ public class CatalogImportBundleController {
      * Het antwoord is de volledige {@code BundleDetail} van de geannuleerde bundel.
      * <p>
      * 409 {@code BUNDLE_NOT_CANCELLABLE} vanuit elke andere status (ook een tweede annulering); 400 bij
-     * een ontbrekende {@code cancelledBy} of {@code reason}.
+     * een ontbrekende {@code reason}. Sinds 5A-4 is {@code cancelledBy} optioneel en enkel een controle
+     * (400 {@code ACTOR_FIELD_MISMATCH}, 403 {@code SYSTEM_ACTOR_FORBIDDEN}); de naam komt uit de login.
      */
+    @RequiresPermission(Permission.APPROVE)
     @PostMapping("/{bundleId}/cancel")
     BundleDetail cancel(@PathVariable("bundleId") long bundleId, @RequestBody CancelBundleRequest request) {
-        cancellationService.cancel(bundleId, request.cancelledBy(), request.reason());
+        cancellationService.cancel(bundleId, currentActor.signer(request.cancelledBy(), "cancelledBy"),
+                request.reason());
         return queries.getBundle(bundleId);
     }
 }

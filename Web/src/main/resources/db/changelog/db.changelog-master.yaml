@@ -20,3 +20,13 @@ databaseChangeLog:
       file: db/changelog/005-publication-bundle-core.sql
   - include:
       file: db/changelog/006-import-template-bookmark.sql
+  - include:
+      file: db/changelog/007-actor-subject.sql
+  - include:
+      file: db/changelog/008-publication-snapshot.sql
+  - include:
+      file: db/changelog/009-publication-run.sql
+  - include:
+      file: db/changelog/010-valuta-standaard.sql
+  - include:
+      file: db/changelog/011-delivery-source-kind.sql

@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
+import { TEST_IDENTITY } from './testIdentity';
 import type { BundleDetail, MutationRow, PageResult } from '../api/types';
 import { MutationList } from '../components/MutationList/MutationList';
 import type { MutationListToolbarContext, MutationQuery, MutationSource } from '../components/MutationList/types';
@@ -211,7 +212,7 @@ describe('MutationList toolbar-slot (F9)', () => {
     };
 
     render(
-      <ActorProvider>
+      <ActorProvider identity={TEST_IDENTITY}>
         <MutationList
           source={source}
           toolbar={(context) => {
@@ -249,7 +250,7 @@ describe('MutationList toolbar-slot (F9)', () => {
 
 function renderTab(detail: BundleDetail, reloadBundle: () => void = () => {}) {
   return render(
-    <ActorProvider>
+    <ActorProvider identity={TEST_IDENTITY}>
       <MemoryRouter initialEntries={['/bundles/42/mutations']}>
         <Routes>
           <Route path="/bundles/:bundleId" element={<Outlet context={{ bundle: detail, reloadBundle }} />}>
@@ -322,7 +323,6 @@ describe('GroupDecisionDialog in BundleMutationsTab', () => {
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
     const dialog = await screen.findByRole('dialog');
-    fireEvent.change(within(dialog).getByLabelText(/Naam/), { target: { value: 'An Beslisser' } });
     return dialog;
   }
 

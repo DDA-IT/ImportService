@@ -53,7 +53,10 @@ public class TestSecurityConfiguration {
                         .clientRegistration(keycloakRegistration())
                         .idToken(token -> token
                                 .subject(DEFAULT_SUBJECT)
-                                .claim("preferred_username", DEFAULT_USERNAME)))
+                                .claim("preferred_username", DEFAULT_USERNAME)
+                                // 5-PERM (V3): ook de standaardlogin draagt alle drie de rechten, zodat
+                                // een test die niets over rechten zegt, er ook niet op struikelt.
+                                .claim(TestPermissionSource.CLAIM, TestActors.ALL_PERMISSION_CODES)))
                 .with(csrf().asHeader()));
     }
 

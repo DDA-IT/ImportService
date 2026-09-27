@@ -93,6 +93,7 @@ class SetupApiFlowTest {
 
         // 2. Eén bevoegde persoon aanvaardt de nulmeting.
         mockMvc.perform(post("/api/catalog-import/batches/{id}/accept-baseline", firstBatch)
+                        .with(be.dda.catalogimport.testsupport.TestActors.as(USER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"acceptedBy\":\"" + USER + "\",\"reason\":\"nulmeting van de demoketen\"}"))
                 .andExpect(status().isOk())
@@ -257,6 +258,97 @@ class SetupApiFlowTest {
                 .andExpect(jsonPath("$.code").value("FIELD_NOT_FOUND"));
     }
 
+    // --- Vaste valuta van de koppeling (valuta-standaard V-4) --------------------------------------
+
+    @Test
+    void aLinkWithoutOrABlankDefaultCurrencyStoresNull() throws Exception {
+        String unique = unique("CURN");
+        createOrganisation(unique);
+        long definitionId = createDefinition(unique);
+
+        postLink(definitionId, unique + "-A", unique, "").andExpect(status().isCreated())
+                .andExpect(jsonPath("$.defaultCurrency").doesNotExist());
+        assertThat(linkCurrency(unique + "-A")).isNull();
+        assertThat(linkCount(unique + "-A")).isEqualTo(1L);
+    }
+
+    @Test
+    void aValidDefaultCurrencyIsStoredOnTheLink() throws Exception {
+        String unique = unique("CURY");
+        createOrganisation(unique);
+        long definitionId = createDefinition(unique);
+
+        postLink(definitionId, unique + "-LINK", unique, ",\"defaultCurrency\":\"USD\"")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.defaultCurrency").value("USD"));
+        assertThat(linkCurrency(unique + "-LINK")).isEqualTo("USD");
+    }
+
+    @Test
+    void aBlankDefaultCurrencyOnALinkStoresNull() throws Exception {
+        String unique = unique("CURB");
+        createOrganisation(unique);
+        long definitionId = createDefinition(unique);
+
+        postLink(definitionId, unique + "-LINK", unique, ",\"defaultCurrency\":\"  \"")
+                .andExpect(status().isCreated());
+        assertThat(linkCurrency(unique + "-LINK")).isNull();
+    }
+
+    @Test
+    void anInvalidDefaultCurrencyIsA400WithACodeAndCreatesNoLink() throws Exception {
+        String unique = unique("CURX");
+        createOrganisation(unique);
+        long definitionId = createDefinition(unique);
+
+        int index = 0;
+        for (String bad : List.of("usd", "US", "DOLLAR", "123", " USD")) {
+            String code = unique + "-" + index++;
+            postLink(definitionId, code, unique, ",\"defaultCurrency\":\"" + bad + "\"")
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("LINK_CURRENCY_INVALID"));
+            assertThat(linkCount(code)).isZero();
+        }
+    }
+
+    /** Endpoint, database en screening in één keten: de vaste valuta wordt de gestagede munt. */
+    @Test
+    void aLinkCreatedWithAFixedCurrencyStagesADeliveryWithoutCurrencyFieldAsUsdLinkDefault() throws Exception {
+        String unique = unique("CURF");
+        createOrganisation(unique);
+        long definitionId = createDefinition(unique);
+        long revisionId = id(mockMvc.perform(post(SETUP + "/definitions/{id}/revisions", definitionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(revisionJson().replace("\"currencyField\":\"valuta\"", "\"currencyField\":null")))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        mockMvc.perform(post(SETUP + "/revisions/{id}/mappings", revisionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"targetFieldCode\":\"EAN\",\"sourceReference\":\"ean\",\"sequenceNumber\":1}"))
+                .andExpect(status().isCreated());
+        activate(revisionId).andExpect(status().isOk());
+        long linkId = id(postLink(definitionId, unique + "-LINK", unique, ",\"defaultCurrency\":\"USD\"")
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        long taskId = id(mockMvc.perform(post(SETUP + "/tasks").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"linkId\":" + linkId + ",\"name\":\"" + unique + " levering\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+
+        String csv = "leverancier;groep;referentie;omschrijving;prijs;ean\n"
+                + "ACME;BOOR;A-1;Boormachine;149,50;5411234500017\n";
+        long batchId = batchId(mockMvc.perform(multipart("/api/catalog-import/tasks/{id}/deliveries", taskId)
+                        .file(new MockMultipartFile("file", "usd.csv", "text/csv",
+                                csv.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                        .param("deliveryReference", "REF-USD")
+                        .param("uploadedBy", USER)
+                        .with(be.dda.catalogimport.testsupport.TestActors.as(USER)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("SCREENED"))
+                .andReturn().getResponse().getContentAsString());
+
+        assertThat(jdbc.queryForList("select base_price_currency || '/' || base_price_currency_origin "
+                + "from import_candidate_stage where batch_id = ?", String.class, batchId))
+                .containsExactly("USD/LINK_DEFAULT");
+    }
+
     // --- Recordfilters en kritiek-overrules --------------------------------------------------------
 
     /**
@@ -385,6 +477,7 @@ class SetupApiFlowTest {
         long batchId = batchId(upload(chain.taskId(), "REF-BASE", "01-eerste-levering.csv")
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
         mockMvc.perform(post("/api/catalog-import/batches/{id}/accept-baseline", batchId)
+                        .with(be.dda.catalogimport.testsupport.TestActors.as(USER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"acceptedBy\":\"" + USER + "\",\"reason\":\"nulmeting\"}"))
                 .andExpect(status().isOk());
@@ -414,8 +507,14 @@ class SetupApiFlowTest {
                 .andReturn().getResponse().getContentAsString());
     }
 
+    /**
+     * Sinds 5A-6 controleert de Web-laag {@code approvedBy} tegen de aangemelde gebruiker; wie onder
+     * die naam activeert, moet dus ook als die naam aangemeld zijn (400 {@code ACTOR_FIELD_MISMATCH}
+     * anders).
+     */
     private ResultActions activate(long revisionId) throws Exception {
         return mockMvc.perform(post(SETUP + "/revisions/{id}/activate", revisionId)
+                .with(be.dda.catalogimport.testsupport.TestActors.as(USER))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"approvedBy\":\"" + USER + "\"}"));
     }
 
@@ -435,7 +534,8 @@ class SetupApiFlowTest {
         return mockMvc.perform(multipart("/api/catalog-import/tasks/{id}/deliveries", taskId)
                 .file(new MockMultipartFile("file", sampleName, "text/csv", read(sampleName)))
                 .param("deliveryReference", reference)
-                .param("uploadedBy", USER));
+                .param("uploadedBy", USER)
+                .with(be.dda.catalogimport.testsupport.TestActors.as(USER)));
     }
 
     private ResultActions batch(long batchId) throws Exception {
@@ -450,6 +550,24 @@ class SetupApiFlowTest {
     private List<String> issueCodes(long batchId) {
         return jdbc.queryForList("select issue_code from import_row_issue where batch_id = ?",
                 String.class, batchId);
+    }
+
+    /** POST /setup/links; {@code extraJson} is een optioneel JSON-fragment dat met een komma begint. */
+    private ResultActions postLink(long definitionId, String code, String supplierCode, String extraJson)
+            throws Exception {
+        return mockMvc.perform(post(SETUP + "/links").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"definitionId\":" + definitionId + ",\"code\":\"" + code + "\",\"name\":\"" + code
+                        + "\",\"supplierCode\":\"" + supplierCode + "\",\"libraryCode\":\""
+                        + library(code) + "\"" + extraJson + "}"));
+    }
+
+    private String linkCurrency(String code) {
+        return jdbc.queryForObject("select default_currency from import_link where code = ?", String.class, code);
+    }
+
+    private long linkCount(String code) {
+        Long count = jdbc.queryForObject("select count(*) from import_link where code = ?", Long.class, code);
+        return count == null ? 0L : count;
     }
 
     private long organisationCount(String code) {

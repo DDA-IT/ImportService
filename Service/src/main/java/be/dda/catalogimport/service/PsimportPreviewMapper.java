@@ -1,5 +1,6 @@
 package be.dda.catalogimport.service;
 
+import be.dda.catalogimport.dao.PsimportPreviewDao.SnapshotPrice;
 import be.dda.catalogimport.dao.PsimportPreviewDao.SourceRow;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -12,11 +13,17 @@ import java.util.List;
  * Sleutel van een veld is de interne code ({@code import_field_catalog.code} of, voor de
  * identiteitsvelden, de {@code import_field_mapping.field_key}); het h.26-label is enkel weergave.
  * <b>Nooit</b> een stille 0, lege tekst of aangenomen waarde: ontbrekende data geeft een expliciete
- * state. {@code complete} is {@code false} zodra minstens één veld {@link State#UNKNOWN} is.
+ * state. {@code complete} is {@code false} zodra minstens één veld {@link State#UNKNOWN} of
+ * {@link State#NOT_SNAPSHOTTED} is.
  */
 public final class PsimportPreviewMapper {
 
-    public enum State { VALUE, NOT_MAPPED, NOT_AVAILABLE_IN_MUTATION, NOT_CONTRACTED, UNKNOWN }
+    /**
+     * {@code NOT_SNAPSHOTTED}: de bundel is bevroren vóór de snapshot bestond; er is geen snapshotrij voor
+     * de mutatie. Telt, net als UNKNOWN, als "onvolledig" voor {@link Row#complete()} (ontwerp 5-PUB
+     * par. 1: een run op een oude bundel krijgt {@code incompleteRowCount > 0}).
+     */
+    public enum State { VALUE, NOT_MAPPED, NOT_AVAILABLE_IN_MUTATION, NOT_CONTRACTED, UNKNOWN, NOT_SNAPSHOTTED }
 
     public record Field(String code, String label, String value, State state) {
     }
@@ -36,16 +43,61 @@ public final class PsimportPreviewMapper {
         fields.add(basePrice(source.afterBasePrice()));
         fields.add(text("BASE_PRICE_CURRENCY", "Valuta", source.basePriceCurrency()));
         fields.addAll(references(source.referenceType(), source.afterReferenceValue()));
-        fields.add(new Field("DESCRIPTION", "Omschrijving NED", null, State.NOT_AVAILABLE_IN_MUTATION));
+        boolean snapshotted = source.snapshotId() != null;
+        fields.add(description(snapshotted, source.description(), source.descriptionState()));
         for (int n = 1; n <= 5; n++) {
-            fields.add(new Field("VKP" + n + "_PCT", "Prijs " + n + " %", null, State.NOT_AVAILABLE_IN_MUTATION));
+            fields.add(vkpPercentage(n, snapshotted, source.prices()));
         }
         fields.add(new Field("PROCESS", "Verwerken", null, State.NOT_CONTRACTED));
         fields.add(new Field("DELETE", "DELETE", null, State.NOT_CONTRACTED));
         fields.add(new Field("RECORD", "Record", null, State.NOT_CONTRACTED));
         fields.add(new Field("NUMBER", "Nummer", null, State.NOT_CONTRACTED));
-        boolean complete = fields.stream().noneMatch(field -> field.state() == State.UNKNOWN);
+        boolean complete = fields.stream()
+                .noneMatch(field -> field.state() == State.UNKNOWN || field.state() == State.NOT_SNAPSHOTTED);
         return new Row(source.batchId(), source.mutationId(), source.actionType(), complete, List.copyOf(fields));
+    }
+
+    /**
+     * Omschrijving uit de bundelsnapshot (slice 2). Geen snapshotrij voor de mutatie (bundel van vóór
+     * 5-PUB) geeft NOT_SNAPSHOTTED. Anders volgt de state {@code description_state}: NOT_MAPPED geeft
+     * NOT_MAPPED zonder waarde; EMPTY geeft VALUE met lege tekst (zoals bij DISCOUNT_CODE); VALUE geeft
+     * VALUE met de letterlijke bronwaarde. Een onbekende state, of VALUE zonder tekst, is UNKNOWN.
+     */
+    static Field description(boolean snapshotted, String description, String state) {
+        String code = "DESCRIPTION";
+        String label = "Omschrijving NED";
+        if (!snapshotted) {
+            return new Field(code, label, null, State.NOT_SNAPSHOTTED);
+        }
+        if ("NOT_MAPPED".equals(state)) {
+            return new Field(code, label, null, State.NOT_MAPPED);
+        }
+        if ("EMPTY".equals(state)) {
+            return new Field(code, label, "", State.VALUE);
+        }
+        if ("VALUE".equals(state) && description != null) {
+            return new Field(code, label, description, State.VALUE);
+        }
+        return new Field(code, label, null, State.UNKNOWN);
+    }
+
+    /**
+     * {@code VKPn_PCT} uit de snapshotcomponent {@code VKPn}: percentage als string via
+     * {@code toPlainString()}, nooit een JSON-getal. Niet gesnapshot: NOT_SNAPSHOTTED. Component
+     * afwezig (niet gemapt voor deze regel): NOT_MAPPED, nooit 0. Component aanwezig zonder percentage
+     * (status niet OK): UNKNOWN.
+     */
+    static Field vkpPercentage(int n, boolean snapshotted, List<SnapshotPrice> prices) {
+        String code = "VKP" + n + "_PCT";
+        String label = "Prijs " + n + " %";
+        if (!snapshotted) {
+            return new Field(code, label, null, State.NOT_SNAPSHOTTED);
+        }
+        String component = "VKP" + n;
+        return prices.stream().filter(p -> component.equals(p.componentCode())).findFirst()
+                .map(p -> p.percentage() == null ? new Field(code, label, null, State.UNKNOWN)
+                        : new Field(code, label, p.percentage().toPlainString(), State.VALUE))
+                .orElseGet(() -> new Field(code, label, null, State.NOT_MAPPED));
     }
 
     /** Een verplichte tekstwaarde: aanwezig is VALUE, {@code null} is UNKNOWN (nooit "" of een default). */

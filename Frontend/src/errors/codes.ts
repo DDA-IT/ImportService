@@ -59,7 +59,9 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   },
   BUNDLE_NOT_FROZEN: {
     title: 'Bundel is nog niet bevroren',
-    explanation: 'De PSIMPORT-preview is enkel beschikbaar voor een bundel met de status FROZEN.',
+    explanation:
+      'Deze actie is alleen mogelijk voor een bundel met status FROZEN (bv. de PSIMPORT-preview of ' +
+      'een publicatierun).',
     whatNow: 'Bevries de bundel eerst, of kies een bevroren bundel.',
   },
   BATCH_ALREADY_IN_BUNDLE: {
@@ -208,6 +210,114 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     title: 'Inhoud is veranderd tijdens het annuleren',
     explanation: 'De inhoud van de bundel is tussen het laden en het bevestigen van deze actie gewijzigd.',
     whatNow: 'Laad de bundel opnieuw en probeer opnieuw te annuleren.',
+    showBackendDetail: true,
+  },
+  AUTHENTICATION_REQUIRED: {
+    title: 'Aanmelden vereist',
+    explanation: 'Uw sessie is verlopen of u bent niet aangemeld. Er is niets opgeslagen.',
+    whatNow: 'Meld u opnieuw aan en probeer het daarna nogmaals.',
+  },
+  ACCESS_DENIED: {
+    title: 'Toegang geweigerd',
+    explanation: 'U hebt geen toegang tot deze actie.',
+  },
+  ACTOR_FIELD_MISMATCH: {
+    title: 'Andere gebruiker aangemeld',
+    explanation: 'U bent intussen als iemand anders aangemeld; er is niets opgeslagen. Herlaad de pagina.',
+    whatNow: 'Herlaad de pagina en probeer opnieuw.',
+  },
+  SYSTEM_ACTOR_FORBIDDEN: {
+    title: 'Deze gebruikersnaam mag niet tekenen',
+    explanation: 'De aangemelde gebruikersnaam "system" mag lezen, maar geen acties uitvoeren die ondertekend worden.',
+  },
+  ACTOR_IDENTITY_INVALID: {
+    title: 'Aangemelde identiteit onbruikbaar',
+    explanation:
+      'Uw login levert geen bruikbare gebruikersnaam of identificator (ontbrekend of te lang). Er is niets opgeslagen.',
+    whatNow: 'Neem contact op met de beheerder van de aanmelding.',
+  },
+  PERMISSION_DENIED: {
+    title: 'Recht ontbreekt',
+    explanation:
+      'U heeft niet het recht om deze actie uit te voeren; er is niets opgeslagen. Uw rechten kunnen ' +
+      'ingetrokken zijn: ze worden opnieuw opgehaald.',
+    whatNow: 'Vraag de beheerder om het ontbrekende recht, dat de server hieronder noemt.',
+    showBackendDetail: true,
+  },
+  PERMISSION_SOURCE_UNAVAILABLE: {
+    title: 'Rechten tijdelijk niet beschikbaar',
+    explanation:
+      'De bron van uw rechten is niet bereikbaar. Dat is iets anders dan geen rechten hebben: er is niets ' +
+      'opgeslagen en er is niets over uw rechten besloten.',
+    whatNow: 'Probeer het zo meteen opnieuw; blijft het duren, verwittig dan de beheerder.',
+  },
+  CSRF_TOKEN_INVALID: {
+    title: 'Beveiligingstoken ongeldig',
+    explanation: 'Het beveiligingstoken van uw sessie ontbreekt of is verlopen. Er is niets opgeslagen.',
+    whatNow: 'Herlaad de pagina en probeer opnieuw.',
+  },
+  PUBLICATION_MODE_REQUIRED: {
+    title: 'Doelmodus ontbreekt',
+    explanation: 'Een publicatierun vraagt altijd een expliciete doelmodus; die werd niet meegegeven.',
+  },
+  PUBLICATION_MODE_UNKNOWN: {
+    title: 'Onbekende doelmodus',
+    explanation: 'De meegegeven doelmodus is geen geldige waarde.',
+  },
+  PUBLICATION_MODE_NOT_ENABLED: {
+    title: 'Doelmodus staat dicht',
+    explanation:
+      'Deze fase ondersteunt enkel SIMULATION en schrijft niets naar ProDisWebbase, PSIMPORT of ' +
+      'Pervasive. TRIAL_LIBRARY en PRODUCTION blijven dicht tot het verwerkingscontract bewezen is.',
+  },
+  PUBLICATION_RUN_IN_PROGRESS: {
+    title: 'Er loopt al een publicatierun',
+    explanation: 'Deze bundel heeft al een niet-afgeronde publicatierun; wacht tot die klaar is.',
+    showBackendDetail: true,
+  },
+  BUNDLE_CONTENT_CHANGED_SINCE_FREEZE: {
+    title: 'Inhoud is veranderd sinds het bevriezen',
+    explanation:
+      'De herberekende bundelhash wijkt af van de hash die bij het bevriezen bewaard is; er is niets ' +
+      'gepubliceerd.',
+    whatNow: 'Onderzoek de wijziging voor u deze bundel opnieuw probeert te publiceren.',
+    showBackendDetail: true,
+  },
+  PUBLICATION_RUN_NOT_FOUND: {
+    title: 'Publicatierun niet gevonden',
+    explanation: 'Deze publicatierun bestaat niet (meer).',
+  },
+  PUBLICATION_RUN_ARTIFACT_NOT_AVAILABLE: {
+    title: 'Geen artefact beschikbaar',
+    explanation: 'Deze run draagt geen artefact; enkel een SIMULATED-run heeft er een.',
+  },
+  LOCAL_SOURCE_NOT_CONFIGURED: {
+    title: 'Ontvangstweg niet ingesteld',
+    explanation: 'Deze ontvangstweg is niet ingesteld op deze omgeving.',
+    whatNow: 'Werk gewoon via "Bestand van mijn computer".',
+  },
+  LOCAL_SOURCE_FILE_NAME_INVALID: {
+    title: 'Bestandsnaam ongeldig',
+    explanation: 'De opgegeven bestandsnaam is ongeldig. Dit zou via deze lijst niet mogen gebeuren.',
+  },
+  LOCAL_SOURCE_FILE_NOT_FOUND: {
+    title: 'Bestand niet gevonden',
+    explanation: 'Dit bestand staat niet meer in de servermap.',
+    whatNow: 'Laad de lijst opnieuw.',
+  },
+  LOCAL_SOURCE_FILE_NOT_REGULAR: {
+    title: 'Geen leesbaar bestand',
+    explanation: 'Dit is geen gewoon bestand (bijvoorbeeld een symbolische koppeling of een map).',
+  },
+  LOCAL_SOURCE_FILE_CHANGED: {
+    title: 'Bestand is gewijzigd',
+    explanation: 'Het bestand is gewijzigd terwijl het gelezen werd. Er is niets opgeslagen.',
+    whatNow: 'Probeer opnieuw.',
+  },
+  LOCAL_SOURCE_DIRECTORY_UNAVAILABLE: {
+    title: 'Servermap niet leesbaar',
+    explanation: 'De servermap is momenteel niet leesbaar.',
+    whatNow: 'Probeer later opnieuw.',
     showBackendDetail: true,
   },
 };

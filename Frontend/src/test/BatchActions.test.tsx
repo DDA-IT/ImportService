@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
+import { TEST_IDENTITY } from './testIdentity';
 import type { BatchDetail } from '../api/types';
 import { ACCEPT_BASELINE_CONFIRMATION, BatchActions } from '../features/batches/BatchActions';
 
@@ -52,7 +53,7 @@ describe('BatchActions (B-F2)', () => {
   function renderActions(status = 'SCREENED') {
     const onChanged = vi.fn();
     render(
-      <ActorProvider>
+      <ActorProvider identity={TEST_IDENTITY}>
         <MemoryRouter>
           <BatchActions batch={batch(status)} onChanged={onChanged} />
         </MemoryRouter>
@@ -71,7 +72,6 @@ describe('BatchActions (B-F2)', () => {
   }
 
   function fill(dialog: HTMLElement, reason = 'Nulmeting', typed = ACCEPT_BASELINE_CONFIRMATION) {
-    fireEvent.change(within(dialog).getByLabelText(/Naam/), { target: { value: 'An Beslisser' } });
     fireEvent.change(within(dialog).getByLabelText(/Reden/), { target: { value: reason } });
     fireEvent.change(within(dialog).getByLabelText(/Typ "/), { target: { value: typed } });
   }
@@ -164,7 +164,6 @@ describe('BatchActions (B-F2)', () => {
     expect(submit).toBeDisabled();
 
     fireEvent.change(select, { target: { value: '42' } });
-    fireEvent.change(within(dialog).getByLabelText(/Naam/), { target: { value: 'An Beslisser' } });
     expect(submit).toBeDisabled();
     fireEvent.change(within(dialog).getByLabelText(/Typ "BND-1"/), { target: { value: 'BND-1' } });
     fireEvent.click(submit);

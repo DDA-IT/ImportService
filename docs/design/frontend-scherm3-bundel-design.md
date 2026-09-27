@@ -5,14 +5,20 @@ frontend-blokken van 2026-09-22), `docs/design/fase4-publication-bundle-design.m
 REST-contracten in `Web/src/main/java/be/dda/catalogimport/web/`. Dit is de eerste echte
 frontend-slice; de patronen uit §2 t/m §8 erft elk volgend scherm.
 
+> **Aanvulling na 5-PERM.** Sinds 5-PERM (`docs/design/fase5-perm-design.md`) volgt de foutvolgorde "recht eerst"
+> (§3 daar): 403 `PERMISSION_DENIED` en 503 `PERMISSION_SOURCE_UNAVAILABLE` komen vóór 400/404/409, en
+> `GET /me.permissions` is nu een lijst met effectieve rechten (geen `null`). Schrijfknoppen worden zonder recht
+> uitgeschakeld mét reden (§4 daar). Dit document is verder niet herschreven.
+
 ## 0. Vooraf — wat al vastligt, wat dit ontwerp toevoegt
 
 Vastgelegd en niet ter discussie in dit ontwerp:
 
 - React + Vite + TypeScript, losstaand SPA in `Frontend/`, buiten de Maven-reactor, praat uitsluitend
   via REST/JSON met de `Web`-module (`docs/decisions.md` 22/09 "Frontend: stack en locatie").
-- Vijf schermen; alleen (2) en (3) zijn in beeld, scherm (0)/(1a)/(1b) zijn uitgesteld
-  (22/09 "correctie schermenindeling", "D14", "setup-API productiewaardig maken").
+- Vijf schermen; scherm (0) (werkvoorraad/dashboard) is inmiddels gebouwd (`Frontend/src/features/workqueue`
+  e.a.) — het uitstel uit "D14" is op 2026-09-23 herroepen (zie `docs/decisions.md`). Scherm (1a)/(1b)
+  blijven uitgesteld (22/09 "setup-API productiewaardig maken").
 - De koppelingoverstijgende mutatielijst is een **herbruikbaar component**, geen eigen scherm
   (22/09 "koppelingoverstijgende mutatielijst").
 - `accept-baseline` hoort op scherm (2), niet op scherm (3) (22/09 "plaatsing accept-baseline vs.
@@ -117,7 +123,7 @@ Relevante codes voor dit scherm: `BUNDLE_NOT_FOUND`, `BATCH_NOT_FOUND`, `BATCH_N
 
 ```
 Frontend/
-  vite.config.ts            bestaat; proxy /api → :8081 blijft ongewijzigd
+  vite.config.ts            bestaat; proxy /api → :8081 blijft ongewijzigd (afgeweken door Fase 5-AUTH, zie §20)
   vitest.config.ts          nieuw (F3), of een test-blok in vite.config.ts
   src/
     main.tsx                root + router + ActorProvider
@@ -368,6 +374,10 @@ Eén gedeelde `DataTable` (kolomdefinities als data, geen generieke tabelmotor) 
 backend afdwingt).
 
 ## 7. Fundament — de actor zolang er geen authenticatie is
+
+> **Achterhaald door Fase 5-AUTH (geïmplementeerd).** De handmatige naam, `sessionStorage`-opslag, waarschuwingstekst en het
+> naamveld in de bevestigingsdialoog bestaan niet meer: de actor komt uit `GET /me`. Zie §20 voor de feitelijke stand en
+> `docs/design/fase5-auth-design.md` §6 en §13. De tekst hieronder is de oorspronkelijke motivering.
 
 De backend eist bij elke schrijfactie een naam: `createdBy`, `addedBy`, `removedBy`, `decidedBy`,
 `frozenBy`, `cancelledBy`, en op scherm (2) `acceptedBy`/`uploadedBy`. Validatie: niet leeg, ≤100 tekens,
@@ -843,6 +853,11 @@ Rapport aan de mens na **F5** (fundament af) en na **F10** (het onomkeerbare dee
 
 ## 16. Wat de bestaande backend niet levert voor dit scherm
 
+> **Stand na C1 t/m C7, B1 en §16.5 (geïmplementeerd):** punt 1 (`statusReason`-filter) is gebouwd (C1); punt 2 en 3 zijn
+> vervangen door C2/C3 (zie de tekst); punt 4 (`identityHash`) is gebouwd (C4, filter én veld, en C5 voor de groepsactie);
+> punt 5 (koppelingsnaam) is in de UI opgelost via de bestaande `importLinks`-API (`BundleBatchesTab`), zonder backendwijziging;
+> punt 6 (sortering) is gebouwd in B1. Zie §20. De opsomming hieronder is de oorspronkelijke bevinding.
+
 1. **Geen `statusReason`-filter op de mutatielijst**, terwijl `DecisionFilter` die filter wél aanvaardt.
    Gevolg: het meest bruikbare groepsscenario uit het fase 4-ontwerp ("keur alles goed wat om déze reden
    wachtte", bv. `BULK_PRICE_INCIDENT`) kan in de UI niet getoond en dus niet aangeboden worden.
@@ -1006,3 +1021,54 @@ Aanbeveling **A**, als een aparte backend-commit vóór of na F6.
   waarheid: elke 409 wordt ook afgehandeld wanneer de poort "toegestaan" zei.
 - **A45** Scherm (3) werkt volledig met `catalogimport.setup-api.enabled=false`; koppelingen worden als
   nummer getoond zolang §16.5 niet opgelost is.
+  *(Na de beslissing van 2026-09-24 toont `BundleBatchesTab` de koppelingsnaam via `GET /import-links`; zie §20.)*
+
+## 20. Aanvullingen na C1-C7 en Fase 5-AUTH (geïmplementeerd, mens akkoord op terugschrijven 2026-09-26)
+
+Bron: `Frontend/src`, `Frontend/vite.config.ts`, `docs/decisions.md` (2026-09-23 t/m 2026-09-25) en
+`docs/design/fase5-auth-design.md` §6, §11 en §13. Beschrijft de feitelijke stand waar die afwijkt van §2, §7, §16 en A39-A45.
+
+### 20.1 De actor (vervangt §7)
+- `ActorContext` laadt de geverifieerde identiteit uit `GET /me` (`api/me.ts`). `useActor()` levert `actor` (= username),
+  `subject`, `displayName`, `sessionExpired`, `reauthenticate` en `logout`. Er is geen `setActor`, geen `sessionStorage`-naam
+  en geen `validateActorName` meer (een oude sleutel `catalogimport.actor` wordt bij opstart gewist).
+- `ActorBar` toont "Aangemeld als *displayName* (*username*)" met **Afmelden**; bij een 401 tijdens een actie de melding "Uw
+  sessie is verlopen" met **Opnieuw aanmelden**. De waarschuwing "geen authenticatie" is verdwenen.
+- `ConfirmDialog` toont "U tekent als …" alleen-lezen; `onConfirm` geeft nog steeds `{ actor, reason }`. Het principe
+  "wie tekent, ziet onder welke naam" blijft.
+- De request-DTO's dragen de actorvelden nog (`frozenBy`, `decidedBy`, ...): de SPA stuurt de `/me`-username mee; bij een
+  ander aangemelde gebruiker in een ander tabblad geeft de server 400 `ACTOR_FIELD_MISMATCH` (nieuwe entries in
+  `errors/codes.ts`, samen met `AUTHENTICATION_REQUIRED`, `SYSTEM_ACTOR_FORBIDDEN`, `ACTOR_IDENTITY_INVALID`,
+  `CSRF_TOKEN_INVALID` en `DECISION_FILTER_UNKNOWN_FIELD`).
+- `api/http.ts` zet op elke niet-GET/HEAD-aanroep de header `X-XSRF-TOKEN` (waarde van cookie `XSRF-TOKEN`) en meldt een 401
+  (behalve op `/me`) aan de ActorProvider.
+- Login-redirect: 401 op `/me` bij opstart bewaart het huidige pad in `sessionStorage['catalogimport.returnTo']` en navigeert
+  naar `/oauth2/authorization/keycloak`; een vlag `catalogimport.loginAttempt` voorkomt een lus. `main.tsx` herstelt het pad
+  na de login (`onRestorePath`).
+
+### 20.2 Proxy en bereikbaarheid (wijkt af van §2 en A39)
+- `vite.config.ts` heeft nu drie proxy-entries, `/api`, `/oauth2` en `/login`, alle naar `http://localhost:8081` met
+  `changeOrigin: false`. De Host blijft `localhost:5173`, zodat Spring de OIDC-`redirect_uri` op :5173 bouwt en de callback
+  via de proxy loopt.
+
+> **Important technical constraint discovered** (C10)
+>
+> Met `changeOrigin: true` herschrijft de Vite-proxy de Host naar :8081; Spring bouwt dan de `redirect_uri` op :8081 en na de
+> login kom je op de backend terecht in plaats van in de SPA. OIDC via de devproxy vereist `changeOrigin: false` en
+> proxy-entries voor `/oauth2` en `/login`.
+
+> **Important technical constraint discovered** (C6)
+>
+> De uitspraak in §7 dat `ActorContext` het enige vervangpunt is en geen formulier hoeft te wijzigen, klopte maar
+> gedeeltelijk: `ConfirmDialog` en `ActorBar` wijzigden de naam via `setActor`, `UploadPage`, `BundleBatchesTab` en
+> `CreateBundleForm` riepen `validateActorName` aan, en veertien frontendtests wikkelden `ActorProvider` en typden in het
+> naamveld. Deze onderdelen zijn in 5A-3 aangepast.
+
+### 20.3 Backenduitbreidingen uit §16 (feitelijke stand)
+- C1: `statusReason`-filter op `GET /bundles/{id}/mutations` en `GET /batches/{id}/mutations`.
+- C3: `GET /bundles/{id}/freeze-check` (droogloop, `freeze` blijft de waarheid).
+- C4/C5: `identityHash` op `MutationRow`, als queryparameter op beide mutatielijsten en in de groepsactiefilter.
+- C6: `POST /bundles/{id}/decisions` weigert onbekende velden met 400 `DECISION_FILTER_UNKNOWN_FIELD`.
+- C7: `expirableCount` op `BundleDetail`; `CancelDialog` gebruikt dat veld (`expiringMutations.ts` bestaat niet meer).
+- B1: deterministische sortering op `GET /bundles` en `GET /bundles/{id}/batches`.
+- `BundleBatchesTab` toont de koppelingsnaam via `GET /import-links` (`api/importLinks.ts`), niet `#importLinkId`.

@@ -66,8 +66,11 @@ import org.springframework.transaction.annotation.Transactional;
  * met een leesbare 400 ({@code CONFIG_REQUIRED_BOOKMARK_MISSING}). {@code library_search_supplier_code}
  * is nullable en volgt de bookmarkwaarde rechtstreeks, net als bij materialisatie.
  * <p>
- * Autorisatie volgt in Fase 5; {@code updatedBy} is voorlopig een requestveld met dezelfde regels als
- * {@code acceptedBy}/{@code decidedBy} (A38).
+ * Sinds Fase 5-AUTH (5A-6) tekent de aangemelde gebruiker: de Web-laag roept
+ * {@code CurrentActor.signer(updatedBy, "updatedBy")} aan vóór deze service, {@code updatedBy} is
+ * daardoor een optionele controle geworden, en naast de naam wordt het OIDC-subject bewaard. De oude
+ * {@code String}-vorm van {@link #setValue} blijft bestaan zonder subject ("geen geverifieerde
+ * identiteit") — alleen voor tests en {@code DemoDataSeeder}.
  */
 @Service
 @Transactional
@@ -183,10 +186,23 @@ public class LinkBookmarkValueService {
      * @throws IllegalArgumentException ontbrekende of te lange velden
      */
     public LinkBookmarkValueRow setValue(long linkId, String bookmarkName, String valueText, String updatedBy) {
+        return setValue(linkId, bookmarkName, valueText, ActorIdentity.unverified(updatedBy));
+    }
+
+    /**
+     * Zoals hierboven, met de geverifieerde identiteit van wie wijzigt (Fase 5-AUTH, 5A-6): de naam
+     * komt in {@code import_link_bookmark_value.filled_by} of {@code updated_by}, het subject in
+     * {@code filled_by_subject} respectievelijk {@code updated_by_subject} (changeset 007-4). Bij een
+     * wijziging blijven de eerste invuller én diens subject staan: hij is niet de auteur van deze
+     * wijziging. De Web-laag gebruikt uitsluitend deze overload.
+     */
+    public LinkBookmarkValueRow setValue(long linkId, String bookmarkName, String valueText,
+                                         ActorIdentity actor) {
         ImportLink link = link(linkId);
         String name = ActorNames.requireText(bookmarkName, "bookmarkName", MAX_NAME_LENGTH);
         String newValue = requireValue(valueText);
-        String updater = ActorNames.requireActorName(updatedBy, "updatedBy", MAX_USER_LENGTH);
+        String updater = ActorNames.requireActorName(actor.username(), "updatedBy", MAX_USER_LENGTH);
+        String updaterSubject = actor.subject();
 
         // Het slot van keuze 5, vóór elke inhoudelijke beoordeling.
         if (batches.existsByImportLinkIdAndOpenMarkerIsNotNull(linkId)) {
@@ -207,11 +223,11 @@ public class LinkBookmarkValueService {
                     // De gedenormaliseerde dataType volgt de declaratie waartegen zojuist gevalideerd
                     // is; anders zou de rij een type dragen dat nergens meer bestaat.
                     existing.setDataType(declaration.getDataType());
-                    existing.recordChange(newValue, updater, now);
+                    existing.recordChange(newValue, updater, updaterSubject, now);
                     return existing;
                 })
                 .orElseGet(() -> new ImportLinkBookmarkValue(link, name, declaration.getDataType(), newValue,
-                        updater));
+                        updater, updaterSubject));
         ImportLinkBookmarkValue saved = values.saveAndFlush(stored);
         links.saveAndFlush(link);
         return row(saved, declaration);

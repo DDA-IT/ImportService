@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
+import { TEST_IDENTITY } from './testIdentity';
 import type { BundleDetail, MutationRow } from '../api/types';
 import { BundleMutationsTab } from '../features/bundles/BundleMutationsTab';
 
@@ -97,7 +98,7 @@ function mutationsPage(content: MutationRow[]) {
 
 function renderTab(detail: BundleDetail) {
   return render(
-    <ActorProvider>
+    <ActorProvider identity={TEST_IDENTITY}>
       <MemoryRouter initialEntries={['/bundles/42/mutations']}>
         <Routes>
           <Route
@@ -228,7 +229,6 @@ describe('BundleMutationsTab', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Goedkeuren mutatie 501/ }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.change(within(dialog).getByLabelText(/Naam/), { target: { value: 'An Beslisser' } });
     // Goedkeuren zonder herziening: reden optioneel, bevestigen mag meteen.
     fireEvent.click(within(dialog).getByRole('button', { name: 'Goedkeuren' }));
 
@@ -258,7 +258,6 @@ describe('BundleMutationsTab', () => {
     expect(within(dialog).getByText(/herzien naar goedgekeurd/)).toBeInTheDocument();
     expect(within(dialog).getByText(/Eerdere Beslisser/)).toBeInTheDocument();
 
-    fireEvent.change(within(dialog).getByLabelText(/Naam/), { target: { value: 'An Beslisser' } });
     // Reden verplicht bij een herziening (§10.3), ook al gaat het om goedkeuren.
     expect(within(dialog).getByRole('button', { name: 'Goedkeuren' })).toBeDisabled();
 
@@ -272,7 +271,6 @@ describe('BundleMutationsTab', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Afkeuren mutatie 501/ }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.change(within(dialog).getByLabelText(/Naam/), { target: { value: 'An Beslisser' } });
     expect(within(dialog).getByRole('button', { name: 'Afkeuren' })).toBeDisabled();
 
     fireEvent.change(within(dialog).getByLabelText(/Reden/), { target: { value: 'prijs klopt niet' } });
@@ -303,7 +301,6 @@ describe('BundleMutationsTab', () => {
     renderTab(bundle());
     fireEvent.click(await screen.findByRole('button', { name: /Goedkeuren mutatie 501/ }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.change(within(dialog).getByLabelText(/Naam/), { target: { value: 'An Beslisser' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Goedkeuren' }));
 
     await waitFor(() => expect(within(dialog).getByText(/MUTATION_NOT_DECIDABLE/)).toBeInTheDocument());

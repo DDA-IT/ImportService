@@ -1139,3 +1139,154 @@ realm nodig, met redirect-URI's `http://localhost:8081/login/oauth2/code/keycloa
 > `docs/design/fase4-publication-bundle-design.md` nog niet gedaan (wacht op akkoord van de mens, AGENT.md §5).
 
 **Bron:** denker-zwaar (`Denker: PSIMPORT-projectie ST-13`) / mens (vier keuzes) / Businessanalyse_artikelimport_en_prijsacceptatie-2.md §15.6-15.10 + h.26, docs/decisions.md 2026-09-18, 2026-09-22 en 2026-09-25
+
+## 2026-09-26 — Ontdekkingen teruggeschreven naar de ontwerpdocumenten
+**Vraag:** Mogen de tijdens het bouwen ontdekte regels en constraints (AGENT.md §5) teruggeschreven worden naar de ontwerpdocumenten?
+**Beslissing:** Ja, door de mens goedgekeurd ("Alle 3", 2026-09-26). Uitgevoerd door bouwer-gemiddeld en tegen code gecontroleerd:
+- `docs/design/fase2-screening-design.md` §18 (upload/accept-baseline/continue na 5-AUTH; ontdekkingen C3 en C9; synchrone upload).
+- `docs/design/fase4-publication-bundle-design.md` §16 (PSIMPORT-preview, met de constraint over omschrijving/percentages) en §17 (na 5A-2 en 5A-4).
+- `docs/design/fase5-auth-design.md`: verduidelijking bij A6 (geen subject in domeinantwoorden; `GET /me` geeft het wel) en nieuw §13 (actorvelden optioneel, foutvolgorde 400/403 vóór 404/409, `createDefinition` slaat de tokennaam op, feitelijke frontendstand).
+- `docs/design/frontend-scherm3-bundel-design.md`: nota's bij §7 en §16, nieuw §20 (actor/`/me`/CSRF/login-redirect, proxy met `changeOrigin: false`, ontdekkingen C6 en C10, backendstand).
+- `docs/requirements/catalog-import-acceptance.md`: testinstructies na 5-AUTH (gerichte tests, `scripts/test/run-full-tests.ps1` in eigen schema, Frontend-typecheck met `-p tsconfig.app.json`).
+**Niet teruggeschreven (bewust):** het blok over de WebBase-uitvoerder die lege waarden stil op 0 zet (het bestemde 5-PUB-design bestaat nog niet), en de ontdekkingen uit de 2026-09-23-entry (`identity_hash` niet gemapt, UI-getal "wordt goedgekeurd" versus `countPlanned`, geen handler voor `MaxUploadSizeExceededException`, upload-voortgang niet meetbaar) omdat ze niet tegen de code geverifieerd zijn en geen bestemming noemen.
+**Bron:** mens / bouwer-gemiddeld (`Schrijf ontdekkingen terug naar docs`)
+
+## 2026-09-26 — Vier keuzes uit het beslisdossier: 5-PERM, bundelsnapshot, 5-PUB SIMULATION, credentials
+**Vraag:** Welke richting voor de vier onderdelen die de rest ontgrendelen (beslisdossier van denker-zwaar, 2026-09-26)?
+**Beslissing:** Door de mens beantwoord:
+- **5-PERM = nu bouwen met een lokaal instelbare rechtenbron; de Prodis-adapter (token relay naar `GET /api/account`) is de laatste, losse stap.**
+  Alles behalve die ene adapter is Prodis-onafhankelijk: actiemapping op alle endpoints (read = alle GET; manage = upload/continue/setup/bundel
+  aanmaken en batches; approve = accept-baseline/beslissingen/bevriezen/annuleren), 403 `PERMISSION_DENIED`, `/me.permissions` vullen, knoppen
+  uitgeschakeld-met-reden in de SPA. Rechten worden per verzoek opgehaald (intrekking werkt direct). Fail-closed. De setup-API-vlag blijft naast `.manage`.
+  Nooit via `hasDdaProdisApiBypass()`. Bindend blijven de 2026-09-25-beslissingen Q3/A2.
+- **Bundelsnapshot bij bevriezen:** omschrijving en VKP-percentages worden bij het bevriezen vastgelegd in een eigen snapshottabel (geen extra kolommen
+  op `import_mutation`), zodat een bevroren bundel zelfdragend is en niet van stagingretentie afhangt. Dit is ook de databron voor 5-PUB en voor
+  PSIMPORT-preview slice 2. Kandidaatstaging mag pas worden opgeruimd als de batch terminaal is en buiten elke bundel valt.
+- **5-PUB-a (SIMULATION) mag gebouwd worden:** afleverregister (`publication_run`), uitgaande wachtrij en statusmachine, alleen SIMULATION, hergebruikt de
+  PSIMPORT-projectie; er wordt NIETS naar ProDisWebbase of Pervasive geschreven. 5-PUB-b (TRIAL_LIBRARY) en 5-PUB-c (PRODUCTION) blijven dicht tot het
+  verwerkingscontract (252 IMPORT/1179, ARIMP_DELETE-codes, OUT02) bewezen is.
+- **Credentials voor externe bronnen (SFTP/API): versleutelde opslag bouwen** (eigen versleutelde kolom met sleutelbeheer). De brondocumenten verbieden leesbare
+  opslag, ook tijdelijk; sleutelbeheer (waar leeft de sleutel, rotatie, wie mag ontsleutelen) is een open ontwerpvraag die eerst door een Denker uitgewerkt en
+  aan de mens voorgelegd wordt vóór de Bouwer start. Tot dan: geen server-side ophaling.
+**Bron:** mens (vier keuzes) / denker-zwaar (`Beslisdossier geblokkeerde onderdelen`) / docs/decisions.md 2026-09-22, 2026-09-23, 2026-09-25
+
+## 2026-09-26 — 5-PERM: ontwerp bindend (V1-V4) en bouwvolgorde 5B-1 … 5B-7
+**Vraag:** Vier open keuzes uit het 5-PERM-ontwerp (denker-zwaar): foutvolgorde, rechtenmodel, testlogin, lot van de setup-API-vlag.
+**Beslissing:** `docs/design/fase5-perm-design.md` is bindend. Door de mens beantwoord:
+- **V1 = recht eerst:** 403 `PERMISSION_DENIED` komt vóór 400 `ACTOR_FIELD_MISMATCH` en vóór 404/409 (wijzigt de volgorde in `fase5-auth-design.md` §13.1).
+- **V2 = hiërarchisch (afwijkend van de aanbeveling "plat"):** `approve` impliceert `manage` en `read`; `manage` impliceert `read`. CatalogImport leidt het effectieve recht af uit de
+  ruwe codes van de bron; `GET /me.permissions` geeft de effectieve set. (Gevolg: wie `.approve` seedt krijgt automatisch lees- en beheerrechten.)
+- **V3 = standaardtestlogin krijgt alle drie de rechten:** bestaande testaanroepen blijven ongewijzigd; weigering wordt in gerichte tests met `as(user, READ)` bewezen.
+- **V4 = de setup-API-vlag vervalt (afwijkend van de aanbeveling "blijft tot scherm 1a"):** `catalogimport.setup-api.enabled` en de `@ConditionalOnProperty` op de setup-, template- en linkcontrollers verdwijnen in stap 5B-3,
+  nadat die endpoints hun `MANAGE`/`READ`-annotatie dragen. Dit is een bewuste verwijdering van een config-property (AGENT.md §6) door de mens; `SetupApiDisabledTest` wordt vervangen door
+  tests op 403 zonder recht.
+Overige punten volgen de eerdere bindende beslissingen (lokale `ConfiguredPermissionSource` per username, fail-closed zonder default, geen `hasDdaProdisApiBypass()`, Prodis-adapter als laatste stap 5B-7).
+**Bron:** mens (V1-V4) / denker-zwaar (`Ontwerp 5-PERM rechtenlaag`) / docs/decisions.md 2026-09-25 en 2026-09-26
+
+## 2026-09-26 — Herroeping van V4: de setup-API-vlag blijft als echte beveiliging
+**Vraag:** De vorige entry ("5-PERM: ontwerp bindend (V1-V4)") liet de vlag `catalogimport.setup-api.enabled` vervallen (V4). Blijft dat zo?
+**Beslissing:** Nee. Door de mens herroepen ("Setup vlag toch als echte beveiliging, ik heb me bedacht"). **V4 uit de vorige entry is vervangen:** de vlag en de
+`@ConditionalOnProperty` op `CatalogImportSetupController`, `CatalogImportTemplateController` en `CatalogImportLinkController` blijven bestaan en gelden als tweede, onafhankelijke
+beveiliging naast `MANAGE`/`READ`. Vlag uit = die endpoints bestaan niet (404, ongeacht rechten); vlag aan = recht vereist (403 `PERMISSION_DENIED` zonder). Er wordt dus géén config-property
+verwijderd, `SetupApiDisabledTest` blijft, en de vlag verdwijnt niet uit `application*.yml`, README en handleiding. V1, V2 (hiërarchisch) en V3 uit de vorige entry blijven ongewijzigd.
+`docs/design/fase5-perm-design.md` §5 en de rij 5B-3 zijn aangepast; 5B-1 (al gebouwd) was hierdoor niet geraakt.
+**Bron:** mens / docs/design/fase5-perm-design.md
+
+## 2026-09-26 — 5-PUB (deel a): ontwerp bindend (bundelsnapshot en SIMULATION-run) en bouwvolgorde 5P-1 … 5P-8
+**Vraag:** Vier open keuzes uit het ontwerp voor de bundelsnapshot en 5-PUB-a: hash, oude bundels, artefactopslag, annuleren.
+**Beslissing:** `docs/design/fase5-pub-design.md` is bindend. Door de mens beantwoord (alle vier conform aanbeveling):
+- **Hash:** `publication_bundle.content_hash` blijft byte-identiek voor alle bundels; de snapshot krijgt een aparte `snapshot_hash` (+ `snapshot_spec_version`). Bestaande bundels houden `snapshot_hash = null`.
+- **Oude bundels:** geen automatische backfill. Een SIMULATION-run mag op een bundel zonder snapshot draaien, met zichtbare onvolledigheid (`incompleteRowCount > 0`, preview toont `NOT_SNAPSHOTTED`); niets wordt stil ingevuld of op 0 gezet.
+- **Artefact:** op het bestandssysteem via een `PublicationArtifactStore` (patroon `DeliveryArchiveStore`), SHA-256 en grootte in de database, de bytes nooit in de database.
+- **Annuleren:** een geslaagde SIMULATION-run blokkeert het annuleren van de bundel niet; de runs blijven als auditspoor.
+Overig volgt uit eerdere bindende beslissingen: recht APPROVE voor het starten van een run (A2, 2026-09-25); TRIAL_LIBRARY/PRODUCTION geven altijd 409 `PUBLICATION_MODE_NOT_ENABLED`; staging zonder snapshot blokkeert het bevriezen
+(`SNAPSHOT_SOURCE_MISSING`); de opruiming van staging wordt nu alleen als regel + read-only guard vastgelegd. Er wordt niets naar ProDisWebbase, PSIMPORT of Pervasive geschreven.
+**Bron:** mens (vier keuzes) / denker-zwaar (`Ontwerp bundelsnapshot en 5-PUB-a`) / docs/decisions.md 2026-09-25 en 2026-09-26
+
+## 2026-09-26 — 5-PUB (deel a) uitgevoerd: bundelsnapshot en SIMULATION-run (5P-1 t/m 5P-8)
+**Vraag:** Is de uitvoering van het bindende ontwerp `docs/design/fase5-pub-design.md` afgerond en geverifieerd?
+**Beslissing:** Ja. Alle acht stappen zijn gebouwd; de volledige Web-ronde (`scripts/test/run-full-tests.ps1`, eigen schema) is groen: 92 klassen, 1086 tests, 0 fouten. Wat er nu bestaat: snapshottabellen (008) gevuld bij bevriezen met `SNAPSHOT_SOURCE_MISSING`-blokkade en
+een aparte `snapshot_hash` (`content_hash` byte-identiek); PSIMPORT-preview slice 2 (omschrijving/VKP-percentages uit de snapshot, `NOT_SNAPSHOTTED` voor oude bundels); een read-only retentieguard (alleen `FAILED`/`BASELINE_ACCEPTED`; er is geen delete); `publication_run` (009) met statusmachine
+`REQUESTED → PREPARING → SIMULATED|FAILED` en de database-afgedwongen uitzondering van hoogstens één actieve run per bundel; `PublicationRunService` + `PublicationArtifactStore` (artefact op het bestandssysteem, SHA-256 in de database); vier endpoints
+(POST = APPROVE, drie GET's = READ). Er wordt NIETS naar ProDisWebbase, PSIMPORT of Pervasive geschreven; TRIAL_LIBRARY en PRODUCTION geven altijd 409 `PUBLICATION_MODE_NOT_ENABLED`. Afwijkingen en ontdekkingen staan in `fase5-pub-design.md` §7 (o.a. de constraintfout `= true` versus `is true`, de
+guard die strenger is dan `isTerminal()`, en het risico van een vastgelopen `PREPARING`-run zonder recovery). Nog open: 5-PUB-b/c (geblokkeerd op het verwerkingscontract), herstel van vastgelopen runs, Frontend (foutcodes + scherm voor runs), versleutelde credentials (eerst een sleutelbeheerontwerp).
+**Bron:** hoofdsessie na verificatie (volledige testronde) / docs/design/fase5-pub-design.md
+
+## 2026-09-26 — Ontbrekende valuta = euro (herziening van aanname A22)
+**Vraag:** Wat gebeurt er als een levering geen valuta bevat? Tot nu gold aanname A22 ("nooit stilzwijgend EUR veronderstellen": munt blijft `null` = onbekend, rij onvolledig).
+**Beslissing:** Door de mens gewijzigd: als er geen valuta aanwezig is, **wordt uitgegaan van de euro**. Keuzes:
+- **Toepassing bij het verwerken van de levering (screening/normalisatie):** zonder muntveld en zonder waarde wordt `EUR` vastgelegd, zodat mutaties, bundels, snapshot, preview en run overal dezelfde munt zien en de onvolledigheid door een ontbrekende valuta verdwijnt.
+- **Zichtbaar markeren:** naast de munt komt een herkomst (uit de bron versus standaard `EUR`), zodat een aangenomen euro altijd herkenbaar en later te onderscheiden blijft. Het aannemen is dus een expliciete, gedocumenteerde standaardregel en geen stille aanpassing (AGENT.md §2 principe 8).
+- **Vaste variabele per import (toevoeging mens):** het is ook aanvaardbaar dat de valuta als vaste instelling van de import wordt meegegeven. Interpretatie van de hoofdsessie ("prijs" gelezen als "valuta"; nog door de mens te bevestigen): een importdefinitierevisie kan een vaste valuta dragen die geldt wanneer de bron geen munt levert, met `EUR` als standaard als ook die ontbreekt.
+- **Compatibiliteit:** de munt zit in `price_fingerprint`; de wijziging vereist daarom een aparte canonicalisatieversie (patroon van versie 2 naast 1), zodat bestaande bronstaat en bevroren bundels geen valse wijzigingen of een gewijzigde `content_hash` krijgen. Het ontwerp hiervoor volgt van een Denker.
+**Bron:** mens / eerdere regel: aanname A22 in `CandidateNormaliser` (Service) en de PSIMPORT-preview-beslissing van 2026-09-25 (`base_price_currency = null` gaf `UNKNOWN`)
+
+## 2026-09-26 — Valuta-standaard: ontwerp bindend (per koppeling, geen versiebump, geen backfill) en bouwvolgorde V-1 … V-7
+**Vraag:** Drie open keuzes uit het ontwerp voor "ontbrekende valuta = euro": waar de vaste valuta wordt ingesteld, hoe bestaande vingerafdrukken compatibel blijven, en wat met bestaande gegevens.
+**Beslissing:** `docs/design/valuta-standaard-design.md` is bindend. Door de mens beantwoord:
+- **V1 = per koppeling (leverancier), niet per revisie (afwijkend van de aanbeveling):** de vaste valuta staat op `import_link.default_currency` en wordt bij het aanmaken van de koppeling vastgelegd; ze zit niet in de revisiehash. Dit vervangt de "revisie-instelling" uit de vorige entry.
+- **V2 = geen canonicalisatieversie 3:** een aangenomen `SYSTEM_DEFAULT`-euro wordt in de vingerafdruk met de bestaande "niet gemapt"-marker (U+0000) geschreven; bestaande revisies houden byte-identieke hashes. Dit vervangt de zin "aparte canonicalisatieversie nodig" in de vorige entry, omdat een versiebump ook de identiteit van elke aanbieding verandert
+  (massa-CREATE) en bestaande bronstaat niet te migreren is. Versie 3 blijft gereserveerd.
+- **V3 = geen backfill:** bestaande rijen zonder valuta blijven `null`/onbekend en convergeren bij de volgende aanvaarding; bevroren bundels (`content_hash`, `snapshot_hash`) veranderen niet.
+- Herkomst zichtbaar: `SOURCE`, `LINK_DEFAULT` of `SYSTEM_DEFAULT` (kolom `base_price_currency_origin`); een ongeldige bronwaarde blijft blokkeren en wordt nooit stil vervangen door EUR.
+**Bron:** mens (V1-V3) / denker-zwaar (`Ontwerp standaardvaluta EUR`) / docs/decisions.md 2026-09-26 ("Ontbrekende valuta = euro")
+
+## 2026-09-26 — Valuta-standaard teruggebracht tot het minimum (V-3, V-5 herkomstveld en V-6 vervallen)
+**Vraag:** De valuta wijzigt per koppeling nooit per import; is het uitgebreide ontwerp (herkomst doorschrijven naar bronstaat en mutatie, herkomstveld in preview en run, Frontend-weergave) nodig?
+**Beslissing:** Nee, door de mens teruggebracht ("dit duurt lang voor 1 veldje, dit zal nooit wijzigen per import"). Blijft: V-1 (schema `010`) en V-2 (normaliser: bronveld, dan vaste valuta van de koppeling, dan EUR; ongeldige bronwaarde blijft verwerpen; vingerafdrukken byte-identiek via de bestaande marker; delta-correcties in `domainMask` en `componentDiffers`), plus V-4 (vaste valuta bij het aanmaken van een koppeling)
+en V-7 (documentatie). **Vervallen:** V-3 (herkomst doorschrijven naar `catalog_source_state` en `import_mutation`), het herkomstveld `BASE_PRICE_CURRENCY_ORIGIN` in preview/run en de `previewSpecVersion`-ophoging daarvoor (V-5), en de Frontend-weergave (V-6). De reeds aangemaakte kolommen `base_price_currency_origin` op `catalog_source_state` en
+`import_mutation` blijven ongebruikt (`null`); `import_candidate_stage.base_price_currency_origin` wordt door V-2 nog wel gevuld en de `domainMask`-correctie leunt daarop. De eerdere keuze "herkomst zichtbaar markeren" geldt daardoor alleen nog op de staging; een aangenomen euro is in mutaties en preview niet meer van een geleverde te onderscheiden. Bewust aanvaard.
+**Bron:** mens / docs/design/valuta-standaard-design.md (§7 herzien)
+
+## 2026-09-27 — Vervolgprioriteit na 5-PUB-a/valuta: eerst statusdocumenten gelijktrekken, externe blokkades vastleggen
+**Vraag:** Er is geen lopende onafgeronde bouwvolgorde meer. Een denker-zwaar gap-analyse (27/09) leverde vier gelijkwaardige kandidaten op om nu op te pakken: (a) Frontend voor de publicatierun + herstel van een vastgelopen `PREPARING`-run, (b) heropenen van het uitstel van scherm 1a/1b en het D14-vervolg (behandelgeval/toewijzing) — de voorwaarde "tot na Fase 5/Keycloak" is inmiddels vervuld, (c) sleutelbeheerontwerp voor versleutelde credentials, (d) enkel de achterhaalde statusdocumenten bijwerken.
+**Beslissing:** Door de mens: eerst optie (d) — geen nieuwe bouw, enkel de documenten die de gap-analyse als materieel achterhaald aanmerkte gelijktrekken met de werkelijke codestatus:
+- `docs/analysis/current-project-vs-businessanalyse-2.md` (T1: onderschat wat er staat — authenticatie/autorisatie, publicatiebundel-besluit en Frontend-dashboard/UI zijn wél gebouwd; T2: het acceptance-document ten onrechte als "niet langer actueel" aangemerkt).
+- `docs/requirements/catalog-import-acceptance.md` r.33 (T3: vermeldt nog het niet-werkende `mvn -pl Web -am test` naast de latere §35/§53-aanvulling die het juiste, geïsoleerde testcommando geeft).
+- `README.md` r.34-36 (T5: "Nog niet aanwezig" maakt geen onderscheid tussen 5-PUB-a — wél gebouwd — en 5-PUB-b/c — niet gebouwd; de publicatierun ontbreekt bovendien volledig in `docs/handleiding/`).
+- `docs/design/frontend-scherm3-bundel-design.md` r.19 (T6: noemt scherm 0 nog als uitgesteld, terwijl het gebouwd is en het uitstel op 2026-09-23 al herroepen werd).
+- `docs/design/valuta-standaard-design.md` r.58 (V-7: documentatiestatus "In uitvoering" afronden of expliciet openstaand laten staan).
+Daarnaast worden de vijf externe blokkades uit de gap-analyse (Keycloak-client + redirect-URI's, audience/permissierechten in Prodis voor 5B-7, het verwerkingscontract 252 IMPORT/1179 + OUT02, adapterplaats/controlebibliotheek Pervasive, ERP-datasetinventaris D11) vastgelegd in een apart overzicht `docs/openstaande-externe-punten.md`, zodat ze niet verloren gaan terwijl de mens ze extern uitzet. De overige drie kandidaten (a, b, c) blijven openstaande, nog te maken keuzes — geen van drie is hiermee verworpen.
+**Bron:** mens / denker-zwaar (gap-analyse "wat moet er nog gebeuren", 2026-09-27)
+
+## 2026-09-27 — Ontwerp bindend: Frontend publicatierun (SIMULATION) op scherm (3)
+**Vraag:** Kandidaat (a) uit de vorige entry ("Frontend voor de publicatierun") is door de mens nu gekozen ("Frontendpublicatie run wil ik nu"). Hoe wordt dit toegevoegd aan het bestaande bundelscherm, bovenop het al vastliggende, geteste backend-contract van 5-PUB-a (`docs/design/fase5-pub-design.md`)?
+**Beslissing:** Het ontwerp van denker-gemiddeld (27/09) is bindend, geen §6-criterium geraakt (zuiver additief op een vastliggend contract):
+- **Locatie:** nieuwe tab "Publicatie" naast Overzicht/Leden/Mutaties/Beslissingen op scherm (3) (`BundlePublicationTab.tsx`, route `.../publication`, `BundleDetailPage.tsx`). Altijd zichtbaar; buiten `FROZEN` een uitleg i.p.v. de actie.
+- **Starten:** knop "Simulatierun starten", `withPermission(approveGate, publicationRunGate(...))` — nieuwe pure gate-functie in `bundlePolicy.ts` (niet-FROZEN → denied; al een actieve `REQUESTED`/`PREPARING`-run → denied). Geen `ConfirmDialog`: een SIMULATION-run heeft geen operationeel effect (`writesToProdis: false`), dus een gewone actieknop met inline melding volstaat.
+- **Statusweergave:** `POST /bundles/{id}/publication-runs` is **synchroon** (bevestigd in `PublicationRunController`-javadoc) — geen polling nodig, het antwoord is al de terminale status (`SIMULATED`/`FAILED`). Runlijst (`GET .../publication-runs`) is de audittrail, alleen-lezen, geen paginering (platte lijst).
+- **Niet-contractuele aard zichtbaar:** vaste banner ("niet-contractuele simulatie, contractStatus UNVERIFIED_FIELD_INVENTORY, writesToProdis: false"); `rowCount`/`incompleteRowCount` per run met de bestaande "null → —, nooit 0"-conventie.
+- **Resultaat:** `artifactSha256` (kopieerknop) + `artifactByteSize`; downloadlink als gewone `<a>` (geen `fetch`, want CSV-antwoord + sessiecookie) naar zowel het runartefact als de bestaande PSIMPORT-preview-CSV. Vereist één kleine additieve wijziging: `apiUrl()` exporteren uit `api/http.ts` (was intern). Bij `FAILED`: `failureCode`/`failureMessage` als platte tekst.
+- **Foutcodes (`errors/codes.ts`):** zes nieuwe entries (`PUBLICATION_MODE_REQUIRED`, `PUBLICATION_MODE_UNKNOWN`, `PUBLICATION_MODE_NOT_ENABLED`, `PUBLICATION_RUN_IN_PROGRESS`, `BUNDLE_CONTENT_CHANGED_SINCE_FREEZE`, `PUBLICATION_RUN_NOT_FOUND`, `PUBLICATION_RUN_ARTIFACT_NOT_AVAILABLE`) + de bestaande `BUNDLE_NOT_FROZEN`-uitleg verbreden (tekstwijziging, geen contractwijziging: geldt nu voor zowel PSIMPORT-preview als publicatierun).
+- **Kleinste verticale slice (nu te bouwen):** `api/types.ts` (nieuwe DTO's), `api/publicationRuns.ts` (requestRun/listRuns/getRun, geen artefact-fetch), `api/http.ts` (`apiUrl()`), `bundlePolicy.ts` (`publicationRunGate`), `errors/codes.ts`, `BundlePublicationTab.tsx`, `routes.tsx`+`BundleDetailPage.tsx`, tests (`bundlePolicy.test.ts`-uitbreiding + nieuwe `BundlePublicationTab.test.tsx` naar het patroon van `BundleMutationsTab.test.tsx`).
+- **Bewust nog niet nu:** automatisch pollen (niet nodig, POST is synchroon; pas relevant bij een hersteltraject voor de vastgelopen-`PREPARING`-edge case, dat is een aparte, nog niet genomen backendbeslissing), een volwaardige PSIMPORT-previewpagina (nu enkel downloadlink), TRIAL_LIBRARY/PRODUCTION-keuze in de UI (blijft dicht zolang 5-PUB-b/c niet gebouwd is; UI biedt hardcoded enkel SIMULATION aan).
+**Bron:** mens (keuze kandidaat) / denker-gemiddeld (ontwerp "Frontend publicatierun", 2026-09-27) / docs/design/fase5-pub-design.md, docs/design/frontend-scherm3-bundel-design.md
+
+## 2026-09-27 — Ontwerp bindend: tweede ontvangstweg — levering inlezen uit een beheerde servermap
+**Vraag:** De mens wil een tweede, handmatig getriggerde manier om een levering in te lezen, naast de browser-upload: "Dit zal jaarlijkse bestanden zijn van leveranciers die dat doormailen. Een gebruiker zal dit eerst uploaden op de server en vervolgens kan die worden ingelezen." Geen scheduler, geen polling, geen credentials — een mens plaatst het bestand handmatig buiten CatalogImport om, en triggert daarna handmatig het inlezen. Hoe wordt dit gebouwd zonder het grotere, nog niet vrijgegeven `Leveringsconfiguratie`/scheduler/connectormodel uit de businessanalyse (§14.17) te bouwen?
+**Beslissing:** Het ontwerp van denker-zwaar (27/09) is bindend. Harde ontwerpgrens: geen `Leveringsconfiguratie`-entiteit, geen acquisitieservice, geen scheduler — één configuratieproperty en hergebruik van de bestaande, al bron-agnostische `DeliveryIntakeService`/`DeliveryArchiveStore` (AGENT.md §0 "nooit een parallelle architectuur").
+
+**Twee keuzes door de mens beantwoord (beide aanbevolen optie):**
+- **Q1 — deliveryReference-afleiding = optie A:** de server hasht het bronbestand zelf (SHA-256, streaming) en leidt dezelfde referentie af als de browser vandaag al doet (`Frontend/src/features/upload/deliveryReference.ts`: bestandsnaam ingekort tot 177 tekens + `#` + eerste 12 hex, max. 190 tekens), onder hetzelfde `manual:`-sleutelvoorvoegsel. Gevolg: hetzelfde bestand via browser óf servermap wordt als dezelfde levering herkend (200 idempotente retry i.p.v. een dubbele levering). Kost één extra leespas vóór de intake; grootte/wijzigingstijd worden vóór de hashpas vastgelegd en vlak vóór de intake-stream herchecked — gewijzigd tussenin → 409 `LOCAL_SOURCE_FILE_CHANGED`, niets geregistreerd. Client mag een eigen referentie meegeven (override).
+- **Q2 — herkomst permanent auditeerbaar = optie 1:** nieuwe kolom `delivery.source_kind varchar(20) not null default 'UPLOAD'` (Liquibase-changeset) + nieuwe waarde `LOCAL_DIRECTORY`, mee in `DeliveryView`. Bestaande rijen krijgen terecht `UPLOAD`.
+
+**Implementatiekeuzes (denker-zwaar, geen §6-impact, gemotiveerd volgens bestaande conventies):**
+- **D1** Eén property `catalogimport.local-source.directory`, optioneel zonder default (patroon `catalogimport.archive.root`); één gedeelde map voor alle leveranciers — de gebruiker kiest de taak al zoals vandaag, enkel de bronkeuze van het bestand verandert.
+- **D2** Property niet gezet ⇒ beide endpoints geven 404 `LOCAL_SOURCE_NOT_CONFIGURED` (zelfde patroon als `catalogimport.setup-api.enabled`); ±30 bestaande testklassen met `@DynamicPropertySource` hoeven niet aangepast.
+- **D3** Bij opstart met een gezette property: pad moet bestaan, een map zijn, leesbaar zijn, en niet overlappen met `catalogimport.archive.root` — anders `IllegalStateException` bij opstart, niet pas bij gebruik.
+- **D4** Nieuwe Service-klasse `LocalSourceDirectory` (spiegel van `DeliveryArchiveStore`: eigen root, containment-check, streaming, `list`/`stat`/`open`/`sha256Hex`). Geen nieuwe abstractielaag.
+- **D5** Beide nieuwe endpoints in de bestaande `CatalogImportDeliveryController` (hergebruikt `UploadResponse`/`screen(batchId)`-orkestratie), geen nieuwe controller.
+- **D6** `DeliveryIntakeService` blijft ongewijzigd — aangeroepen met een `InputStream` op het bronbestand, exact zoals vandaag met de multipart-stream.
+- **D7** Na het inlezen blijft het bronbestand ongemoeid (geen move/delete): de bytes zijn al onveranderlijk gearchiveerd, het OS-account van de app krijgt enkel leesrecht, en herhaald inlezen van hetzelfde bestand is via Q1-A al veilig idempotent. Opruimen is een operatortaak.
+- **D8** Lijst-endpoint vereist `MANAGE` (niet `READ`) — least privilege, want het onthult serverdirectory-inhoud.
+- **D9** Vlakke map, geen recursie/submappen/extensiefilter in slice 1.
+- **Additieve contractwijziging:** `UploadResponse` krijgt een nieuw veld `deliveryReference` (bestaande consumenten breken niet — puur additief).
+
+**Beveiliging (verplicht in slice 1, AGENT.md-instructie om OWASP-kwetsbaarheden te vermijden):** kale bestandsnaam van de client, nooit een pad (weiger `/`,`\`,`:`,NUL, `..`, controle­tekens, absolute/drive-paden); whitelist-resolutie door de map te lijsten en op exacte naam te matchen (geen padconcatenatie met clientinvoer); `toRealPath()`-containmentcheck tegen `catalogimport.local-source.directory` (defence in depth, symlink-bewust); symlinks altijd geweigerd (409); geen absoluut pad ooit in een API-respons of foutboodschap (enkel bestandsnaam; volledig pad alleen in de serverlog); streaming, nooit het bestand in het geheugen; beide endpoints toegevoegd aan de bestaande rechten-regressietests (`PermissionWriteEndpointsHttpTest`, `PermissionReadEndpointsHttpTest`).
+
+**Endpoints:** `GET /api/catalog-import/local-source/files` (MANAGE; lijst met `fileName`/`byteSize`/`lastModifiedAt`, gesorteerd meest-recent-eerst, cap 500 + `truncated`, geen absoluut pad) en `POST /api/catalog-import/tasks/{taskId}/deliveries/local-source` (MANAGE; body `fileName` + optioneel `deliveryReference`/`uploadedBy`/`expectedRecordCount`/`expectedByteSize`; zelfde foutcodes/volgorde als de bestaande upload, plus `LOCAL_SOURCE_NOT_CONFIGURED`/`LOCAL_SOURCE_FILE_NOT_FOUND`/`LOCAL_SOURCE_FILE_NOT_REGULAR`/`LOCAL_SOURCE_FILE_CHANGED`/`LOCAL_SOURCE_FILE_NAME_INVALID`/`LOCAL_SOURCE_DIRECTORY_UNAVAILABLE`). Synchrone screening in hetzelfde verzoek, zoals vandaag.
+
+**Kleinste verticale slice(s):** Slice 1 (backend, nu te bouwen — raakt Domain+Liquibase+Service+Web door Q2, dus `bouwer-zwaar`): property, `LocalSourceDirectory`, beide endpoints, `source_kind`-changeset, rechten-regressietests, nieuwe testklassen `LocalSourceDeliveryTest`/`LocalSourceDisabledTest` met een volledige traversal-/symlinkbatterij. Slice 2 (frontend, sequentieel na slice 1: bronkeuze op `UploadPage.tsx`, `api/localSource.ts`) volgt apart, geen UI nu.
+
+**Bewust nog niet:** bestandsvoorwaarden/voorwaardebouwer, per-koppeling-mappen, submappen, automatisch opruimen/verplaatsen, "minstens N seconden ongewijzigd"-versheidsfilter, en het volledige `Leveringsconfiguratie`+scheduler+connectormodel.
+**Bron:** mens (Q1, Q2) / denker-zwaar (ontwerp "tweede ontvangstweg — lokale servermap", 2026-09-27) / businessanalyse-catalogimport.md §9.1, business-analyse-leveranciersbibliotheken.md §14.17

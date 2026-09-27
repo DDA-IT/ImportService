@@ -46,6 +46,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,9 +60,15 @@ import org.springframework.transaction.annotation.Transactional;
  * uitproberen.
  * <p>
  * <b>Veiligheid — lees dit vóór u ze aanzet.</b> De bijhorende REST-laag staat standaard <b>uit</b>
- * ({@code catalogimport.setup-api.enabled}, default {@code false}). Er is nog geen authenticatie
- * (Fase 5): wie de setup-API kan bereiken, kan een importdefinitie en haar drempels bepalen en dus de
- * controle op een catalogus uitschakelen. Zet ze daarom nooit aan in een omgeving met echte gegevens.
+ * ({@code catalogimport.setup-api.enabled}, default {@code false}). Sinds Fase 5-AUTH (5A-1) vereist ze
+ * bovendien een login, en de vlag blijft een extra bescherming daarbovenop (A12): wie de setup-API kan
+ * bereiken, kan een importdefinitie en haar drempels bepalen en dus de controle op een catalogus
+ * uitschakelen. Zet ze daarom nooit aan in een omgeving met echte gegevens.
+ * <p>
+ * <b>Wie tekent (5A-6).</b> Elke schrijfmethode hieronder heeft naast haar bestaande {@code String}-vorm
+ * een overload met {@link ActorIdentity}. De Web-laag gebruikt uitsluitend die overload en bewaart naam
+ * én OIDC-subject; de oude {@code String}-vorm bewaart enkel de naam en laat het subject {@code null}
+ * ("geen geverifieerde identiteit") — alleen voor tests en {@code DemoDataSeeder}.
  * <p>
  * <b>Wat deze service níét doet.</b> Ze voegt geen enkele businessregel toe. Ze bewaart precies de
  * velden die het model al kent, laat de bestaande validatie het werk doen
@@ -85,6 +92,8 @@ public class SetupService {
 
     /** {@code source_organisation.code}, {@code import_definition.code}, {@code import_link.code}. */
     private static final int MAX_CODE_LENGTH = 50;
+    /** Zelfde vorm als PriceRules.ISO_4217 (private daar): exact drie hoofdletters. */
+    private static final Pattern LINK_CURRENCY_SHAPE = Pattern.compile("[A-Z]{3}");
     /** {@code name}/{@code description} van organisatie, definitie, koppeling en taak. */
     private static final int MAX_NAME_LENGTH = 200;
     /** {@code import_link.library_code}. */
@@ -153,7 +162,8 @@ public class SetupService {
     }
 
     public record CreateLinkCommand(Long definitionId, String code, String name, String supplierCode,
-                                    String libraryCode, String librarySearchSupplierCode) {
+                                    String libraryCode, String librarySearchSupplierCode,
+                                    String defaultCurrency) {
     }
 
     /** De taak is altijd {@link TaskTriggerType#MANUAL}: alleen daarop is een upload toegelaten. */
@@ -191,7 +201,7 @@ public class SetupService {
     }
 
     public record LinkView(long id, String code, String name, long definitionId, String supplierCode,
-                           String libraryCode, boolean active) {
+                           String libraryCode, boolean active, String defaultCurrency) {
     }
 
     public record TaskView(long id, long linkId, String name, String triggerType, boolean active,
@@ -281,6 +291,16 @@ public class SetupService {
      * @throws IllegalArgumentException ontbrekende of te lange velden
      */
     public DefinitionView createDefinition(CreateDefinitionCommand command) {
+        return createDefinition(command, ActorIdentity.unverified(DEFAULT_CREATED_BY));
+    }
+
+    /**
+     * Zoals hierboven, met de geverifieerde identiteit van wie aanmaakt (Fase 5-AUTH, 5A-6): de naam
+     * komt in {@code import_definition.created_by} — waar zonder login {@code setup-api}
+     * staat — en het subject in {@code created_by_subject}. De Web-laag gebruikt uitsluitend deze
+     * overload; het verzoek draagt hier geen actorveld, dus er valt niets te vergelijken.
+     */
+    public DefinitionView createDefinition(CreateDefinitionCommand command, ActorIdentity actor) {
         String code = requireText(command.code(), "code", MAX_CODE_LENGTH);
         String name = requireText(command.name(), "name", MAX_NAME_LENGTH);
         SourceOrganisation organisation = organisation(command.sourceOrganisationCode());
@@ -288,7 +308,9 @@ public class SetupService {
             throw new ConflictException("DEFINITION_CODE_IN_USE", "Definition code '" + code
                     + "' already exists for source organisation '" + organisation.getCode() + "'");
         }
-        ImportDefinition definition = new ImportDefinition(organisation, code, name, DEFAULT_CREATED_BY);
+        ImportDefinition definition = new ImportDefinition(organisation, code, name,
+                requireText(orDefault(actor.username(), DEFAULT_CREATED_BY), "createdBy", MAX_USER_LENGTH));
+        definition.setCreatedBySubject(actor.subject());
         if (command.usageType() != null) {
             definition.setUsageType(command.usageType());
         }
@@ -304,6 +326,18 @@ public class SetupService {
      * @throws IllegalArgumentException ontbrekende of ongeldige velden
      */
     public RevisionView createRevision(long definitionId, CreateRevisionCommand command) {
+        return createRevision(definitionId, command, ActorIdentity.unverified(command.createdBy()));
+    }
+
+    /**
+     * Zoals hierboven, met de geverifieerde identiteit van wie aanmaakt (Fase 5-AUTH, 5A-6): de naam
+     * komt in {@code import_definition_revision.created_by}, het subject in {@code created_by_subject}.
+     * De naam uit {@code command.createdBy()} wordt hier <b>niet</b> gebruikt — de Web-laag heeft dat
+     * veld al met de aangemelde gebruiker vergeleken (400 {@code ACTOR_FIELD_MISMATCH}) en bewaart
+     * altijd de token-spelling.
+     */
+    public RevisionView createRevision(long definitionId, CreateRevisionCommand command,
+                                       ActorIdentity actor) {
         ImportDefinition definition = definitions.findById(definitionId)
                 .orElseThrow(() -> new NotFoundException("DEFINITION_NOT_FOUND",
                         "Import definition " + definitionId + " does not exist"));
@@ -313,8 +347,9 @@ public class SetupService {
                 .mapToInt(ImportDefinitionRevision::getRevisionNumber).max().orElse(0) + 1;
 
         ImportDefinitionRevision revision = new ImportDefinitionRevision(definition, revisionNumber,
-                identityKind, requireText(orDefault(command.createdBy(), DEFAULT_CREATED_BY), "createdBy",
+                identityKind, requireText(orDefault(actor.username(), DEFAULT_CREATED_BY), "createdBy",
                 MAX_USER_LENGTH));
+        revision.setCreatedBySubject(actor.subject());
         revision.setIdentitySupplierField(
                 requireText(command.supplierField(), "supplierField", MAX_FIELD_REFERENCE_LENGTH));
         revision.setIdentitySupplierGroupField(
@@ -430,6 +465,15 @@ public class SetupService {
      * @throws IllegalArgumentException een {@code CONFIG_*}-fout in de configuratie
      */
     public RevisionView activateRevision(long revisionId, String approvedBy) {
+        return activateRevision(revisionId, ActorIdentity.unverified(approvedBy));
+    }
+
+    /**
+     * Zoals hierboven, met de geverifieerde identiteit van wie activeert (Fase 5-AUTH, 5A-6): de naam
+     * komt in {@code import_definition_revision.approved_by}, het subject in
+     * {@code approved_by_subject}. De Web-laag gebruikt uitsluitend deze overload.
+     */
+    public RevisionView activateRevision(long revisionId, ActorIdentity actor) {
         ImportDefinitionRevision revision = revision(revisionId);
         if (revision.getStatus() == RevisionStatus.ACTIVE) {
             throw new ConflictException("REVISION_NOT_ACTIVATABLE",
@@ -450,8 +494,11 @@ public class SetupService {
         });
         revision.setStatus(RevisionStatus.ACTIVE);
         revision.setApprovedAt(Instant.now());
-        revision.setApprovedBy(requireText(orDefault(approvedBy, DEFAULT_CREATED_BY), "approvedBy",
+        revision.setApprovedBy(requireText(orDefault(actor.username(), DEFAULT_CREATED_BY), "approvedBy",
                 MAX_USER_LENGTH));
+        // Naam en subject altijd samen: ck_import_definition_revision_approved_subject weigert een
+        // subject zonder naam.
+        revision.setApprovedBySubject(actor.subject());
         return view(revisions.saveAndFlush(revision));
     }
 
@@ -463,6 +510,15 @@ public class SetupService {
      * @throws IllegalArgumentException een {@code CONFIG_*}-fout in de configuratie
      */
     public MappingView addMapping(long revisionId, CreateMappingCommand command) {
+        return addMapping(revisionId, command, ActorIdentity.unverified(command.createdBy()));
+    }
+
+    /**
+     * Zoals hierboven, met de geverifieerde identiteit van wie de mapping toevoegt (Fase 5-AUTH,
+     * 5A-6): {@code import_field_mapping.created_by} plus {@code created_by_subject}. De naam uit
+     * {@code command.createdBy()} wordt hier niet gebruikt; de Web-laag heeft ze al vergeleken.
+     */
+    public MappingView addMapping(long revisionId, CreateMappingCommand command, ActorIdentity actor) {
         ImportDefinitionRevision revision = editableRevision(revisionId);
         String targetFieldCode = requireText(command.targetFieldCode(), "targetFieldCode", 60);
         ImportFieldCatalogEntry target = fieldCatalog.findById(targetFieldCode)
@@ -503,7 +559,8 @@ public class SetupService {
         }
         mapping.setTransformConfig(optionalText(command.transformConfig(), "transformConfig", 1000));
         mapping.setCriticality(command.criticality());
-        mapping.setCreatedBy(orDefault(command.createdBy(), DEFAULT_CREATED_BY));
+        mapping.setCreatedBy(orDefault(actor.username(), DEFAULT_CREATED_BY));
+        mapping.setCreatedBySubject(actor.subject());
         ImportFieldMapping stored = fieldMappings.saveAndFlush(mapping);
         validateConfiguration(revision);
         return new MappingView(stored.getId(), revisionId, stored.getSequenceNumber(), targetFieldCode,
@@ -516,6 +573,14 @@ public class SetupService {
      * @throws IllegalArgumentException een {@code CONFIG_*}-fout in de configuratie
      */
     public FilterView addFilter(long revisionId, CreateFilterCommand command) {
+        return addFilter(revisionId, command, ActorIdentity.unverified(command.createdBy()));
+    }
+
+    /**
+     * Zoals hierboven, met de geverifieerde identiteit van wie de filter toevoegt (Fase 5-AUTH, 5A-6):
+     * {@code import_record_filter.created_by} plus {@code created_by_subject}.
+     */
+    public FilterView addFilter(long revisionId, CreateFilterCommand command, ActorIdentity actor) {
         ImportDefinitionRevision revision = editableRevision(revisionId);
         List<ImportRecordFilter> existing =
                 recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId);
@@ -543,7 +608,8 @@ public class SetupService {
         if (command.missingColumnBehaviour() != null) {
             filter.setMissingColumnBehaviour(command.missingColumnBehaviour());
         }
-        filter.setCreatedBy(orDefault(command.createdBy(), DEFAULT_CREATED_BY));
+        filter.setCreatedBy(orDefault(actor.username(), DEFAULT_CREATED_BY));
+        filter.setCreatedBySubject(actor.subject());
         ImportRecordFilter stored = recordFilters.saveAndFlush(filter);
         validateConfiguration(revision);
         return new FilterView(stored.getId(), revisionId, stored.getSequenceNumber(),
@@ -558,6 +624,16 @@ public class SetupService {
      *                                  identiteitsveld dat niet kritiek zou zijn)
      */
     public FieldCriticalityView addFieldCriticality(long revisionId, CreateFieldCriticalityCommand command) {
+        return addFieldCriticality(revisionId, command, ActorIdentity.unverified(command.createdBy()));
+    }
+
+    /**
+     * Zoals hierboven, met de geverifieerde identiteit van wie de kritiek-overrule vastlegt (Fase
+     * 5-AUTH, 5A-6): {@code import_revision_field_criticality.created_by} plus
+     * {@code created_by_subject}.
+     */
+    public FieldCriticalityView addFieldCriticality(long revisionId, CreateFieldCriticalityCommand command,
+                                                    ActorIdentity actor) {
         ImportDefinitionRevision revision = editableRevision(revisionId);
         String fieldKey = requireText(command.fieldKey(), "fieldKey", 60);
         RevisionCriticalityField field = RevisionCriticalityField.byKey(fieldKey)
@@ -579,7 +655,8 @@ public class SetupService {
         }
         ImportRevisionFieldCriticality row = new ImportRevisionFieldCriticality(revisionId, fieldKey,
                 criticality);
-        row.setCreatedBy(orDefault(command.createdBy(), DEFAULT_CREATED_BY));
+        row.setCreatedBy(orDefault(actor.username(), DEFAULT_CREATED_BY));
+        row.setCreatedBySubject(actor.subject());
         ImportRevisionFieldCriticality stored = fieldCriticalities.saveAndFlush(row);
         validateConfiguration(revision);
         return new FieldCriticalityView(revisionId, stored.getFieldKey(), stored.getCriticality().name());
@@ -611,7 +688,16 @@ public class SetupService {
             throw new ConflictException("LINK_SCOPE_IN_USE", "This definition already has a link for supplier '"
                     + supplier.getCode() + "' and library '" + libraryCode + "'");
         }
+        String defaultCurrency = command.defaultCurrency();
+        if (defaultCurrency != null && defaultCurrency.isBlank()) {
+            defaultCurrency = null;
+        } else if (defaultCurrency != null && !LINK_CURRENCY_SHAPE.matcher(defaultCurrency).matches()) {
+            // Dezelfde vormregel als PriceRules: exact drie hoofdletters, nooit upper-casen of trimmen.
+            throw new BadRequestException("LINK_CURRENCY_INVALID", "defaultCurrency '" + defaultCurrency
+                    + "' is not an ISO 4217 currency code (exactly three capital letters)");
+        }
         ImportLink link = new ImportLink(code, name, definition, supplier, libraryCode);
+        link.setDefaultCurrency(defaultCurrency);
         link.setLibrarySearchSupplierCode(
                 optionalText(command.librarySearchSupplierCode(), "librarySearchSupplierCode", MAX_CODE_LENGTH));
         return view(links.saveAndFlush(link));
@@ -794,7 +880,7 @@ public class SetupService {
     private static LinkView view(ImportLink link) {
         return new LinkView(link.getId(), link.getCode(), link.getName(),
                 link.getImportDefinition().getId(), link.getSupplierOrganisation().getCode(),
-                link.getLibraryCode(), link.isActive());
+                link.getLibraryCode(), link.isActive(), link.getDefaultCurrency());
     }
 
     private static TaskView view(CatalogImportTask task) {

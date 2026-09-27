@@ -1,5 +1,6 @@
 package be.dda.catalogimport.service.support;
 
+import be.dda.catalogimport.domain.CurrencyOrigin;
 import be.dda.catalogimport.domain.DiscountCodeState;
 import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.RevisionOwnedField;
@@ -56,11 +57,30 @@ import java.util.List;
  *       identiteit ‖ artikel ‖ prijs ‖ referenties.</li>
  * </ul>
  * <b>Prijs en referenties onder versie 2.</b> De prijsvingerafdruk dekt de basisprijs, de munt en élke
- * gemapte prijscomponent met haar verhouding. Zonder {@code record_currency_field} blijft
- * {@code basePriceCurrency} {@code null} ("onbekend"); er wordt nooit stilzwijgend EUR verondersteld.
- * De referentievingerafdruk dekt élke gemapte kritieke koppelreferentie met haar <b>genormaliseerde</b>
+ * gemapte prijscomponent met haar verhouding. Zonder {@code record_currency_field} geldt sinds de
+ * valuta-standaard de vaste valuta van de koppeling of, bij gebrek daaraan, de systeemstandaard EUR —
+ * altijd met een expliciete herkomst. De referentievingerafdruk dekt élke gemapte kritieke
+ * koppelreferentie met haar <b>genormaliseerde</b>
  * waarde, gesorteerd op referentietype (bouwstap 3f, R-REF-01). Een revisie zónder prijscomponenten
  * en zónder referentiemappings houdt exact de vingerafdrukken van bouwstap 3c — byte voor byte.
+ *
+ * <h2>Standaardvaluta (docs/design/valuta-standaard-design.md par. 1 en 4)</h2>
+ * <b>Business rule.</b> Een aanbieding heeft altijd een munt. De volgorde is: het gemapte bronveld
+ * ({@link CurrencyOrigin#SOURCE}), anders de vaste valuta van de koppeling
+ * ({@link CurrencyOrigin#LINK_DEFAULT}), anders {@value #SYSTEM_DEFAULT_CURRENCY}
+ * ({@link CurrencyOrigin#SYSTEM_DEFAULT}). Een <b>ongeldige of lege</b> bronwaarde blijft de regel
+ * verwerpen ({@link PriceRules#CODE_PRICE_CURRENCY_MISMATCH}) en wordt nooit door de standaard
+ * vervangen: alleen een <i>ontbrekend veld</i> krijgt een standaard, en die aanname is via de herkomst
+ * altijd zichtbaar (AGENT.md par. 2 principe 8).
+ * <p>
+ * <b>Vingerafdruk.</b> Er komt bewust géén canonicalisatieversie 3: het versienummer staat vooraan in
+ * élke canonieke tekst, óók die van {@code identity_hash}, dus een versiebump zou elke bestaande
+ * aanbieding als {@code NEW} laten terugkomen. In de canonieke prijstekst wordt daarom een
+ * {@code SYSTEM_DEFAULT}-euro geschreven als de bestaande "niet gemapt"-markering ({@code U+0000}) —
+ * exact wat er vóór deze wijziging voor {@code currency == null} stond. Gevolg: onder versie 1 én
+ * versie 2 blijven {@code price_fingerprint}, {@code combined_fingerprint} en {@code identity_hash}
+ * <b>byte-identiek</b> voor een revisie zonder muntveld en een koppeling zonder vaste valuta.
+ * {@code SOURCE} en {@code LINK_DEFAULT} schrijven de code zelf en zijn dus wél zichtbaar in de delta.
  */
 public final class CandidateNormaliser {
 
@@ -87,6 +107,14 @@ public final class CandidateNormaliser {
     public static final int MAX_REFERENCE_LENGTH = 200;
     /** {@code base_price} is numeric(24,6): hoogstens 18 cijfers vóór de komma. */
     public static final int MAX_PRICE_INTEGER_DIGITS = 18;
+
+    /**
+     * De systeemstandaard voor een aanbieding zonder muntveld en zonder vaste valuta op de koppeling
+     * (beslissingslog 26/09 "Ontbrekende valuta = euro"). De herkomst
+     * {@link CurrencyOrigin#SYSTEM_DEFAULT} maakt die aanname zichtbaar; de waarde wordt nooit stil
+     * gebruikt om een ongeldige bronwaarde te vervangen.
+     */
+    public static final String SYSTEM_DEFAULT_CURRENCY = "EUR";
 
     /**
      * De canonicalisatieversie waarvan de artikelvingerafdruk élk gemapt veld dekt en waarin een
@@ -136,6 +164,11 @@ public final class CandidateNormaliser {
      *                             standaardwaarden). Ze verwerpen de regel niet en tellen dus niet in
      *                             {@code rejected_record_count}, maar ze moeten wél zichtbaar zijn:
      *                             een ingevulde default is een afwijking van wat de leverancier stuurde
+     * @param basePriceCurrency    de <b>effectieve</b> munt; sinds de valuta-standaard nooit
+     *                             {@code null} voor een nieuwe kandidaat
+     * @param basePriceCurrencyOrigin waar die munt vandaan komt; nooit {@code null} voor een nieuwe
+     *                             kandidaat. {@code null} bestaat enkel in de database, voor rijen van
+     *                             vóór de valuta-standaard (herkomst onbekend, ontwerp par. 4b)
      */
     public record NormalisedCandidate(
             long rowNumber,
@@ -147,6 +180,7 @@ public final class CandidateNormaliser {
             byte[] identityHash,
             BigDecimal basePrice,
             String basePriceCurrency,
+            CurrencyOrigin basePriceCurrencyOrigin,
             String description,
             byte[] articleFingerprint,
             byte[] priceFingerprint,
@@ -244,12 +278,11 @@ public final class CandidateNormaliser {
             // R-PRI-02/R-PRI-03: 0 en negatief zijn geleverde, betekenisvolle waarden en worden enkel
             // doorgelaten wanneer de revisie ze uitdrukkelijk toelaat.
             basePrice = PriceRules.basePrice(basePrice, priceField, rawPrice, config.pricePolicy());
-            // Geen muntveld ⇒ munt onbekend (null). Nooit stil EUR veronderstellen (aanname A22).
-            String currency = null;
-            if (config.currencyField() != null) {
-                String rawCurrency = row.value(position(row, config.currencyField()));
-                currency = PriceRules.currency(rawCurrency, config.currencyField());
-            }
+            // Ontwerp valuta-standaard par. 1: bronveld ⇒ SOURCE, anders de vaste valuta van de
+            // koppeling ⇒ LINK_DEFAULT, anders EUR ⇒ SYSTEM_DEFAULT. Een ongeldige of lege bronwaarde
+            // verwerpt de regel en wordt nooit door de standaard vervangen.
+            EffectiveCurrency effectiveCurrency = effectiveCurrency(row, config);
+            String currency = effectiveCurrency.code();
             List<PriceRules.PriceComponent> priceComponents =
                     priceComponents(row, basePrice, currency, mapped, mappingConfig, config);
             List<ReferenceValue> references = references(row, mapped, mappingConfig);
@@ -269,8 +302,11 @@ public final class CandidateNormaliser {
                     version == CANONICALISATION_VERSION_WITH_FIELDS
                             ? canonicalArticle(description, mapped, mappingConfig)
                             : ImportValueRules.canonical(version, description));
+            // De canonieke prijstekst krijgt de munt in haar vingerafdrukvorm: bij SYSTEM_DEFAULT is dat
+            // de "niet gemapt"-markering, zodat bestaande v1/v2-hashes byte-identiek blijven (par. 4).
             byte[] priceFingerprint = ImportValueRules.sha256Utf8(
-                    canonicalPrice(version, basePrice, currency, priceComponents));
+                    canonicalPrice(version, basePrice, effectiveCurrency.fingerprintValue(),
+                            priceComponents));
             byte[] referenceFingerprint = version == CANONICALISATION_VERSION_WITH_FIELDS
                     ? ImportValueRules.sha256Utf8(canonicalReferences(references))
                     : null;
@@ -280,13 +316,62 @@ public final class CandidateNormaliser {
                             referenceFingerprint));
 
             return new NormalisedCandidate(row.lineNumber(), supplier, group, reference, discountCode,
-                    discountState, identityHash, basePrice, currency, description, articleFingerprint,
+                    discountState, identityHash, basePrice, currency, effectiveCurrency.origin(),
+                    description, articleFingerprint,
                     priceFingerprint, referenceFingerprint, combinedFingerprint, priceComponents,
                     references, notices(row, mapped));
         } catch (ImportValueException rejected) {
             return new RowIssue(row.lineNumber(), rejected.getCode(), rejected.getField(),
                     rejected.getRawValue(), rejected.getMessage());
         }
+    }
+
+    /**
+     * De effectieve munt van één bronregel met haar herkomst (ontwerp valuta-standaard par. 1).
+     *
+     * @param code   de munt zoals ze bewaard wordt; nooit {@code null}
+     * @param origin waar die munt vandaan komt; nooit {@code null}
+     */
+    private record EffectiveCurrency(String code, CurrencyOrigin origin) {
+
+        /**
+         * De munt zoals ze in de canonieke <b>prijstekst</b> gaat (ontwerp par. 4, keuze mens: geen
+         * canonicalisatieversie 3). Een aangenomen systeemstandaard wordt de bestaande "niet
+         * gemapt"-markering ({@code null} ⇒ {@code U+0000} in
+         * {@link ImportValueRules#canonical(int, String...)}), precies wat er vóór deze wijziging voor
+         * een revisie zonder muntveld stond. Zo blijven bestaande v1- en v2-vingerafdrukken
+         * byte-identiek en komt geen enkele bestaande aanbieding onterecht als {@code CHANGED} uit de
+         * delta. Een munt uit de bron of uit de koppeling gaat wél als code mee en is dus zichtbaar.
+         */
+        String fingerprintValue() {
+            return origin == CurrencyOrigin.SYSTEM_DEFAULT ? null : code;
+        }
+    }
+
+    /**
+     * Bepaalt de effectieve munt en haar herkomst (ontwerp valuta-standaard par. 1).
+     * <ol>
+     *   <li>een gemapt bronveld ⇒ {@link PriceRules#currency(String, String)}, herkomst
+     *       {@link CurrencyOrigin#SOURCE}. Een ongeldige of lege bronwaarde <b>verwerpt de regel</b>
+     *       (bestaand gedrag) en wordt nooit door een standaard vervangen;</li>
+     *   <li>geen bronveld en een vaste valuta op de koppeling ⇒ die waarde, herkomst
+     *       {@link CurrencyOrigin#LINK_DEFAULT}. De vorm is al gecontroleerd in
+     *       {@link SourceStructureConfigFactory}, één keer per batch;</li>
+     *   <li>anders {@value #SYSTEM_DEFAULT_CURRENCY}, herkomst
+     *       {@link CurrencyOrigin#SYSTEM_DEFAULT}.</li>
+     * </ol>
+     */
+    private static EffectiveCurrency effectiveCurrency(ParsedRow row, SourceStructureConfig config) {
+        if (config.currencyField() != null) {
+            String rawCurrency = row.value(position(row, config.currencyField()));
+            return new EffectiveCurrency(PriceRules.currency(rawCurrency, config.currencyField()),
+                    CurrencyOrigin.SOURCE);
+        }
+        String linkDefault = config.linkDefaultCurrency();
+        if (linkDefault != null) {
+            return new EffectiveCurrency(linkDefault, CurrencyOrigin.LINK_DEFAULT);
+        }
+        return new EffectiveCurrency(SYSTEM_DEFAULT_CURRENCY, CurrencyOrigin.SYSTEM_DEFAULT);
     }
 
     /**
@@ -444,6 +529,11 @@ public final class CandidateNormaliser {
      * De basisprijsrij zelf staat <b>niet</b> in de lijst — de basisprijs is al het eerste onderdeel.
      * Een revisie zonder componenten levert daardoor exact dezelfde tekst (en dus dezelfde hash) als
      * bouwstap 3c: een bestaande bronstaat komt nooit onterecht als gewijzigd uit de delta.
+     *
+     * @param currency de munt in haar <b>vingerafdrukvorm</b>, niet de effectieve munt: {@code null}
+     *                 voor een aangenomen systeemstandaard (dan komt er {@code U+0000} in de tekst,
+     *                 exact het gedrag van vóór de valuta-standaard) en de code zelf voor een munt uit
+     *                 de bron of uit de koppeling. Zie {@code EffectiveCurrency#fingerprintValue()}
      */
     private static String canonicalPrice(int version, BigDecimal basePrice, String currency,
                                          List<PriceRules.PriceComponent> components) {

@@ -27,6 +27,7 @@ public class PsimportPreviewController {
         this.service = service;
     }
 
+    @RequiresPermission(Permission.READ)
     @GetMapping("/{bundleId}/psimport-preview")
     public Object preview(@PathVariable("bundleId") long bundleId,
                           @RequestParam(value = "page", required = false) Integer page,

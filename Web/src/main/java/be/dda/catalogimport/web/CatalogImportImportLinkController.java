@@ -29,6 +29,7 @@ public class CatalogImportImportLinkController {
     }
 
     /** Alle koppelingen, oplopend op {@code code}, optioneel gefilterd op {@code active}. */
+    @RequiresPermission(Permission.READ)
     @GetMapping
     PageResult<ImportLinkRow> importLinks(@RequestParam(value = "active", required = false) Boolean active,
                                           @RequestParam(value = "page", required = false) Integer page,

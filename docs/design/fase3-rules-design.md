@@ -450,8 +450,7 @@ A14 `import_row_issue` wordt uitgebreid (naam blijft). A15 canonicalisatieversie
 prijsobservaties append-only (eerste waarde van de dag blijft). A17 `max_critical_records` default 0.
 A18 `max_rejected_*` geen default (null). A19 bestaande revisiekolommen blijven autoritair, mapping dekt
 overige velden. A20 ondersteunende matching en bulk-ID-patroonherkenning niet in Fase 3. A21 record met
-kritiek incident wordt vastgehouden (mutatie BLOCKED). A22 valuta syntactisch (ISO-4217-vorm) en intern
-consistent gevalideerd; stamdata in Fase 5.
+kritiek incident wordt vastgehouden (mutatie BLOCKED). A22 (**herzien, 2026-09-26**) valuta volgt de regel uit `docs/design/valuta-standaard-design.md` §1-4: bronveld (SOURCE), vast waarde per koppeling (LINK_DEFAULT), of EUR (SYSTEM_DEFAULT); bestaande rijen behouden `null`; geen backfill.
 
 ## 8. Documentatie-impact
 `docs/requirements/catalog-import-business-rules.md` is achterhaald en r.28 aantoonbaar fout (100% i.p.v.
@@ -550,9 +549,7 @@ Te laten beslissen door een Denker (of de mens) vóór 3h.
 - Revisies zonder prijscomponenten schrijven geen enkele prijsrij (byte-neutraal; hashes vastgepind).
   Batch zonder prijsrijen raakt `catalog_source_state_price` niet aan.
 - `NO_BASE_PRICE` bestaat in model/schema/`PriceRules` maar bereikt de staging nu niet (issue is ERROR ⇒ record
-  verworpen); 3h kan dit anders regelen. Valuta: één munt per record uit `record_currency_field`
-  (`[A-Z]{3}`, nooit stil geüppercased of EUR); een v1-revisie met `record_currency_field` blokkeert
-  (`CONFIG_CANONICALISATION_VERSION_REQUIRED`).
+  verworpen); 3h kan dit anders regelen. **Valuta (herzien, 2026-09-26):** volgt de regel uit `docs/design/valuta-standaard-design.md` §1-4. Het optionele bronveld (`record_currency_field`) blijft bestaan en gaat voor (herkomst `SOURCE`); ontbreekt het, dan geldt de optionele vaste valuta per koppeling (`import_link.default_currency`, `LINK_DEFAULT`), anders EUR (`SYSTEM_DEFAULT`). Een ongeldige of lege bronwaarde verwerpt de regel. Herkomst (`base_price_currency_origin`) wordt vastgelegd maar niet doorgeschreven naar preview of bronstaat.
 - Prijscomponent-mapping vereist DECIMAL en `decimal_scale ≤ 6` (`CONFIG_MAPPING_TYPE_INCOMPATIBLE`);
   `maxPercentage=` als `transform_config`-sleutel (>0, alleen op prijscomponent). Prijscomponent-mappings zijn
   onder v2 toegestaan; referentie-mappings blijven geblokkeerd tot 3f.

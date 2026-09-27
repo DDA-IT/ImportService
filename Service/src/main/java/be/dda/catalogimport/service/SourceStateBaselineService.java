@@ -188,7 +188,17 @@ public class SourceStateBaselineService {
      *                                  {@link #CODE_SOURCE_STATE_CHANGED}
      */
     public BaselineAcceptance acceptBaseline(long batchId, String acceptedBy, String reason) {
-        String user = ActorNames.requireActorName(acceptedBy, "acceptedBy", MAX_ACCEPTED_BY_LENGTH);
+        return acceptBaseline(batchId, ActorIdentity.unverified(acceptedBy), reason);
+    }
+
+    /**
+     * Zoals hierboven, met de geverifieerde identiteit van wie aanvaardt (Fase 5-AUTH, 5A-5): de naam komt
+     * in {@code import_batch.baseline_accepted_by} en de bulkkopieen, het subject in
+     * {@code import_batch.baseline_accepted_by_subject}. De Web-laag gebruikt uitsluitend deze overload.
+     */
+    public BaselineAcceptance acceptBaseline(long batchId, ActorIdentity actor, String reason) {
+        String user = ActorNames.requireActorName(actor.username(), "acceptedBy", MAX_ACCEPTED_BY_LENGTH);
+        String userSubject = actor.subject();
         String motivation = ActorNames.requireText(reason, "reason", MAX_REASON_LENGTH);
 
         Instant acceptedAt = clock.instant();
@@ -242,7 +252,7 @@ public class SourceStateBaselineService {
         }
 
         BaselineAcceptance result = transaction.execute(status ->
-                finish(batchId, user, acceptedAt, motivation));
+                finish(batchId, user, userSubject, acceptedAt, motivation));
         LOG.info("Batch {} accepted as baseline by {} ({} mutations skipped): {}", batchId, user,
                 result.skippedMutationCount(), motivation);
         return result;
@@ -294,14 +304,15 @@ public class SourceStateBaselineService {
      * tweede aanvaarding is dan al klaar), zet de mutaties op {@code SKIPPED} en de batch op
      * {@code BASELINE_ACCEPTED}, met de audit.
      */
-    private BaselineAcceptance finish(long batchId, String user, Instant acceptedAt, String reason) {
+    private BaselineAcceptance finish(long batchId, String user, String userSubject, Instant acceptedAt,
+                                      String reason) {
         ImportBatch batch = batches.findByIdForUpdate(batchId)
                 .orElseThrow(() -> new NotFoundException("BATCH_NOT_FOUND", "Batch " + batchId + " not found"));
         requireScreened(batch);
         requireNoActiveBundleMembership(batchId);
         int skipped = mutations.skipOpenContentMutations(batchId, SKIPPED_REASON);
         batch.setStatus(ImportBatchStatus.BASELINE_ACCEPTED);
-        batch.recordBaselineAcceptance(user, acceptedAt, reason);
+        batch.recordBaselineAcceptance(user, userSubject, acceptedAt, reason);
         batches.saveAndFlush(batch);
         return new BaselineAcceptance(batchId, batch.getStatus().name(), user, acceptedAt, reason,
                 batch.getNewCount(), batch.getChangedCount(), batch.getUnchangedCount(), skipped);

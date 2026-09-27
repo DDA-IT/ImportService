@@ -59,9 +59,7 @@ class TemplateMaterialisationHttpTest {
 
     @Test
     void returns404WithTemplateNotFound() throws Exception {
-        mockMvc.perform(post("/api/catalog-import/templates/{id}/materialisations", -1L)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(bareRequest("X-DEF", "X-LINK", "X-SUP")))
+        mockMvc.perform(materialiseRequest(-1L, bareRequest("X-DEF", "X-LINK", "X-SUP")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("TEMPLATE_NOT_FOUND"));
     }
@@ -70,10 +68,8 @@ class TemplateMaterialisationHttpTest {
     void returns404WithSourceOrganisationNotFound() throws Exception {
         MaterialisationFixtures.Template template = fixtures.template("H404B");
 
-        mockMvc.perform(post("/api/catalog-import/templates/{id}/materialisations",
-                        template.definition().getId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(bareRequest(template.definitionCode(), template.linkCode(),
+        mockMvc.perform(materialiseRequest(template.definition().getId(),
+                        bareRequest(template.definitionCode(), template.linkCode(),
                                 "BESTAAT-NIET-" + template.unique())))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("SOURCE_ORGANISATION_NOT_FOUND"));
@@ -86,10 +82,8 @@ class TemplateMaterialisationHttpTest {
         MaterialisationFixtures.Template own = fixtures.template("H409A", DefinitionUsageType.OWN_DEFINITION,
                 RevisionStatus.ACTIVE);
 
-        mockMvc.perform(post("/api/catalog-import/templates/{id}/materialisations",
-                        own.definition().getId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(bareRequest(own.definitionCode(), own.linkCode(), own.supplier().getCode())))
+        mockMvc.perform(materialiseRequest(own.definition().getId(),
+                        bareRequest(own.definitionCode(), own.linkCode(), own.supplier().getCode())))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DEFINITION_NOT_A_TEMPLATE"));
     }
@@ -106,9 +100,7 @@ class TemplateMaterialisationHttpTest {
                  "bookmarkValues":[{"name":"TE_VROEG","value":"x"}],"materialisedBy":"%s"}"""
                 .formatted(template.definitionCode(), template.linkCode(), template.supplier().getCode(), USER);
 
-        mockMvc.perform(post("/api/catalog-import/templates/{id}/materialisations",
-                        template.definition().getId())
-                        .contentType(MediaType.APPLICATION_JSON).content(body))
+        mockMvc.perform(materialiseRequest(template.definition().getId(), body))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONFIG_BOOKMARK_PLACE_NOT_SUPPORTED"));
     }
@@ -117,17 +109,13 @@ class TemplateMaterialisationHttpTest {
     void returns409WithDefinitionCodeInUse() throws Exception {
         MaterialisationFixtures.Template template = fixtures.template("H409C");
         declareCanonicalBookmarks(template.revision());
-        mockMvc.perform(post("/api/catalog-import/templates/{id}/materialisations",
-                        template.definition().getId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(canonicalBody(template, template.linkCode(), "PSARF900")))
+        mockMvc.perform(materialiseRequest(template.definition().getId(),
+                        canonicalBody(template, template.linkCode(), "PSARF900")))
                 .andExpect(status().isCreated());
 
         // Zelfde definitiecode, andere koppeling: botst op uk_import_definition_code.
-        mockMvc.perform(post("/api/catalog-import/templates/{id}/materialisations",
-                        template.definition().getId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(canonicalBody(template, template.linkCode("B"), "PSARF901")))
+        mockMvc.perform(materialiseRequest(template.definition().getId(),
+                        canonicalBody(template, template.linkCode("B"), "PSARF901")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DEFINITION_CODE_IN_USE"));
     }
@@ -143,9 +131,7 @@ class TemplateMaterialisationHttpTest {
                  "supplierOrganisationCode":"%s","bookmarkValues":[],"materialisedBy":"%s"}"""
                 .formatted(template.definitionCode(), template.linkCode(), template.supplier().getCode(), USER);
 
-        mockMvc.perform(post("/api/catalog-import/templates/{id}/materialisations",
-                        template.definition().getId())
-                        .contentType(MediaType.APPLICATION_JSON).content(body))
+        mockMvc.perform(materialiseRequest(template.definition().getId(), body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("MATERIALISATION_MODE_REQUIRED"));
     }
@@ -156,10 +142,8 @@ class TemplateMaterialisationHttpTest {
         fixtures.declareOn(template.revision(), "CULTUUR", BookmarkValueScope.DEFINITION, true,
                 BookmarkDataType.TEXT, 1, BookmarkUsagePlace.RECORD_FILTER_COMPARE_VALUE, "1");
 
-        mockMvc.perform(post("/api/catalog-import/templates/{id}/materialisations",
-                        template.definition().getId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(bareRequest(template.definitionCode(), template.linkCode(),
+        mockMvc.perform(materialiseRequest(template.definition().getId(),
+                        bareRequest(template.definitionCode(), template.linkCode(),
                                 template.supplier().getCode())))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("CONFIG_REQUIRED_BOOKMARK_MISSING"));
@@ -177,9 +161,7 @@ class TemplateMaterialisationHttpTest {
                  "bookmarkValues":[{"name":"DOELBIBLIOTHEEK","value":"PSARF002"}],"materialisedBy":"%s"}"""
                 .formatted(template.definitionCode(), template.linkCode(), template.supplier().getCode(), USER);
 
-        mockMvc.perform(post("/api/catalog-import/templates/{id}/materialisations",
-                        template.definition().getId())
-                        .contentType(MediaType.APPLICATION_JSON).content(body))
+        mockMvc.perform(materialiseRequest(template.definition().getId(), body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("LINK_FIELD_BOTH_BOOKMARK_AND_EXPLICIT"));
     }
@@ -207,6 +189,19 @@ class TemplateMaterialisationHttpTest {
                                    {"name":"DETAILLEVERANCIER","value":"ACME-001"}],
                  "materialisedBy":"%s"}"""
                 .formatted(template.definitionCode(), linkCode, template.supplier().getCode(), libraryCode, USER);
+    }
+
+    /**
+     * Het verzoek, aangemeld als {@link #USER}. Sinds 5A-6 controleert de Web-laag {@code
+     * materialisedBy} tegen de aangemelde gebruiker (400 {@code ACTOR_FIELD_MISMATCH}), en die controle
+     * gaat vóór 404/409 — zonder deze aanmelding zou elke test hieronder een 400 krijgen in plaats van
+     * de statuscode die ze onderzoekt.
+     */
+    private org.springframework.test.web.servlet.RequestBuilder materialiseRequest(long definitionId,
+                                                                                     String body) {
+        return post("/api/catalog-import/templates/{id}/materialisations", definitionId)
+                .with(be.dda.catalogimport.testsupport.TestActors.as(USER))
+                .contentType(MediaType.APPLICATION_JSON).content(body);
     }
 
     /** Een minimale, geldig gevormde aanvraag zonder bookmarkwaarden — voor de fase A/B/E-toetsen. */

@@ -1,5 +1,6 @@
 package be.dda.catalogimport.web;
 
+import static be.dda.catalogimport.testsupport.TestActors.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -113,7 +114,7 @@ class PsimportPreviewHttpTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.previewOnly").value(true))
                 .andExpect(jsonPath("$.contractStatus").value("UNVERIFIED_FIELD_INVENTORY"))
-                .andExpect(jsonPath("$.previewSpecVersion").isString())
+                .andExpect(jsonPath("$.previewSpecVersion").value("2"))
                 .andExpect(jsonPath("$.bundleContentHash").isString())
                 .andExpect(jsonPath("$.generatedAt").exists())
                 .andExpect(jsonPath("$.totalElements").value(0))
@@ -227,6 +228,51 @@ class PsimportPreviewHttpTest {
     }
 
     @Test
+    void aSnapshottedBundleShowsDescriptionAndPercentagesVerbatimAsStrings() throws Exception {
+        Frozen frozen = frozenBundle("SNAP", 2);
+        List<Long> ids = mutationIds(frozen.batchId());
+        long snapshotId = jdbc.queryForObject("select id from publication_bundle_snapshot where mutation_id = ?",
+                Long.class, ids.get(0));
+        jdbc.update("insert into publication_bundle_snapshot_price (snapshot_id, component_code, percentage, "
+                + "status) values (?, 'VKP1', 125.500000000000, 'OK')", snapshotId);
+
+        String body = preview(frozen.bundleId(), "");
+        assertThat(JsonPath.<String>read(body, "$.previewSpecVersion")).isEqualTo("2");
+        assertThat(JsonPath.<String>read(body, "$.snapshotSpecVersion")).isNotBlank();
+        assertThat(JsonPath.<String>read(body, "$.snapshotHash")).matches("[0-9a-f]+");
+        String row = "$.content[?(@.mutationId==" + ids.get(0) + ")].fields[?(@.code=='";
+        assertThat(JsonPath.<List<String>>read(body, row + "DESCRIPTION')].value")).containsExactly("Artikel 1");
+        assertThat(JsonPath.<List<String>>read(body, row + "DESCRIPTION')].state")).containsExactly("VALUE");
+        assertThat(JsonPath.<List<Object>>read(body, row + "VKP1_PCT')].value"))
+                .containsExactly("125.500000000000");
+        assertThat(JsonPath.<List<String>>read(body, row + "VKP2_PCT')].state")).containsExactly("NOT_MAPPED");
+        assertThat(JsonPath.<List<Object>>read(body, row + "VKP2_PCT')].value")).containsExactly((Object) null);
+        assertThat(JsonPath.<List<Boolean>>read(body, "$.content[*].complete")).containsOnly(true);
+    }
+
+    @Test
+    void aBundleWithoutSnapshotShowsNotSnapshottedAndIsIncomplete() throws Exception {
+        Frozen frozen = frozenBundle("OLD", 2);
+        jdbc.update("delete from publication_bundle_snapshot_price where snapshot_id in "
+                + "(select id from publication_bundle_snapshot where bundle_id = ?)", frozen.bundleId());
+        jdbc.update("delete from publication_bundle_snapshot where bundle_id = ?", frozen.bundleId());
+        jdbc.update("update publication_bundle set snapshot_hash = null, snapshot_spec_version = null "
+                + "where id = ?", frozen.bundleId());
+
+        String body = preview(frozen.bundleId(), "?size=1&page=1");
+        assertThat(JsonPath.<Integer>read(body, "$.totalElements")).isEqualTo(2);
+        assertThat(JsonPath.<Object>read(body, "$.snapshotHash")).isNull();
+        assertThat(JsonPath.<Object>read(body, "$.snapshotSpecVersion")).isNull();
+        for (String code : List.of("DESCRIPTION", "VKP1_PCT", "VKP2_PCT", "VKP3_PCT", "VKP4_PCT", "VKP5_PCT")) {
+            assertThat(JsonPath.<List<String>>read(body, "$.content[*].fields[?(@.code=='" + code + "')].state"))
+                    .containsExactly("NOT_SNAPSHOTTED");
+            assertThat(JsonPath.<List<Object>>read(body, "$.content[*].fields[?(@.code=='" + code + "')].value"))
+                    .containsOnlyNulls();
+        }
+        assertThat(JsonPath.<List<Boolean>>read(body, "$.content[*].complete")).containsExactly(false);
+    }
+
+    @Test
     void csvFormatRequiresFrozenBundle() throws Exception {
         long bundleId = createBundle();
 
@@ -334,7 +380,8 @@ class PsimportPreviewHttpTest {
 
     private long createBundle() throws Exception {
         String reference = "BND-PSI-" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet();
-        String body = mockMvc.perform(post("/api/catalog-import/bundles").contentType(MediaType.APPLICATION_JSON)
+        String body = mockMvc.perform(post("/api/catalog-import/bundles").with(as(CREATOR))
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"bundleReference\":\"" + reference + "\",\"targetMode\":\"SIMULATION\","
                                 + "\"createdBy\":\"" + CREATOR + "\"}"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
@@ -353,7 +400,7 @@ class PsimportPreviewHttpTest {
                         .file(new MockMultipartFile("file", "levering.csv", "text/csv",
                                 csv.toString().getBytes(StandardCharsets.UTF_8)))
                         .param("deliveryReference", "REF-" + f.unique())
-                        .param("uploadedBy", "tester@example.test"))
+                        .param("uploadedBy", "tester@example.test").with(as("tester@example.test")))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("SCREENED"))
                 .andReturn().getResponse().getContentAsString();
         long batchId = ((Number) JsonPath.read(upload, "$.batchId")).longValue();
@@ -362,16 +409,18 @@ class PsimportPreviewHttpTest {
         jdbc.update("update import_mutation set base_price_currency = 'EUR' where batch_id = ? "
                 + "and action_type in ('CREATE', 'UPDATE')", batchId);
         long bundleId = createBundle();
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", bundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", bundleId).with(as(CREATOR))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"batchIds\":[" + batchId + "],\"addedBy\":\"" + CREATOR + "\"}"))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", bundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", bundleId).with(as(DECIDER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"" + DECIDER + "\","
                                 + "\"reason\":\"Nagekeken\",\"filter\":{\"batchId\":" + batchId + "}}"))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/freeze", bundleId)
+        // 5A-2: frozenBy moet overeenkomen met de aangemelde gebruiker; deze fixture tekent met een eigen
+        // naam, dus de bevriezer meldt zich expliciet aan.
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/freeze", bundleId).with(as(FREEZER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"frozenBy\":\"" + FREEZER + "\",\"reason\":\"Preview test\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FROZEN"));

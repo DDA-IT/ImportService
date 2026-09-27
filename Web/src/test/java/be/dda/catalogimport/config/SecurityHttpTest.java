@@ -20,6 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import be.dda.catalogimport.testsupport.TestSecurityConfiguration;
+import be.dda.catalogimport.web.Permission;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
@@ -32,6 +33,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -228,7 +230,7 @@ class SecurityHttpTest {
     // --- GET /me ---------------------------------------------------------------------------------------
 
     @Test
-    void meReturnsTheDefaultTestIdentityWithPermissionsNull() throws Exception {
+    void meReturnsTheDefaultTestIdentityWithAllPermissionCodes() throws Exception {
         MvcResult result = mockMvc.perform(get(ME))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value(TestSecurityConfiguration.DEFAULT_USERNAME))
@@ -237,8 +239,10 @@ class SecurityHttpTest {
 
         Map<String, Object> body = body(result);
         assertThat(body).containsOnlyKeys("username", "subject", "displayName", "permissions");
-        // "Niet vastgesteld" is null, nooit een lege lijst (ontwerp par. 5).
-        assertThat(body.get("permissions")).isNull();
+        // Standaardlogin krijgt alle drie rechten; permissions is altijd een lijst (5B-4), nooit null.
+        @SuppressWarnings("unchecked")
+        List<String> permissions = (List<String>) body.get("permissions");
+        assertThat(permissions).containsExactlyInAnyOrder("catalogImport.read", "catalogImport.manage", "catalogImport.approve");
         assertThat(body.get("displayName")).isNull();
     }
 
@@ -324,6 +328,82 @@ class SecurityHttpTest {
         bareMvc.perform(get(ME))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    // --- Fase 5-PERM: /me.permissions vullen (5B-4) --------------------------------------------------------
+
+    @Test
+    void meWithoutAnyRightReturnsAnEmptyPermissionsList() throws Exception {
+        MvcResult result = mockMvc.perform(get(ME).with(as("no.rights@example.test", new Permission[0])))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        Map<String, Object> body = body(result);
+        @SuppressWarnings("unchecked")
+        List<String> permissions = (List<String>) body.get("permissions");
+        assertThat(permissions).isEmpty();
+    }
+
+    @Test
+    void meWithReadOnlyReturnsSortedPermissions() throws Exception {
+        MvcResult result = mockMvc.perform(get(ME).with(as("read.only@example.test", Permission.READ)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        Map<String, Object> body = body(result);
+        @SuppressWarnings("unchecked")
+        List<String> permissions = (List<String>) body.get("permissions");
+        assertThat(permissions).containsExactly("catalogImport.read");
+    }
+
+    @Test
+    void meWithManageReturnsSortedPermissionsIncludingRead() throws Exception {
+        MvcResult result = mockMvc.perform(get(ME).with(as("manage@example.test", Permission.MANAGE)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        Map<String, Object> body = body(result);
+        @SuppressWarnings("unchecked")
+        List<String> permissions = (List<String>) body.get("permissions");
+        assertThat(permissions).containsExactly("catalogImport.manage", "catalogImport.read");
+    }
+
+    @Test
+    void meWithApproveReturnsSortedPermissionsIncludingReadAndManage() throws Exception {
+        MvcResult result = mockMvc.perform(get(ME).with(as("approve@example.test", Permission.APPROVE)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        Map<String, Object> body = body(result);
+        @SuppressWarnings("unchecked")
+        List<String> permissions = (List<String>) body.get("permissions");
+        assertThat(permissions).containsExactly("catalogImport.approve", "catalogImport.manage", "catalogImport.read");
+    }
+
+    @Test
+    void systemWithoutRightsReturnsEmptyPermissionsList() throws Exception {
+        MvcResult result = mockMvc.perform(get(ME).with(as("system", new Permission[0])))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        Map<String, Object> body = body(result);
+        @SuppressWarnings("unchecked")
+        List<String> permissions = (List<String>) body.get("permissions");
+        assertThat(permissions).isEmpty();
+    }
+
+    @Test
+    void meReturnsPermissionsSortedAlphabetically() throws Exception {
+        // APPROVE, MANAGE, READ in enum order; sorted: approve, manage, read alphabetically.
+        MvcResult result = mockMvc.perform(get(ME).with(as("multi@example.test", Permission.APPROVE)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        Map<String, Object> body = body(result);
+        @SuppressWarnings("unchecked")
+        List<String> permissions = (List<String>) body.get("permissions");
+        // Alphabetically: catalogImport.approve < catalogImport.manage < catalogImport.read
+        assertThat(permissions).containsExactly("catalogImport.approve", "catalogImport.manage", "catalogImport.read");
     }
 
     // --- Logout ----------------------------------------------------------------------------------------

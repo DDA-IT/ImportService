@@ -114,6 +114,14 @@ public class ImportDefinitionBookmark {
     @Column(name = "created_by", length = 100)
     private String createdBy;
 
+    /**
+     * OIDC-subject van wie de bookmark declareerde (Fase 5-AUTH, changeset 007-4); {@code null} = geen
+     * geverifieerde identiteit. {@code ck_import_definition_bookmark_created_subject} verbiedt een
+     * subject zonder naam.
+     */
+    @Column(name = "created_by_subject", length = 255)
+    private String createdBySubject;
+
     protected ImportDefinitionBookmark() {
         // JPA
     }
@@ -243,5 +251,14 @@ public class ImportDefinitionBookmark {
 
     public void setCreatedBy(String createdBy) {
         this.createdBy = createdBy;
+    }
+
+    public String getCreatedBySubject() {
+        return createdBySubject;
+    }
+
+    /** Fase 5-AUTH (5A-6): zet altijd samen met {@link #setCreatedBy(String)}; {@code null} = niet geverifieerd. */
+    public void setCreatedBySubject(String createdBySubject) {
+        this.createdBySubject = createdBySubject;
     }
 }

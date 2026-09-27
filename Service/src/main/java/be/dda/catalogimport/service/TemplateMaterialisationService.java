@@ -138,8 +138,12 @@ import org.springframework.transaction.annotation.Transactional;
  * OPTIONAL_BOOKMARK_NOT_FILLED} (een niet-verplichte bookmark zonder waarde; de plaats behoudt wat ze
  * had) en {@code LINK_SEARCH_SUPPLIER_NOT_DERIVED} hierboven. Beide zijn getypeerd, geen vrije tekst.
  * <p>
- * Autorisatie volgt in Fase 5; {@code materialisedBy} is voorlopig een requestveld met dezelfde regels
- * als {@code acceptedBy}/{@code decidedBy} (A38, Q1).
+ * Sinds Fase 5-AUTH (5A-6) tekent de aangemelde gebruiker: de Web-laag roept
+ * {@code CurrentActor.signer(materialisedBy, "materialisedBy")} aan vóór deze service, {@code
+ * materialisedBy} is daardoor een optionele controle geworden, en naast de naam wordt het OIDC-subject
+ * bewaard op elke rij die de materialisatie aanmaakt (changeset 007-4). De oude twee-argumentvorm van
+ * {@link #materialise} blijft bestaan zonder subject ("geen geverifieerde identiteit") — alleen voor
+ * tests en {@code DemoDataSeeder}.
  */
 @Service
 @Transactional
@@ -347,6 +351,21 @@ public class TemplateMaterialisationService {
      *                             {@code CONFIG_*}-code van een fase F-blokkade
      */
     public MaterialisationView materialise(long definitionId, MaterialiseRequest request) {
+        return materialise(definitionId, request,
+                ActorIdentity.unverified(request == null ? null : request.materialisedBy()));
+    }
+
+    /**
+     * Zoals hierboven, met de geverifieerde identiteit van wie materialiseert (Fase 5-AUTH, 5A-6).
+     * {@code actor} vervangt binnen de service het veld {@code materialisedBy}; het record
+     * {@link MaterialiseRequest} wijzigt niet. De naam komt in de {@code *_by}-kolommen van élke rij die
+     * deze materialisatie aanmaakt (definitie, revisie, mappings, filters, kritiekheid, bookmarks en
+     * bookmarkwaarden), het subject in de bijhorende {@code *_by_subject}-kolommen (changeset 007-4).
+     * De Web-laag gebruikt uitsluitend deze overload en heeft {@code materialisedBy} dan al met de
+     * aangemelde gebruiker vergeleken (400 {@code ACTOR_FIELD_MISMATCH}).
+     */
+    public MaterialisationView materialise(long definitionId, MaterialiseRequest request,
+                                           ActorIdentity actor) {
         MaterialiseRequest command = request == null
                 ? new MaterialiseRequest(null, null, null, null, null, null, null, null, null, null, null,
                         null, null)
@@ -357,7 +376,7 @@ public class TemplateMaterialisationService {
         ImportDefinitionRevision templateRevision = templateRevision(template, command.templateRevisionId());
 
         // --- Fase B: vorm van het verzoek ---------------------------------------------------------
-        RequestShape shape = checkRequestShape(command);
+        RequestShape shape = checkRequestShape(command, actor);
 
         // --- Fase C: integriteit van de sjabloondeclaratie -----------------------------------------
         Declarations declarations = checkDeclarations(templateRevision);
@@ -510,14 +529,14 @@ public class TemplateMaterialisationService {
      */
     private record RequestShape(MaterialisationMode mode, String definitionCode, String definitionName,
                                 String linkCode, String linkName, String changeReason,
-                                String librarySearchSupplierCode, String materialisedBy) {
+                                String librarySearchSupplierCode, ActorIdentity actor) {
 
         boolean reuse() {
             return mode == MaterialisationMode.REUSE_DEFINITION;
         }
     }
 
-    private RequestShape checkRequestShape(MaterialiseRequest command) {
+    private RequestShape checkRequestShape(MaterialiseRequest command, ActorIdentity signer) {
         if (command.mode() == null) {
             throw new BadRequestException("MATERIALISATION_MODE_REQUIRED",
                     "mode is required and has no default; state NEW_DEFINITION or REUSE_DEFINITION "
@@ -536,8 +555,12 @@ public class TemplateMaterialisationService {
             throw new BadRequestException("REUSE_DEFINITION_NOT_ALLOWED",
                     "reuseDefinitionId only belongs to mode REUSE_DEFINITION");
         }
-        String materialisedBy = ActorNames.requireActorName(command.materialisedBy(), "materialisedBy",
-                MAX_USER_LENGTH);
+        // De naam blijft dezelfde regels volgen als voorheen (niet leeg, niet 'system', hoogstens
+        // MAX_USER_LENGTH); enkel de bron verschilt: de aangemelde gebruiker in plaats van het
+        // requestveld. Het subject reist mee naar elke rij die hieronder ontstaat.
+        ActorIdentity actor = new ActorIdentity(
+                ActorNames.requireActorName(signer.username(), "materialisedBy", MAX_USER_LENGTH),
+                signer.subject());
         if (reuse && (command.definitionCode() != null || command.definitionName() != null
                 || command.changeReason() != null)) {
             // Hergebruik maakt geen definitie en geen revisie: een meegegeven code, naam of
@@ -555,7 +578,7 @@ public class TemplateMaterialisationService {
                 optionalText(command.changeReason(), "changeReason", MAX_CHANGE_REASON_LENGTH),
                 optionalText(command.librarySearchSupplierCode(), "librarySearchSupplierCode",
                         MAX_CODE_LENGTH),
-                materialisedBy);
+                actor);
     }
 
     // --- Fase C ------------------------------------------------------------------------------------
@@ -928,13 +951,15 @@ public class TemplateMaterialisationService {
     private MaterialisationView write(ImportDefinition template, ImportDefinitionRevision templateRevision,
                                       RequestShape shape, Declarations declarations, Values values,
                                       SourceOrganisation supplier) {
-        String actor = shape.materialisedBy();
+        ActorIdentity actor = shape.actor();
         ImportDefinition definition;
         ImportDefinitionRevision revision;
         ImportLink link;
         try {
             definition = new ImportDefinition(template.getSourceOrganisation(), shape.definitionCode(),
-                    shape.definitionName(), actor);
+                    shape.definitionName(), actor.username());
+            // Naam en subject horen bij dezelfde handtekening; NULL = geen geverifieerde identiteit.
+            definition.setCreatedBySubject(actor.subject());
             // usage_type blijft OWN_DEFINITION: een afgeleide definitie is live configuratie, geen
             // blauwdruk. based_on legt de herkomst vast (§14.16 "Gebaseerd op").
             definition.setBasedOnDefinition(template);
@@ -1003,7 +1028,7 @@ public class TemplateMaterialisationService {
     private MaterialisationView writeReuse(ImportDefinition template, ImportDefinitionRevision templateRevision,
                                            RequestShape shape, Declarations declarations, Values values,
                                            SourceOrganisation supplier, ReusedDefinition reused) {
-        String actor = shape.materialisedBy();
+        ActorIdentity actor = shape.actor();
         try {
             ImportLink link = new ImportLink(shape.linkCode(), shape.linkName(), reused.definition(),
                     supplier, values.libraryCode());
@@ -1042,7 +1067,7 @@ public class TemplateMaterialisationService {
                             value, usage.getPlaceKind().name(), usage.getTargetHint()));
                 }
                 linkValues.save(new ImportLinkBookmarkValue(link, bookmark.getName(), bookmark.getDataType(),
-                        value, actor));
+                        value, actor.username(), actor.subject()));
             }
             linkValues.flush();
 
@@ -1081,9 +1106,10 @@ public class TemplateMaterialisationService {
      */
     private ImportDefinitionRevision copyRevision(ImportDefinition definition,
                                                   ImportDefinitionRevision source, RequestShape shape,
-                                                  String actor) {
+                                                  ActorIdentity actor) {
         ImportDefinitionRevision copy = new ImportDefinitionRevision(definition, 1,
-                source.getIdentityProfileKind(), actor);
+                source.getIdentityProfileKind(), actor.username());
+        copy.setCreatedBySubject(actor.subject());
         copy.setStatus(RevisionStatus.DRAFT);
         copy.setBasedOnRevision(source);
         copy.setChangeReason(shape.changeReason() != null ? shape.changeReason()
@@ -1151,7 +1177,8 @@ public class TemplateMaterialisationService {
      *     nog <b>niet</b> weggeschreven: eerst wordt de bookmarkwaarde erin gezet, dan pas opgeslagen.
      */
     private Map<String, ImportFieldMapping> copyMappings(ImportDefinitionRevision revision,
-                                                         ImportDefinitionRevision source, String actor) {
+                                                         ImportDefinitionRevision source,
+                                                         ActorIdentity actor) {
         Map<String, ImportFieldMapping> copies = new LinkedHashMap<>();
         for (ImportFieldMapping row : fieldMappings.findByRevisionIdWithTargetField(source.getId())) {
             ImportFieldMapping copy = new ImportFieldMapping(revision, row.getSequenceNumber(),
@@ -1173,7 +1200,8 @@ public class TemplateMaterialisationService {
             copy.setReferenceType(row.getReferenceType());
             copy.setCriticality(row.getCriticality());
             copy.setActive(row.isActive());
-            copy.setCreatedBy(actor);
+            copy.setCreatedBy(actor.username());
+            copy.setCreatedBySubject(actor.subject());
             copies.put(row.getTargetField().getCode(), copy);
         }
         return copies;
@@ -1181,7 +1209,8 @@ public class TemplateMaterialisationService {
 
     /** @return de nog niet weggeschreven kopieën op volgnummer — de sleutel waarmee een bookmark ze aanwijst */
     private Map<Integer, ImportRecordFilter> copyFilters(ImportDefinitionRevision revision,
-                                                         ImportDefinitionRevision source, String actor) {
+                                                         ImportDefinitionRevision source,
+                                                         ActorIdentity actor) {
         Map<Integer, ImportRecordFilter> copies = new LinkedHashMap<>();
         for (ImportRecordFilter row
                 : recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(source.getId())) {
@@ -1192,18 +1221,20 @@ public class TemplateMaterialisationService {
             copy.setTrimBeforeCompare(row.isTrimBeforeCompare());
             copy.setNullBehaviour(row.getNullBehaviour());
             copy.setMissingColumnBehaviour(row.getMissingColumnBehaviour());
-            copy.setCreatedBy(actor);
+            copy.setCreatedBy(actor.username());
+            copy.setCreatedBySubject(actor.subject());
             copies.put(row.getSequenceNumber(), copy);
         }
         return copies;
     }
 
     private void copyFieldCriticalities(ImportDefinitionRevision revision, ImportDefinitionRevision source,
-                                        String actor) {
+                                        ActorIdentity actor) {
         for (ImportRevisionFieldCriticality row : fieldCriticalities.findByDefinitionRevisionId(source.getId())) {
             ImportRevisionFieldCriticality copy = new ImportRevisionFieldCriticality(revision.getId(),
                     row.getFieldKey(), row.getCriticality());
-            copy.setCreatedBy(actor);
+            copy.setCreatedBy(actor.username());
+            copy.setCreatedBySubject(actor.subject());
             fieldCriticalities.save(copy);
         }
     }
@@ -1215,7 +1246,7 @@ public class TemplateMaterialisationService {
      * precies het runtime-leespad dat R-MAT-02 verbiedt.
      */
     private void copyLinkScopeDeclarations(ImportDefinitionRevision revision, Declarations declarations,
-                                           String actor) {
+                                           ActorIdentity actor) {
         for (ImportDefinitionBookmark source : declarations.bookmarks()) {
             if (source.getValueScope() != BookmarkValueScope.LINK) {
                 continue;
@@ -1228,7 +1259,8 @@ public class TemplateMaterialisationService {
             copy.setDefaultValue(source.getDefaultValue());
             copy.setAllowedValues(source.getAllowedValues());
             copy.setValidationPattern(source.getValidationPattern());
-            copy.setCreatedBy(actor);
+            copy.setCreatedBy(actor.username());
+            copy.setCreatedBySubject(actor.subject());
             ImportDefinitionBookmark stored = bookmarks.save(copy);
             for (ImportDefinitionBookmarkUsage usage : declarations.usages().get(source)) {
                 usages.save(new ImportDefinitionBookmarkUsage(stored, usage.getPlaceKind(),
@@ -1251,7 +1283,7 @@ public class TemplateMaterialisationService {
     private void applyValues(ImportDefinitionRevision templateRevision, Declarations declarations,
                              Values values, ImportDefinitionRevision revision, ImportLink link,
                              Map<String, ImportFieldMapping> mappings, Map<Integer, ImportRecordFilter> filters,
-                             String actor, List<AppliedValue> appliedDefinition,
+                             ActorIdentity actor, List<AppliedValue> appliedDefinition,
                              List<AppliedValue> appliedLink, List<Warning> warnings) {
         for (ImportDefinitionBookmark bookmark : declarations.bookmarks()) {
             String value = values.effective().get(bookmark.getName());
@@ -1280,12 +1312,13 @@ public class TemplateMaterialisationService {
             }
             if (definitionScope) {
                 ImportDefinitionBookmarkValue row = new ImportDefinitionBookmarkValue(revision,
-                        bookmark.getName(), bookmark.getDataType(), value, actor);
+                        bookmark.getName(), bookmark.getDataType(), value, actor.username(),
+                        actor.subject());
                 row.setSourceTemplateRevision(templateRevision);
                 definitionValues.save(row);
             } else {
                 linkValues.save(new ImportLinkBookmarkValue(link, bookmark.getName(),
-                        bookmark.getDataType(), value, actor));
+                        bookmark.getDataType(), value, actor.username(), actor.subject()));
             }
         }
     }

@@ -235,7 +235,16 @@ public class BundleDecisionService {
      *                                  {@link #CODE_IDENTITY_DECISION_NOT_IN_SCOPE}
      */
     public MutationDecisionView approve(long bundleId, long mutationId, String decidedBy, String reason) {
-        return decide(bundleId, mutationId, decidedBy, reason, MutationStatus.READY_FOR_PUBLICATION);
+        return approve(bundleId, mutationId, ActorIdentity.unverified(decidedBy), reason);
+    }
+
+    /**
+     * Zoals {@link #approve(long, long, String, String)}, met de beslisser als {@link ActorIdentity}
+     * (Fase 5-AUTH, 5A-4); de String-variant laat {@code decided_by_subject} {@code null}. De idempotentie
+     * ("dezelfde beslisser") blijft op username vergelijken (ontwerp A6).
+     */
+    public MutationDecisionView approve(long bundleId, long mutationId, ActorIdentity actor, String reason) {
+        return decide(bundleId, mutationId, actor, reason, MutationStatus.READY_FOR_PUBLICATION);
     }
 
     /**
@@ -247,7 +256,12 @@ public class BundleDecisionService {
      * @throws ConflictException        zie {@link #approve}
      */
     public MutationDecisionView reject(long bundleId, long mutationId, String decidedBy, String reason) {
-        return decide(bundleId, mutationId, decidedBy, reason, MutationStatus.REJECTED);
+        return reject(bundleId, mutationId, ActorIdentity.unverified(decidedBy), reason);
+    }
+
+    /** Zoals {@link #reject(long, long, String, String)}, met de beslisser als {@link ActorIdentity} (5A-4). */
+    public MutationDecisionView reject(long bundleId, long mutationId, ActorIdentity actor, String reason) {
+        return decide(bundleId, mutationId, actor, reason, MutationStatus.REJECTED);
     }
 
     /**
@@ -297,8 +311,22 @@ public class BundleDecisionService {
      */
     public GroupDecisionView decideGroup(long bundleId, BundleDecisionKind decisionKind, String decidedBy,
                                          String reason, DecisionFilter filter) {
+        return decideGroup(bundleId, decisionKind, ActorIdentity.unverified(decidedBy), reason, filter);
+    }
+
+    /**
+     * Zoals {@link #decideGroup(long, BundleDecisionKind, String, String, DecisionFilter)}, met de
+     * beslisser als {@link ActorIdentity} (Fase 5-AUTH, 5A-4); het subject komt op de ene
+     * {@code publication_decision}-regel. De String-variant laat {@code decided_by_subject} {@code null}.
+     */
+    public GroupDecisionView decideGroup(long bundleId, BundleDecisionKind decisionKind, ActorIdentity actor,
+                                         String reason, DecisionFilter filter) {
         MutationStatus target = targetOf(decisionKind);
-        String decider = ActorNames.requireActorName(decidedBy, "decidedBy", MAX_ACTOR_LENGTH);
+        if (actor == null) {
+            throw new IllegalArgumentException("Missing decidedBy");
+        }
+        String decider = ActorNames.requireActorName(actor.username(), "decidedBy", MAX_ACTOR_LENGTH);
+        String deciderSubject = actor.subject();
         String motivation = optionalText(reason);
         if (target == MutationStatus.REJECTED && motivation == null) {
             throw new IllegalArgumentException("Missing reason: rejecting mutations always requires one");
@@ -329,7 +357,7 @@ public class BundleDecisionService {
 
             Instant decidedAt = clock.instant();
             PublicationDecision decision = new PublicationDecision(bundle, null, decisionKind,
-                    BundleDecisionScope.GROUP, candidates, decider, decidedAt,
+                    BundleDecisionScope.GROUP, candidates, decider, deciderSubject, decidedAt,
                     motivation == null ? DEFAULT_APPROVAL_REASON : motivation);
             decision.setSelectionFilter(rendered);
             // previous_status enkel wanneer de filter één bronstatus vastpint; anders draagt elke
@@ -466,9 +494,13 @@ public class BundleDecisionService {
      * {@code ASSEMBLING} eisen → mutatie + actief lidmaatschap → marker/identiteitsincident → blokkade
      * → idempotentie → herziening → beslissingsregel invoegen → mutatie bijwerken.
      */
-    private MutationDecisionView decide(long bundleId, long mutationId, String decidedBy, String reason,
+    private MutationDecisionView decide(long bundleId, long mutationId, ActorIdentity actor, String reason,
                                         MutationStatus target) {
-        String decider = ActorNames.requireActorName(decidedBy, "decidedBy", MAX_ACTOR_LENGTH);
+        if (actor == null) {
+            throw new IllegalArgumentException("Missing decidedBy");
+        }
+        String decider = ActorNames.requireActorName(actor.username(), "decidedBy", MAX_ACTOR_LENGTH);
+        String deciderSubject = actor.subject();
         String motivation = optionalText(reason);
         if (target == MutationStatus.REJECTED && motivation == null) {
             throw new IllegalArgumentException("Missing reason: rejecting a mutation always requires one");
@@ -506,7 +538,7 @@ public class BundleDecisionService {
             BundleDecisionKind kind = target == MutationStatus.READY_FOR_PUBLICATION
                     ? BundleDecisionKind.APPROVE : BundleDecisionKind.REJECT;
             PublicationDecision decision = new PublicationDecision(bundle, mutation, kind,
-                    BundleDecisionScope.MUTATION, 1, decider, decidedAt,
+                    BundleDecisionScope.MUTATION, 1, decider, deciderSubject, decidedAt,
                     motivation == null ? DEFAULT_APPROVAL_REASON : motivation);
             decision.setPreviousStatus(current.name());
             decision.setNewStatus(target.name());

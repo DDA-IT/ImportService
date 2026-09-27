@@ -174,6 +174,19 @@ public class TemplateBookmarkService {
      * @throws IllegalArgumentException ontbrekende, te lange of ongeldige velden
      */
     public BookmarkView declareBookmark(long definitionId, long revisionId, DeclareBookmarkCommand command) {
+        return declareBookmark(definitionId, revisionId, command,
+                ActorIdentity.unverified(command.createdBy()));
+    }
+
+    /**
+     * Zoals hierboven, met de geverifieerde identiteit van wie declareert (Fase 5-AUTH, 5A-6): de naam
+     * komt in {@code import_definition_bookmark.created_by}, het subject in
+     * {@code created_by_subject}. De naam uit {@code command.createdBy()} wordt hier <b>niet</b>
+     * gebruikt — de Web-laag heeft dat veld al met de aangemelde gebruiker vergeleken (400
+     * {@code ACTOR_FIELD_MISMATCH}) en bewaart altijd de token-spelling.
+     */
+    public BookmarkView declareBookmark(long definitionId, long revisionId, DeclareBookmarkCommand command,
+                                        ActorIdentity actor) {
         ImportDefinitionRevision revision = editableTemplateRevision(definitionId, revisionId);
         String name = requireText(command.name(), "name", MAX_NAME_LENGTH);
         if (!NAME_PATTERN.matcher(name).matches()) {
@@ -221,7 +234,8 @@ public class TemplateBookmarkService {
         bookmark.setDefaultValue(defaultValue);
         bookmark.setAllowedValues(allowedValues);
         bookmark.setValidationPattern(validationPattern);
-        bookmark.setCreatedBy(orDefault(command.createdBy(), DEFAULT_CREATED_BY));
+        bookmark.setCreatedBy(orDefault(actor.username(), DEFAULT_CREATED_BY));
+        bookmark.setCreatedBySubject(actor.subject());
         ImportDefinitionBookmark stored = bookmarks.saveAndFlush(bookmark);
         return view(stored, List.of());
     }

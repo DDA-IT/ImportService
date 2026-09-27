@@ -71,6 +71,13 @@ public class ImportLink {
     @Column(name = "library_search_supplier_code", length = 50)
     private String librarySearchSupplierCode;
 
+    /**
+     * Optionele vaste valuta van de koppeling (ISO-4217-vorm, drie hoofdletters), gebruikt als er geen
+     * muntveld gemapt is; {@code null} = geen vaste valuta (valuta-standaard-design par. 2).
+     */
+    @Column(name = "default_currency", length = 3)
+    private String defaultCurrency;
+
     @Column(name = "active", nullable = false)
     private boolean active = true;
 
@@ -157,6 +164,14 @@ public class ImportLink {
 
     public void setLibrarySearchSupplierCode(String librarySearchSupplierCode) {
         this.librarySearchSupplierCode = librarySearchSupplierCode;
+    }
+
+    public String getDefaultCurrency() {
+        return defaultCurrency;
+    }
+
+    public void setDefaultCurrency(String defaultCurrency) {
+        this.defaultCurrency = defaultCurrency;
     }
 
     public boolean isActive() {

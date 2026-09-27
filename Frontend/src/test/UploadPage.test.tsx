@@ -5,12 +5,18 @@
  * manuele taak), fout met foutcode (409, 413 zonder code), ongeldige input (niets verstuurd), herhaalde
  * actie (200 = bestaande levering; dubbele klik = één POST; herstelroute na netwerkfout met dezelfde
  * referentie), twee fasen + tijdteller, en de deterministische referentie.
+ *
+ * Sinds `docs/decisions.md` 2026-09-27 ("tweede ontvangstweg"): ook de servermap-bron (bestandslijst
+ * laden/tonen, bestand kiezen en versturen naar `.../deliveries/local-source`, server-afgeleide
+ * `deliveryReference`, `LOCAL_SOURCE_NOT_CONFIGURED`). De bestandsinput-selector is verscherpt naar
+ * `/^Bestand \(CSV\)/` omdat de nieuwe bronkeuze-radioknoppen ook met "Bestand" beginnen.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { ActorProvider } from '../actor/ActorContext';
+import { ActorProvider, type ActorIdentity } from '../actor/ActorContext';
+import { TEST_IDENTITY, testIdentityWith } from './testIdentity';
 import { UploadPage, ElapsedTimer } from '../features/upload/UploadPage';
 import { deriveDeliveryReference } from '../features/upload/deliveryReference';
 
@@ -54,6 +60,7 @@ const EMPTY_TASKS = { content: [], page: 0, size: 200, totalElements: 0, totalPa
 const UPLOAD_OK = {
   deliveryId: 9,
   batchId: 55,
+  deliveryReference: 'levering.csv#abc123abc123',
   status: 'SCREENED',
   blockedCode: null,
   rawRecordCount: 7,
@@ -72,11 +79,29 @@ function json(body: unknown, status = 200): Response {
 
 type Handler = (init: RequestInit | undefined) => Promise<Response>;
 
-function mockFetch(tasks: unknown, post: Handler) {
+const LOCAL_SOURCE_FILES = {
+  files: [
+    { fileName: 'ABP4-2026.csv', byteSize: 734003200, lastModifiedAt: '2026-09-27T08:12:44Z' },
+    { fileName: 'oud.csv', byteSize: 512, lastModifiedAt: '2026-01-01T00:00:00Z' },
+  ],
+  truncated: false,
+};
+
+function mockFetch(
+  tasks: unknown,
+  post: Handler,
+  options: { localSourceFiles?: Handler; localSourcePost?: Handler } = {},
+) {
   global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
+    if (url.endsWith('/deliveries/local-source')) {
+      return (options.localSourcePost ?? (() => Promise.reject(new Error('geen local-source POST-handler'))))(init);
+    }
     if (url.endsWith('/deliveries')) {
       return post(init);
+    }
+    if (url.endsWith('/local-source/files')) {
+      return (options.localSourceFiles ?? (() => Promise.resolve(json(LOCAL_SOURCE_FILES))))(init);
     }
     if (url.includes('/tasks')) {
       return Promise.resolve(json(tasks));
@@ -92,9 +117,16 @@ function posts(): [string, RequestInit][] {
     .map((call) => [call[0]!.toString(), call[1] as RequestInit]);
 }
 
-function renderPage() {
+function localSourcePosts(): [string, RequestInit][] {
+  return vi
+    .mocked(global.fetch)
+    .mock.calls.filter((call) => call[0]?.toString().endsWith('/deliveries/local-source'))
+    .map((call) => [call[0]!.toString(), call[1] as RequestInit]);
+}
+
+function renderPage(identity: ActorIdentity = { ...TEST_IDENTITY, username: 'tester' }) {
   return render(
-    <ActorProvider>
+    <ActorProvider identity={identity}>
       <MemoryRouter>
         <UploadPage />
       </MemoryRouter>
@@ -110,7 +142,7 @@ function csv(content = 'a;b\n1;2\n', name = 'levering.csv'): File {
 async function fillIn(file: File = csv()) {
   await screen.findByRole('option', { name: /LNK-1 — Handmatige levering/ });
   fireEvent.change(screen.getByLabelText(/^Taak/), { target: { value: '5' } });
-  fireEvent.change(screen.getByLabelText(/^Bestand/), { target: { files: [file] } });
+  fireEvent.change(screen.getByLabelText(/^Bestand \(CSV\)/), { target: { files: [file] } });
   await waitFor(() => expect((screen.getByLabelText(/^Referentie/) as HTMLInputElement).value).toContain('#'));
 }
 
@@ -120,10 +152,6 @@ function submit() {
 
 describe('UploadPage', () => {
   const originalFetch = global.fetch;
-
-  beforeEach(() => {
-    sessionStorage.setItem('catalogimport.actor', 'tester');
-  });
 
   afterEach(() => {
     cleanup();
@@ -241,7 +269,7 @@ describe('UploadPage', () => {
     expect(await screen.findByText('Bestand te groot')).toBeInTheDocument();
   });
 
-  it('ongeldige input: niets wordt verstuurd (geen taak, geen bestand, negatief aantal, geen actor, lange referentie)', async () => {
+  it('ongeldige input: niets wordt verstuurd (geen taak, geen bestand, negatief aantal, lange referentie)', async () => {
     mockFetch(TASKS, () => Promise.resolve(json(UPLOAD_OK, 201)));
     renderPage();
     await screen.findByRole('option', { name: /LNK-1 — Handmatige levering/ });
@@ -253,7 +281,7 @@ describe('UploadPage', () => {
     submit();
     expect(await screen.findByText('Kies een bestand.')).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText(/^Bestand/), { target: { files: [csv()] } });
+    fireEvent.change(screen.getByLabelText(/^Bestand \(CSV\)/), { target: { files: [csv()] } });
     await waitFor(() => expect((screen.getByLabelText(/^Referentie/) as HTMLInputElement).value).toContain('#'));
 
     fireEvent.change(screen.getByLabelText(/^Referentie/), { target: { value: '   ' } });
@@ -274,15 +302,6 @@ describe('UploadPage', () => {
     submit();
     expect(await screen.findByText(/Verwachte bestandsgrootte moet een geheel getal/)).toBeInTheDocument();
 
-    expect(posts()).toHaveLength(0);
-
-    // Zonder actornaam ook geen upload.
-    sessionStorage.clear();
-    cleanup();
-    renderPage();
-    await fillIn();
-    submit();
-    expect(await screen.findByText(/Geüpload door: Vul een naam in\./)).toBeInTheDocument();
     expect(posts()).toHaveLength(0);
   });
 
@@ -348,6 +367,111 @@ describe('UploadPage', () => {
     const sent = posts().map(([, init]) => (init.body as FormData).get('deliveryReference'));
     expect(sent).toEqual([referenceBefore, referenceBefore]);
     expect(screen.queryByTestId('upload-recovery')).not.toBeInTheDocument();
+  });
+
+  it('zonder MANAGE: uploadknop uitgeschakeld mét reden, niets verstuurd', async () => {
+    mockFetch(TASKS, () => Promise.resolve(json(UPLOAD_OK, 201)));
+    renderPage(testIdentityWith('catalogImport.read'));
+    await screen.findByRole('option', { name: /LNK-1 — Handmatige levering/ });
+
+    const button = screen.getByRole('button', { name: 'Uploaden' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', "U heeft het recht 'Beheren' (catalogImport.manage) niet.");
+    expect(screen.getByTestId('permission-reason-manage')).toHaveTextContent(
+      "U heeft het recht 'Beheren' (catalogImport.manage) niet.",
+    );
+    expect(button).toHaveAttribute('aria-describedby', 'upload-permission-reason');
+    expect(posts()).toHaveLength(0);
+  });
+
+  it('met MANAGE: uploadknop niet uitgeschakeld en geen reden', async () => {
+    mockFetch(TASKS, () => Promise.resolve(json(UPLOAD_OK, 201)));
+    renderPage(testIdentityWith('catalogImport.read', 'catalogImport.manage'));
+    await screen.findByRole('option', { name: /LNK-1 — Handmatige levering/ });
+
+    expect(screen.getByRole('button', { name: 'Uploaden' })).toBeEnabled();
+    expect(screen.queryByTestId('permission-reason-manage')).not.toBeInTheDocument();
+  });
+
+  describe('servermap-bron (tweede ontvangstweg, docs/decisions.md 2026-09-27)', () => {
+    it('laadt en toont de lijst, en verstuurt een JSON-POST naar .../deliveries/local-source', async () => {
+      const localSourcePost = vi.fn((_init?: RequestInit) =>
+        Promise.resolve(
+          json({ ...UPLOAD_OK, deliveryReference: 'ABP4-2026.csv#deadbeef0001' }, 201),
+        ),
+      );
+      mockFetch(TASKS, () => Promise.reject(new Error('mag niet aangeroepen worden')), { localSourcePost });
+      renderPage();
+      await screen.findByRole('option', { name: /LNK-1 — Handmatige levering/ });
+      fireEvent.change(screen.getByLabelText(/^Taak/), { target: { value: '5' } });
+
+      fireEvent.click(screen.getByLabelText('Bestand op de server'));
+      await screen.findByRole('option', { name: /ABP4-2026\.csv/ });
+      expect(screen.getByRole('option', { name: /oud\.csv/ })).toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText(/^Kies een bestand uit de servermap/), {
+        target: { value: 'ABP4-2026.csv' },
+      });
+      submit();
+
+      const result = await screen.findByTestId('upload-result');
+      expect(result).toHaveTextContent('Levering aangemaakt en gescreend');
+      expect(screen.getByTestId('upload-result-reference')).toHaveTextContent('ABP4-2026.csv#deadbeef0001');
+
+      const [[url, init]] = localSourcePosts();
+      expect(url).toContain('/tasks/5/deliveries/local-source');
+      expect(init.method).toBe('POST');
+      expect(new Headers(init.headers).get('Content-Type')).toBe('application/json');
+      const body = JSON.parse(init.body as string);
+      expect(body).toEqual({
+        fileName: 'ABP4-2026.csv',
+        deliveryReference: null,
+        uploadedBy: 'tester',
+        expectedRecordCount: null,
+        expectedByteSize: null,
+      });
+      expect(localSourcePost).toHaveBeenCalledTimes(1);
+    });
+
+    it('vereist een gekozen bestand uit de lijst (geen vrije tekstinvoer)', async () => {
+      mockFetch(TASKS, () => Promise.reject(new Error('mag niet aangeroepen worden')));
+      renderPage();
+      await screen.findByRole('option', { name: /LNK-1 — Handmatige levering/ });
+      fireEvent.change(screen.getByLabelText(/^Taak/), { target: { value: '5' } });
+      fireEvent.click(screen.getByLabelText('Bestand op de server'));
+      await screen.findByRole('option', { name: /ABP4-2026\.csv/ });
+
+      submit();
+      expect(await screen.findByText('Kies een bestand uit de servermap.')).toBeInTheDocument();
+      expect(localSourcePosts()).toHaveLength(0);
+    });
+
+    it('lege lijst: duidelijke melding, geen crash', async () => {
+      mockFetch(TASKS, () => Promise.reject(new Error('mag niet aangeroepen worden')), {
+        localSourceFiles: () => Promise.resolve(json({ files: [], truncated: false })),
+      });
+      renderPage();
+      await screen.findByRole('option', { name: /LNK-1 — Handmatige levering/ });
+      fireEvent.click(screen.getByLabelText('Bestand op de server'));
+
+      expect(await screen.findByTestId('no-local-source-files')).toHaveTextContent(
+        'Geen bestanden gevonden in de servermap',
+      );
+    });
+
+    it('404 LOCAL_SOURCE_NOT_CONFIGURED: duidelijke melding en de bronkeuze "server" wordt uitgeschakeld', async () => {
+      mockFetch(TASKS, () => Promise.reject(new Error('mag niet aangeroepen worden')), {
+        localSourceFiles: () =>
+          Promise.resolve(json({ error: 'not configured', code: 'LOCAL_SOURCE_NOT_CONFIGURED' }, 404)),
+      });
+      renderPage();
+      await screen.findByRole('option', { name: /LNK-1 — Handmatige levering/ });
+      fireEvent.click(screen.getByLabelText('Bestand op de server'));
+
+      expect(await screen.findByText('Ontvangstweg niet ingesteld')).toBeInTheDocument();
+      expect(screen.getByText(/Werk gewoon via "Bestand van mijn computer"/)).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByLabelText('Bestand op de server')).toBeDisabled());
+    });
   });
 });
 

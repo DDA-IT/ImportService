@@ -117,6 +117,66 @@ class PublicationBundleSchemaTest {
         assertThat(found.getContentHash()).isEqualTo(sha256("bundle-content"));
     }
 
+    // --- Changeset 007-1: het geverifieerde subject (Fase 5-AUTH, bouwstap 5A-2) -------------------
+
+    /**
+     * {@code ck_publication_bundle_frozen_subject}: een subject zonder naam is een handtekening zonder
+     * ondertekenaar. De constraint wordt hier rechtstreeks op de database getoetst, niet via de service.
+     */
+    @Test
+    void refusesAFrozenSubjectOnABundleThatIsNotFrozen() {
+        PublicationBundle bundle = bundles.saveAndFlush(
+                new PublicationBundle(bundleRef("SUBJ-BAD"), PublicationTargetMode.SIMULATION, "tester@example.test"));
+
+        assertThatThrownBy(() -> jdbc.update("update publication_bundle set frozen_by_subject = ? where id = ?",
+                        "sub-without-a-name", bundle.getId()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    /**
+     * De twee betekenissen van {@code frozen_by_subject} naast elkaar: een bevriezing met geverifieerde
+     * identiteit bewaart het subject, de bestaande {@code recordFreeze} zonder subject laat het bewust
+     * {@code NULL} ("geen geverifieerde identiteit"). Nooit stil ingevuld.
+     */
+    @Test
+    void storesTheFrozenSubjectWhenPresentAndLeavesItNullWhenAbsent() {
+        PublicationBundle verified = bundles.saveAndFlush(
+                new PublicationBundle(bundleRef("SUBJ-OK"), PublicationTargetMode.SIMULATION, "tester@example.test"));
+        verified.recordFreeze("freezer@example.test", "keycloak-sub-1234", Instant.now(), "Beoordeeld",
+                sha256("bundle-content-subject"));
+        assertThatCode(() -> bundles.saveAndFlush(verified)).doesNotThrowAnyException();
+        assertThat(bundles.findById(verified.getId()).orElseThrow().getFrozenBySubject())
+                .isEqualTo("keycloak-sub-1234");
+
+        PublicationBundle unverified = bundles.saveAndFlush(new PublicationBundle(bundleRef("SUBJ-NULL"),
+                PublicationTargetMode.SIMULATION, "tester@example.test"));
+        unverified.recordFreeze("freezer@example.test", Instant.now(), "Beoordeeld",
+                sha256("bundle-content-no-subject"));
+        bundles.saveAndFlush(unverified);
+        assertThat(bundles.findById(unverified.getId()).orElseThrow().getFrozenBySubject()).isNull();
+    }
+
+    /** {@code publication_decision.decided_by} is NOT NULL, dus het subject staat er los naast. */
+    @Test
+    void storesTheDecidedSubjectOnADecisionAndLeavesItNullWhenAbsent() {
+        Scenario s = scenario("DECSUBJ");
+        ImportBatch batch = batches.saveAndFlush(s.newBatch(1));
+        PublicationBundle bundle = bundles.saveAndFlush(
+                new PublicationBundle(bundleRef("DECSUBJ"), PublicationTargetMode.SIMULATION, "tester@example.test"));
+        String mutationKey = "DECSUBJ" + Long.toString(System.nanoTime(), 36) + ":1:H1:OFFER";
+        ImportMutation mutation = mutations.saveAndFlush(createMutation(batch, mutationKey));
+
+        PublicationDecision verified = decisions.saveAndFlush(new PublicationDecision(bundle, mutation,
+                BundleDecisionKind.APPROVE, BundleDecisionScope.MUTATION, 1, "decider@example.test",
+                "keycloak-sub-9876", Instant.now(), "Goedgekeurd"));
+        PublicationDecision unverified = decisions.saveAndFlush(new PublicationDecision(bundle, null,
+                BundleDecisionKind.FREEZE, BundleDecisionScope.BUNDLE, 1, "decider@example.test", "Bevroren"));
+
+        assertThat(decisions.findById(verified.getId()).orElseThrow().getDecidedBySubject())
+                .isEqualTo("keycloak-sub-9876");
+        assertThat(decisions.findById(unverified.getId()).orElseThrow().getDecidedBySubject()).isNull();
+    }
+
     @Test
     void refusesACancelledBundleWithoutACancelledReason() {
         PublicationBundle bundle = bundles.saveAndFlush(

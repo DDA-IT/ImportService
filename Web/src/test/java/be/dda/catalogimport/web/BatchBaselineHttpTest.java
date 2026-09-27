@@ -321,15 +321,15 @@ class BatchBaselineHttpTest {
         accept(first.batchId(), ACCEPTED_BY, "").andExpect(status().isBadRequest());
         accept(first.batchId(), ACCEPTED_BY, "   ").andExpect(status().isBadRequest());
         acceptRaw(first.batchId(), "{\"acceptedBy\":\"" + ACCEPTED_BY + "\"}").andExpect(status().isBadRequest());
-        accept(first.batchId(), "", REASON).andExpect(status().isBadRequest());
-        accept(first.batchId(), "  ", REASON).andExpect(status().isBadRequest());
-        accept(first.batchId(), "system", REASON).andExpect(status().isBadRequest());
-        accept(first.batchId(), "SYSTEM", REASON).andExpect(status().isBadRequest());
-        accept(first.batchId(), "SyStEm", REASON).andExpect(status().isBadRequest());
-        accept(first.batchId(), " System ", REASON).andExpect(status().isBadRequest());
-        acceptRaw(first.batchId(), "{\"reason\":\"" + REASON + "\"}").andExpect(status().isBadRequest());
+        // Sinds 5A-5 tekent de aangemelde gebruiker: een blanco of ontbrekend acceptedBy is "afwezig" en
+        // dus geen 400 meer (zie UploadBaselineActorHttpTest); "system" is 403 SYSTEM_ACTOR_FORBIDDEN en een
+        // te lange naam 403 ACTOR_IDENTITY_INVALID (login zonder bruikbare identiteit).
+        accept(first.batchId(), "system", REASON).andExpect(status().isForbidden());
+        accept(first.batchId(), "SYSTEM", REASON).andExpect(status().isForbidden());
+        accept(first.batchId(), "SyStEm", REASON).andExpect(status().isForbidden());
+        accept(first.batchId(), " System ", REASON).andExpect(status().isForbidden());
         acceptRaw(first.batchId(), "").andExpect(status().isBadRequest());
-        accept(first.batchId(), "x".repeat(101), REASON).andExpect(status().isBadRequest());
+        accept(first.batchId(), "x".repeat(101), REASON).andExpect(status().isForbidden());
         accept(first.batchId(), ACCEPTED_BY, "x".repeat(501)).andExpect(status().isBadRequest());
 
         assertThat(stateRows(f)).isEmpty();
@@ -676,13 +676,21 @@ class BatchBaselineHttpTest {
                 + "and status = 'SKIPPED'", Long.class, batchId)).isEqualTo(mutationsSkippedBefore);
     }
 
+    /** Meldt de test aan als {@code acceptedBy} (gelijke naam = aanvaard, 5A-5); geen naam = standaardlogin. */
     private ResultActions accept(long batchId, String acceptedBy, String reason) throws Exception {
-        return acceptRaw(batchId, "{\"acceptedBy\":" + quote(acceptedBy) + ",\"reason\":" + quote(reason) + "}");
+        return acceptRaw(batchId, "{\"acceptedBy\":" + quote(acceptedBy) + ",\"reason\":" + quote(reason) + "}",
+                acceptedBy);
     }
 
     private ResultActions acceptRaw(long batchId, String json) throws Exception {
-        return mockMvc.perform(post("/api/catalog-import/batches/{id}/accept-baseline", batchId)
-                .contentType(MediaType.APPLICATION_JSON).content(json));
+        return acceptRaw(batchId, json, ACCEPTED_BY);
+    }
+
+    private ResultActions acceptRaw(long batchId, String json, String signedInAs) throws Exception {
+        var request = post("/api/catalog-import/batches/{id}/accept-baseline", batchId)
+                .contentType(MediaType.APPLICATION_JSON).content(json);
+        return mockMvc.perform(signedInAs == null || signedInAs.isBlank() ? request
+                : request.with(be.dda.catalogimport.testsupport.TestActors.as(signedInAs)));
     }
 
     private static String quote(String value) {
@@ -707,7 +715,8 @@ class BatchBaselineHttpTest {
         return mockMvc.perform(multipart("/api/catalog-import/tasks/{id}/deliveries", taskId)
                 .file(new MockMultipartFile("file", "levering.csv", "text/csv", content))
                 .param("deliveryReference", reference)
-                .param("uploadedBy", "tester@example.test"));
+                .param("uploadedBy", "tester@example.test")
+                .with(be.dda.catalogimport.testsupport.TestActors.as("tester@example.test")));
     }
 
     private static byte[] csv(boolean withDiscount, String... rows) {

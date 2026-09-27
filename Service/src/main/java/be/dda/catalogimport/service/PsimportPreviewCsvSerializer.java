@@ -5,6 +5,8 @@ import be.dda.catalogimport.service.PsimportPreviewMapper.Row;
 import be.dda.catalogimport.service.PsimportPreviewService.PsimportPreview;
 import java.io.IOException;
 import java.io.StringWriter;
+import java.io.Writer;
+import java.util.List;
 
 /**
  * Pure CSV-serialisatie van een PSIMPORT-preview voor een bevroren bundel (beslissing 2026-09-25, slice 1).
@@ -48,54 +50,101 @@ public final class PsimportPreviewCsvSerializer {
         }
     }
 
-    private static void writeBanner(StringWriter out, PsimportPreview preview) throws IOException {
+    /**
+     * De banner van de preview, letterlijk dezelfde regel als in {@link #toCsv}. Streaming-variant
+     * (bouwstap 5P-7): het publicatierun-artefact bouwt de CSV paginagewijs op en kan de preview dus niet
+     * als één object meegeven.
+     *
+     * @param envelope enkel de omslagvelden worden gelezen ({@code contractStatus},
+     *                 {@code previewSpecVersion}, {@code bundleContentHash}); {@code content()} niet
+     */
+    public static void writeBanner(Writer out, PsimportPreview envelope) throws IOException {
+        writeBannerBody(out, envelope);
+        out.write("\n");
+    }
+
+    /**
+     * De banner van het <b>publicatierun-artefact</b> (ontwerp fase 5-PUB par. 3 en 4): exact dezelfde
+     * tekst als {@link #writeBanner}, met vier velden erachter. Bewust een aparte variant en geen
+     * uitbreiding van de bestaande banner: het preview-endpoint heeft een vastgelegd formaat dat 5P-7 niet
+     * mag verschuiven.
+     * <p>
+     * {@code simulationOnly=true} en {@code writesToProdis=false} staan er <b>altijd</b> en letterlijk:
+     * een SIMULATION-run schrijft een bestand en verder niets. Wie het artefact later terugvindt, moet aan
+     * de eerste regel kunnen zien dat het nooit naar ProDisWebbase is gegaan.
+     * {@code snapshotHash}/{@code snapshotSpecVersion} zijn {@code (null)} voor een bundel die bevroren
+     * werd vóór de snapshot bestond — nooit leeg of 0.
+     */
+    public static void writeArtifactBanner(Writer out, PsimportPreview envelope) throws IOException {
+        writeBannerBody(out, envelope);
+        out.write(" simulationOnly=true writesToProdis=false snapshotSpecVersion=");
+        writeOrNullKeyword(out, envelope.snapshotSpecVersion());
+        out.write(" snapshotHash=");
+        writeOrNullKeyword(out, envelope.snapshotHash());
+        out.write("\n");
+    }
+
+    /**
+     * De headerregel: de vier vaste kolommen, gevolgd door {@code CODE} en {@code CODE.state} per veld.
+     * De kolommen liggen dus vast vóór de eerste rij; een lege bundel levert enkel de vier vaste kolommen
+     * op (zelfde uitkomst als {@link #toCsv} op een preview zonder rijen).
+     *
+     * @param fields de velden van de <b>eerste</b> rij, of een lege lijst als er geen rijen zijn
+     */
+    public static void writeHeader(Writer out, List<Field> fields) throws IOException {
+        // Headers: batchId, mutationId, actionType, complete, dan per veld: CODE, CODE.state
+        out.write("batchId,mutationId,actionType,complete");
+        for (Field field : fields) {
+            out.write(",");
+            writeEscapedCsv(out, field.code());
+            out.write(",");
+            writeEscapedCsv(out, field.code() + ".state");
+        }
+        out.write("\n");
+    }
+
+    /** Eén datarij, letterlijk dezelfde tekst als de overeenkomstige regel uit {@link #toCsv}. */
+    public static void writeRow(Writer out, Row row) throws IOException {
+        out.write(String.valueOf(row.batchId()));
+        out.write(",");
+        out.write(String.valueOf(row.mutationId()));
+        out.write(",");
+        writeEscapedCsv(out, row.actionType());
+        out.write(",");
+        out.write(row.complete() ? "true" : "false");
+
+        for (Field field : row.fields()) {
+            out.write(",");
+            writeEscapedCsv(out, field.value());
+            out.write(",");
+            writeEscapedCsv(out, field.state().toString());
+        }
+        out.write("\n");
+    }
+
+    /** De banner zonder afsluitende newline; gedeeld door de preview- en de artefactbanner. */
+    private static void writeBannerBody(Writer out, PsimportPreview preview) throws IOException {
         // Banner: # PREVIEW previewOnly=true contractStatus=... previewSpecVersion=... bundleContentHash=...
         out.write("# PREVIEW previewOnly=true contractStatus=");
         out.write(preview.contractStatus());
         out.write(" previewSpecVersion=");
         out.write(preview.previewSpecVersion());
         out.write(" bundleContentHash=");
-        String hash = preview.bundleContentHash();
-        if (hash != null) {
-            out.write(hash);
-        } else {
-            out.write("(null)");
-        }
-        out.write("\n");
+        writeOrNullKeyword(out, preview.bundleContentHash());
+    }
+
+    /** Een ontbrekende waarde wordt {@code (null)}: onderscheidbaar van een lege tekst. */
+    private static void writeOrNullKeyword(Writer out, String value) throws IOException {
+        out.write(value == null ? "(null)" : value);
     }
 
     private static void writeHeaders(StringWriter out, PsimportPreview preview) throws IOException {
-        // Headers: batchId, mutationId, actionType, complete, dan per veld: CODE, CODE.state
-        out.write("batchId,mutationId,actionType,complete");
-        if (!preview.content().isEmpty()) {
-            Row firstRow = preview.content().get(0);
-            for (Field field : firstRow.fields()) {
-                out.write(",");
-                writeEscapedCsv(out, field.code());
-                out.write(",");
-                writeEscapedCsv(out, field.code() + ".state");
-            }
-        }
-        out.write("\n");
+        writeHeader(out, preview.content().isEmpty() ? List.of() : preview.content().get(0).fields());
     }
 
     private static void writeRows(StringWriter out, PsimportPreview preview) throws IOException {
         for (Row row : preview.content()) {
-            out.write(String.valueOf(row.batchId()));
-            out.write(",");
-            out.write(String.valueOf(row.mutationId()));
-            out.write(",");
-            writeEscapedCsv(out, row.actionType());
-            out.write(",");
-            out.write(row.complete() ? "true" : "false");
-
-            for (Field field : row.fields()) {
-                out.write(",");
-                writeEscapedCsv(out, field.value());
-                out.write(",");
-                writeEscapedCsv(out, field.state().toString());
-            }
-            out.write("\n");
+            writeRow(out, row);
         }
     }
 
@@ -110,10 +159,10 @@ public final class PsimportPreviewCsvSerializer {
      *   <li>Overige → as-is (geen escaping nodig)</li>
      * </ul>
      *
-     * @param out  de StringWriter om in te schrijven
+     * @param out  de Writer om in te schrijven
      * @param value de waarde (mag null zijn)
      */
-    private static void writeEscapedCsv(StringWriter out, String value) throws IOException {
+    private static void writeEscapedCsv(Writer out, String value) throws IOException {
         if (value == null) {
             // Lege waarde
             return;

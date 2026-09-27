@@ -64,6 +64,46 @@ describe('describe(error) — errors/codes.ts', () => {
     });
   });
 
+  describe('T1.1b: authenticatiecodes (fase 5-AUTH)', () => {
+    it('vertaalt elke nieuwe foutcode en toont de technische regel', () => {
+      const cases: Array<[number, string]> = [
+        [401, 'AUTHENTICATION_REQUIRED'],
+        [403, 'ACCESS_DENIED'],
+        [400, 'ACTOR_FIELD_MISMATCH'],
+        [403, 'SYSTEM_ACTOR_FORBIDDEN'],
+        [403, 'ACTOR_IDENTITY_INVALID'],
+        [403, 'CSRF_TOKEN_INVALID'],
+      ];
+      for (const [status, code] of cases) {
+        expect(CODE_MESSAGES[code], `verwacht een vertaling voor ${code}`).toBeDefined();
+        const result = describeError(new ApiError(status, code, 'x', '/bundles/1/freeze'));
+        expect(result.title).toBe(CODE_MESSAGES[code]!.title);
+        expect(result.technical).toBe(`${code} · HTTP ${status} · /bundles/1/freeze`);
+      }
+    });
+
+    it('ACTOR_FIELD_MISMATCH zegt dat er niets is opgeslagen', () => {
+      expect(CODE_MESSAGES.ACTOR_FIELD_MISMATCH!.explanation).toContain('niets opgeslagen');
+    });
+  });
+
+  describe('T1.1c: rechtencodes (fase 5-PERM)', () => {
+    it('PERMISSION_DENIED (403) en PERMISSION_SOURCE_UNAVAILABLE (503) zijn vertaald en tonen de code', () => {
+      const denied = describeError(
+        new ApiError(403, 'PERMISSION_DENIED', 'Missing permission catalogImport.approve', '/bundles/1/freeze'),
+      );
+      expect(denied.title).toBe('Recht ontbreekt');
+      expect(denied.technical).toBe('PERMISSION_DENIED · HTTP 403 · /bundles/1/freeze');
+      // De servertekst noemt het ontbrekende recht en wordt letterlijk getoond.
+      expect(denied.detail).toBe('Missing permission catalogImport.approve');
+
+      const unavailable = describeError(new ApiError(503, 'PERMISSION_SOURCE_UNAVAILABLE', 'x', '/me'));
+      expect(unavailable.title).toBe('Rechten tijdelijk niet beschikbaar');
+      expect(unavailable.technical).toBe('PERMISSION_SOURCE_UNAVAILABLE · HTTP 503 · /me');
+      expect(unavailable.explanation).toContain('niets opgeslagen');
+    });
+  });
+
   describe('T1.2: onbekende code — familie-fallback', () => {
     it('CONFIG_* krijgt de configuratie-fallback en toont de code letterlijk in de titel', () => {
       const error = new ApiError(409, 'CONFIG_INCOMPLETE', 'Config incomplete', '/import-links/1');

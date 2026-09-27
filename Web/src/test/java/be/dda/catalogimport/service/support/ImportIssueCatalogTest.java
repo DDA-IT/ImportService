@@ -211,6 +211,8 @@ class ImportIssueCatalogTest {
                 SourceStructureConfigFactory.CODE_COLUMN_COUNT_INVALID,
                 SourceStructureConfigFactory.CODE_FIELD_REFERENCE_INVALID,
                 SourceStructureConfigFactory.CODE_CANONICALISATION_VERSION_UNSUPPORTED,
+                // Valuta-standaard V-2: een onleesbare vaste valuta van de koppeling blokkeert.
+                SourceStructureConfigFactory.CODE_LINK_CURRENCY_INVALID,
                 CandidateNormaliser.CODE_CONFIG_DISCOUNT_FIELD_MISSING,
                 CandidateNormaliser.CODE_CONFIG_FIELD_NOT_RESOLVED,
                 ImportMappingConfigFactory.CODE_MAPPING_TARGET_UNKNOWN,

@@ -20,7 +20,8 @@
 
 import { useState } from 'react';
 import * as bundlesApi from '../../api/bundles.ts';
-import type { MutationRow } from '../../api/types.ts';
+import { PERMISSION_APPROVE, type MutationRow } from '../../api/types.ts';
+import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { MutationList } from '../../components/MutationList/MutationList.tsx';
 import type { MutationRowAction, MutationSource } from '../../components/MutationList/types.ts';
 import { mutationDecisionGate } from './bundlePolicy.ts';
@@ -70,13 +71,16 @@ export function BundleMutationsTab() {
     supportedFilters: ['status', 'batchId', 'actionType', 'statusReason', 'identityHash'],
   };
 
+  const approveGate = usePermissionGate(PERMISSION_APPROVE);
+
+  // Goedkeuren/afkeuren vraagt APPROVE; een ontbrekend recht wint van de toestandspoort (recht eerst).
   function gateFor(row: MutationRow) {
-    return mutationDecisionGate(bundle.status, row.actionType, row.status, 'individual');
+    return withPermission(approveGate, mutationDecisionGate(bundle.status, row.actionType, row.status, 'individual'));
   }
 
   function isRevision(row: MutationRow): boolean {
     const gate = gateFor(row);
-    return gate.allowed && gate.isRevision === true;
+    return gate.allowed && 'isRevision' in gate && gate.isRevision === true;
   }
 
   function report(result: { idempotent: boolean }, label: string) {

@@ -4,7 +4,7 @@ Praktische handleiding voor het aanleveren van één CSV-levering. Aanvullend bi
 [`README.md`](README.md), [`standaardflows.md`](standaardflows.md) (flow 2 en 3) en
 [`begrippen.md`](begrippen.md); wat daar staat herhaal ik niet volledig.
 
-Statuslabels zoals in de hoofdhandleiding: **Beschikbaar**, **Alleen via API**, **In aanbouw**. Wat ik niet
+Statuslabels zoals in de hoofdhandleiding: **Beschikbaar**, **Alleen via API**, **Niet gebouwd**. Wat ik niet
 kon nagaan (er draaide geen backend) staat als **nog te verifiëren**.
 
 ## 1. Waar gaat dit over, en wat is "het pad"?
@@ -14,23 +14,29 @@ multipart-bestand via `POST /api/catalog-import/tasks/{taskId}/deliveries`
 (`CatalogImportDeliveryController`). De server archiveert het bestand onder `catalogimport.archive.root`
 (`DeliveryArchiveStore`) en screent het **synchroon**, in hetzelfde verzoek.
 
-Het "pad" is dus het pad op **uw eigen machine**, dat u aan `curl` (`-F "file=@pad"`) of aan het uploadscherm
-meegeeft. Een server-side inbox/pad-import en een scheduler bestaan niet (uitgesteld, zie README sectie 1).
+Het "pad" is dus het pad op **uw eigen machine**, dat u aan het uploadscherm (bestandskiezer) meegeeft. Een server-side inbox/pad-import en een scheduler bestaan niet (uitgesteld, zie README sectie 1).
 
-Status: upload via API **Alleen via API**; uploadscherm **Beschikbaar** (zie 4.4, lokaal via frontend `npm run dev`).
+Status: uploadscherm **Beschikbaar** (`/upload`, navigatielink "Levering uploaden", zie 4.4, lokaal via
+frontend `npm run dev`). De API zelf vereist sinds 5-AUTH een Keycloak-login: zonder sessie geeft
+`/api/**` **401 `AUTHENTICATION_REQUIRED`** en een schrijfaanroep zonder CSRF-header `X-XSRF-TOKEN` (cookie
+`XSRF-TOKEN`) 403 `CSRF_TOKEN_INVALID`. Er is geen token-flow voor scripts (V1 = A1): uploaden met `curl` kan
+voorlopig niet; gebruik het uploadscherm.
 
 ## 2. Voorbereiding (checklist)
 
-1. Backend draait: zie README sectie 9.2 (twee commando's, poort 8081 met profiel `local`).
+1. Backend draait: zie README sectie 9.2 (twee commando's, poort 8081 met profiel `local`) en de
+   Prodis-Keycloak (`:9080`, realm `prodis`, client `catalog-import`, `CATALOG_OIDC_CLIENT_SECRET` in de
+   omgeving; zie hoofd-`README.md`, "Lokaal aanmelden"). Open de frontend op `http://localhost:5173` en meld u aan.
 2. Er is een **actieve revisie** van de importdefinitie (anders 409 `NO_ACTIVE_REVISION`), met een
    basisprijsveld (anders 409 `CONFIG_PRICE_FIELD_MISSING`).
 3. Er is een **koppeling** en een **MANUAL-taak** (flow 1; met profiel `demo` staat er een voorbeeldketen,
    taak *Demo manuele levering*, en wordt de `taskId` bij het opstarten gelogd).
-4. U kent het `taskId`. Opzoeken (altijd bereikbaar, ook zonder setup-vlag):
+4. U kent het `taskId`. In de UI kiest u de taak in een lijst op `/upload`. Opzoeken via de API (na login
+   altijd bereikbaar, ook zonder setup-vlag): open `http://localhost:5173/api/catalog-import/tasks` in het
+   aangemelde tabblad, of
 
-```bash
-BASE=http://localhost:8081
-curl -s "$BASE/api/catalog-import/tasks"
+```
+GET /api/catalog-import/tasks
 ```
 
 Elke rij bevat `id` (het `taskId`), `name`, `active`, `triggerType` (moet `MANUAL` zijn), `importLinkCode`,
@@ -55,7 +61,8 @@ passen bij die revisie.
 | Kolomaantal | Elke regel moet even veel kolommen hebben als de header; anders wordt de regel verworpen (`ROW_COLUMN_COUNT_MISMATCH`), nooit aangevuld of afgekapt. Maximale regellengte standaard 100 000 tekens (`ROW_TOO_LONG`). |
 | Identiteit | Leverancier, groep en referentie (kolomnamen uit de revisie: `supplierField`, `supplierGroupField`, `supplierReferenceField`). Een lege component verwerpt de regel (`IDENTITY_COMPONENT_EMPTY`). Twee regels met dezelfde identiteit: hele levering geblokkeerd (`DUPLICATE_IDENTITY_IN_DELIVERY`). |
 | Prijs | Kolom uit `basePriceField`. Komma of punt als decimaalteken (tenzij de revisie er één verklaart; dan is het andere teken een fout). Leeg of onleesbaar: regel verworpen (`PRICE_MISSING` / `PRICE_UNREADABLE`); nooit 0. Te veel decimalen: `PRICE_SCALE_EXCEEDED`. |
-| Omschrijving, valuta | Alleen aanwezig als de revisie ze mapt (`descriptionField`, `currencyField`); dan moet de kolom in de header staan. |
+| Omschrijving | Alleen aanwezig als de revisie het mapt (`descriptionField`); dan moet de kolom in de header staan. |
+| Valuta | Optioneel. Staat er een munt in het bestand (en is het muntveld in de revisie gemapt), dan gaat die voor; een ongeldige of lege munt verwerpt de regel. Zonder munt in het bestand geldt de vaste valuta van de koppeling (`defaultCurrency`), en anders `EUR`. Rijen van vóór deze regel zonder valuta blijven onbekend. |
 | Extra kolommen | Alleen gelezen als een **mapping** ernaar verwijst. Een onbekende kolom achteraan is een waarschuwing (`HEADER_UNKNOWN_COLUMN`); niets gaat verloren of wordt stil gebruikt. |
 | Lege waarde versus `null` | Een lege cel is een lege tekst, geen `null`. Een verplicht veld dat leeg is, is een fout (`VALUE_MISSING`). Het woord `null` in een cel is gewoon tekst. |
 | Grootte | Maximaal `1GB` (`CATALOG_MAX_UPLOAD_SIZE`); de verwerking is synchroon, dus grote bestanden duren lang. |
@@ -97,56 +104,32 @@ Parameters (multipart):
 | --- | --- | --- |
 | `file` | ja | het CSV-bestand; de bestandsnaam is verplicht (max. 500 tekens) |
 | `deliveryReference` | ja | uw referentie voor deze levering (max. 190 tekens), zie sectie 5 |
-| `uploadedBy` | ja | uw naam (max. 100 tekens); niet gecontroleerd, er is geen authenticatie |
+| `uploadedBy` | nee | optioneel sinds 5-AUTH: de uploader komt uit uw login (`preferred_username`). Is het veld aanwezig, dan moet het gelijk zijn aan die naam (anders 400 `ACTOR_FIELD_MISMATCH`) |
 | `expectedRecordCount` | nee | verwacht aantal datalijnen; wijkt het af, dan `BLOCKED` met `RECORD_COUNT_MISMATCH` |
 | `expectedByteSize` | nee | verwachte bestandsgrootte in bytes; wijkt ze af, dan `BLOCKED` met `BYTE_SIZE_MISMATCH` |
 
 Een negatieve waarde voor de twee verwachtingen, of een ontbrekend verplicht veld, geeft 400.
 
-### 4.1 curl in bash of Git Bash
+### 4.1 De aanroep (verzoekvorm)
 
-```bash
-BASE=http://localhost:8081
-TASK_ID=<id uit GET /tasks>
-curl -s -w '\n[HTTP %{http_code}]\n' \
-  -F "file=@/pad/naar/levering.csv" \
-  -F "deliveryReference=LEVERANCIER-2026-09-24" \
-  -F "uploadedBy=uw.naam" \
-  "$BASE/api/catalog-import/tasks/$TASK_ID/deliveries"
+```
+POST /api/catalog-import/tasks/{taskId}/deliveries     (multipart/form-data)
+     file=levering.csv, deliveryReference=LEVERANCIER-2026-09-24
+     [expectedRecordCount=7, expectedByteSize=421]
 ```
 
-Optioneel erbij: `-F "expectedRecordCount=7" -F "expectedByteSize=421"`. Dit is dezelfde aanroep als in
-`scripts/scenario/manual-upload-scenario.sh`. In Git Bash werkt `/c/Users/naam/levering.csv`;
-`C:/Users/naam/levering.csv` werkt doorgaans ook (**nog te verifiëren**).
+Dit is de aanroep die het uploadscherm (4.4) doet; het scenario in `scripts/scenario/` (sinds 5-AUTH een
+handmatige checklist, zie [`standaardflows.md`](standaardflows.md)) gebruikt dezelfde. Uitvoeren kan alleen in
+een aangemelde browsersessie (sessiecookie plus header `X-XSRF-TOKEN`); een `curl`- of PowerShell-script kan
+zich **voorlopig niet aanmelden** (geen token-flow voor scripts, V1 = A1). Gebruik dus het uploadscherm.
 
-### 4.2 PowerShell
+### 4.2 Valkuilen met bestandsnamen
 
-Gebruik `curl.exe` (niet `curl`, dat is een alias voor `Invoke-WebRequest`):
-
-```powershell
-$BASE = "http://localhost:8081"
-$TASK_ID = <id>
-curl.exe -s -w "`n[HTTP %{http_code}]`n" `
-  -F "file=@C:\Users\naam\Documents\levering.csv" `
-  -F "deliveryReference=LEVERANCIER-2026-09-24" `
-  -F "uploadedBy=uw.naam" `
-  "$BASE/api/catalog-import/tasks/$TASK_ID/deliveries"
-```
-
-`Invoke-RestMethod -Form @{ file = Get-Item .\levering.csv; ... }` bestaat alleen vanaf PowerShell 7;
-Windows PowerShell 5.1 kent `-Form` niet. Beide PowerShell-varianten heb ik niet uitgevoerd (**nog te
-verifiëren**); de `curl.exe`-variant volgt de bewezen bash-aanroep.
-
-### 4.3 Valkuilen met Windows-paden
-
-- Backslashes: `curl.exe` accepteert `C:\map\bestand.csv` in `-F "file=@..."`. In bash moet een backslash
-  verdubbeld of vervangen worden door `/`.
-- Spaties in het pad: zet het **hele** `-F`-argument tussen dubbele aanhalingstekens
-  (`-F "file=@C:\Mijn documenten\levering.csv"`).
 - Aanhalingstekens, `;` of `,` in de bestandsnaam: vermijd ze. Het bestandsnaamveld wordt in de header
   van het multipartverzoek gezet (gedrag met vreemde tekens: **nog te verifiëren**).
-- Een fout pad geeft een curl-fout ("Failed to open/read local data") en er wordt niets verstuurd.
-- Zet geen `Content-Type: application/json` mee; `-F` regelt `multipart/form-data` zelf.
+- De bestandsnaam is verplicht en maximaal 500 tekens.
+- Meld u niet af tijdens een lopende upload: de sessie is nodig voor het antwoord. Verloopt de sessie tijdens
+  een lange screening (401), meld u opnieuw aan en herhaal met **dezelfde** referentie (veilig, zie sectie 5).
 
 ### 4.4 Uploadscherm (bouwstap B-F1)
 
@@ -154,8 +137,9 @@ verifiëren**); de `curl.exe`-variant volgt de bewezen bash-aanroep.
 
 Het scherm biedt een webformulier voor het uploaden van een CSV-bestand. Stappen:
 
-1. **Voorbereiding:** Backend draait (poort 8081, profiel `local` en `demo` voor de demogegevens). Frontend
-   draait lokaal (`npm run dev`, poort 5173).
+1. **Voorbereiding:** Backend draait (poort 8081, profiel `local` en `demo` voor de demogegevens) en de
+   Prodis-Keycloak is bereikbaar. Frontend draait lokaal (`npm run dev`, poort 5173); u wordt bij het openen
+   bij Keycloak aangemeld.
 2. **Scherm openen:** Browse naar `http://localhost:5173/upload`.
 3. **Taak kiezen:** Vervolgkeuzelijst met beschikbare taken. Alleen taken met trigger type `MANUAL` zijn kiesbaar;
    niet-manuele taken staan grijs met reden ("niet manueel" / "inactief"). Het scherm maakt **geen** taak aan —
@@ -169,8 +153,8 @@ Het scherm biedt een webformulier voor het uploaden van een CSV-bestand. Stappen
 6. **Verwachtingen (optioneel):** Vul in hoeveel datalijnen u verwacht (`expectedRecordCount`) en hoe groot het
    bestand moet zijn in bytes (`expectedByteSize`). Wijkt het af, dan wordt de levering geblokkeerd met
    `RECORD_COUNT_MISMATCH` of `BYTE_SIZE_MISMATCH`.
-7. **Actor:** De naam "Geüpload door" komt van de actorbalk bovenaan (u vult dat eenmalig in, wordt opgeslagen
-   in de sessie).
+7. **Actor:** De naam "Geüpload door" komt uit uw login; de actorbalk bovenaan toont "Aangemeld als ..." en
+   is niet meer in te vullen.
 8. **Uploaden:** Klik "Uploaden". De knop staat uit zolang de upload en screening nog bezig zijn.
 
 **Twee fasen met tijdteller:**
@@ -183,8 +167,12 @@ meetbaar. Dit kan minuten duren bij grote bestanden. **Laat het tabblad open.**
 
 **Herstelroute bij netwerkfout:**
 
-Valt de verbinding weg: herhaal met **dezelfde referentie** en **hetzelfde bestand**. De server antwoordt dan
+Valt de verbinding weg (netwerkfout) of geeft de server een 5xx: het scherm biedt de knop **"Herhaal met
+dezelfde referentie"**. Herhaal met **dezelfde referentie** en **hetzelfde bestand**. De server antwoordt dan
 met HTTP 200 en de bestaande levering, zonder opnieuw te screenen. Wijzig de referentie niet.
+
+**Betekenis van het antwoord:** **201** = levering aangemaakt en gescreend; **200** = een bestaande levering
+teruggevonden, **niet** opnieuw gescreend.
 
 **Foutmeldingen:**
 
@@ -202,7 +190,7 @@ met HTTP 200 en de bestaande levering, zonder opnieuw te screenen. Wijzig de ref
 
 Het scherm toont het resultaat: `Levering #{id}` en `Batch #{id}`. Klik de batchnummer door naar het
 batchdetail (`/batches/{id}`, **Beschikbaar** — `Frontend/src/features/upload/UploadPage.tsx`,
-`<Link to={/batches/${delivery.batchId}}>`; zie README 4.2); via API: `curl $A/batches/{id}`, zie sectie 6
+`<Link to={/batches/${delivery.batchId}}>`; zie README 4.2); via API: `GET /api/catalog-import/batches/{id}`, zie sectie 6
 van [`README.md`](README.md).
 
 De batch staat op status `SCREENED` (gereed), `BLOCKED` (levering onbruikbaar) of `FAILED` (technische fout).
@@ -218,7 +206,8 @@ Een `SCREENED` batch kan op twee manieren verder, en nooit op allebei (zie secti
 Beide acties staan **niet** op het uploadscherm zelf, maar wel op het batchdetail waar u via de batchlink
 hierboven terechtkomt (**Beschikbaar** — `Frontend/src/features/batches/BatchActions.tsx`): een `SCREENED`
 batch toont daar de knoppen "Aanvaarden als nulmeting" en "Opnemen in bundel", elk met een verplichte reden
-en een typ-bevestiging. Alternatief: de API (flow 4 en 5 van [`standaardflows.md`](standaardflows.md)).
+en een typ-bevestiging. Alternatief: de API (flow 4 en 5 van [`standaardflows.md`](standaardflows.md)). Bij 409
+`BATCH_IN_PUBLICATION_BUNDLE` of `BATCH_NOT_ACCEPTABLE` legt het scherm uit waarom de actie niet kan.
 
 ## 5. De `deliveryReference`
 
@@ -249,15 +238,15 @@ Statuscode **201** = nieuwe levering; **200** = idempotente herhaling. Beide bev
 Een teller die `null` is, is **niet vastgesteld**; lees dat nooit als 0 (README 6.2). Het antwoord bevat
 `validationResult` niet; dat staat op de batch.
 
-Resultaat bekijken (alle `GET`, altijd bereikbaar):
+Resultaat bekijken (alle `GET`; na login altijd bereikbaar; open ze in het aangemelde tabblad via
+`http://localhost:5173/<pad>`, of gebruik het batchdetail in de UI):
 
-```bash
-A=$BASE/api/catalog-import
-curl -s "$A/batches/$BATCH_ID"                  # status, validationResult, alle tellers
-curl -s "$A/batches/$BATCH_ID/issues"           # voorbeeldregels per fout (max. 200 per code)
-curl -s "$A/batches/$BATCH_ID/issue-groups"     # echte aantallen per soort fout (vanaf 10 gelijksoortige)
-curl -s "$A/batches/$BATCH_ID/mutations?size=50"
-curl -s "$A/deliveries/$DELIVERY_ID"
+```
+GET /api/catalog-import/batches/{batchId}                 # status, validationResult, alle tellers
+GET /api/catalog-import/batches/{batchId}/issues          # voorbeeldregels per fout (max. 200 per code)
+GET /api/catalog-import/batches/{batchId}/issue-groups    # echte aantallen per soort fout (vanaf 10 gelijksoortige)
+GET /api/catalog-import/batches/{batchId}/mutations?size=50
+GET /api/catalog-import/deliveries/{deliveryId}
 ```
 
 **Scherm 0 (werkvoorraad)** op `http://localhost:5173/` — **Beschikbaar**, alleen-lezen: de batch staat
@@ -286,6 +275,11 @@ levering vóór `accept-baseline` is opnieuw een `INITIAL_LOAD`.
 | 409 `TASK_RUN_IN_PROGRESS` | een eerdere uitvoering op deze taak is niet afgerond | wachten; blijft het staan, batchstatus onderzoeken (README 7 punt 15) |
 | 409 `DELIVERY_REFERENCE_REUSED_WITH_DIFFERENT_CONTENT` | referentie eerder gebruikt met ander bestand | nieuwe referentie |
 | 400 (zonder `code`) | ontbrekend of te lang veld, negatieve verwachting | parameters controleren |
+| 400 `ACTOR_FIELD_MISMATCH` | `uploadedBy` meegegeven en verschillend van uw login | veld weglaten |
+| 401 `AUTHENTICATION_REQUIRED` | geen (geldige) sessie | opnieuw aanmelden via `http://localhost:5173`; herhaal met dezelfde referentie |
+| 403 `PERMISSION_DENIED` | u heeft het recht `catalogImport.manage` niet (upload vraagt Beheren) | de beheerder om het recht vragen |
+| 503 `PERMISSION_SOURCE_UNAVAILABLE` | de rechtenbron is onbereikbaar | later opnieuw proberen |
+| 403 `CSRF_TOKEN_INVALID` | schrijfaanroep zonder header `X-XSRF-TOKEN` (cookie `XSRF-TOKEN`) | via het uploadscherm werken; de UI zet de header zelf |
 | 201 met `status=BLOCKED` en `HEADER_*` | header past niet bij de revisie | bestand of revisie aanpassen; nieuwe referentie bij ander bestand |
 | 201 met `status=BLOCKED`, `RECORD_COUNT_MISMATCH` / `BYTE_SIZE_MISMATCH` | opgegeven verwachting klopt niet met het bestand | verwachting of bestand controleren. Het is een screeningblokkade (201 met `blockedCode`), geen HTTP-fout; HTTP-status **nog te verifiëren** |
 | 201 met `status=FAILED`, `blockedCode=SCREENING_FAILED` | technische fout tijdens screening; levering is wél aangemaakt en gearchiveerd | serverlog lezen; **niet** onder een nieuwe referentie herupload maken zonder eerst de oorzaak te kennen |

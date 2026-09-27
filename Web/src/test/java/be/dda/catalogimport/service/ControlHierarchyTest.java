@@ -264,8 +264,11 @@ class ControlHierarchyTest {
         assertThat(outcome.rejectedRecordCount()).isEqualTo(500L);
         assertThat(outcome.validRecordCount()).isZero();
 
+        // De repository-query heeft geen ORDER BY: de fysieke rijvolgorde is niet gegarandeerd (op een drukke
+        // database kwam regel 130 eerst). Daarom hier expliciet op regelnummer sorteren.
         List<ImportRowIssue> samples = issues(uploaded).stream()
                 .filter(issue -> issue.getIssueCode().equals(ImportValueRules.CODE_PRICE_UNREADABLE))
+                .sorted(java.util.Comparator.comparing(ImportRowIssue::getRowNumber))
                 .toList();
         assertThat(samples).hasSize(DeliveryScreeningService.DEFAULT_MAX_SAMPLE_ROWS_PER_CODE);
         // Deterministisch de laagste regelnummers: het bestand wordt in leesvolgorde verwerkt.

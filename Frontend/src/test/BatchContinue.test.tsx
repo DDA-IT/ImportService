@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
+import { TEST_IDENTITY } from './testIdentity';
 import type { BatchDetail } from '../api/types';
 import { BatchActions } from '../features/batches/BatchActions';
 
@@ -40,7 +41,7 @@ describe('BatchActions continue (B-F3)', () => {
   function renderActions(status = 'MUTATING') {
     const onChanged = vi.fn();
     render(
-      <ActorProvider>
+      <ActorProvider identity={TEST_IDENTITY}>
         <MemoryRouter>
           <BatchActions batch={batch(status)} onChanged={onChanged} />
         </MemoryRouter>

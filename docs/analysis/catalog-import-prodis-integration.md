@@ -1,5 +1,14 @@
 # CatalogImport — integratie met Prodis
 
+> **Achterhaald op 2026-09-18 (publicatieroute).** Dit document beschrijft nog een eigen
+> "Idempotente CatalogImport-publicatie API" naar de Prodis-PostgreSQL-kern
+> (`SupplierCatalog`/`CatalogArticle`) als publicatieroute (zie o.a. de mermaid-diagram,
+> `ProdisApi`/`ProdisDb`, en de outbox-beschrijving hieronder). Die positie is op 2026-09-18
+> bindend herroepen ten gunste van ProDisWebbase/Pervasive via `252 IMPORT` (zie
+> `docs/decisions.md`, blok 2026-09-18 "Fase 0: publicatiedoel", en de latere
+> designdocumenten `docs/design/fase5-pub-design.md`). De rest van dit document — de
+> leesrichting naar leveranciersbronnen, niet naar legacy — blijft wel geldig.
+
 ## Beslissing
 
 CatalogImport blijft een zelfstandig, modulair monolithisch project met een eigen database. Het bezit de volledige catalogusimportflow: importdefinities, bronconnecties, taakplanning, taakuitvoering, capaciteit, validatie, staging, mutatieplannen, goedkeuring, audit en de betrouwbare buffer voor publicatie naar Prodis.

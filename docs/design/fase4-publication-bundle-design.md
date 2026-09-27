@@ -439,3 +439,30 @@ Bron: `docs/decisions.md`, 2026-09-25 ("Read-only PSIMPORT-preview van een bevro
 
 - Gedekt door `PsimportPreviewMapperTest` en `PsimportPreviewCsvSerializerTest` (database-vrij) en `PsimportPreviewHttpTest`
   (PostgreSQL).
+
+## 17. Aanvullingen na 5A-2 en 5A-4 (geïmplementeerd, mens akkoord op terugschrijven 2026-09-26)
+
+Bron: `CatalogImportBundleController`, `BundleQueryService`, `docs/design/fase5-auth-design.md` §13 en
+`docs/decisions.md` (2026-09-23 t/m 2026-09-25). Wijzigt het contract van §3 als volgt; niets is hernoemd of verwijderd.
+
+**Actorvelden zijn optioneel geworden (5A-2 freeze, 5A-4 de rest).** `frozenBy`, `createdBy`, `addedBy`, `removedBy`,
+`decidedBy` (approve, reject en groepsactie) en `cancelledBy` mogen ontbreken of blanco zijn. Zijn ze aanwezig, dan moeten ze
+(hoofdletterongevoelig, getrimd) gelijk zijn aan de aangemelde gebruiker, anders 400 `ACTOR_FIELD_MISMATCH`. Een aangemelde
+`system` krijgt 403 `SYSTEM_ACTOR_FORBIDDEN`; een onbruikbare identiteit 403 `ACTOR_IDENTITY_INVALID`. Deze controles gaan
+**vóór** de service en dus vóór 404 (`BUNDLE_NOT_FOUND`) en 409. Bewaard wordt de token-username plus het OIDC-subject
+(`publication_bundle.created_by_subject/frozen_by_subject/cancelled_by_subject`,
+`publication_bundle_batch.added_by_subject/removed_by_subject`, `publication_decision.decided_by_subject`; changeset 007-1 en
+007-2). `import_mutation.decided_by` krijgt geen subjectkolom: het subject staat op de `publication_decision`-rij.
+
+**Aanvullende endpoints en velden (frontend-uitbreidingen, geïmplementeerd):**
+- `GET /bundles/{id}/freeze-check` (droogloop, momentopname zonder slot; `freeze` blijft de waarheid).
+- De groepsactie-filter draagt `batchId`, `status`, `statusReason`, `actionType` en `identityHash` (dezelfde vijf velden als
+  de queryparameters van `GET /bundles/{id}/mutations`); een onbekend veld in de body (topniveau of `filter`) is 400
+  `DECISION_FILTER_UNKNOWN_FIELD`. Dit geldt enkel voor dit endpoint; de globale Jackson-configuratie is ongewijzigd.
+- `BundleDetail` kent `expirableCount` (aantal mutaties dat bij annuleren vervalt); zie de beslissingen van 2026-09-24.
+- `GET /bundles` sorteert op `id` aflopend en `GET /bundles/{id}/batches` op `id` oplopend (`BundleQueryService`); dit lost
+  de eerder ongedefinieerde paginavolgorde op.
+
+**Bekend gebleven:** `ApiExceptionHandler` geeft `{error, code}` bij 404/409 en `BadRequestException`, maar `{error}` zonder
+`code` bij elke `IllegalArgumentException`/`IllegalStateException` (gewone invoerfouten zoals een lege reden); dat is niet
+gewijzigd.

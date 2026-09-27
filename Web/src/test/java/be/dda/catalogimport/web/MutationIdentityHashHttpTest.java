@@ -1,5 +1,6 @@
 package be.dda.catalogimport.web;
 
+import static be.dda.catalogimport.testsupport.TestActors.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -289,7 +290,7 @@ class MutationIdentityHashHttpTest {
         int totalElements = JsonPath.read(visible, "$.totalElements");
         assertThat(totalElements).isEqualTo(2);
 
-        String decided = body(post("/api/catalog-import/bundles/{id}/decisions", s.bundleId())
+        String decided = body(post("/api/catalog-import/bundles/{id}/decisions", s.bundleId()).with(as(DECIDER))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"" + DECIDER + "\","
                         + "\"reason\":\"Deze aanbieding nagekeken\","
@@ -321,7 +322,7 @@ class MutationIdentityHashHttpTest {
         assertThat(JsonPath.<List<Integer>>read(register, "$.content[*].affectedCount")).containsExactly(2);
 
         // Herhaling: niets meer te beslissen, geen tweede regel in het register.
-        String repeated = body(post("/api/catalog-import/bundles/{id}/decisions", s.bundleId())
+        String repeated = body(post("/api/catalog-import/bundles/{id}/decisions", s.bundleId()).with(as(DECIDER))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"" + DECIDER + "\","
                         + "\"filter\":{\"identityHash\":\"" + hash + "\"}}"));
@@ -340,7 +341,7 @@ class MutationIdentityHashHttpTest {
         Scenario s = scenario("DECIDEBAD");
 
         for (String value : List.of(UNKNOWN_HASH, "zz", "abc", "geen-hash", "1".repeat(63))) {
-            mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", s.bundleId())
+            mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", s.bundleId()).with(as(DECIDER))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"" + DECIDER + "\","
                                     + "\"filter\":{\"identityHash\":\"" + value + "\"}}"))
@@ -357,7 +358,7 @@ class MutationIdentityHashHttpTest {
                 body(get("/api/catalog-import/bundles/{id}/decisions", s.bundleId())), "$.content")).isEmpty();
 
         // Een blanco hash is geen filter: zonder ander filterveld blijft dat 400 met stabiele code.
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", s.bundleId())
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", s.bundleId()).with(as(DECIDER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"" + DECIDER + "\","
                                 + "\"filter\":{\"identityHash\":\"   \"}}"))
@@ -404,12 +405,13 @@ class MutationIdentityHashHttpTest {
         r1.setStatusReason(reason);
         mutations.saveAndFlush(r1);
 
-        String created = mockMvc.perform(post("/api/catalog-import/bundles").contentType(MediaType.APPLICATION_JSON)
+        String created = mockMvc.perform(post("/api/catalog-import/bundles").with(as(CREATOR))
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"bundleReference\":\"BND-" + unique + "\",\"targetMode\":\"SIMULATION\","
                                 + "\"createdBy\":\"" + CREATOR + "\"}"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         long bundleId = ((Number) JsonPath.read(created, "$.id")).longValue();
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", bundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", bundleId).with(as(CREATOR))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"batchIds\":[" + firstBatch + "," + secondBatch + "],\"addedBy\":\""
                                 + CREATOR + "\"}"))
@@ -429,7 +431,7 @@ class MutationIdentityHashHttpTest {
                         .file(new MockMultipartFile("file", "levering.csv", "text/csv",
                                 csv.toString().getBytes(StandardCharsets.UTF_8)))
                         .param("deliveryReference", reference)
-                        .param("uploadedBy", "tester@example.test"))
+                        .param("uploadedBy", "tester@example.test").with(as("tester@example.test")))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         return ((Number) JsonPath.read(upload, "$.batchId")).longValue();
     }

@@ -273,6 +273,14 @@ public class ImportBatch {
     @Column(name = "created_by", length = 100)
     private String createdBy;
 
+    /** OIDC-subject van de uploader (Fase 5-AUTH, changeset 007-3); {@code null} = geen geverifieerde identiteit. */
+    @Column(name = "created_by_subject", length = 255)
+    private String createdBySubject;
+
+    /** OIDC-subject van wie de baseline aanvaardde (Fase 5-AUTH, changeset 007-3); {@code null} = niet geverifieerd. */
+    @Column(name = "baseline_accepted_by_subject", length = 255)
+    private String baselineAcceptedBySubject;
+
     protected ImportBatch() {
         // JPA
     }
@@ -601,6 +609,30 @@ public class ImportBatch {
         this.baselineAcceptedBy = acceptedBy;
         this.baselineAcceptedAt = acceptedAt;
         this.baselineAcceptReason = reason;
+    }
+
+    /**
+     * Zoals hierboven, met het geverifieerde OIDC-subject van wie aanvaardt (Fase 5-AUTH, 5A-5).
+     *
+     * @param acceptedBySubject {@code null} = geen geverifieerde identiteit
+     */
+    public void recordBaselineAcceptance(String acceptedBy, String acceptedBySubject, Instant acceptedAt,
+                                         String reason) {
+        recordBaselineAcceptance(acceptedBy, acceptedAt, reason);
+        this.baselineAcceptedBySubject = acceptedBySubject;
+    }
+
+    public String getBaselineAcceptedBySubject() {
+        return baselineAcceptedBySubject;
+    }
+
+    public String getCreatedBySubject() {
+        return createdBySubject;
+    }
+
+    /** Stelt het OIDC-subject van de uploader in (Fase 5-AUTH, 5A-5); {@code null} = niet geverifieerd. */
+    public void setCreatedBySubject(String createdBySubject) {
+        this.createdBySubject = createdBySubject;
     }
 
     public Instant getCreatedAt() {

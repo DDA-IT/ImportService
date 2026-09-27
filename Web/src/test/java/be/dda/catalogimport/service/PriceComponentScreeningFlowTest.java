@@ -146,8 +146,10 @@ class PriceComponentScreeningFlowTest {
             // De basisprijs is haar eigen basis; een percentage zou hier enkel verwarring stichten.
             assertThat(row.get("percentage")).isNull();
             assertThat(row.get("status")).isEqualTo("OK");
-            // Geen muntveld op deze revisie: onbekend, en nooit stil EUR.
-            assertThat(row.get("currency")).isNull();
+            // Valuta-standaard (bouwstap V-2): geen muntveld en geen vaste valuta op de koppeling, dus
+            // de systeemstandaard EUR. De component erft die effectieve munt van de basisprijs
+            // (R-PRI-06); de herkomst staat op de stagingrij, niet op de prijscomponent.
+            assertThat(row.get("currency")).isEqualTo("EUR");
         });
         // 80,00 van 100,00 is exact 80%, op schaal 12.
         assertThat(percentageOf(delivered.batchId(), 2L, "AKP")).isEqualTo("80.000000000000");

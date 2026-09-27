@@ -118,3 +118,13 @@
 .loading {
   color: var(--color-text-secondary);
 }
+
+.sourceChoice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+}

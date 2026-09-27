@@ -1,62 +1,48 @@
 /**
- * Staat permanent in de app shell. Toont wie er "tekent" zolang er geen authenticatie is, en laat de
- * naam voor de rest van de browsersessie invullen/wijzigen. Zie
- * `docs/design/frontend-scherm3-bundel-design.md` §7.
+ * Staat permanent in de app shell. Toont de geverifieerde identiteit (uit `GET /me`) met een knop om af
+ * te melden; bij een verlopen sessie de melding met "Opnieuw aanmelden". Zie
+ * `docs/design/fase5-auth-design.md` §6.
  */
 
-import { useState, type FormEvent } from 'react';
-import { useActor, validateActorName } from './ActorContext';
+import { useState } from 'react';
+import { formatActor, useActor } from './ActorContext';
 import styles from './ActorBar.module.css';
 
 export function ActorBar() {
-  const { actor, setActor } = useActor();
-  const [draft, setDraft] = useState(actor);
-  const [error, setError] = useState<string | null>(null);
+  const actorContext = useActor();
+  const { sessionExpired, reauthenticate, logout } = actorContext;
+  const [logoutFailed, setLogoutFailed] = useState(false);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const validationError = validateActorName(draft);
-    if (validationError !== null) {
-      setError(validationError);
-      return;
+  async function handleLogout() {
+    setLogoutFailed(false);
+    try {
+      await logout();
+    } catch {
+      setLogoutFailed(true);
     }
-    setError(null);
-    setActor(draft.trim());
   }
 
   return (
     <div className={styles.bar}>
-      <form className={styles.form} onSubmit={handleSubmit}>
-        <label className={styles.label} htmlFor="actor-bar-name">
-          Ingelogd als
-        </label>
-        <input
-          id="actor-bar-name"
-          className={styles.input}
-          type="text"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Uw naam"
-          maxLength={100}
-        />
-        <button type="submit" className={styles.button}>
-          Opslaan
-        </button>
-        {actor !== '' && (
-          <span className={styles.current}>
-            Huidig: <strong>{actor}</strong>
-          </span>
-        )}
-      </form>
-      {error !== null && (
+      <span className={styles.current}>
+        Aangemeld als <strong>{formatActor(actorContext)}</strong>
+      </span>
+      <button type="button" className={styles.button} onClick={handleLogout}>
+        Afmelden
+      </button>
+      {logoutFailed && (
         <p className={styles.error} role="alert">
-          {error}
+          Afmelden is mislukt; probeer opnieuw.
         </p>
       )}
-      <p className={styles.warning}>
-        Er is nog geen authenticatie. Deze naam wordt ongecontroleerd in het beslissingsregister
-        bewaard.
-      </p>
+      {sessionExpired && (
+        <p className={styles.error} role="alert">
+          Uw sessie is verlopen.{' '}
+          <button type="button" className={styles.button} onClick={reauthenticate}>
+            Opnieuw aanmelden
+          </button>
+        </p>
+      )}
     </div>
   );
 }

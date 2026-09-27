@@ -62,8 +62,16 @@ public class PublicationBundle {
     @Column(name = "created_by", nullable = false, length = 100)
     private String createdBy;
 
+    /** OIDC-subject van de aanmaker (Fase 5-AUTH, changeset 007-2); {@code null} = geen geverifieerde identiteit. */
+    @Column(name = "created_by_subject", length = 255)
+    private String createdBySubject;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
+
+    /** OIDC-subject van de annuleerder (Fase 5-AUTH, changeset 007-2); {@code null} = geen geverifieerde identiteit. */
+    @Column(name = "cancelled_by_subject", length = 255)
+    private String cancelledBySubject;
 
     @Column(name = "frozen_by", length = 100)
     private String frozenBy;
@@ -73,6 +81,16 @@ public class PublicationBundle {
 
     @Column(name = "frozen_reason", length = 500)
     private String frozenReason;
+
+    /**
+     * Het OIDC-subject ({@code sub}) van de bevriezer (Fase 5-AUTH, changeset 007-1). {@code null}
+     * betekent <b>"geen geverifieerde identiteit"</b>: een rij van vóór Fase 5, of een bevriezing via een
+     * rechtstreekse Service-aanroep (tests, {@code DemoDataSeeder}). Nooit stil ingevuld.
+     * <p>
+     * Audit-only: dit veld komt in geen enkel domeinantwoord van de API terecht.
+     */
+    @Column(name = "frozen_by_subject", length = 255)
+    private String frozenBySubject;
 
     @Column(name = "cancelled_by", length = 100)
     private String cancelledBy;
@@ -86,6 +104,14 @@ public class PublicationBundle {
     /** Volledige bundelhash, enkel gevuld zodra {@link #status} {@code FROZEN} is (ck_publication_bundle_frozen). */
     @Column(name = "content_hash")
     private byte[] contentHash;
+
+    /** Hash over de bundelsnapshot (Fase 5-PUB, changeset 008-3); {@code null} = geen snapshot. */
+    @Column(name = "snapshot_hash")
+    private byte[] snapshotHash;
+
+    /** Specificatieversie van de snapshot (Fase 5-PUB, changeset 008-3); {@code null} = geen snapshot. */
+    @Column(name = "snapshot_spec_version", length = 10)
+    private String snapshotSpecVersion;
 
     @Column(name = "idempotency_key", nullable = false, length = 200)
     private String idempotencyKey;
@@ -202,13 +228,42 @@ public class PublicationBundle {
         return frozenReason;
     }
 
-    /** Legt de drie auditgegevens van een bevriezing samen vast; nooit los te zetten. */
+    public String getFrozenBySubject() {
+        return frozenBySubject;
+    }
+
+    /**
+     * Legt de drie auditgegevens van een bevriezing samen vast; nooit los te zetten. Zonder subject, dus
+     * <b>zonder geverifieerde identiteit</b> ({@code frozen_by_subject} blijft {@code null}).
+     */
     public void recordFreeze(String frozenBy, Instant frozenAt, String frozenReason, byte[] contentHash) {
+        recordFreeze(frozenBy, null, frozenAt, frozenReason, contentHash);
+    }
+
+    /**
+     * Zoals {@link #recordFreeze(String, Instant, String, byte[])}, maar met het geverifieerde OIDC-subject
+     * van de bevriezer (Fase 5-AUTH, bouwstap 5A-2). Additieve overload: de bestaande signatuur blijft
+     * bestaan voor rechtstreekse Service-aanroepen zonder login.
+     *
+     * @param frozenBySubject {@code null} = geen geverifieerde identiteit; nooit stil ingevuld
+     */
+    public void recordFreeze(String frozenBy, String frozenBySubject, Instant frozenAt, String frozenReason,
+                             byte[] contentHash) {
         this.frozenBy = frozenBy;
+        this.frozenBySubject = frozenBySubject;
         this.frozenAt = frozenAt;
         this.frozenReason = frozenReason;
         this.contentHash = contentHash;
         this.status = PublicationBundleStatus.FROZEN;
+    }
+
+    /**
+     * Bewaart de snapshotgegevens (Fase 5-PUB, 5P-3); aan te roepen in dezelfde transactie als
+     * {@link #recordFreeze}, en alleen wanneer de bundel minstens één snapshotrij heeft.
+     */
+    public void recordSnapshot(byte[] snapshotHash, String snapshotSpecVersion) {
+        this.snapshotHash = snapshotHash;
+        this.snapshotSpecVersion = snapshotSpecVersion;
     }
 
     public String getCancelledBy() {
@@ -223,8 +278,35 @@ public class PublicationBundle {
         return cancelledReason;
     }
 
-    /** Legt de drie auditgegevens van een annulering samen vast; nooit los te zetten. */
+    public String getCreatedBySubject() {
+        return createdBySubject;
+    }
+
+    /**
+     * Stelt het geverifieerde OIDC-subject van de aanmaker in (Fase 5-AUTH, 5A-4). {@code null} = geen
+     * geverifieerde identiteit; nooit afgeleid uit de naam.
+     */
+    public void setCreatedBySubject(String createdBySubject) {
+        this.createdBySubject = createdBySubject;
+    }
+
+    public String getCancelledBySubject() {
+        return cancelledBySubject;
+    }
+
+    /** Legt de drie auditgegevens van een annulering samen vast; nooit los te zetten. Zonder subject. */
     public void recordCancellation(String cancelledBy, Instant cancelledAt, String cancelledReason) {
+        recordCancellation(cancelledBy, null, cancelledAt, cancelledReason);
+    }
+
+    /**
+     * Zoals hierboven, maar met het geverifieerde OIDC-subject van de annuleerder (Fase 5-AUTH, 5A-4).
+     *
+     * @param cancelledBySubject {@code null} = geen geverifieerde identiteit
+     */
+    public void recordCancellation(String cancelledBy, String cancelledBySubject, Instant cancelledAt,
+                                   String cancelledReason) {
+        this.cancelledBySubject = cancelledBySubject;
         this.cancelledBy = cancelledBy;
         this.cancelledAt = cancelledAt;
         this.cancelledReason = cancelledReason;
@@ -233,6 +315,14 @@ public class PublicationBundle {
 
     public byte[] getContentHash() {
         return contentHash;
+    }
+
+    public byte[] getSnapshotHash() {
+        return snapshotHash;
+    }
+
+    public String getSnapshotSpecVersion() {
+        return snapshotSpecVersion;
     }
 
     public String getIdempotencyKey() {

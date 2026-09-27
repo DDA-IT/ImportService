@@ -15,6 +15,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ActorProvider } from '../actor/ActorContext';
+import { TEST_IDENTITY } from './testIdentity';
 import { ApiError } from '../api/http';
 import type { MutationRow, PageResult } from '../api/types';
 import { MutationList } from '../components/MutationList/MutationList';
@@ -80,7 +81,7 @@ function fakeSource(
 
 function renderList(props: Parameters<typeof MutationList>[0]) {
   return render(
-    <ActorProvider>
+    <ActorProvider identity={TEST_IDENTITY}>
       <MutationList {...props} />
     </ActorProvider>,
   );
@@ -276,7 +277,6 @@ describe('MutationList', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Afkeuren mutatie 1' }));
     const dialog = await screen.findByRole('dialog');
 
-    fireEvent.change(within(dialog).getByLabelText(/Naam/), { target: { value: 'An Beslisser' } });
     // Zonder verplichte reden blijft bevestigen geblokkeerd (ConfirmDialog, T4).
     expect(within(dialog).getByRole('button', { name: 'Afkeuren' })).toBeDisabled();
 
@@ -310,7 +310,6 @@ describe('MutationList', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Goedkeuren mutatie 1' }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.change(within(dialog).getByLabelText(/Naam/), { target: { value: 'An Beslisser' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Goedkeuren' }));
 
     await waitFor(() => expect(within(dialog).getByText(/MUTATION_NOT_DECIDABLE/)).toBeInTheDocument());

@@ -14,6 +14,8 @@
  */
 
 import { useState } from 'react';
+import { PERMISSION_APPROVE } from '../../api/types.ts';
+import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { bundleActionGate } from './bundlePolicy.ts';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
 import { CancelDialog } from './CancelDialog.tsx';
@@ -46,8 +48,9 @@ export function BundleOverviewTab() {
 
   const isAssembling = bundle.status === 'ASSEMBLING';
 
-  const freezeGate = bundleActionGate(bundle.status, 'FREEZE');
-  const cancelGate = bundleActionGate(bundle.status, 'CANCEL');
+  const approveGate = usePermissionGate(PERMISSION_APPROVE);
+  const freezeGate = withPermission(approveGate, bundleActionGate(bundle.status, 'FREEZE'));
+  const cancelGate = withPermission(approveGate, bundleActionGate(bundle.status, 'CANCEL'));
 
   // Een aankondiging, geen blokkade: de knop blijft aan zodat de voorvlucht (de bron van de blokkades,
   // inclusief de conflicten die hier niet te zien zijn) bekeken kan worden. De dialoog blokkeert.

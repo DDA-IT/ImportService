@@ -2,6 +2,8 @@ package be.dda.catalogimport.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.ForeignKey;
 import jakarta.persistence.GeneratedValue;
@@ -62,6 +64,15 @@ public class Delivery {
 
     @Column(name = "received_at", nullable = false)
     private Instant receivedAt;
+
+    /**
+     * Langs welke ontvangstweg deze levering binnenkwam (beslissingslog 2026-09-27, Q2). Wordt bij de
+     * ontvangst één keer gezet en daarna nooit meer gewijzigd; de databasekolom heeft dezelfde default
+     * {@code UPLOAD}, zodat een rechtstreekse insert de herkomst nooit leeg kan laten.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source_kind", nullable = false, length = 20)
+    private DeliverySourceKind sourceKind = DeliverySourceKind.UPLOAD;
 
     /** Verwijzing naar het manifest/de bestandslijst in het bronarchief; geen inhoud. */
     @Column(name = "manifest_reference", length = 500)
@@ -153,6 +164,15 @@ public class Delivery {
 
     public void setReceivedAt(Instant receivedAt) {
         this.receivedAt = receivedAt;
+    }
+
+    public DeliverySourceKind getSourceKind() {
+        return sourceKind;
+    }
+
+    /** Enkel bij de ontvangst te zetten; {@code null} blijft {@link DeliverySourceKind#UPLOAD}. */
+    public void setSourceKind(DeliverySourceKind sourceKind) {
+        this.sourceKind = sourceKind == null ? DeliverySourceKind.UPLOAD : sourceKind;
     }
 
     public String getManifestReference() {

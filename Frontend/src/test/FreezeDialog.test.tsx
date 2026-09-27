@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
+import { TEST_IDENTITY } from './testIdentity';
 import type { BundleDetail, FreezePreflight } from '../api/types';
 import { BundleOverviewTab } from '../features/bundles/BundleOverviewTab';
 
@@ -95,7 +96,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 function renderOverview(detail: BundleDetail) {
   const reloadBundle = vi.fn();
   render(
-    <ActorProvider>
+    <ActorProvider identity={TEST_IDENTITY}>
       <MemoryRouter initialEntries={['/bundles/42']}>
         <Routes>
           <Route path="/bundles/:bundleId" element={<Outlet context={{ bundle: detail, reloadBundle }} />}>
@@ -135,7 +136,6 @@ function waitForPreflight(dialog: HTMLElement): Promise<HTMLElement> {
 }
 
 function fillConfirmation(dialog: HTMLElement, typed: string = REFERENCE, reason = 'Klaar voor publicatie') {
-  fireEvent.change(within(dialog).getByLabelText(/Naam/), { target: { value: 'An Beslisser' } });
   fireEvent.change(within(dialog).getByLabelText(/Reden/), { target: { value: reason } });
   fireEvent.change(within(dialog).getByLabelText(/Typ "BND-2026-001"/), { target: { value: typed } });
 }
@@ -192,7 +192,6 @@ describe('FreezeDialog (F10, §10.5)', () => {
     expect(planned.textContent).toContain('PLANNED');
     expect(planned.textContent).toContain('uw naam');
 
-    fireEvent.change(within(dialog).getByLabelText(/Naam/), { target: { value: 'An Beslisser' } });
     expect(within(dialog).getByTestId('freeze-planned-count').textContent).toContain('uw naam (An Beslisser)');
 
     // De blijvende waarschuwing uit §10.5 staat in beeld.

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
+import { TEST_IDENTITY } from './testIdentity';
 import type { BundleDetail } from '../api/types';
 import { BundleBatchesTab } from '../features/bundles/BundleBatchesTab';
 
@@ -119,7 +120,7 @@ function jsonResponse(body: unknown): Response {
 
 function renderTab(detail: BundleDetail) {
   return render(
-    <ActorProvider>
+    <ActorProvider identity={TEST_IDENTITY}>
       <MemoryRouter initialEntries={['/bundles/1/batches']}>
         <Routes>
           <Route

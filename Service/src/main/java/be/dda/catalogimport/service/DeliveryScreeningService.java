@@ -532,7 +532,12 @@ public class DeliveryScreeningService {
         ImportMappingConfig mappingConfig = null;
         ScreeningBlockedException configFailure = null;
         try {
-            config = configFactory.from(batch.getDefinitionRevision());
+            // De vaste valuta hoort bij de KOPPELING en niet bij de revisie (valuta-standaard par. 2).
+            // Ze wordt hier, binnen de openende transactie, exact één keer per batch van de (lazy)
+            // koppeling gelezen en reist als momentopname mee in de bronconfiguratie; zo bereikt ze de
+            // normaliser zonder dat die een entiteit of een query nodig heeft.
+            config = configFactory.from(batch.getDefinitionRevision(),
+                    batch.getImportLink().getDefaultCurrency());
             mappingConfig = mappingConfigFactory.from(batch.getDefinitionRevision(), config);
         } catch (ScreeningBlockedException failure) {
             configFailure = failure;
@@ -739,7 +744,8 @@ public class DeliveryScreeningService {
         return new StageRow(context.batchId(), candidate.rowNumber(), context.deliveryFileId(),
                 candidate.supplier(), candidate.supplierGroup(), candidate.supplierReference(),
                 candidate.discountCode(), candidate.discountState(), candidate.identityHash(),
-                candidate.basePrice(), candidate.basePriceCurrency(), candidate.description(),
+                candidate.basePrice(), candidate.basePriceCurrency(),
+                candidate.basePriceCurrencyOrigin(), candidate.description(),
                 candidate.articleFingerprint(), candidate.priceFingerprint(),
                 candidate.referenceFingerprint(), candidate.combinedFingerprint(),
                 candidate.mutationKeyPrefix(context.deliveryId(), context.definitionRevisionId()),

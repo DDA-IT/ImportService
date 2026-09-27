@@ -4,6 +4,7 @@ import be.dda.catalogimport.domain.ImportBatchStatus;
 import be.dda.catalogimport.domain.MutationActionType;
 import be.dda.catalogimport.domain.MutationStatus;
 import be.dda.catalogimport.domain.ValidationResult;
+import be.dda.catalogimport.service.ActorIdentity;
 import be.dda.catalogimport.service.BatchQueryService;
 import be.dda.catalogimport.service.BatchQueryService.BatchDetail;
 import be.dda.catalogimport.service.BatchQueryService.BatchRow;
@@ -17,6 +18,8 @@ import be.dda.catalogimport.service.PageResult;
 import be.dda.catalogimport.service.SourceStateBaselineService;
 import be.dda.catalogimport.service.SourceStateBaselineService.BaselineAcceptance;
 import java.time.Instant;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -42,7 +45,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/catalog-import/batches")
 public class CatalogImportBatchController {
 
-    /** Body van {@code accept-baseline}; beide velden zijn verplicht. */
+    private static final Logger LOG = LoggerFactory.getLogger(CatalogImportBatchController.class);
+
+    /**
+     * Body van {@code accept-baseline}; {@code reason} is verplicht, {@code acceptedBy} optioneel en enkel nog
+     * een controle op de aangemelde gebruiker (Fase 5-AUTH).
+     */
     public record AcceptBaselineRequest(String acceptedBy, String reason) {
     }
 
@@ -50,11 +58,14 @@ public class CatalogImportBatchController {
     private final SourceStateBaselineService baseline;
     private final DeliveryScreeningService screening;
 
+    private final CurrentActor currentActor;
+
     public CatalogImportBatchController(BatchQueryService queries, SourceStateBaselineService baseline,
-                                        DeliveryScreeningService screening) {
+                                        DeliveryScreeningService screening, CurrentActor currentActor) {
         this.queries = queries;
         this.baseline = baseline;
         this.screening = screening;
+        this.currentActor = currentActor;
     }
 
     /**
@@ -65,6 +76,7 @@ public class CatalogImportBatchController {
      * letterlijk pad en wint van dit endpoint niet — Spring matcht {@code GET /batches} hier alleen
      * zonder verder pad.
      */
+    @RequiresPermission(Permission.READ)
     @GetMapping
     PageResult<BatchRow> batches(@RequestParam(value = "status", required = false) ImportBatchStatus status,
                                  @RequestParam(value = "validationResult", required = false)
@@ -87,6 +99,7 @@ public class CatalogImportBatchController {
      * geldige {@code batchId} maar Spring's {@code PathPattern}-matching geeft toch voorrang aan het
      * letterlijke segment.
      */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/summary")
     BatchSummary summary(@RequestParam(value = "importLinkId", required = false) Long importLinkId) {
         return queries.getSummary(importLinkId);
@@ -115,6 +128,7 @@ public class CatalogImportBatchController {
      * actieve aanbiedingen van de koppeling waartegen het creatiebeleid geoordeeld heeft. Beide zijn
      * {@code null} zolang dat oordeel er niet is.
      */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/{batchId}")
     BatchDetail batch(@PathVariable("batchId") long batchId) {
         return queries.getBatch(batchId);
@@ -131,6 +145,7 @@ public class CatalogImportBatchController {
      * heen. Een onbekende of ongeldige hexwaarde geeft een lege pagina en geen fout; blanco of afwezig
      * is geen filter.
      */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/{batchId}/mutations")
     PageResult<MutationRow> mutations(@PathVariable("batchId") long batchId,
                                       @RequestParam(value = "status", required = false) MutationStatus status,
@@ -159,6 +174,7 @@ public class CatalogImportBatchController {
      * uitsluitend in {@code GET /batches/{id}/issue-groups}; een telling over deze lijst is dus
      * systematisch te laag.
      */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/{batchId}/issues")
     PageResult<IssueRow> issues(@PathVariable("batchId") long batchId,
                                 @RequestParam(value = "issueGroupId", required = false) Long issueGroupId,
@@ -176,6 +192,7 @@ public class CatalogImportBatchController {
      * Gepagineerd zoals de andere lijsten: {@code page} 0-gebaseerd, {@code size} standaard 50 en
      * begrensd tot 200.
      */
+    @RequiresPermission(Permission.READ)
     @GetMapping("/{batchId}/issue-groups")
     PageResult<IssueGroupRow> issueGroups(@PathVariable("batchId") long batchId,
                                           @RequestParam(value = "page", required = false) Integer page,
@@ -193,10 +210,13 @@ public class CatalogImportBatchController {
      * wordt door de standaard Jackson-configuratie genegeerd en nergens bewaard. Vier-ogen wordt pas
      * met authenticatie (Fase 5) opnieuw beoordeeld.
      */
+    @RequiresPermission(Permission.APPROVE)
     @PostMapping("/{batchId}/accept-baseline")
     BaselineAcceptance acceptBaseline(@PathVariable("batchId") long batchId,
                                       @RequestBody AcceptBaselineRequest request) {
-        return baseline.acceptBaseline(batchId, request.acceptedBy(), request.reason());
+        // Vóór de service: 400 ACTOR_FIELD_MISMATCH / 403 SYSTEM_ACTOR_FORBIDDEN gaan vóór 404/409.
+        return baseline.acceptBaseline(batchId, currentActor.signer(request.acceptedBy(), "acceptedBy"),
+                request.reason());
     }
 
     /**
@@ -204,8 +224,12 @@ public class CatalogImportBatchController {
      * eindstatus en de tellers. Een technische fout blijft een fout (500): de batch blijft dan
      * hervatbaar en dezelfde aanroep mag herhaald worden.
      */
+    @RequiresPermission(Permission.MANAGE)
     @PostMapping("/{batchId}/continue")
     ScreeningOutcome resume(@PathVariable("batchId") long batchId) {
+        // Geen actorveld en niets persistent (beslissing V2, 2026-09-23; ontwerp par. 3): enkel een logregel.
+        ActorIdentity actor = currentActor.current();
+        LOG.info("Batch {} resumed by {} (subject {})", batchId, actor.username(), actor.subject());
         return screening.continueMutating(batchId);
     }
 }

@@ -342,11 +342,18 @@ class AcceptBaselineReviewFlowTest {
     }
 
     private ResultActions accept(long batchId, String acceptedBy, String reason) throws Exception {
-        return acceptRaw(batchId, "{\"acceptedBy\":\"" + acceptedBy + "\",\"reason\":\"" + reason + "\"}");
+        return acceptRaw(batchId, "{\"acceptedBy\":\"" + acceptedBy + "\",\"reason\":\"" + reason + "\"}",
+                acceptedBy);
     }
 
     private ResultActions acceptRaw(long batchId, String json) throws Exception {
+        return acceptRaw(batchId, json, ACCEPTED_BY);
+    }
+
+    /** Sinds 5A-5 tekent de aangemelde gebruiker: de test meldt zich aan als de opgegeven naam. */
+    private ResultActions acceptRaw(long batchId, String json, String signedInAs) throws Exception {
         return mockMvc.perform(post("/api/catalog-import/batches/{id}/accept-baseline", batchId)
+                .with(be.dda.catalogimport.testsupport.TestActors.as(signedInAs))
                 .contentType(MediaType.APPLICATION_JSON).content(json));
     }
 

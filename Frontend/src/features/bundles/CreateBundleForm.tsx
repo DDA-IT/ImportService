@@ -17,9 +17,10 @@
 import { useState, type FormEvent } from 'react';
 import * as bundlesApi from '../../api/bundles.ts';
 import type { PublicationTargetMode } from '../../api/types.ts';
-import { PUBLICATION_TARGET_MODES } from '../../api/types.ts';
+import { PERMISSION_MANAGE, PUBLICATION_TARGET_MODES } from '../../api/types.ts';
+import { usePermissionGate } from '../../actor/permissions.ts';
 import type { BundleReference } from '../../api/types.ts';
-import { useActor, validateActorName } from '../../actor/ActorContext.tsx';
+import { useActor } from '../../actor/ActorContext.tsx';
 import { useAction } from '../../hooks/useAction.ts';
 import { Field } from '../../components/Field.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
@@ -36,6 +37,7 @@ type TargetModeSelection = PublicationTargetMode | typeof NO_TARGET_MODE;
 
 export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
   const { actor } = useActor();
+  const manageGate = usePermissionGate(PERMISSION_MANAGE);
   const [bundleReference, setBundleReference] = useState('');
   const [description, setDescription] = useState('');
   const [targetMode, setTargetMode] = useState<TargetModeSelection>(NO_TARGET_MODE);
@@ -57,14 +59,12 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!manageGate.allowed) {
+      return;
+    }
     setOutcome(null);
     reset();
 
-    const actorError = validateActorName(actor);
-    if (actorError !== null) {
-      setValidationError(`Aangemaakt door: ${actorError}`);
-      return;
-    }
     if (bundleReference.trim() === '') {
       setValidationError('Vul een bundelreferentie in.');
       return;
@@ -166,8 +166,7 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
       </Field>
 
       <p className={styles.actorRow}>
-        Aangemaakt door: <strong>{actor === '' ? '(nog niet ingevuld)' : actor}</strong> — wijzig dit
-        hierboven bij "Ingelogd als".
+        Aangemaakt door: <strong>{actor}</strong>
       </p>
 
       {validationError !== null && (
@@ -190,7 +189,18 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
         </p>
       )}
 
-      <button type="submit" className={styles.submit} disabled={pending}>
+      {!manageGate.allowed && (
+        <p className={styles.validationError} id="create-bundle-permission-reason" data-testid="permission-reason-manage">
+          {manageGate.reason}
+        </p>
+      )}
+      <button
+        type="submit"
+        className={styles.submit}
+        disabled={pending || !manageGate.allowed}
+        title={manageGate.allowed ? undefined : manageGate.reason}
+        aria-describedby={manageGate.allowed ? undefined : 'create-bundle-permission-reason'}
+      >
         {pending ? 'Bezig…' : 'Bundel aanmaken'}
       </button>
     </form>

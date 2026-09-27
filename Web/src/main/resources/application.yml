@@ -37,10 +37,25 @@ spring:
 # catalogimport.archive.root (bronarchief van leveringen) is verplicht en heeft bewust geen default:
 # zet het per omgeving (application-local.yml voor lokaal gebruik).
 #
+# catalogimport.local-source.directory staat hier BEWUST NIET (tweede ontvangstweg, docs/decisions.md
+# 2026-09-27 D1/D2/D3): de beheerde servermap waaruit een levering ingelezen kan worden. Optioneel, geen
+# default. Niet gezet = die ontvangstweg bestaat niet en beide endpoints (GET /local-source/files,
+# POST /tasks/{id}/deliveries/local-source) geven 404 LOCAL_SOURCE_NOT_CONFIGURED. Is ze wél gezet, dan
+# moet het pad bij het opstarten bestaan, een map zijn, leesbaar zijn en niet overlappen met
+# catalogimport.archive.root - anders start de applicatie niet (een stil niet-werkende ontvangstweg zou
+# pas bij de eerste levering opvallen). Het OS-account van de applicatie heeft er enkel LEESRECHT nodig:
+# CatalogImport verplaatst of verwijdert er nooit iets; opruimen is een operatortaak.
+#
 # catalogimport.setup-api.enabled staat hier BEWUST NIET: zonder die vlag bestaat de setup-API
 # (/api/catalog-import/setup/**) niet en antwoordt elk setup-pad met 404. Die API kan importdefinities
-# en hun drempels bepalen; ze vereist sinds 5-AUTH een login, maar kent nog geen rechten per actie
-# (5-PERM). Alleen het demo-profiel zet ze aan.
+# en hun drempels bepalen; ze vereist een login en (5-PERM) het recht catalogImport.manage (schrijven)
+# of catalogImport.read (lezen). De vlag is een tweede, onafhankelijke beveiliging naast dat recht.
+# Alleen het demo-profiel zet ze aan.
+#
+# catalogimport.permissions.grants staat hier BEWUST NIET (Fase 5-PERM, docs/design/fase5-perm-design.md
+# par. 2): geen wildcard en geen default, in geen enkel profiel. Zonder expliciete toekenning heeft
+# niemand ook maar een enkel recht (fail-closed) en geeft elk beschermd endpoint 403 PERMISSION_DENIED.
+# Zie application-local.yml / application-demo.yml voor de vorm van een toekenning.
 catalogimport:
   screening:
     # Aantal rijen per microbatch-transactie tijdens het stagen (design par. 2 en par. 9 stap C).

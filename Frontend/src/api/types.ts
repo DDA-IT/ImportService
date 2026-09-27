@@ -37,6 +37,13 @@ export type PublicationBundleStatus = (typeof PUBLICATION_BUNDLE_STATUSES)[numbe
 export const PUBLICATION_TARGET_MODES = ['SIMULATION', 'TRIAL_LIBRARY', 'PRODUCTION'] as const;
 export type PublicationTargetMode = (typeof PUBLICATION_TARGET_MODES)[number];
 
+// be.dda.catalogimport.web Permission (5-PERM): de rechtcodes zoals `GET /me.permissions` ze levert.
+export const PERMISSION_READ = 'catalogImport.read';
+export const PERMISSION_MANAGE = 'catalogImport.manage';
+export const PERMISSION_APPROVE = 'catalogImport.approve';
+export const PERMISSIONS = [PERMISSION_READ, PERMISSION_MANAGE, PERMISSION_APPROVE] as const;
+export type Permission = (typeof PERMISSIONS)[number];
+
 // be.dda.catalogimport.domain.MutationStatus
 export const MUTATION_STATUSES = [
   'PLANNED',
@@ -613,6 +620,64 @@ export type TaskRow = {
   lastRunFinishedAt: string | null;
 };
 
+// be.dda.catalogimport.domain.PublicationRunStatus (5-PUB-a zet enkel REQUESTED/PREPARING/SIMULATED/
+// FAILED; de overige zeven zijn gedeclareerd voor 5-PUB-b/c en worden nooit gezet, maar de UI moet ze
+// verdragen — zie StatusBadge-conventie "onbekend wordt getoond, niet weggelaten").
+export const PUBLICATION_RUN_STATUSES = [
+  'REQUESTED',
+  'PREPARING',
+  'SIMULATED',
+  'FAILED',
+  'WAITING_FOR_TARGET_CONTRACT',
+  'READY_FOR_DELIVERY',
+  'WRITTEN_TO_PSIMPORT',
+  'RESULT_UNKNOWN',
+  'APPLIED',
+  'REJECTED_BY_PRODIS',
+  'RECOVERY_REQUIRED',
+] as const;
+export type PublicationRunStatus = (typeof PUBLICATION_RUN_STATUSES)[number];
+
+/**
+ * be.dda.catalogimport.service.PublicationRunService.PublicationRunView (5-PUB-a, bouwstap 5P-8).
+ * `startedAt` wordt in dezelfde transactie als de aanmaak gezet (`markPreparing`) en is dus in de
+ * praktijk altijd gevuld; `finishedAt` blijft `null` zolang de run niet terminaal is (`SIMULATED`/
+ * `FAILED`) — inclusief het edge-case risico van een vastgelopen `PREPARING`-run zonder herstel
+ * (`docs/design/fase5-pub-design.md` §7). `simulationOnly`/`writesToProdis`/`contractStatus` staan
+ * altijd vast: geen contractuele toezegging, enkel een waarschuwing dat er niets uitgevoerd is.
+ */
+export type PublicationRunView = {
+  id: number;
+  bundleId: number;
+  targetMode: PublicationTargetMode;
+  attempt: number;
+  status: PublicationRunStatus;
+  requestedBy: string;
+  requestedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  bundleContentHash: string | null;
+  snapshotHash: string | null;
+  payloadHash: string | null;
+  artifactSha256: string | null;
+  artifactByteSize: number | null;
+  rowCount: number | null;
+  incompleteRowCount: number | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  simulationOnly: boolean;
+  writesToProdis: boolean;
+  contractStatus: string;
+  previewSpecVersion: string;
+  snapshotSpecVersion: string | null;
+};
+
+// be.dda.catalogimport.web.PublicationRunController.RequestRunRequest (request). Geen actorveld: de
+// aanvrager komt uit de login (CurrentActor).
+export type RequestRunRequest = {
+  targetMode: PublicationTargetMode;
+};
+
 /**
  * be.dda.catalogimport.web.CatalogImportDeliveryController.UploadResponse (`POST /tasks/{id}/deliveries`).
  * Tellers zijn `null` wanneer de screening er niet aan toegekomen is — nooit als 0 lezen. `status` is
@@ -621,6 +686,7 @@ export type TaskRow = {
 export type UploadResponse = {
   deliveryId: number;
   batchId: number;
+  deliveryReference: string;
   status: string;
   blockedCode: string | null;
   rawRecordCount: number | null;
@@ -631,4 +697,20 @@ export type UploadResponse = {
   changedCount: number | null;
   unchangedCount: number | null;
   contentMutationCount: number | null;
+};
+
+/**
+ * be.dda.catalogimport.web.CatalogImportDeliveryController — `GET /local-source/files`-rij (tweede
+ * ontvangstweg, `docs/decisions.md` 2026-09-27). Geen pad: enkel de kale bestandsnaam.
+ */
+export type LocalSourceFile = {
+  fileName: string;
+  byteSize: number;
+  lastModifiedAt: string;
+};
+
+/** `GET /local-source/files` (MANAGE), gesorteerd meest-recent-eerst, cap 500 + `truncated`. */
+export type LocalSourceListing = {
+  files: LocalSourceFile[];
+  truncated: boolean;
 };

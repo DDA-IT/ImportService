@@ -8,6 +8,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.UnsupportedCharsetException;
 import java.util.Set;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
@@ -40,6 +41,13 @@ public class SourceStructureConfigFactory {
     public static final String CODE_FIELD_REFERENCE_INVALID = "CONFIG_FIELD_REFERENCE_INVALID";
     public static final String CODE_CANONICALISATION_VERSION_UNSUPPORTED =
             "CONFIG_CANONICALISATION_VERSION_UNSUPPORTED";
+    /**
+     * De vaste valuta van de koppeling ({@code import_link.default_currency}) heeft geen
+     * ISO-4217-vorm. De setup-API (V-4) en de databasecheck van changeset 010-4b/010-4c weren zo'n
+     * waarde al; komt ze hier tóch binnen, dan blokkeert de levering in plaats van een verzonnen of
+     * stil gecorrigeerde munt op élke prijs van deze koppeling te zetten.
+     */
+    public static final String CODE_LINK_CURRENCY_INVALID = "CONFIG_LINK_CURRENCY_INVALID";
 
     /**
      * De canonicalisatieversies die deze build kent (ontwerp fase 3, par. 3.5, aanname A15).
@@ -57,10 +65,30 @@ public class SourceStructureConfigFactory {
      */
     public static final Set<Integer> SUPPORTED_CANONICALISATION_VERSIONS = Set.of(1, 2);
 
+    /** Dezelfde syntactische ISO-4217-vorm als {@code PriceRules}: exact drie hoofdletters. */
+    private static final Pattern LINK_DEFAULT_CURRENCY = Pattern.compile("[A-Z]{3}");
+
     /**
+     * De bronconfiguratie van een revisie <b>zonder</b> vaste valuta van de koppeling. Gedrag exact als
+     * vóór de valuta-standaard: zonder muntveld geldt de systeemstandaard.
+     *
      * @throws ScreeningBlockedException bij ontbrekende of tegenstrijdige bronconfiguratie
      */
     public SourceStructureConfig from(ImportDefinitionRevision revision) {
+        return from(revision, null);
+    }
+
+    /**
+     * Dezelfde bronconfiguratie, aangevuld met de vaste valuta van de <b>koppeling</b>
+     * ({@code import_link.default_currency}, ontwerp valuta-standaard par. 1 en 2). Additieve overload:
+     * enkel de screening van een batch kent een koppeling; de definitievalidatie van de setup- en
+     * materialisatie-API's blijft de eenargumentvariant gebruiken.
+     *
+     * @param linkDefaultCurrency de vaste valuta van de koppeling, of {@code null}
+     * @throws ScreeningBlockedException bij ontbrekende of tegenstrijdige bronconfiguratie, of bij een
+     *                                   vaste valuta die geen ISO-4217-vorm heeft
+     */
+    public SourceStructureConfig from(ImportDefinitionRevision revision, String linkDefaultCurrency) {
         String format = revision.getStructureFormat();
         if (!"CSV".equals(format)) {
             throw blocked(CODE_FORMAT_UNSUPPORTED, "Source format " + format + " is not supported");
@@ -110,7 +138,7 @@ public class SourceStructureConfigFactory {
             throw blocked(CODE_PRICE_FIELD_MISSING, "No base price field configured on the revision");
         }
         String description = trimToNull(revision.getRecordDescriptionField());
-        PricePolicy pricePolicy = pricePolicy(revision);
+        PricePolicy pricePolicy = pricePolicy(revision, linkDefaultCurrency);
 
         int canonicalisationVersion = revision.getRecordCanonicalisationVersion();
         if (!SUPPORTED_CANONICALISATION_VERSIONS.contains(canonicalisationVersion)) {
@@ -137,7 +165,8 @@ public class SourceStructureConfigFactory {
      * default in plaats van "geen tolerantie" — dat laatste zou elk reconstructieverschil aanvaarden.
      * Een negatieve tolerantie is een configuratiefout en blokkeert de levering.
      */
-    private static PricePolicy pricePolicy(ImportDefinitionRevision revision) {
+    private static PricePolicy pricePolicy(ImportDefinitionRevision revision,
+                                           String linkDefaultCurrency) {
         BigDecimal tolerance = revision.getPriceDerivationTolerance();
         if (tolerance == null) {
             tolerance = PriceRules.DEFAULT_DERIVATION_TOLERANCE;
@@ -147,7 +176,28 @@ public class SourceStructureConfigFactory {
                     + tolerance.toPlainString() + "); a tolerance is a distance and is never negative");
         }
         return new PricePolicy(trimToNull(revision.getRecordCurrencyField()),
-                revision.isBasePriceZeroAllowed(), revision.isBasePriceNegativeAllowed(), tolerance);
+                revision.isBasePriceZeroAllowed(), revision.isBasePriceNegativeAllowed(), tolerance,
+                linkDefaultCurrency(linkDefaultCurrency));
+    }
+
+    /**
+     * De vaste valuta van de koppeling, defensief gecontroleerd op de ISO-4217-<b>vorm</b> — dezelfde
+     * regel als {@link PriceRules#currency(String, String)} en als de databasecheck van changeset
+     * 010-4b/010-4c. Nooit upper-casen en nooit terugvallen op de systeemstandaard: een onleesbare
+     * vaste valuta zou anders stil als EUR op élke prijs van deze koppeling belanden. De eigenlijke
+     * invoervalidatie gebeurt bij het aanmaken van de koppeling (bouwstap V-4); dit is het vangnet.
+     */
+    private static String linkDefaultCurrency(String value) {
+        String trimmed = trimToNull(value);
+        if (trimmed == null) {
+            return null;
+        }
+        if (!LINK_DEFAULT_CURRENCY.matcher(trimmed).matches()) {
+            throw blocked(CODE_LINK_CURRENCY_INVALID, "import_link.default_currency '" + value
+                    + "' is not an ISO 4217 currency code (exactly three capital letters); a fixed "
+                    + "currency is never guessed, corrected or replaced by the system default");
+        }
+        return trimmed;
     }
 
     private static Charset charset(String name) {

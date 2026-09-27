@@ -13,6 +13,7 @@ import type {
   MutationActionType,
   MutationStatus,
   PublicationBundleStatus,
+  PublicationRunView,
 } from '../../api/types.ts';
 import { isEmptyDecisionFilter } from './groupDecisionFilter.ts';
 
@@ -250,6 +251,34 @@ export function freezeBlockerReason(code: string, preflight: FreezePreflight): s
     default:
       return `De server meldt een blokkade die dit scherm niet kent (${code}).`;
   }
+}
+
+/**
+ * Publicatierun (5-PUB-a, `docs/decisions.md` 2026-09-27) — mag "Simulatierun starten" aangeboden
+ * worden? Spiegel van de backend, nooit de bron van waarheid: een 409 van de server wordt altijd
+ * getoond. `runs` is de reeds geladen runlijst van deze bundel, of `null` zolang die niet (succesvol)
+ * geladen is — zonder lijst kan niet vastgesteld worden of er al een actieve run loopt.
+ */
+export function publicationRunGate(
+  bundleStatus: PublicationBundleStatus,
+  runs: readonly PublicationRunView[] | null,
+): Gate {
+  if (bundleStatus !== 'FROZEN') {
+    return denied(
+      'Kan niet: alleen een bevroren bundel kan een publicatierun starten (BUNDLE_NOT_FROZEN).',
+    );
+  }
+  if (runs === null) {
+    return denied('De lijst van publicatieruns is nog niet geladen (of het laden mislukte).');
+  }
+  const active = runs.find((run) => run.status === 'REQUESTED' || run.status === 'PREPARING');
+  if (active !== undefined) {
+    return denied(
+      `Er loopt al een publicatierun (#${active.id}, status ${active.status}) voor deze bundel ` +
+        '(PUBLICATION_RUN_IN_PROGRESS).',
+    );
+  }
+  return ALLOWED;
 }
 
 /** Alle blokkades uit de voorvlucht, in de volgorde van de server (R-FRZ), elk met een leesbare reden. */

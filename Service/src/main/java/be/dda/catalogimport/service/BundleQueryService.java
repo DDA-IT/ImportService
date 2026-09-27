@@ -98,7 +98,7 @@ public class BundleQueryService {
                                Long identityIncidentCount, Long bulkIncidentCount, Long criticalIssueCount,
                                Long warningCount, Long staleMutationCount, String contentHash,
                                Long plannedCount, Long awaitingApprovalCount,
-                               Long expirableCount) {
+                               Long expirableCount, String snapshotHash, String snapshotSpecVersion) {
 
         private static BundleDetail frozen(PublicationBundle bundle, Long expirableCount) {
             return new BundleDetail(bundle.getId(), bundle.getBundleReference(), bundle.getDescription(),
@@ -109,7 +109,8 @@ public class BundleQueryService {
                     bundle.getContentMutationCount(), bundle.getReadyCount(), bundle.getRejectedCount(),
                     bundle.getBlockedCount(), bundle.getExpiredCount(), bundle.getIdentityIncidentCount(),
                     bundle.getBulkIncidentCount(), bundle.getCriticalIssueCount(), bundle.getWarningCount(), null,
-                    hex(bundle.getContentHash()), null, null, expirableCount);
+                    hex(bundle.getContentHash()), null, null, expirableCount, hex(bundle.getSnapshotHash()),
+                    bundle.getSnapshotSpecVersion());
         }
 
         private static BundleDetail live(PublicationBundle bundle, List<MutationStatusCount> counts,
@@ -128,7 +129,7 @@ public class BundleQueryService {
                     totals.blockedCount(), bundle.getExpiredCount(), totals.identityIncidentCount(),
                     bundle.getBulkIncidentCount(), bundle.getCriticalIssueCount(), bundle.getWarningCount(),
                     staleCount, hex(bundle.getContentHash()), plannedCount, awaitingApprovalCount,
-                    expirableCount);
+                    expirableCount, hex(bundle.getSnapshotHash()), bundle.getSnapshotSpecVersion());
         }
 
         /** De bundelhash als hexadecimale tekst; binaire bytes horen niet in een JSON-antwoord. */

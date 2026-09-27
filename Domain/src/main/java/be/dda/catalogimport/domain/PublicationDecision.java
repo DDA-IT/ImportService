@@ -66,6 +66,14 @@ public class PublicationDecision {
     @Column(name = "decided_by", nullable = false, length = 100)
     private String decidedBy;
 
+    /**
+     * Het OIDC-subject ({@code sub}) van de beslisser (Fase 5-AUTH, changeset 007-1). {@code null}
+     * betekent <b>"geen geverifieerde identiteit"</b>: een rij van vóór Fase 5 of een rechtstreekse
+     * Service-aanroep zonder login. Nooit stil ingevuld; audit-only, nooit in een API-antwoord.
+     */
+    @Column(name = "decided_by_subject", length = 255)
+    private String decidedBySubject;
+
     @Column(name = "decided_at", nullable = false)
     private Instant decidedAt;
 
@@ -92,12 +100,26 @@ public class PublicationDecision {
     public PublicationDecision(PublicationBundle bundle, ImportMutation mutation, BundleDecisionKind decisionKind,
                                BundleDecisionScope decisionScope, long affectedCount, String decidedBy,
                                Instant decidedAt, String reason) {
+        this(bundle, mutation, decisionKind, decisionScope, affectedCount, decidedBy, null, decidedAt, reason);
+    }
+
+    /**
+     * Zoals de constructor hierboven, maar met het geverifieerde OIDC-subject van de beslisser (Fase
+     * 5-AUTH, bouwstap 5A-2). Additief: de bestaande constructoren blijven bestaan en laten
+     * {@code decided_by_subject} bewust op {@code null} ("geen geverifieerde identiteit").
+     *
+     * @param decidedBySubject {@code null} = geen geverifieerde identiteit; nooit stil ingevuld
+     */
+    public PublicationDecision(PublicationBundle bundle, ImportMutation mutation, BundleDecisionKind decisionKind,
+                               BundleDecisionScope decisionScope, long affectedCount, String decidedBy,
+                               String decidedBySubject, Instant decidedAt, String reason) {
         this.bundle = bundle;
         this.mutation = mutation;
         this.decisionKind = decisionKind;
         this.decisionScope = decisionScope;
         this.affectedCount = affectedCount;
         this.decidedBy = decidedBy;
+        this.decidedBySubject = decidedBySubject;
         this.decidedAt = decidedAt;
         this.reason = reason;
     }
@@ -159,6 +181,11 @@ public class PublicationDecision {
 
     public String getDecidedBy() {
         return decidedBy;
+    }
+
+    /** {@code null} = geen geverifieerde identiteit (rij van vóór Fase 5 of een aanroep zonder login). */
+    public String getDecidedBySubject() {
+        return decidedBySubject;
     }
 
     public Instant getDecidedAt() {

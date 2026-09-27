@@ -2,6 +2,7 @@ package be.dda.catalogimport.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import be.dda.catalogimport.dao.PsimportPreviewDao.SnapshotPrice;
 import be.dda.catalogimport.dao.PsimportPreviewDao.SourceRow;
 import be.dda.catalogimport.service.PsimportPreviewMapper.Field;
 import be.dda.catalogimport.service.PsimportPreviewMapper.Row;
@@ -15,8 +16,20 @@ class PsimportPreviewMapperTest {
 
     private static SourceRow source(BigDecimal price, String currency, String discountCode, String discountState,
                                     String refType, String refValue) {
+        return snapshotted(price, currency, discountCode, discountState, refType, refValue, "VALUE", "Boormachine",
+                List.of());
+    }
+
+    private static SourceRow snapshotted(BigDecimal price, String currency, String discountCode,
+                                         String discountState, String refType, String refValue,
+                                         String descriptionState, String description, List<SnapshotPrice> prices) {
         return new SourceRow(7L, 42L, "CREATE", "ACME", "G1", "R1", discountCode, discountState, price, currency,
-                refType, refValue);
+                refType, refValue, 99L, description, descriptionState, prices);
+    }
+
+    private static SourceRow notSnapshotted() {
+        return new SourceRow(7L, 42L, "CREATE", "ACME", "G1", "R1", null, "NOT_USED", new BigDecimal("1"), "EUR",
+                null, null, null, null, null, List.of());
     }
 
     private static Field field(Row row, String code) {
@@ -93,16 +106,65 @@ class PsimportPreviewMapperTest {
     }
 
     @Test
-    void contractFieldsNeverCarryAValueAndDescriptionAndPercentagesAreNotAvailable() {
+    void contractFieldsNeverCarryAValue() {
         Row row = PsimportPreviewMapper.map(source(new BigDecimal("1"), "EUR", null, "NOT_USED", null, null));
 
         for (String code : List.of("PROCESS", "DELETE", "RECORD", "NUMBER")) {
             assertThat(field(row, code).state()).isEqualTo(State.NOT_CONTRACTED);
             assertThat(field(row, code).value()).isNull();
         }
+    }
+
+    @Test
+    void descriptionFollowsTheSnapshotState() {
+        assertThat(PsimportPreviewMapper.description(true, "Boor, \"XL\"", "VALUE"))
+                .isEqualTo(new Field("DESCRIPTION", "Omschrijving NED", "Boor, \"XL\"", State.VALUE));
+        Field empty = PsimportPreviewMapper.description(true, "", "EMPTY");
+        assertThat(empty.state()).isEqualTo(State.VALUE);
+        assertThat(empty.value()).isEmpty();
+        Field notMapped = PsimportPreviewMapper.description(true, null, "NOT_MAPPED");
+        assertThat(notMapped.state()).isEqualTo(State.NOT_MAPPED);
+        assertThat(notMapped.value()).isNull();
+        assertThat(PsimportPreviewMapper.description(true, null, "VALUE").state()).isEqualTo(State.UNKNOWN);
+        assertThat(PsimportPreviewMapper.description(true, "x", "BOGUS").state()).isEqualTo(State.UNKNOWN);
+    }
+
+    @Test
+    void percentagesAreStringsFromTheSnapshotComponentsAndAMissingOneIsNotMappedNeverZero() {
+        Row row = PsimportPreviewMapper.map(snapshotted(new BigDecimal("1"), "EUR", null, "NOT_USED", null, null,
+                "VALUE", "Boor", List.of(
+                        new SnapshotPrice("VKP1", new BigDecimal("125.500000000000"), "OK"),
+                        new SnapshotPrice("VKP2", new BigDecimal("1E+2"), "OK"),
+                        new SnapshotPrice("VKP3", null, "NO_BASE_PRICE"),
+                        new SnapshotPrice("AKP", new BigDecimal("50"), "OK"))));
+
+        assertThat(field(row, "VKP1_PCT")).isEqualTo(new Field("VKP1_PCT", "Prijs 1 %", "125.500000000000", State.VALUE));
+        assertThat(field(row, "VKP2_PCT").value()).isEqualTo("100");
+        assertThat(field(row, "VKP3_PCT").state()).isEqualTo(State.UNKNOWN);
+        assertThat(field(row, "VKP3_PCT").value()).isNull();
+        assertThat(field(row, "VKP4_PCT").state()).isEqualTo(State.NOT_MAPPED);
+        assertThat(field(row, "VKP4_PCT").value()).isNull();
+        assertThat(field(row, "VKP5_PCT").state()).isEqualTo(State.NOT_MAPPED);
+        assertThat(row.complete()).isFalse(); // VKP3 is UNKNOWN
+    }
+
+    @Test
+    void aSnapshottedRowWithoutPercentagesIsCompleteWhenNothingIsUnknown() {
+        Row row = PsimportPreviewMapper.map(source(new BigDecimal("1"), "EUR", null, "NOT_USED", null, null));
+
+        assertThat(field(row, "DESCRIPTION").state()).isEqualTo(State.VALUE);
+        assertThat(field(row, "VKP1_PCT").state()).isEqualTo(State.NOT_MAPPED);
+        assertThat(row.complete()).isTrue();
+    }
+
+    @Test
+    void aRowWithoutSnapshotIsNotSnapshottedAndIncomplete() {
+        Row row = PsimportPreviewMapper.map(notSnapshotted());
+
         for (String code : List.of("DESCRIPTION", "VKP1_PCT", "VKP2_PCT", "VKP3_PCT", "VKP4_PCT", "VKP5_PCT")) {
-            assertThat(field(row, code).state()).isEqualTo(State.NOT_AVAILABLE_IN_MUTATION);
+            assertThat(field(row, code).state()).isEqualTo(State.NOT_SNAPSHOTTED);
             assertThat(field(row, code).value()).isNull();
         }
+        assertThat(row.complete()).isFalse();
     }
 }

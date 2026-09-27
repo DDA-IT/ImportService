@@ -84,6 +84,14 @@ public class ImportRevisionFieldCriticality {
     @Column(name = "created_by", length = 100)
     private String createdBy;
 
+    /**
+     * OIDC-subject van wie de kritiek-overrule vastlegde (Fase 5-AUTH, changeset 007-4); {@code null} =
+     * geen geverifieerde identiteit. {@code ck_import_revision_field_criticality_subject} verbiedt een
+     * subject zonder naam.
+     */
+    @Column(name = "created_by_subject", length = 255)
+    private String createdBySubject;
+
     protected ImportRevisionFieldCriticality() {
         // JPA
     }
@@ -127,5 +135,14 @@ public class ImportRevisionFieldCriticality {
 
     public void setCreatedBy(String createdBy) {
         this.createdBy = createdBy;
+    }
+
+    public String getCreatedBySubject() {
+        return createdBySubject;
+    }
+
+    /** Fase 5-AUTH (5A-6): zet altijd samen met {@link #setCreatedBy(String)}; {@code null} = niet geverifieerd. */
+    public void setCreatedBySubject(String createdBySubject) {
+        this.createdBySubject = createdBySubject;
     }
 }

@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
+import { TEST_IDENTITY } from './testIdentity';
 import type { BundleDetail } from '../api/types';
 import { BundleOverviewTab } from '../features/bundles/BundleOverviewTab';
 
@@ -92,7 +93,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 function renderOverview(detail: BundleDetail) {
   const reloadBundle = vi.fn();
   render(
-    <ActorProvider>
+    <ActorProvider identity={TEST_IDENTITY}>
       <MemoryRouter initialEntries={['/bundles/42']}>
         <Routes>
           <Route path="/bundles/:bundleId" element={<Outlet context={{ bundle: detail, reloadBundle }} />}>
@@ -133,7 +134,6 @@ function gets() {
 }
 
 function fillConfirmation(dialog: HTMLElement, typed: string = REFERENCE, reason = 'Verkeerde levering') {
-  fireEvent.change(within(dialog).getByLabelText(/Naam/), { target: { value: 'An Beslisser' } });
   fireEvent.change(within(dialog).getByLabelText(/Reden/), { target: { value: reason } });
   fireEvent.change(within(dialog).getByLabelText(/Typ "BND-2026-001"/), { target: { value: typed } });
 }

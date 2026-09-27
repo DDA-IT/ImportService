@@ -1,5 +1,6 @@
 package be.dda.catalogimport.dao;
 
+import be.dda.catalogimport.domain.CurrencyOrigin;
 import java.sql.Types;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -104,6 +105,13 @@ public class MutationDao {
 
     /** Vorm van een prijscomponentcode; zie {@link #verifyComponentCode(String)}. */
     private static final Pattern COMPONENT_CODE = Pattern.compile("[A-Z0-9_]{1,20}");
+
+    /**
+     * De herkomstwaarde waarvoor een bronstaatmunt {@code null} als gelijk telt (valuta-standaard
+     * par. 4). Letterlijk de naam van {@code CurrencyOrigin.SYSTEM_DEFAULT}; de enumklasse zelf wordt
+     * hier niet gebruikt omdat deze DAO uitsluitend SQL-tekst opbouwt.
+     */
+    private static final String SYSTEM_DEFAULT_ORIGIN = CurrencyOrigin.SYSTEM_DEFAULT.name();
 
     private static final String CONTENT_MUTATION_COLUMNS = "batch_id, delivery_id, import_link_id, "
             + "definition_revision_id, task_run_id, action_type, target_domain, status, status_reason, "
@@ -217,6 +225,15 @@ public class MutationDao {
      * {@code PRICE}, {@code ARTICLE,PRICE} of {@code null}): de basisprijsvergelijking is dan
      * gelijkwaardig aan de vergelijking van de prijsvingerafdrukken, want die dekt in dat geval enkel
      * de basisprijs en de munt.
+     * <p>
+     * <b>Valuta-standaard (ontwerp valuta-standaard par. 4).</b> Een bronstaatrij van vóór de
+     * standaard draagt munt {@code null} ("onbekend"); de staging draagt sindsdien altijd een munt. Een
+     * state-{@code null} geldt daarom als <b>gelijk</b> aan een stagemunt met herkomst
+     * {@code SYSTEM_DEFAULT} — precies de toestand die de vingerafdruk óók als ongewijzigd ziet (de
+     * canonieke prijstekst schrijft die euro als de "niet gemapt"-markering). Zonder deze regel zou
+     * élke toch al gewijzigde rij na de invoering onterecht {@code PRICE} in haar masker krijgen. Een
+     * {@code LINK_DEFAULT}- of {@code SOURCE}-munt naast een state-{@code null} blijft wél een
+     * verschil: dáár is de munt een bewuste uitspraak en geen systeemaanname.
      */
     private static String domainMask(List<String> componentCodes) {
         verifyMaskFits(componentCodes);
@@ -224,7 +241,10 @@ public class MutationDao {
         parts.append("case when state.article_fingerprint <> stage.article_fingerprint "
                 + "then ',").append(ARTICLE_MASK).append("' else '' end");
         parts.append(" || case when state.base_price <> stage.base_price "
-                + "or coalesce(state.base_price_currency, '') <> coalesce(stage.base_price_currency, '') "
+                + "or (coalesce(state.base_price_currency, '') <> coalesce(stage.base_price_currency, '') "
+                + "    and not (state.base_price_currency is null "
+                + "         and coalesce(stage.base_price_currency_origin, '') = '"
+                + SYSTEM_DEFAULT_ORIGIN + "')) "
                 + "then ',").append(PRICE_MASK).append("' else '' end");
         for (String code : componentCodes) {
             parts.append(" || case when ").append(componentDiffers(code))
@@ -244,6 +264,13 @@ public class MutationDao {
      * beide kanten met exact dezelfde verhouding en munt, óf ze bestaat aan geen van beide kanten.
      * Elke andere toestand — toegevoegd, weggevallen, andere verhouding, andere munt — is een
      * verschil. De vergelijking gebeurt op {@code numeric}, nooit op een afgeronde of tekstuele vorm.
+     * <p>
+     * <b>Valuta-standaard.</b> Een component erft de munt van de basisprijs (R-PRI-06), dus geldt hier
+     * exact dezelfde uitzondering als in {@link #domainMask(List)}: een aanvaarde componentmunt
+     * {@code null} (van vóór de standaard) is gelijk aan de aangenomen euro van een stagerij met
+     * herkomst {@code SYSTEM_DEFAULT}. {@code catalog_source_state_price} draagt zelf geen herkomst —
+     * die staat op de basisprijsrij ({@code catalog_source_state}/{@code import_candidate_stage}) en
+     * geldt voor al haar componenten.
      */
     private static String componentDiffers(String componentCode) {
         String code = "'" + verifyComponentCode(componentCode) + "'";
@@ -254,7 +281,10 @@ public class MutationDao {
                 + "where price.batch_id = stage.batch_id and price.row_number = stage.row_number "
                 + "  and price.component_code = " + code
                 + "  and price.percentage = accepted.percentage "
-                + "  and coalesce(price.currency, '') = coalesce(accepted.currency, '')) "
+                + "  and (coalesce(price.currency, '') = coalesce(accepted.currency, '') "
+                + "       or (accepted.currency is null "
+                + "           and coalesce(stage.base_price_currency_origin, '') = '"
+                + SYSTEM_DEFAULT_ORIGIN + "'))) "
                 + "or (not exists (select 1 from import_candidate_price price "
                 + "      where price.batch_id = stage.batch_id and price.row_number = stage.row_number "
                 + "        and price.component_code = " + code + ") "

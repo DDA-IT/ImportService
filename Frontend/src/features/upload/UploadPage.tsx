@@ -11,14 +11,20 @@
  *   referentie is de herstelroute: identiek bestand geeft 200, geen nieuwe screening.
  * - Geen `AbortSignal`, geen timeout, geen automatische retry. De verzendknop staat uit zolang de upload loopt.
  * - Accept-baseline, bundel-opname en `continue` horen bij B-F2/B-F3 en staan hier niet.
+ * - Tweede ontvangstweg (`docs/decisions.md` 2026-09-27): naast "bestand van mijn computer" kan een
+ *   bestand uit een beheerde servermap gekozen worden (`GET /local-source/files`). Daar leidt de
+ *   server zelf de `deliveryReference` af (de browser kan het serverbestand niet hashen); dit scherm
+ *   toont enkel wat de server teruggeeft. Geen vrije bestandsnaaminvoer: enkel kiezen uit de lijst.
  */
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import * as deliveriesApi from '../../api/deliveries.ts';
+import * as localSourceApi from '../../api/localSource.ts';
 import * as tasksApi from '../../api/tasks.ts';
-import type { TaskRow } from '../../api/types.ts';
-import { useActor, validateActorName } from '../../actor/ActorContext.tsx';
+import { PERMISSION_MANAGE, type TaskRow, type UploadResponse } from '../../api/types.ts';
+import { useActor } from '../../actor/ActorContext.tsx';
+import { usePermissionGate } from '../../actor/permissions.ts';
 import { Field } from '../../components/Field.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
@@ -29,6 +35,26 @@ import styles from './UploadPage.module.css';
 
 const MAX_FILE_NAME_LENGTH = 500;
 const NO_TASK = '';
+const NO_FILE = '';
+
+type SourceKind = 'UPLOAD' | 'LOCAL_SOURCE';
+
+/** `Outcome` van beide bronnen heeft dezelfde vorm; enkel de aanroep zelf verschilt. */
+type SubmitOutcome = { created: boolean; delivery: UploadResponse };
+
+function formatByteSize(byteSize: number): string {
+  if (byteSize < 1024) {
+    return `${byteSize} B`;
+  }
+  const units = ['kB', 'MB', 'GB', 'TB'];
+  let value = byteSize / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(1)} ${units[unitIndex]}`;
+}
 
 /** mm:ss sinds het mounten; mount = start van de upload. */
 export function ElapsedTimer() {
@@ -68,10 +94,13 @@ function taskLabel(task: TaskRow): string {
 
 export function UploadPage() {
   const { actor } = useActor();
+  const manageGate = usePermissionGate(PERMISSION_MANAGE);
   const tasks = useQuery('tasks:all', (signal) => tasksApi.listTasks({ size: 200 }, signal));
 
+  const [sourceKind, setSourceKind] = useState<SourceKind>('UPLOAD');
   const [taskId, setTaskId] = useState<string>(NO_TASK);
   const [file, setFile] = useState<File | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string>(NO_FILE);
   const [reference, setReference] = useState('');
   const [expectedRecordCount, setExpectedRecordCount] = useState('');
   const [expectedByteSize, setExpectedByteSize] = useState('');
@@ -79,8 +108,25 @@ export function UploadPage() {
   const [deriving, setDeriving] = useState(false);
   const pickCounter = useRef(0);
 
-  const { execute, pending, error, reset } = useAction(deliveriesApi.uploadDelivery);
-  const [outcome, setOutcome] = useState<deliveriesApi.UploadOutcome | null>(null);
+  // Enkel bevraagd zolang de servermap-bron gekozen is; bij "mijn computer" geen netwerkverzoek.
+  const localSourceFiles = useQuery(`local-source:${sourceKind}`, (signal) =>
+    sourceKind === 'LOCAL_SOURCE' ? localSourceApi.listLocalSourceFiles(signal) : Promise.resolve(null),
+  );
+  const localSourceNotConfigured =
+    localSourceFiles.error !== null &&
+    localSourceFiles.error.status === 404 &&
+    localSourceFiles.error.code === 'LOCAL_SOURCE_NOT_CONFIGURED';
+
+  type SubmitInput =
+    | { source: 'UPLOAD'; upload: deliveriesApi.UploadDeliveryParams }
+    | { source: 'LOCAL_SOURCE'; local: localSourceApi.ReadLocalSourceDeliveryParams };
+  const { execute, pending, error, reset } = useAction(async (input: SubmitInput): Promise<SubmitOutcome> => {
+    if (input.source === 'UPLOAD') {
+      return deliveriesApi.uploadDelivery(input.upload);
+    }
+    return localSourceApi.readLocalSourceDelivery(input.local);
+  });
+  const [outcome, setOutcome] = useState<SubmitOutcome | null>(null);
 
   const manualTasks = tasks.data?.content.filter((task) => task.triggerType === 'MANUAL') ?? [];
   const noManualTask = tasks.data !== null && manualTasks.length === 0;
@@ -113,33 +159,46 @@ export function UploadPage() {
     }
   }
 
+  function handleSourceChange(next: SourceKind) {
+    if (next === sourceKind) {
+      return;
+    }
+    setSourceKind(next);
+    setFile(null);
+    setSelectedFileName(NO_FILE);
+    setReference('');
+    setOutcome(null);
+    setValidationError(null);
+    reset();
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (pending) {
+    if (pending || !manageGate.allowed) {
       return;
     }
     setOutcome(null);
     reset();
 
-    const actorError = validateActorName(actor);
-    if (actorError !== null) {
-      setValidationError(`Geüpload door: ${actorError}`);
-      return;
-    }
     if (taskId === NO_TASK) {
       setValidationError('Kies een taak.');
       return;
     }
-    if (file === null) {
+    if (sourceKind === 'UPLOAD' && file === null) {
       setValidationError('Kies een bestand.');
       return;
     }
-    if (file.name.length > MAX_FILE_NAME_LENGTH) {
+    if (sourceKind === 'UPLOAD' && file !== null && file.name.length > MAX_FILE_NAME_LENGTH) {
       setValidationError(`De bestandsnaam mag niet langer zijn dan ${MAX_FILE_NAME_LENGTH} tekens.`);
       return;
     }
+    if (sourceKind === 'LOCAL_SOURCE' && selectedFileName === NO_FILE) {
+      setValidationError('Kies een bestand uit de servermap.');
+      return;
+    }
     const trimmedReference = reference.trim();
-    if (trimmedReference === '') {
+    // Bij de servermap-bron is de referentie optioneel: de server leidt ze zelf af.
+    if (sourceKind === 'UPLOAD' && trimmedReference === '') {
       setValidationError('Vul een referentie in.');
       return;
     }
@@ -159,14 +218,30 @@ export function UploadPage() {
     }
     setValidationError(null);
 
-    const result = await execute({
-      taskId: Number(taskId),
-      file,
-      deliveryReference: trimmedReference,
-      uploadedBy: actor.trim(),
-      expectedRecordCount: recordCount,
-      expectedByteSize: byteSize,
-    });
+    const result =
+      sourceKind === 'UPLOAD'
+        ? await execute({
+            source: 'UPLOAD',
+            upload: {
+              taskId: Number(taskId),
+              file: file!,
+              deliveryReference: trimmedReference,
+              uploadedBy: actor.trim(),
+              expectedRecordCount: recordCount,
+              expectedByteSize: byteSize,
+            },
+          })
+        : await execute({
+            source: 'LOCAL_SOURCE',
+            local: {
+              taskId: Number(taskId),
+              fileName: selectedFileName,
+              deliveryReference: trimmedReference === '' ? undefined : trimmedReference,
+              uploadedBy: actor.trim(),
+              expectedRecordCount: recordCount,
+              expectedByteSize: byteSize,
+            },
+          });
     if (result !== undefined) {
       setOutcome(result);
     }
@@ -212,21 +287,92 @@ export function UploadPage() {
           </select>
         </Field>
 
-        <Field label="Bestand (CSV)" htmlFor="upload-file" required>
-          <input
-            id="upload-file"
-            className={styles.input}
-            type="file"
-            disabled={pending}
-            onChange={(event) => void handleFileChange(event.target.files?.[0] ?? null)}
-          />
-        </Field>
+        <fieldset className={styles.sourceChoice}>
+          <legend>Bron</legend>
+          <label>
+            <input
+              type="radio"
+              name="upload-source"
+              checked={sourceKind === 'UPLOAD'}
+              disabled={pending}
+              onChange={() => handleSourceChange('UPLOAD')}
+            />{' '}
+            Bestand van mijn computer
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="upload-source"
+              checked={sourceKind === 'LOCAL_SOURCE'}
+              disabled={pending || localSourceNotConfigured}
+              onChange={() => handleSourceChange('LOCAL_SOURCE')}
+            />{' '}
+            Bestand op de server
+          </label>
+        </fieldset>
+
+        {sourceKind === 'UPLOAD' && (
+          <Field label="Bestand (CSV)" htmlFor="upload-file" required>
+            <input
+              id="upload-file"
+              className={styles.input}
+              type="file"
+              disabled={pending}
+              onChange={(event) => void handleFileChange(event.target.files?.[0] ?? null)}
+            />
+          </Field>
+        )}
+
+        {sourceKind === 'LOCAL_SOURCE' && (
+          <Field label="Kies een bestand uit de servermap" htmlFor="upload-local-file" required>
+            {localSourceFiles.error !== null && <ErrorBanner error={localSourceFiles.error} />}
+            {localSourceFiles.loading && localSourceFiles.data === null && localSourceFiles.error === null && (
+              <p className={styles.loading}>Bestanden laden…</p>
+            )}
+            {localSourceFiles.data !== null && localSourceFiles.data.files.length === 0 && (
+              <p className={styles.note} role="status" data-testid="no-local-source-files">
+                Geen bestanden gevonden in de servermap.
+              </p>
+            )}
+            {localSourceFiles.data !== null && localSourceFiles.data.files.length > 0 && (
+              <select
+                id="upload-local-file"
+                className={styles.select}
+                value={selectedFileName}
+                disabled={pending}
+                onChange={(event) => {
+                  setSelectedFileName(event.target.value);
+                  setOutcome(null);
+                  reset();
+                  setValidationError(null);
+                }}
+              >
+                <option value={NO_FILE}>— kies een bestand —</option>
+                {localSourceFiles.data.files.map((entry) => (
+                  <option key={entry.fileName} value={entry.fileName}>
+                    {entry.fileName} — {formatByteSize(entry.byteSize)} —{' '}
+                    {new Date(entry.lastModifiedAt).toLocaleString()}
+                  </option>
+                ))}
+              </select>
+            )}
+            {localSourceFiles.data?.truncated === true && (
+              <p className={styles.note} role="status">
+                De lijst toont niet alle bestanden in de servermap (afgekapt bij 500).
+              </p>
+            )}
+          </Field>
+        )}
 
         <Field
           label="Referentie"
           htmlFor="upload-reference"
-          required
-          hint={`Afgeleid van bestandsnaam en inhoud (geen tijdstempel), max. ${MAX_DELIVERY_REFERENCE_LENGTH} tekens. Hetzelfde bestand met dezelfde referentie opnieuw uploaden is veilig; een ander bestand heeft een nieuwe referentie nodig.`}
+          required={sourceKind === 'UPLOAD'}
+          hint={
+            sourceKind === 'UPLOAD'
+              ? `Afgeleid van bestandsnaam en inhoud (geen tijdstempel), max. ${MAX_DELIVERY_REFERENCE_LENGTH} tekens. Hetzelfde bestand met dezelfde referentie opnieuw uploaden is veilig; een ander bestand heeft een nieuwe referentie nodig.`
+              : `Optioneel: leeg gelaten leidt de server de referentie zelf af (hash van het bestand). Max. ${MAX_DELIVERY_REFERENCE_LENGTH} tekens.`
+          }
         >
           <input
             id="upload-reference"
@@ -263,8 +409,7 @@ export function UploadPage() {
         </Field>
 
         <p className={styles.actorRow}>
-          Geüpload door: <strong>{actor === '' ? '(nog niet ingevuld)' : actor}</strong> — wijzig dit hierboven bij
-          "Ingelogd als".
+          Geüpload door: <strong>{actor}</strong>
         </p>
 
         {validationError !== null && (
@@ -304,7 +449,18 @@ export function UploadPage() {
           </p>
         )}
 
-        <button type="submit" className={styles.submit} disabled={pending || deriving}>
+        {!manageGate.allowed && (
+          <p className={styles.validationError} id="upload-permission-reason" data-testid="permission-reason-manage">
+            {manageGate.reason}
+          </p>
+        )}
+        <button
+          type="submit"
+          className={styles.submit}
+          disabled={pending || deriving || !manageGate.allowed}
+          title={manageGate.allowed ? undefined : manageGate.reason}
+          aria-describedby={manageGate.allowed ? undefined : 'upload-permission-reason'}
+        >
           {submitLabel}
         </button>
       </form>
@@ -328,6 +484,9 @@ export function UploadPage() {
                 · reden <strong>{delivery.blockedCode}</strong>
               </>
             )}
+          </p>
+          <p>
+            Referentie: <strong data-testid="upload-result-reference">{delivery.deliveryReference}</strong>
           </p>
           <dl className={styles.counters}>
             <Counter label="Ruwe records" value={delivery.rawRecordCount} />

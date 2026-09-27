@@ -1,7 +1,6 @@
 # CatalogImport — handleiding
 
-Stand: 2026-09-24. Deze handleiding wordt bijgewerkt zodra de resterende schermen klaar zijn (zie
-[Nog in aanbouw](#5-nog-in-aanbouw)).
+Stand: 2026-09-25. Wat nog niet gebouwd is, staat in [Nog niet gebouwd](#5-nog-niet-gebouwd).
 
 Bijbehorende documenten:
 
@@ -12,8 +11,9 @@ Bijbehorende documenten:
 Statuslabels in deze handleiding:
 
 - **Beschikbaar** — werkt vandaag in het scherm (bestaat in `Frontend/src/`).
-- **Alleen via API** — de backend kan het, er is nog geen scherm voor.
-- **In aanbouw** — nog niet (volledig) gebouwd.
+- **Alleen via API** — de backend kan het, er is (nog) geen scherm voor (nu enkel nog de inrichting en de
+  sjabloonwizard, en de PSIMPORT-preview).
+- **Niet gebouwd** — bestaat nog niet.
 
 Niet alles is door mij in een draaiende applicatie uitgeprobeerd: er draaide bij het schrijven geen backend.
 Wat uit de code, het beslissingslog (`docs/decisions.md`) of het scenarioscript volgt, staat als feit. Wat
@@ -25,7 +25,7 @@ ik niet kon bevestigen, is gemarkeerd met **nog te verifiëren**.
 2. [Het grote plaatje](#2-het-grote-plaatje)
 3. [Begrippen in context](#3-begrippen-in-context)
 4. [De schermen](#4-de-schermen-die-er-nu-zijn)
-5. [Nog in aanbouw](#5-nog-in-aanbouw)
+5. [Nog niet gebouwd](#5-nog-niet-gebouwd)
 6. [Een screening lezen](#6-de-uitkomst-van-een-screening-lezen)
 7. [Belangrijke regels en valkuilen](#7-belangrijke-regels-en-valkuilen)
 8. [Foutcodes](#8-foutcodes)
@@ -45,17 +45,20 @@ verandert nooit iets stilzwijgend.
 
 - Het **publiceert nog niet naar Prodis** (ProDisWebbase/Pervasive). Publiceren is Fase 5. Een bundel
   bevriezen betekent "klaar voor publicatie", niet "gepubliceerd". De status `PUBLISHED` bestaat in het
-  model maar wordt niet gezet.
-- Er is **geen authenticatie of rechtenbeheer** (Keycloak volgt in Fase 5). Iedereen die de applicatie
-  bereikt, kan alles wat de API toelaat. De naam van "wie doet dit" (de *actor*) is een zelf ingetypte
-  naam die niet gecontroleerd wordt. Gebruik daarom nooit een andermans naam.
+  model maar wordt niet gezet. Er is wel een read-only **PSIMPORT-preview** van een bevroren bundel (zie
+  4.5); dat is geen echt PSIMPORT-formaat.
+- **Rechten per actie (5-PERM) zijn er wel**, maar de **koppeling met Prodis nog niet** (5B-7): de rechten
+  komen voorlopig uit een lokale YAML-lijst (zie 9.3 en de hoofd-`README.md`). Daarnaast is er een
+  **Keycloak-login** (via de backend als BFF, met sessiecookie en CSRF-header): wie niet aangemeld is, krijgt
+  401 `AUTHENTICATION_REQUIRED`. Aangemeld zijn volstaat niet: elke actie vraagt een recht (zie 7a). De naam
+  van "wie doet dit" (de *actor*) komt uit het token (`preferred_username`), niet uit een ingetypte naam.
 - Er zijn geen automatische leveringen (scheduler, SFTP, API). Alleen manuele upload van een CSV-bestand.
 - De frontend is een ontwikkelhulpmiddel: hij draait alleen lokaal tegen een lokale backend en wordt niet
   uitgeleverd (`docs/decisions.md`, 2026-09-23, Q2).
 - Het is dus vooral een **controle en simulatie**: u ziet wat er zou gebeuren en legt beslissingen vast.
 
 Er is geen vier-ogenprincipe: één persoon kan een levering aanvaarden of een bundel bevriezen
-(beslissing 2026-09-20). Dat risico is bewust genomen en wordt pas met authenticatie heroverwogen.
+(beslissing 2026-09-20). Dat risico is bewust genomen; de login (5-AUTH) legt wel vast wíe het deed.
 
 ## 2. Het grote plaatje
 
@@ -133,10 +136,11 @@ hun onderlinge samenhang.
 
 ## 4. De schermen die er nu zijn
 
-De frontend heeft een menu met twee ingangen: **Werkvoorraad** en **Publicatiebundels**. Bovenaan staat de
-**actorbalk**: vul daar eenmalig uw naam in ("Uw naam"). Die wordt bewaard in de browsersessie
-(`sessionStorage`) en gebruikt als "wie" bij elke schrijfactie. Sluit u de browsersessie, dan moet u de
-naam opnieuw invullen.
+De frontend heeft een menu met drie ingangen: **Werkvoorraad**, **Levering uploaden** en
+**Publicatiebundels**. Bij het openen (`http://localhost:5173`) wordt u bij Keycloak aangemeld. Bovenaan staat
+de **actorbalk**: "Aangemeld als *naam*" met een knop **Afmelden**. Die naam (uit het token) wordt gebruikt als
+"wie" bij elke schrijfactie; u kunt hem niet aanpassen. Verloopt de sessie (401), dan meldt de frontend u opnieuw
+aan.
 
 ### 4.1 Scherm 0 — Werkvoorraad (`/`) — **Beschikbaar** (alleen-lezen)
 
@@ -174,6 +178,19 @@ Alleen-lezen overzicht van een batch, plus de acties die vanaf een `SCREENED`- o
   - Bij `MUTATING`: **Batch hervatten** (`continue`), met een expliciete vermelding dat deze actie niet op
     naam wordt vastgelegd (het endpoint heeft geen actorveld).
 - Er is geen doorklik naar een setup-/beheerscherm: die bestaat nog niet (zie sectie 5).
+- Een teller die niet vastgesteld is, staat als "—", nooit als 0. Het scherm is bereikbaar vanuit de werkvoorraad
+  en vanuit scherm 0 (klik op een rij) en vanuit het uploadscherm na een geslaagde upload.
+- Foutcodes bij de acties: 409 `BATCH_IN_PUBLICATION_BUNDLE` (de batch zit al in een actieve bundel; annuleer
+  die bundel of werk via de bundel door), 409 `BATCH_NOT_ACCEPTABLE` (de batch is niet (meer) `SCREENED`) en
+  bij hervatten 409 `BATCH_NOT_RESUMABLE` (niet `MUTATING`).
+
+### 4.2b Scherm — Uploaden (`/upload`) — **Beschikbaar**
+
+Zie [`csv-importeren.md`](csv-importeren.md) §4.4. Kort: taak kiezen, bestand kiezen; de `deliveryReference`
+wordt voorgesteld als `<bestandsnaam>#<12 hex SHA-256>` (deterministisch, dus veilig te herhalen); twee
+benoemde fasen (uploaden, screenen) met tijdteller; bij netwerkfout of 5xx de herstelroute "Herhaal met
+dezelfde referentie". **201** = levering aangemaakt en gescreend; **200** = bestaande levering teruggevonden,
+niet opnieuw gescreend. `expectedRecordCount` en `expectedByteSize` zijn optioneel.
 
 ### 4.3 Scherm 3 — Publicatiebundels (`/bundles`) — **Beschikbaar**
 
@@ -194,6 +211,10 @@ scope wordt geweigerd (`BUNDLE_REFERENCE_REUSED_WITH_DIFFERENT_SCOPE`).
 
 Een toegestane actie die verboden is in de huidige toestand staat uitgeschakeld mét reden, niet verborgen.
 Elke fout uit de backend toont de stabiele foutcode (zie sectie 8).
+
+Op het tabblad **Leden** staan de koppelingscodes van de batches (niet meer het kale `#id`). In de
+annuleerdialoog staat het aantal mutaties dat vervalt: dat komt uit `BundleDetail.expirableCount`. Bij een
+geannuleerde bundel is dat `null` (niet vastgesteld); **0 is een geldige waarde** ("er vervalt niets").
 
 ### 4.4 De mutatielijst: filters, wijzigingsgroep en groepsbeslissing — **Beschikbaar**
 
@@ -222,20 +243,31 @@ bevestiging over **alle** mutaties die aan de toegepaste lijstfilter voldoen, ni
 pagina. Het aantal uit de lijst (`totalElements`) staat vóór de bevestiging in beeld als bovengrens; het
 werkelijke aantal kan lager zijn (bv. omdat een mutatie al beslist is of geblokkeerd staat) en dat wordt
 gemeld. Groepsafkeuren vraagt altijd een reden; groepsgoedkeuren niet. Er is geen typ-bevestiging, wel de
-waarschuwing dat één bevestiging op uw naam over veel mutaties tegelijk beslist.
+waarschuwing dat één bevestiging op uw naam over veel mutaties tegelijk beslist. De groepsactie weigert
+onbekende velden (topniveau of `filter`) met 400 `DECISION_FILTER_UNKNOWN_FIELD`.
 
-## 5. Nog in aanbouw
+### 4.5 PSIMPORT-preview — **Alleen via API**
 
-Op basis van de code in `Frontend/src/` (geen `setup`/`template`-scherm gevonden onder
-`Frontend/src/features/`) bestaan de volgende onderdelen nog niet. Alle schermen uit sectie 4
-(werkvoorraad, batchdetail, bundeloverzicht/leden/mutaties/beslissingen, uploadscherm) zijn intussen
-gebouwd, gerouteerd (`Frontend/src/routes.tsx`) en werkend — zie sectie 4 voor wat elk scherm doet.
+`GET /api/catalog-import/bundles/{id}/psimport-preview` (JSON, of `?format=csv`; `page`/`size`) toont voor een
+**`FROZEN`** bundel welke `READY_FOR_PUBLICATION`-mutaties (`CREATE`/`UPDATE`) later naar PSIMPORT zouden gaan.
+Een andere bundelstatus geeft 409 `BUNDLE_NOT_FROZEN`. Het is **read-only** (geen afleverregister, niets naar
+ProDisWebbase) en **niet-contractueel**: het antwoord draagt `previewOnly` en de contractstatus
+`UNVERIFIED_FIELD_INVENTORY`; velden als `ARIMP_Verwerken` krijgen nooit een waarde. Er is geen scherm voor. Zie
+`docs/design/fase4-publication-bundle-design.md` §16 en `docs/decisions.md` (2026-09-25).
 
-| Onderdeel | Status | Wat er komt | Tussentijdse route (API) |
-| --- | --- | --- | --- |
-| **Inrichting** (bronorganisatie, definitie, koppeling, taak) | **Alleen via API**, achter de setup-vlag | Een productiewaardig beheerscherm komt pas na Fase 5/Keycloak | Setup-API (flow 1) |
-| **Sjabloon/materialisatiewizard** | **Alleen via API**, achter de setup-vlag | Nog geen scherm | `/api/catalog-import/templates/...` (flow 1) |
-| **Publiceren naar Prodis** | Niet gebouwd (Fase 5) | — | — |
+## 5. Nog niet gebouwd
+
+Deze onderdelen bestaan (nog) niet als scherm of functie. Alle schermen uit sectie 4 (werkvoorraad, upload,
+batchdetail, bundeloverzicht/leden/mutaties/beslissingen) zijn gebouwd, gerouteerd
+(`Frontend/src/routes.tsx`) en werkend.
+
+| Onderdeel | Status | Tussentijdse route (API) |
+| --- | --- | --- |
+| **Scherm 1a: inrichting** (bronorganisatie, definitie, koppeling, taak) | **Niet gebouwd**; alleen via de setup-API, achter de setup-vlag. Een productiewaardig beheerscherm komt pas na Fase 5 | Setup-API (flow 1) |
+| **Scherm 1b: sjabloon/materialisatiewizard** | **Niet gebouwd**; alleen via de API, achter de setup-vlag | `/api/catalog-import/templates/...` (flow 1B) |
+| **Publiceren naar Prodis** (Fase 5, 5-PUB) | Niet gebouwd | — |
+| **Echt PSIMPORT-formaat** | Niet gebouwd; enkel de niet-contractuele preview (4.5) | — |
+| **Rechten per actie** (5-PERM) | Gebouwd met een lokale rechtenbron (YAML); de Prodis-koppeling (5B-7) is **niet gebouwd** | zie sectie 7a |
 
 Alle API-voorbeelden staan in [`standaardflows.md`](standaardflows.md). Ze zijn afgeleid van
 `scripts/scenario/manual-upload-scenario.sh`.
@@ -397,11 +429,44 @@ Kort:
 11. **Een fout op een prijs wordt nooit 0.** Een onleesbare prijs verwerpt de regel (`PRICE_UNREADABLE`).
 12. **Dubbele identiteit in één bestand blokkeert de hele levering** (`DUPLICATE_IDENTITY_IN_DELIVERY`);
     "de laatste regel wint" bestaat niet.
-13. **`continue` wordt niet op naam vastgelegd.** Het endpoint kent geen actorveld (zie flow 6).
-14. **Geen authenticatie.** Elke naam die u invult wordt aanvaard.
+13. **`continue` wordt niet persistent op naam vastgelegd.** Het endpoint kent geen actorveld (zie flow 6);
+    uw login-naam komt enkel in een serverlogregel.
+14. **Login én recht.** Sinds 5-AUTH vereist elke `/api/**`-aanroep een Keycloak-login
+    (anders 401 `AUTHENTICATION_REQUIRED`) en elke schrijfaanroep een CSRF-header `X-XSRF-TOKEN` (anders 403
+    `CSRF_TOKEN_INVALID`). Sinds 5-PERM vraagt elke actie bovendien een recht (zonder: 403
+    `PERMISSION_DENIED`, zie 7a). De actor komt uit het token; een meegegeven actorveld dat afwijkt geeft 400
+    `ACTOR_FIELD_MISMATCH` (maar de rechtencheck komt eerst). Publicatie (5-PUB) is niet gebouwd. Scripts
+    (`curl`) kunnen zich voorlopig niet aanmelden.
 15. **Startup-recovery.** Bij het opstarten van de backend wordt een batch die op `SCREENING` bleef staan
     `FAILED` (`SCREENING_INTERRUPTED`); een batch op `MUTATING` blijft hervatbaar. Dat veronderstelt precies
     één draaiende applicatie-instantie.
+
+## 7a. Rechten: wat mag u?
+
+Elke actie vraagt een recht. De rechten volgen een **hiërarchie**: *Goedkeuren* omvat *Beheren* en *Lezen*;
+*Beheren* omvat *Lezen*. Wat u uiteindelijk mag (uw **effectieve rechten**) berekent de backend; het scherm
+toont enkel het resultaat.
+
+| Recht | Code | Actie |
+| --- | --- | --- |
+| Lezen | `catalogImport.read` | alle schermen en lijsten bekijken, preview, setup-overzicht |
+| Beheren | `catalogImport.manage` | CSV uploaden, batch hervatten, bundel aanmaken, batches toevoegen/verwijderen uit een bundel |
+| Goedkeuren | `catalogImport.approve` | nulmeting aanvaarden (accept-baseline), mutaties goed-/afkeuren, groepsbeslissing, bundel bevriezen of annuleren |
+
+- **Knoppen zonder recht zijn uitgeschakeld, niet verborgen**, met een reden zoals "U heeft het recht
+  'Goedkeuren' (`catalogImport.approve`) niet."
+- **Geen enkel recht:** het scherm toont één vlak "U heeft geen rechten voor CatalogImport" en haalt geen gegevens
+  op. Vraag de beheerder om een recht.
+- Wordt een actie toch geweigerd (bv. omdat uw recht net is ingetrokken), dan ziet u **403 `PERMISSION_DENIED`**
+  en worden uw rechten opnieuw geladen.
+- Is de rechtenbron niet bereikbaar, dan ziet u **503 `PERMISSION_SOURCE_UNAVAILABLE`**: dat is iets anders dan
+  "geen rechten"; probeer het later opnieuw.
+- De recht-check komt **vóór** de andere controles: zonder recht krijgt u 403 `PERMISSION_DENIED`, ook als de
+  bundel niet bestaat of een actorveld niet klopt.
+- De setup-API (`catalogimport.setup-api.enabled`) blijft een aparte beveiliging: staat de vlag uit, dan is er
+  een 404, ook mét recht.
+- `system` mag nooit beheren of goedkeuren.
+- Voorlopig komen de rechten uit een lokale YAML-lijst (9.3). De koppeling met Prodis is nog niet gebouwd.
 
 ## 8. Foutcodes
 
@@ -412,6 +477,13 @@ details; zie het serverlogboek. Het scherm toont de code altijd zichtbaar.
 
 Onderstaande tabel is een selectie. De volledige lijst voor het bundelscherm staat in
 `Frontend/src/errors/codes.ts`; de overige codes komen uit de services.
+
+### 8.0 Rechten
+
+| Code | HTTP | Betekenis | Wat te doen |
+| --- | --- | --- | --- |
+| `PERMISSION_DENIED` | 403 | u heeft het vereiste recht niet (de melding noemt de ontbrekende rechtcode); niets opgeslagen | de beheerder om het recht vragen |
+| `PERMISSION_SOURCE_UNAVAILABLE` | 503 | de rechtenbron is onbereikbaar; niets opgeslagen | later opnieuw proberen |
 
 ### 8.1 Bundels en beslissingen
 
@@ -432,6 +504,8 @@ Onderstaande tabel is een selectie. De volledige lijst voor het bundelscherm sta
 | `MUTATION_BLOCKED_BY_IDENTITY_INCIDENT` | 409 | kritiek identiteitsincident; geen beslispad in Fase 4 | blijft zichtbaar staan |
 | `IDENTITY_DECISION_NOT_IN_SCOPE` | 409 | identiteitsbeslissing hoort in een latere fase | — |
 | `DECISION_FILTER_REQUIRED` | 400 | groepsbeslissing zonder filterveld | minstens één filterveld meegeven |
+| `DECISION_FILTER_UNKNOWN_FIELD` | 400 | groepsbeslissing bevat een onbekend veld (topniveau of `filter`) | veldnaam controleren; toegestaan: `decisionKind`, `decidedBy`, `reason`, `filter` en in `filter` `batchId`, `status`, `statusReason`, `actionType`, `identityHash` |
+| `BUNDLE_NOT_FROZEN` | 409 | PSIMPORT-preview van een bundel die niet `FROZEN` is | eerst bevriezen |
 | `BUNDLE_EMPTY` | 409 | bundel heeft geen actieve leden | eerst een batch toevoegen |
 | `BUNDLE_HAS_UNDECIDED_MUTATIONS` | 409 | er staan nog mutaties op `AWAITING_APPROVAL` | goedkeuren of afkeuren, dan opnieuw bevriezen |
 | `SOURCE_STATE_CHANGED_SINCE_SCREENING` | 409 | de bronstaat is veranderd sinds de screening (bv. een andere batch is aanvaard) | de levering opnieuw screenen (opnieuw uploaden) |
@@ -524,16 +598,31 @@ mvn -pl Web spring-boot:run "-Dspring-boot.run.profiles=local,demo"
 | Profiel | Wat het doet |
 | --- | --- |
 | `local` | Postgres-verbinding (`localhost:5432/catalog_import`), archiefmap `C:/tmp/catalogimport-archive`, poort 8081 |
-| `demo` | **zet de setup-API aan**, maakt bij het opstarten een voorbeeldketen (bronorganisatie `DEMO`, definitie `DEMO-CSV`, actieve revisie, koppeling `DEMO-LINK`, taak *Demo manuele levering*) en logt de `taskId`. Archiefmap: `${java.io.tmpdir}/catalogimport-demo-archive` |
+| `demo` | zelfde PostgreSQL-database als `local`, **zet de setup-API aan**, maakt bij het opstarten een voorbeeldketen (bronorganisatie `DEMO`, definitie `DEMO-CSV`, actieve revisie, koppeling `DEMO-LINK`, taak *Demo manuele levering*) en logt de `taskId`. Archiefmap: `${java.io.tmpdir}/catalogimport-demo-archive` |
 | (geen) | productieachtig: geen setup-API; `catalogimport.archive.root` is verplicht en heeft bewust geen default |
 
-Let op: het bestaande `README.md` in de hoofdmap beschrijft het demoprofiel nog met een in-memory
-H2-database en poort 8080. In `application-demo.yml` en `application-local.yml` staat echter Postgres en
-poort 8081. Volg de configuratiebestanden. De frontend proxyt `/api` naar `http://localhost:8081`.
+Beide profielen gebruiken PostgreSQL en poort 8081 (`application-local.yml`, `application-demo.yml`); H2
+volstaat niet. De frontend proxyt `/api`, `/oauth2` en `/login` naar `http://localhost:8081`.
 
-**Waarschuwing.** De setup-API (`catalogimport.setup-api.enabled`) kent geen authenticatie. Wie ze bereikt,
-kan een importdefinitie en haar drempels bepalen en dus de controle uitschakelen. Zet ze nooit aan met
-echte gegevens.
+**Keycloak (5-AUTH, gebouwd).** Beide profielen vereisen een draaiende Prodis-Keycloak op
+`http://localhost:9080`, realm `prodis`, client `catalog-import`, met de redirect-URI's
+`http://localhost:8081/login/oauth2/code/keycloak` en `http://localhost:5173/login/oauth2/code/keycloak`.
+Zet `CATALOG_OIDC_CLIENT_SECRET` in de omgeving: het secret heeft **geen default** en de backend start niet
+zonder. (`CATALOG_OIDC_CLIENT_ID` en `CATALOG_OIDC_ISSUER_URI` hebben lokaal wel defaults.) Er is geen
+omzeiling voor lokaal gebruik. De geautomatiseerde tests draaien zonder Keycloak (`TestSecurityConfiguration`);
+voor de volledige testronde: `scripts/test/run-full-tests.ps1` (zie hoofd-`README.md`). Publicatie (5-PUB)
+bestaat nog niet.
+
+**Uw eigen rechten instellen (5-PERM).** Zonder toekenning heeft niemand een recht. Vul in
+`application-local.yml` en/of `application-demo.yml` bij `catalogimport.permissions.grants` uw eigen
+Keycloak-`preferred_username` in, met `rights: read, manage, approve`. De placeholder
+`vul-hier-je-keycloak-username-in` komt met niemand overeen: zonder wijziging krijgt u 403 `PERMISSION_DENIED`
+en toont de UI "U heeft geen rechten voor CatalogImport". Een YAML-lijst wordt tussen profielen vervangen, niet
+samengevoegd. Herstart de backend na een wijziging.
+
+**Waarschuwing.** De setup-API (`catalogimport.setup-api.enabled`, de vlag blijft als tweede beveiliging naast
+het recht) vereist een login en het recht `manage`/`read`: wie `manage` heeft kan een importdefinitie en haar
+drempels bepalen en dus de controle uitschakelen. Zet ze nooit aan met echte gegevens.
 
 ### 9.4 Frontend starten
 
@@ -543,8 +632,8 @@ npm --prefix Frontend run dev
 ```
 
 Vite draait dan op poort **5173** (de standaardpoort van Vite; **nog te verifiëren** voor deze installatie)
-en stuurt `/api` door naar de backend op 8081. Er is geen CORS-configuratie: de frontend werkt alleen
-via deze proxy. Er is geen productie-uitlevering van de frontend.
+en stuurt `/api`, `/oauth2` en `/login` door naar de backend op 8081 (de Keycloak-callback loopt via :5173).
+Er is geen CORS-configuratie: de frontend werkt alleen via deze proxy. Er is geen productie-uitlevering van de frontend.
 
 ### 9.5 Database
 
@@ -563,8 +652,11 @@ mvn -pl Web -am test "-Dtest=SetupApiDisabledTest,SetupApiFlowTest,DemoDataSeede
 mvn -pl Web -am test "-Dtest=DeliveryUploadTest,DeliveryScreeningFlowTest,AcceptBaselineReviewFlowTest,BatchBaselineHttpTest" -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
-- Neem **maximaal ongeveer 4 testklassen per run**: de databaseverbindingslimiet van de lokale Postgres is
-  anders snel bereikt.
+- Neem **maximaal ongeveer 4 testklassen per run**: een groot aantal `@SpringBootTest`-klassen in één
+  Maven-run kan de PostgreSQL-verbindingen uitputten (*remaining connection slots are reserved…*). Draai
+  klassen dan los.
+- Frontend typecheck: `tsc --noEmit -p .` in `Frontend/` controleert niets; gebruik
+  `tsc --noEmit -p tsconfig.app.json`.
 - De gegenereerde testsleutels (bronorganisatiecodes e.d.) zijn botsingsvrij tussen runs
   (`System.nanoTime()` plus teller), zodat herhaalde runs op een niet-lege database niet op eerdere rijen
   stuklopen. Dit is doorgevoerd voor `BundleHttpTest` en `CatalogImportWorkQueueHttpTest`; andere
@@ -583,11 +675,12 @@ mvn -pl Web -am test "-Dtest=DeliveryUploadTest,DeliveryScreeningFlowTest,Accept
   draaien nadat de terminal sluit en houdt dan poort 8081/5173 of de database bezet. Controleer voor
   het opstarten of de poort vrij is en stop een oud proces expliciet. (Algemene ervaring met deze
   werkomgeving; niet uit de code gehaald.)
-- **PowerShell:** schrijf `curl.exe` in plaats van `curl` (anders is het de alias voor
-  `Invoke-WebRequest` en werkt `-F` niet) en zet JSON tussen dubbele aanhalingstekens met `\"`-escapes.
+- **Geen `curl`-scripts.** Sinds 5-AUTH geven `curl`-aanroepen zonder sessie 401; schrijfaanroepen hebben ook
+  een `X-XSRF-TOKEN`-header nodig. Voer API-voorbeelden uit in een aangemelde browsersessie (zie hoofd-`README.md`,
+  "Hoe voert u de API-voorbeelden hieronder uit?"). Het scenarioscript is een handmatige checklist geworden.
 - **Eén applicatie-instantie.** Startup-recovery en het ontbreken van een lease veronderstellen dat er
   precies één backend draait.
-- **Slechts één actor-naam per browsersessie**; gedeelde machines: sluit de sessie.
+- **Eén login per browsersessie**; op gedeelde machines: klik **Afmelden**.
 
 ### 9.8 Back-up en hersteltest
 
@@ -623,7 +716,7 @@ ontwikkelhulpmiddel; setup-API blijft een ontwikkelhulp tot Fase 5.
 
 | Document | Inhoud |
 | --- | --- |
-| `README.md` (hoofdmap) | technische startgids en voorbeeldsessie (deels verouderd, zie 9.3) |
+| `README.md` (hoofdmap) | technische startgids en voorbeeldsessie |
 | `docs/design/fase2-screening-design.md` | upload, archivering, screening, `accept-baseline` |
 | `docs/design/fase3-rules-design.md` | regels, drempels, foutgroepen, eindoordeel |
 | `docs/design/fase4-publication-bundle-design.md` | bundels, beslissingen, bevriezen, annuleren |
@@ -631,4 +724,5 @@ ontwikkelhulpmiddel; setup-API blijft een ontwikkelhulp tot Fase 5.
 | `docs/design/sjabloon-materialisatie-design.md` | sjablonen en bookmarks |
 | `docs/design/backup-herstel-design.md` | back-up en hersteltest |
 | `businessanalyse-catalogimport.md` | de functionele doelanalyse |
-| `scripts/scenario/manual-upload-scenario.sh` | doorlopend voorbeeldscenario via de API |
+| `scripts/scenario/manual-upload-scenario.sh` | handmatige scenario-checklist (sinds 5-AUTH niet meer scripted; stopt met een melding) |
+| `docs/design/fase5-auth-design.md` | Keycloak-login, sessie, CSRF, identiteit |

@@ -327,6 +327,13 @@ public class ImportDefinitionRevision {
     @Column(name = "created_by", nullable = false, length = 100)
     private String createdBy;
 
+    /**
+     * OIDC-subject van wie de revisie aanmaakte (Fase 5-AUTH, changeset 007-4); {@code null} = geen
+     * geverifieerde identiteit.
+     */
+    @Column(name = "created_by_subject", length = 255)
+    private String createdBySubject;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -335,6 +342,14 @@ public class ImportDefinitionRevision {
 
     @Column(name = "approved_by", length = 100)
     private String approvedBy;
+
+    /**
+     * OIDC-subject van wie de revisie activeerde (Fase 5-AUTH, changeset 007-4); {@code null} = geen
+     * geverifieerde identiteit. {@code ck_import_definition_revision_approved_subject} verbiedt een
+     * subject zonder naam.
+     */
+    @Column(name = "approved_by_subject", length = 255)
+    private String approvedBySubject;
 
     protected ImportDefinitionRevision() {
         // JPA
@@ -757,6 +772,15 @@ public class ImportDefinitionRevision {
         this.createdBy = createdBy;
     }
 
+    public String getCreatedBySubject() {
+        return createdBySubject;
+    }
+
+    /** Fase 5-AUTH (5A-6): {@code null} = geen geverifieerde identiteit; nooit afgeleid uit de naam. */
+    public void setCreatedBySubject(String createdBySubject) {
+        this.createdBySubject = createdBySubject;
+    }
+
     public Instant getUpdatedAt() {
         return updatedAt;
     }
@@ -775,5 +799,17 @@ public class ImportDefinitionRevision {
 
     public void setApprovedBy(String approvedBy) {
         this.approvedBy = approvedBy;
+    }
+
+    public String getApprovedBySubject() {
+        return approvedBySubject;
+    }
+
+    /**
+     * Fase 5-AUTH (5A-6): zet het subject van wie activeerde. Zet altijd samen met
+     * {@link #setApprovedBy(String)} — de databasecheck weigert een subject zonder naam.
+     */
+    public void setApprovedBySubject(String approvedBySubject) {
+        this.approvedBySubject = approvedBySubject;
     }
 }

@@ -1,5 +1,6 @@
 package be.dda.catalogimport.web;
 
+import static be.dda.catalogimport.testsupport.TestActors.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -189,7 +190,7 @@ class MutationReasonFilterHttpTest {
         String body = "{\"decisionKind\":\"APPROVE\",\"decidedBy\":\"" + DECIDER + "\","
                 + "\"reason\":\"Filtertest\",\"filter\":" + filterJson + "}";
         String response = mockMvc.perform(post("/api/catalog-import/bundles/{id}/decisions", bundleId)
-                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                        .with(as(DECIDER)).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         return ((Number) JsonPath.read(response, "$.affectedCount")).intValue();
     }
@@ -212,7 +213,7 @@ class MutationReasonFilterHttpTest {
                         .file(new MockMultipartFile("file", "levering.csv", "text/csv",
                                 csv.toString().getBytes(StandardCharsets.UTF_8)))
                         .param("deliveryReference", unique + "-LEV")
-                        .param("uploadedBy", "tester@example.test"))
+                        .param("uploadedBy", "tester@example.test").with(as("tester@example.test")))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         long batchId = ((Number) JsonPath.read(upload, "$.batchId")).longValue();
 
@@ -225,12 +226,13 @@ class MutationReasonFilterHttpTest {
         }
         mutations.saveAllAndFlush(creates);
 
-        String created = mockMvc.perform(post("/api/catalog-import/bundles").contentType(MediaType.APPLICATION_JSON)
+        String created = mockMvc.perform(post("/api/catalog-import/bundles").with(as(CREATOR))
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"bundleReference\":\"BND-" + unique + "\",\"targetMode\":\"SIMULATION\","
                                 + "\"createdBy\":\"" + CREATOR + "\"}"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         long bundleId = ((Number) JsonPath.read(created, "$.id")).longValue();
-        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", bundleId)
+        mockMvc.perform(post("/api/catalog-import/bundles/{id}/batches", bundleId).with(as(CREATOR))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"batchIds\":[" + batchId + "],\"addedBy\":\"" + CREATOR + "\"}"))
                 .andExpect(status().isOk());

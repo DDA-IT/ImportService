@@ -152,7 +152,10 @@ class LinkBookmarkValueTest {
         service.setValue(f.link().getId(), "CULTUUR", "NL", USER);
         openBatch(f);
 
+        // Sinds 5A-6 controleert de Web-laag updatedBy tegen de aangemelde gebruiker; wie onder die
+        // naam wijzigt, moet dus ook als die naam aangemeld zijn (anders 400 ACTOR_FIELD_MISMATCH).
         mockMvc.perform(put("/api/catalog-import/links/{id}/bookmark-values/{name}", f.link().getId(), "CULTUUR")
+                        .with(be.dda.catalogimport.testsupport.TestActors.as(USER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"value\":\"FR\",\"updatedBy\":\"" + USER + "\"}"))
                 .andExpect(status().isConflict())

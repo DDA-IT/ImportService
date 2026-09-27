@@ -8,6 +8,11 @@ D14 (lezen vs. schrijven); `docs/design/frontend-scherm3-bundel-design.md` §2-�
 `Prodis/Web/.../config/SecurityConfiguration.java`, `Prodis/Web/src/main/resources/config/application.yml:150-160`,
 `Prodis/Web/src/test/java/.../config/TestSecurityConfiguration.java`.
 
+> **Aanvulling na 5-PERM.** De foutvolgorde in §13.1 is gewijzigd door 5-PERM: het recht komt eerst (403
+> `PERMISSION_DENIED`, en 503 `PERMISSION_SOURCE_UNAVAILABLE`), vóór 400 `ACTOR_FIELD_MISMATCH` en 404/409; zie
+> `docs/design/fase5-perm-design.md` §3. `GET /me.permissions` (hieronder als `null` beschreven) is nu altijd een lijst
+> met de effectieve rechten (§4 daar). Verder is dit document niet herschreven.
+
 **Voldoende gespecificeerd:** loginvorm (BFF, `oauth2Login`, sessiecookie), identiteitsmodel (username in `*_by`, `sub` in
 `*_by_subject`, geen hernoeming, geen actortabel), actorveldcontract (optioneel; indien aanwezig gelijk aan identiteit,
 anders 400 `ACTOR_FIELD_MISMATCH`), `system` blijft verboden.
@@ -217,8 +222,9 @@ bestaande kolom of constraint geraakt; 255 = bovengrens `sub` (OIDC Core §2); b
   (+check); `import_definition_bookmark.created_by_subject` (+check); `import_definition_bookmark_value.filled_by_subject`;
   `import_link_bookmark_value.filled_by_subject`, `updated_by_subject` (+check).
 
-Totaal 18 kolommen op 12 tabellen. Entiteiten krijgen in dezelfde stap een nullable `@Column(length = 255)`-veld
-(`ddl-auto: validate`, `application.yml:10`). **Het subject komt in geen enkel API-antwoord** (A6).
+Totaal 18 kolommen op 12 tabellen (changeset 007); sinds 5-PUB (changeset 009-1, stap 5P-6) 19 kolommen op 13 tabellen door `publication_run.requested_by_subject`. Entiteiten krijgen in dezelfde stap een nullable `@Column(length = 255)`-veld
+(`ddl-auto: validate`, `application.yml:10`). **Het subject komt in geen enkel domeinantwoord** (A6; enkel `GET /me` geeft het
+subject van de eigen login terug, zie §5).
 
 ---
 
@@ -359,6 +365,9 @@ fail-closed zodra het token niet meer ververst kan worden. Geen back-channel log
 - **A4** De SPA blijft de `/me`-username meesturen (bescherming tegen tabblad-/sessiewissel).
 - **A5** `SYSTEM_ACTOR_FORBIDDEN` en `ACTOR_IDENTITY_INVALID` → 403; `ACTOR_FIELD_MISMATCH` → 400.
 - **A6** Subject is audit-only: in geen API-antwoord; idempotentievergelijkingen (bv. dezelfde beslisser) blijven op username.
+  *Verduidelijking (na 5A-6): "geen API-antwoord" geldt voor de domeinantwoorden (bundels, batches, beslissingen, setup,
+  templates, links); het subject staat wél in het antwoord van `GET /me` (§5), omdat dat endpoint de eigen identiteit van de
+  aangemelde gebruiker teruggeeft. De SPA toont het subject nergens (buiten scope, §12).*
 - **A7** 5-AUTH wordt in één keer uitgerold.
 - **A8** Eén instantie → sessies in het geheugen; een herstart meldt iedereen af. Meerdere instanties vragen later Spring Session.
 - **A9** Na een mislukte login de standaard `/login?error`-pagina van Spring; geen eigen loginpagina.
@@ -439,8 +448,9 @@ fail-closed zodra het token niet meer ververst kan worden. Geen back-channel log
 > tokens overleven een logout en twee sessies van dezelfde gebruiker delen ze. Voor 5-PERM (token relay) is
 > `HttpSessionOAuth2AuthorizedClientRepository` nodig.
 
-Terugschrijven (na akkoord van de mens): C3 en C9 naar `docs/design/fase2-screening-design.md`; C6 en C10 naar
-`frontend-scherm3-bundel-design.md` §2/§7; C7 naar het beslissingslog.
+Terugschrijven (akkoord van de mens 2026-09-26, uitgevoerd): C3 en C9 naar `docs/design/fase2-screening-design.md` §18;
+C6 en C10 naar `frontend-scherm3-bundel-design.md` §20 (met verwijzingen in §2 en §7); C7 staat in het beslissingslog
+(2026-09-25, "Fase 5-AUTH: ontwerp bindend", "Externe voorwaarde (C7)").
 
 ## 12. Buiten scope
 - Rechten per actie en de Prodis-token-relay (5-PERM).
@@ -450,3 +460,59 @@ Terugschrijven (na akkoord van de mens): C3 en C9 naar `docs/design/fase2-screen
 - Het subject tonen in UI of API-antwoorden.
 - Het afbouwen van de actorvelden (latere, aangekondigde stap, Q2).
 - Publicatie (5-PUB).
+
+---
+
+## 13. Aanvullingen na 5A-x (geïmplementeerd, mens akkoord op terugschrijven 2026-09-26)
+
+Bron: de controllers in `Web/src/main/java/be/dda/catalogimport/web/` (`CurrentActor`, `CatalogImport*Controller`),
+changeset `007-actor-subject.sql` en `Frontend/src`. Beschrijft de feitelijke stand; het ontwerp hierboven blijft de
+motivering.
+
+### 13.1 Gedrag van alle schrijfendpoints uit §1.1 (5A-2 t/m 5A-6)
+
+- **Actorvelden zijn optioneel** geworden en dienen enkel nog als controle: `frozenBy`, `createdBy`, `addedBy`, `removedBy`,
+  `decidedBy`, `cancelledBy` (bundelendpoints), `acceptedBy` (accept-baseline), `uploadedBy` (upload, nu
+  `@RequestParam(required = false)`), `createdBy`/`approvedBy` (setup-revisies, mappings, filters, kritiekheid,
+  activeren), `createdBy` (bookmark declareren), `materialisedBy` (materialisatie; was verplicht) en `updatedBy`
+  (bookmarkwaarde-PUT). Records en velden zijn niet hernoemd of verwijderd. Blanco of afwezig = geen controle.
+- **Bewaard wordt altijd de token-username** (nooit de spelling uit het request), samen met het OIDC-subject in de
+  `*_by_subject`-kolom (changeset 007-1 t/m 007-4).
+- **Foutvolgorde:** de controle in `CurrentActor.signer` gebeurt in de handler **vóór** de service, dus vóór elke 404/409 en
+  vóór er iets geschreven, gearchiveerd of geregistreerd wordt. Een afwijkende naam is 400 `ACTOR_FIELD_MISMATCH`
+  (`BadRequestException`), een aangemelde `system` is 403 `SYSTEM_ACTOR_FORBIDDEN`, een onbruikbare identiteit is 403
+  `ACTOR_IDENTITY_INVALID`. Voorbeeld: freeze/decisions/approve op een onbekende bundel met een afwijkende actornaam geeft
+  400, niet 404.
+- **Groepsactie** (`POST /bundles/{id}/decisions`): eerst de whitelist van bekende velden (400
+  `DECISION_FILTER_UNKNOWN_FIELD`), dan `signer(decidedBy)`.
+- **`POST /batches/{id}/continue`** heeft nog altijd geen actorveld en bewaart niets; het endpoint roept `current()` aan en
+  logt username en subject (A10).
+
+### 13.2 Setup-, template- en linkendpoints (vlag `catalogimport.setup-api.enabled`, 5A-6)
+
+- `POST /setup/definitions` kreeg geen actorveld, maar de service bewaart nu de token-username (en het subject) in
+  `import_definition.created_by` in plaats van de vaste waarde `setup-api`. De oude String-overload met `setup-api` blijft
+  bestaan voor tests en `DemoDataSeeder`.
+- `POST /setup/source-organisations`, `/setup/links`, `/setup/tasks` en `POST /templates/{d}/revisions/{r}/bookmarks/{n}/usages`
+  hebben geen actorveld en geen `*_by`-kolom, maar geven nu ook 403 `SYSTEM_ACTOR_FORBIDDEN` voor een `system`-login (en 403
+  `ACTOR_IDENTITY_INVALID` bij een onbruikbare login); voor de rest is hun gedrag ongewijzigd.
+- De vlag blijft een extra bescherming bovenop de login (A12); er is nog geen rechtencontrole per actie (5-PERM).
+
+### 13.3 Frontend (5A-3), feitelijke stand
+
+- `actor/ActorContext.tsx` laadt de identiteit uit `GET /me` (`api/me.ts`); geen `setActor`, geen `sessionStorage`-naam en
+  geen naamvalidatie meer (een oude `catalogimport.actor`-sleutel wordt bij opstart gewist). `useActor()` levert `actor`
+  (= username), `subject`, `displayName`, `sessionExpired`, `reauthenticate` en `logout`. Testnaad: prop `identity`.
+- `api/http.ts` zet bij elke niet-GET/HEAD-aanroep de header `X-XSRF-TOKEN` uit de cookie `XSRF-TOKEN` en roept bij een 401
+  (behalve op `/me`) de geregistreerde `onUnauthenticated`-callback aan.
+- 401 op `/me` bij opstart: het huidige pad in `sessionStorage['catalogimport.returnTo']`, dan navigatie naar
+  `/oauth2/authorization/keycloak`; een vlag `catalogimport.loginAttempt` voorkomt een redirectlus (bij een tweede 401 volgt
+  een foutvlak met "Opnieuw aanmelden"). Na de login herstelt de SPA het pad wanneer ze op `/` landt.
+- `ActorBar` toont "Aangemeld als …" met knop **Afmelden** (POST logout, dan navigatie naar `logoutUrl`) en bij een verlopen
+  sessie de melding met **Opnieuw aanmelden**. `ConfirmDialog` toont "U tekent als …" alleen-lezen; `onConfirm` geeft
+  `{ actor, reason }` terug.
+- De request-DTO's in `Frontend/src/api/types.ts` dragen de actorvelden nog (A4): de SPA stuurt de `/me`-username mee.
+- Vite (`vite.config.ts`): proxy voor `/api`, `/oauth2` en `/login` naar `http://localhost:8081`, alle drie met
+  `changeOrigin: false`.
+- `errors/codes.ts` bevat entries voor `AUTHENTICATION_REQUIRED`, `ACTOR_FIELD_MISMATCH`, `SYSTEM_ACTOR_FORBIDDEN`,
+  `ACTOR_IDENTITY_INVALID` en `CSRF_TOKEN_INVALID`.

@@ -1,9 +1,9 @@
 # Demo-profiel: een lokale speeltuin om de applicatie met de hand uit te proberen.
 #
-# WAARSCHUWING. Dit profiel zet de setup-API aan (catalogimport.setup-api.enabled). Die API vereist sinds
-# 5-AUTH een login, maar kent nog geen rechten per actie (5-PERM): elke aangemelde gebruiker kan
-# importdefinities en hun drempels bepalen. Gebruik dit profiel uitsluitend op een ontwikkelmachine met
-# wegwerpgegevens, nooit in productie.
+# WAARSCHUWING. Dit profiel zet de setup-API aan (catalogimport.setup-api.enabled). Die API vereist een
+# login en (5-PERM) catalogImport.manage/.read, maar de rechten komen hier uit de lokale toekenning
+# hieronder: wie die toekenning krijgt, kan importdefinities en hun drempels bepalen. Gebruik dit
+# profiel uitsluitend op een ontwikkelmachine met wegwerpgegevens, nooit in productie.
 #
 # Start: mvn -pl Web -am spring-boot:run -Dspring-boot.run.profiles=demo
 # Bij het opstarten maakt DemoDataSeeder een volledige voorbeeldketen en logt hij de taskId.
@@ -34,6 +34,18 @@ catalogimport:
   archive:
     # Eigen archiefmap, zodat een demoproef nooit in de map van het local-profiel schrijft.
     root: ${java.io.tmpdir}/catalogimport-demo-archive
+  # Fase 5-PERM (docs/design/fase5-perm-design.md par. 2). Dit profiel overschrijft de lijst uit
+  # application-local.yml volledig (een YAML-lijst wordt vervangen, niet samengevoegd), dus de
+  # toekenning staat hier opnieuw.
+  #
+  # >>> VUL HIER JE EIGEN KEYCLOAK-USERNAME IN (claim preferred_username, zie GET /api/catalog-import/me).
+  # >>> De placeholder hieronder komt met niemand overeen; zonder wijziging is alles 403 PERMISSION_DENIED.
+  #
+  # Geen wildcard, geen default: fail-closed, ook in demo. 'system' mag hoogstens read.
+  permissions:
+    grants:
+      - username: vul-hier-je-keycloak-username-in
+        rights: read, manage, approve
 server:
   servlet:
     session:

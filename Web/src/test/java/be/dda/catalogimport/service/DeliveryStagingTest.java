@@ -154,7 +154,11 @@ class DeliveryStagingTest {
             assertThat(row.supplierGroup()).isEqualTo("G1");
             assertThat(row.discountCode()).isNull();
             assertThat(row.discountState()).isEqualTo("NOT_USED");
-            assertThat(row.basePriceCurrency()).isNull();
+            // Valuta-standaard (bouwstap V-2): deze revisie leest geen muntveld en de koppeling draagt
+            // geen vaste valuta, dus geldt EUR - mét de herkomst erbij, zodat een aangenomen euro
+            // altijd van een geleverde te onderscheiden blijft.
+            assertThat(row.basePriceCurrency()).isEqualTo("EUR");
+            assertThat(row.basePriceCurrencyOrigin()).isEqualTo("SYSTEM_DEFAULT");
             // Lege bronstaat: de delta uit bouwstap 2d ziet elke regel als nieuw.
             assertThat(row.classification()).isEqualTo("NEW");
         });
@@ -321,13 +325,14 @@ class DeliveryStagingTest {
         assertThat(outcome.rejectedRecordCount()).isEqualTo(8L);
         assertThat(outcome.validRecordCount()).isZero();
 
-        // Vijf voorbeelden (de laagste regelnummers) plus één melding met de volledige aantallen.
+        // Vijf voorbeelden (de laagste regelnummers) plus één melding met de volledige aantallen. De repository-query
+        // heeft geen ORDER BY, dus de fysieke rijvolgorde is niet gegarandeerd: toets de verzameling, niet de volgorde.
         List<ImportRowIssue> issues = rowIssues.findByBatchId(screened.batchId(), PageRequest.of(0, 20))
                 .getContent();
         assertThat(issues).filteredOn(issue ->
                         issue.getIssueCode().equals(ImportValueRules.CODE_PRICE_UNREADABLE))
                 .hasSize(5)
-                .extracting(ImportRowIssue::getRowNumber).containsExactly(2L, 3L, 4L, 5L, 6L);
+                .extracting(ImportRowIssue::getRowNumber).containsExactlyInAnyOrder(2L, 3L, 4L, 5L, 6L);
         assertThat(issues).filteredOn(issue -> issue.getIssueCode()
                         .equals(DeliveryScreeningService.CODE_ROW_ISSUE_RECORDING_CAPPED))
                 .singleElement()
@@ -518,20 +523,22 @@ class DeliveryStagingTest {
     private List<StagedRow> stagedRows(long batchId) {
         return jdbc.query("select row_number, identity_supplier, identity_supplier_group, "
                         + "identity_supplier_reference, identity_discount_code, identity_discount_state, "
-                        + "identity_hash, base_price, base_price_currency, description, mutation_key_prefix, "
+                        + "identity_hash, base_price, base_price_currency, base_price_currency_origin, "
+                        + "description, mutation_key_prefix, "
                         + "classification from import_candidate_stage where batch_id = ? order by row_number",
                 (resultSet, rowNumber) -> new StagedRow(
                         resultSet.getLong(1), resultSet.getString(2), resultSet.getString(3),
                         resultSet.getString(4), resultSet.getString(5), resultSet.getString(6),
                         resultSet.getBytes(7), resultSet.getBigDecimal(8), resultSet.getString(9),
-                        resultSet.getString(10), resultSet.getString(11), resultSet.getString(12)),
+                        resultSet.getString(10), resultSet.getString(11), resultSet.getString(12),
+                        resultSet.getString(13)),
                 batchId);
     }
 
     private record StagedRow(long rowNumber, String supplier, String supplierGroup, String supplierReference,
                              String discountCode, String discountState, byte[] identityHash, BigDecimal basePrice,
-                             String basePriceCurrency, String description, String mutationKeyPrefix,
-                             String classification) {
+                             String basePriceCurrency, String basePriceCurrencyOrigin, String description,
+                             String mutationKeyPrefix, String classification) {
     }
 
     /**

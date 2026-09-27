@@ -132,7 +132,21 @@ public class BundleCancellationService {
      *                                  {@link #CODE_CANCELLATION_CONTENT_CHANGED}
      */
     public BundleCancelView cancel(long bundleId, String cancelledBy, String reason) {
-        String canceller = ActorNames.requireActorName(cancelledBy, "cancelledBy", MAX_ACTOR_LENGTH);
+        return cancel(bundleId, ActorIdentity.unverified(cancelledBy), reason);
+    }
+
+    /**
+     * Zoals {@link #cancel(long, String, String)}, met de ondertekenaar als {@link ActorIdentity} (Fase
+     * 5-AUTH, 5A-4). Het subject komt op de bundel ({@code cancelled_by_subject}), op de
+     * {@code CANCEL}-beslissingsregel en op elk lidmaatschap dat door de annulering vrijkomt
+     * ({@code removed_by_subject}); {@code null} = geen geverifieerde identiteit.
+     */
+    public BundleCancelView cancel(long bundleId, ActorIdentity actor, String reason) {
+        if (actor == null) {
+            throw new IllegalArgumentException("Missing cancelledBy");
+        }
+        String canceller = ActorNames.requireActorName(actor.username(), "cancelledBy", MAX_ACTOR_LENGTH);
+        String cancellerSubject = actor.subject();
         String motivation = ActorNames.requireText(reason, "reason", MAX_REASON_LENGTH);
 
         return transaction.execute(status -> {
@@ -143,7 +157,7 @@ public class BundleCancellationService {
 
             long expirable = dao.countExpirableMutations(bundleId);
             PublicationDecision decision = new PublicationDecision(bundle, null, BundleDecisionKind.CANCEL,
-                    BundleDecisionScope.BUNDLE, expirable, canceller, cancelledAt, motivation);
+                    BundleDecisionScope.BUNDLE, expirable, canceller, cancellerSubject, cancelledAt, motivation);
             decision.setPreviousStatus(previousStatus.name());
             decision.setNewStatus(PublicationBundleStatus.CANCELLED.name());
             PublicationDecision saved = decisions.saveAndFlush(decision);
@@ -163,11 +177,11 @@ public class BundleCancellationService {
             List<PublicationBundleBatch> memberships = bundleBatches.findByBundleIdAndActiveMarkerIsNotNull(bundleId);
             String removalReason = removalReasonFor(motivation);
             for (PublicationBundleBatch membership : memberships) {
-                membership.recordRemoval(canceller, cancelledAt, removalReason);
+                membership.recordRemoval(canceller, cancellerSubject, cancelledAt, removalReason);
             }
             bundleBatches.saveAll(memberships);
 
-            bundle.recordCancellation(canceller, cancelledAt, motivation);
+            bundle.recordCancellation(canceller, cancellerSubject, cancelledAt, motivation);
             bundles.saveAndFlush(bundle);
 
             LOG.info("Bundle {} cancelled by {} (was {}, {} mutations expired, {} batches released), decision {}: {}",

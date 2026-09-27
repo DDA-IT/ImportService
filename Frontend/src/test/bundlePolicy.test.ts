@@ -14,6 +14,7 @@ import {
   freezeGate,
   isRevisionStatus,
   mutationDecisionGate,
+  publicationRunGate,
   type BundleAction,
 } from '../features/bundles/bundlePolicy.ts';
 import {
@@ -22,6 +23,7 @@ import {
   PUBLICATION_BUNDLE_STATUSES,
   type FreezePreflight,
   type PublicationBundleStatus,
+  type PublicationRunView,
 } from '../api/types.ts';
 
 const FASE5_STATUSES: readonly PublicationBundleStatus[] = [
@@ -345,5 +347,79 @@ describe('cancelGate — §10.6', () => {
       expect(gate.allowed).toBe(false);
       expect(gate.allowed ? '' : gate.reason).toContain(status);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// publicationRunGate — 5-PUB-a, docs/decisions.md 2026-09-27 "Frontend publicatierun (SIMULATION)"
+// ---------------------------------------------------------------------------------------------------
+
+function run(overrides: Partial<PublicationRunView> = {}): PublicationRunView {
+  return {
+    id: 1,
+    bundleId: 42,
+    targetMode: 'SIMULATION',
+    attempt: 1,
+    status: 'SIMULATED',
+    requestedBy: 'An Beslisser',
+    requestedAt: '2026-09-27T10:00:00Z',
+    startedAt: '2026-09-27T10:00:01Z',
+    finishedAt: '2026-09-27T10:00:02Z',
+    bundleContentHash: 'ab'.repeat(32),
+    snapshotHash: 'cd'.repeat(32),
+    payloadHash: 'ef'.repeat(32),
+    artifactSha256: '12'.repeat(32),
+    artifactByteSize: 100,
+    rowCount: 5,
+    incompleteRowCount: 0,
+    failureCode: null,
+    failureMessage: null,
+    simulationOnly: true,
+    writesToProdis: false,
+    contractStatus: 'UNVERIFIED_FIELD_INVENTORY',
+    previewSpecVersion: 'v1',
+    snapshotSpecVersion: 'v1',
+    ...overrides,
+  };
+}
+
+describe('publicationRunGate — 5-PUB-a "Simulatierun starten"', () => {
+  it('P1: niet-FROZEN => denied (BUNDLE_NOT_FROZEN), ongeacht de runs', () => {
+    for (const status of PUBLICATION_BUNDLE_STATUSES.filter((s) => s !== 'FROZEN')) {
+      const gate = publicationRunGate(status, []);
+      expect(gate.allowed).toBe(false);
+      expect(gate.allowed ? '' : gate.reason).toContain('BUNDLE_NOT_FROZEN');
+    }
+  });
+
+  it('P2: FROZEN zonder runs (lijst nog niet geladen) => denied', () => {
+    const gate = publicationRunGate('FROZEN', null);
+    expect(gate.allowed).toBe(false);
+  });
+
+  it('P3: FROZEN met een lege runlijst => allowed', () => {
+    expect(publicationRunGate('FROZEN', [])).toEqual({ allowed: true });
+  });
+
+  it('P4: FROZEN met een PREPARING-run => denied (PUBLICATION_RUN_IN_PROGRESS), met run-id en status', () => {
+    const gate = publicationRunGate('FROZEN', [run({ id: 7, status: 'PREPARING' })]);
+    expect(gate.allowed).toBe(false);
+    expect(gate.allowed ? '' : gate.reason).toContain('PUBLICATION_RUN_IN_PROGRESS');
+    expect(gate.allowed ? '' : gate.reason).toContain('#7');
+    expect(gate.allowed ? '' : gate.reason).toContain('PREPARING');
+  });
+
+  it('P5: FROZEN met een REQUESTED-run => denied (PUBLICATION_RUN_IN_PROGRESS)', () => {
+    const gate = publicationRunGate('FROZEN', [run({ id: 3, status: 'REQUESTED' })]);
+    expect(gate.allowed).toBe(false);
+    expect(gate.allowed ? '' : gate.reason).toContain('PUBLICATION_RUN_IN_PROGRESS');
+  });
+
+  it('P6: FROZEN met alleen terminale runs (SIMULATED/FAILED) => allowed', () => {
+    const gate = publicationRunGate('FROZEN', [
+      run({ id: 1, status: 'SIMULATED' }),
+      run({ id: 2, status: 'FAILED' }),
+    ]);
+    expect(gate).toEqual({ allowed: true });
   });
 });

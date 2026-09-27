@@ -25,11 +25,12 @@ public class PsimportPreviewService {
 
     public static final String CODE_BUNDLE_NOT_FROZEN = "BUNDLE_NOT_FROZEN";
     public static final String CONTRACT_STATUS = "UNVERIFIED_FIELD_INVENTORY";
-    public static final String PREVIEW_SPEC_VERSION = "1";
+    public static final String PREVIEW_SPEC_VERSION = "2";
 
     /** Antwoord; {@code content/page/size/totalElements/totalPages} spiegelen {@link PageResult}. */
     public record PsimportPreview(boolean previewOnly, String contractStatus, String previewSpecVersion,
-                                  long bundleId, String bundleContentHash, Instant generatedAt,
+                                  long bundleId, String bundleContentHash, String snapshotSpecVersion,
+                                  String snapshotHash, Instant generatedAt,
                                   List<Row> content, int page, int size, long totalElements, int totalPages) {
     }
 
@@ -66,8 +67,11 @@ public class PsimportPreviewService {
         List<Row> rows = dao.findPage(bundleId, pageSize, (long) number * pageSize).stream()
                 .map(PsimportPreviewMapper::map).toList();
         byte[] hash = bundle.getContentHash();
+        byte[] snapshotHash = bundle.getSnapshotHash();
         return new PsimportPreview(true, CONTRACT_STATUS, PREVIEW_SPEC_VERSION, bundleId,
-                hash == null ? null : HexFormat.of().formatHex(hash), Instant.now(), rows, number, pageSize,
+                hash == null ? null : HexFormat.of().formatHex(hash), bundle.getSnapshotSpecVersion(),
+                snapshotHash == null ? null : HexFormat.of().formatHex(snapshotHash), Instant.now(),
+                rows, number, pageSize,
                 total, (int) ((total + pageSize - 1) / pageSize));
     }
 }

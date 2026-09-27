@@ -365,8 +365,11 @@ class TemplateMaterialisationTest {
                  "materialisedBy":"%s"}""".formatted(template.definitionCode(), template.linkCode(),
                 template.supplier().getCode(), USER);
 
+        // Sinds 5A-6 controleert de Web-laag materialisedBy tegen de aangemelde gebruiker (400
+        // ACTOR_FIELD_MISMATCH); dit verzoek meldt zich daarom als USER aan.
         mockMvc.perform(post("/api/catalog-import/templates/{id}/materialisations",
                         template.definition().getId())
+                        .with(be.dda.catalogimport.testsupport.TestActors.as(USER))
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.definitionCreated").value(true))

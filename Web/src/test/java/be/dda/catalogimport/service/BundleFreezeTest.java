@@ -246,7 +246,9 @@ class BundleFreezeTest {
     void freezingRefusesAMissingActorOrReason() {
         Scenario scenario = updateScenario("BADINPUT");
 
-        assertThatThrownBy(() -> freezeService.freeze(scenario.bundleId(), null, FREEZE_REASON))
+        // (String) null: sinds 5A-2 bestaat er ook een freeze(long, ActorIdentity, String)-overload, dus
+        // een kaal null zou hier niet meer compileren. De bewezen regel is ongewijzigd.
+        assertThatThrownBy(() -> freezeService.freeze(scenario.bundleId(), (String) null, FREEZE_REASON))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> freezeService.freeze(scenario.bundleId(), "   ", FREEZE_REASON))
                 .isInstanceOf(IllegalArgumentException.class);

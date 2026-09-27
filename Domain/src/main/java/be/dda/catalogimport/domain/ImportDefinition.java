@@ -78,6 +78,13 @@ public class ImportDefinition {
     @Column(name = "created_by", nullable = false, length = 100)
     private String createdBy;
 
+    /**
+     * OIDC-subject van wie de definitie aanmaakte (Fase 5-AUTH, changeset 007-4); {@code null} = geen
+     * geverifieerde identiteit (rij van vóór Fase 5, seeder, of een rechtstreekse Service-aanroep).
+     */
+    @Column(name = "created_by_subject", length = 255)
+    private String createdBySubject;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -168,6 +175,15 @@ public class ImportDefinition {
 
     public void setCreatedBy(String createdBy) {
         this.createdBy = createdBy;
+    }
+
+    public String getCreatedBySubject() {
+        return createdBySubject;
+    }
+
+    /** Fase 5-AUTH (5A-6): {@code null} laat "geen geverifieerde identiteit" staan; nooit afgeleid uit de naam. */
+    public void setCreatedBySubject(String createdBySubject) {
+        this.createdBySubject = createdBySubject;
     }
 
     public Instant getUpdatedAt() {

@@ -1,5 +1,6 @@
 package be.dda.catalogimport.dao;
 
+import be.dda.catalogimport.domain.CurrencyOrigin;
 import be.dda.catalogimport.domain.DiscountCodeState;
 import java.math.BigDecimal;
 import java.sql.PreparedStatement;
@@ -41,9 +42,10 @@ public class CandidateStageDao {
     private static final String INSERT = "insert into import_candidate_stage ("
             + "batch_id, row_number, delivery_file_id, identity_supplier, identity_supplier_group, "
             + "identity_supplier_reference, identity_discount_code, identity_discount_state, identity_hash, "
-            + "base_price, base_price_currency, description, article_fingerprint, price_fingerprint, "
+            + "base_price, base_price_currency, base_price_currency_origin, description, "
+            + "article_fingerprint, price_fingerprint, "
             + "reference_fingerprint, combined_fingerprint, mutation_key_prefix, created_at) "
-            + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     /**
      * Eén te stagen kandidaat.
@@ -54,6 +56,11 @@ public class CandidateStageDao {
      *                             niet gestaged maar verworpen
      * @param referenceFingerprint {@code null} bij canonicalisatieversie 1, die geen referentiedeel
      *                             kent; dat is iets anders dan een lege referentielijst onder versie 2
+     * @param basePriceCurrencyOrigin waar de munt vandaan komt (valuta-standaard par. 3). {@code null}
+     *                             betekent "herkomst onbekend" en hoort enkel bij rijen van vóór de
+     *                             valuta-standaard; de screening vult ze sindsdien altijd in, zodat de
+     *                             deltavergelijking een aangenomen euro van een vaste valuta kan
+     *                             onderscheiden
      */
     public record StageRow(
             long batchId,
@@ -67,6 +74,7 @@ public class CandidateStageDao {
             byte[] identityHash,
             BigDecimal basePrice,
             String basePriceCurrency,
+            CurrencyOrigin basePriceCurrencyOrigin,
             String description,
             byte[] articleFingerprint,
             byte[] priceFingerprint,
@@ -244,20 +252,27 @@ public class CandidateStageDao {
         } else {
             statement.setString(11, row.basePriceCurrency());
         }
-        if (row.description() == null) {
+        // Herkomst onbekend blijft NULL: de check van changeset 010-1 laat dat toe en een verzonnen
+        // herkomst zou een aangenomen euro van een geleverde munt niet meer te onderscheiden maken.
+        if (row.basePriceCurrencyOrigin() == null) {
             statement.setNull(12, Types.VARCHAR);
         } else {
-            statement.setString(12, row.description());
+            statement.setString(12, row.basePriceCurrencyOrigin().name());
         }
-        statement.setBytes(13, row.articleFingerprint());
-        statement.setBytes(14, row.priceFingerprint());
-        if (row.referenceFingerprint() == null) {
-            statement.setNull(15, Types.BINARY);
+        if (row.description() == null) {
+            statement.setNull(13, Types.VARCHAR);
         } else {
-            statement.setBytes(15, row.referenceFingerprint());
+            statement.setString(13, row.description());
         }
-        statement.setBytes(16, row.combinedFingerprint());
-        statement.setString(17, row.mutationKeyPrefix());
-        statement.setObject(18, OffsetDateTime.ofInstant(row.createdAt(), ZoneOffset.UTC));
+        statement.setBytes(14, row.articleFingerprint());
+        statement.setBytes(15, row.priceFingerprint());
+        if (row.referenceFingerprint() == null) {
+            statement.setNull(16, Types.BINARY);
+        } else {
+            statement.setBytes(16, row.referenceFingerprint());
+        }
+        statement.setBytes(17, row.combinedFingerprint());
+        statement.setString(18, row.mutationKeyPrefix());
+        statement.setObject(19, OffsetDateTime.ofInstant(row.createdAt(), ZoneOffset.UTC));
     }
 }

@@ -76,6 +76,12 @@ export function BundleDetailPage() {
             >
               Beslissingen
             </NavLink>
+            <NavLink
+              to={`/bundles/${bundleId}/publication`}
+              className={({ isActive }) => (isActive ? styles.tabActive : styles.tab)}
+            >
+              Publicatie
+            </NavLink>
           </nav>
 
           <Outlet context={{ bundle: data, reloadBundle: reload } satisfies BundleDetailContext} />

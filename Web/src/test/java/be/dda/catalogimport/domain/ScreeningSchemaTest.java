@@ -521,7 +521,7 @@ class ScreeningSchemaTest {
                 Long.class, batch.getId())).isNull();
         assertThat(batches.findById(batch.getId()).orElseThrow().getCriticalLineCount()).isNull();
         assertThat(jdbc.queryForObject("select is_nullable from information_schema.columns "
-                        + "where lower(table_name) = 'import_batch' "
+                        + "where table_schema = current_schema() and lower(table_name) = 'import_batch' "
                         + "and lower(column_name) = 'critical_line_count'", String.class))
                 .isEqualTo("YES");
     }
@@ -569,7 +569,7 @@ class ScreeningSchemaTest {
 
         Map<String, Object> column = jdbc.queryForMap("select numeric_precision, numeric_scale, "
                 + "is_nullable from information_schema.columns "
-                + "where lower(table_name) = 'import_definition_revision' "
+                + "where table_schema = current_schema() and lower(table_name) = 'import_definition_revision' "
                 + "and lower(column_name) = 'max_critical_share_percent'");
         assertThat(((Number) column.get("numeric_precision")).intValue()).isEqualTo(24);
         assertThat(((Number) column.get("numeric_scale")).intValue()).isEqualTo(12);
@@ -638,7 +638,8 @@ class ScreeningSchemaTest {
         assertThat(stored.getAwaitingApprovalCount()).isNull();
         assertThat(stored.getCreationCandidateCount()).isNull();
         assertThat(jdbc.queryForList("select column_name from information_schema.columns "
-                        + "where lower(table_name) = 'import_batch' and is_nullable = 'NO' "
+                        + "where table_schema = current_schema() and lower(table_name) = 'import_batch' "
+                        + "and is_nullable = 'NO' "
                         + "and lower(column_name) in ('critical_issue_count', 'warning_count', "
                         + "'awaiting_approval_count', 'creation_candidate_count')", String.class))
                 .isEmpty();
@@ -769,7 +770,8 @@ class ScreeningSchemaTest {
     void addsTheCriticalityColumnWithNonCriticalAsDefaultAndTheDocumentedChecks() {
         Map<String, Object> column = jdbc.queryForMap("select is_nullable, column_default, "
                 + "character_maximum_length from information_schema.columns "
-                + "where upper(table_name) = 'IMPORT_FIELD_MAPPING' and upper(column_name) = 'CRITICALITY'");
+                + "where table_schema = current_schema() and upper(table_name) = 'IMPORT_FIELD_MAPPING' "
+                + "and upper(column_name) = 'CRITICALITY'");
         assertThat(column.get("is_nullable")).isEqualTo("NO");
         assertThat(String.valueOf(column.get("column_default"))).contains("NON_CRITICAL");
         assertThat(((Number) column.get("character_maximum_length")).intValue()).isEqualTo(20);
@@ -819,7 +821,8 @@ class ScreeningSchemaTest {
                 "CK_IMPORT_REVISION_FIELD_CRITICALITY_KEY", "CK_IMPORT_REVISION_FIELD_CRITICALITY_VALUE",
                 "CK_IMPORT_REVISION_FIELD_CRITICALITY_IDENTITY");
         assertThat(jdbc.queryForList("select upper(column_name) from information_schema.columns "
-                + "where upper(table_name) = 'IMPORT_REVISION_FIELD_CRITICALITY'", String.class))
+                + "where table_schema = current_schema() "
+                + "and upper(table_name) = 'IMPORT_REVISION_FIELD_CRITICALITY'", String.class))
                 .contains("DEFINITION_REVISION_ID", "FIELD_KEY", "CRITICALITY", "CREATED_AT", "CREATED_BY");
 
         Scenario s = scenario("REVCRIT");
@@ -851,7 +854,7 @@ class ScreeningSchemaTest {
 
     private List<String> constraintNames(String tableName) {
         return jdbc.queryForList("select upper(constraint_name) from information_schema.table_constraints "
-                + "where upper(table_name) = ?", String.class, tableName);
+                + "where table_schema = current_schema() and upper(table_name) = ?", String.class, tableName);
     }
 
     // --- Fase 3b, changeset 004-3: import_record_filter -------------------------------------------
@@ -1141,8 +1144,9 @@ class ScreeningSchemaTest {
         assertThat(((BigDecimal) stored.get("amount")).scale()).isEqualTo(6);
         assertThat(((BigDecimal) stored.get("percentage")).scale()).isEqualTo(12);
         // De leesindex van de afwijkingscontrole bestaat: de laatste N dagwaarden per identiteit.
-        assertThat(jdbc.queryForObject("select count(*) from information_schema.indexes "
-                        + "where upper(index_name) = 'IDX_CATALOG_PRICE_OBSERVATION_WINDOW'", Long.class))
+        assertThat(jdbc.queryForObject("select count(*) from pg_indexes "
+                        + "where upper(indexname) = 'IDX_CATALOG_PRICE_OBSERVATION_WINDOW' "
+                        + "and schemaname = current_schema()", Long.class))
                 .isPositive();
     }
 

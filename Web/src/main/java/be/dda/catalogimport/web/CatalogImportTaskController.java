@@ -27,6 +27,7 @@ public class CatalogImportTaskController {
     }
 
     /** Alle taken, oplopend op koppelingscode, naam en id; optioneel gefilterd op koppeling en {@code active}. */
+    @RequiresPermission(Permission.READ)
     @GetMapping
     PageResult<TaskRow> tasks(@RequestParam(value = "importLinkId", required = false) Long importLinkId,
                               @RequestParam(value = "active", required = false) Boolean active,

@@ -147,6 +147,11 @@ public class ImportMutation {
     @Column(name = "base_price_currency", length = 3)
     private String basePriceCurrency;
 
+    /** Herkomst van de basismunt; {@code null} = onbekend (rijen van vóór de valuta-standaard). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "base_price_currency_origin", length = 20)
+    private CurrencyOrigin basePriceCurrencyOrigin;
+
     /** Verwijzing naar {@code catalog_source_state} (JDBC-only tabel, geen entiteit). */
     @Column(name = "source_state_id")
     private Long sourceStateId;
@@ -363,6 +368,14 @@ public class ImportMutation {
 
     public void setBasePriceCurrency(String basePriceCurrency) {
         this.basePriceCurrency = basePriceCurrency;
+    }
+
+    public CurrencyOrigin getBasePriceCurrencyOrigin() {
+        return basePriceCurrencyOrigin;
+    }
+
+    public void setBasePriceCurrencyOrigin(CurrencyOrigin basePriceCurrencyOrigin) {
+        this.basePriceCurrencyOrigin = basePriceCurrencyOrigin;
     }
 
     public Long getSourceStateId() {

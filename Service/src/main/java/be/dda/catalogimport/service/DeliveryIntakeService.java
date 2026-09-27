@@ -10,6 +10,7 @@ import be.dda.catalogimport.dao.TaskRunRepository;
 import be.dda.catalogimport.domain.CatalogImportTask;
 import be.dda.catalogimport.domain.Delivery;
 import be.dda.catalogimport.domain.DeliveryFile;
+import be.dda.catalogimport.domain.DeliverySourceKind;
 import be.dda.catalogimport.domain.ImportBatch;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.RevisionStatus;
@@ -40,6 +41,13 @@ import org.springframework.transaction.support.TransactionTemplate;
  * {@code TaskRun}, {@code Delivery}, {@code DeliveryFile} en {@code ImportBatch} registreert. Faalt
  * (3) of blijkt de upload een retry, dan wordt het zojuist geschreven archiefobject opgeruimd. Het
  * orkestreren gebeurt met {@link TransactionTemplate}; deze klasse is zelf niet {@code @Transactional}.
+ * <p>
+ * <b>Twee ontvangstwegen, één intake.</b> Sinds de tweede ontvangstweg (beslissingslog 2026-09-27) komt de
+ * stream ofwel van de browser-upload, ofwel van een bestand uit de beheerde servermap
+ * ({@code LocalSourceDirectory}). Voor deze service is dat hetzelfde werk: dezelfde archivering, dezelfde
+ * idempotentiesleutel en dezelfde controles. Het enige verschil is de {@code DeliverySourceKind} die
+ * meekomt en permanent op de {@link Delivery} bewaard wordt; de bestaande overloads zonder die parameter
+ * blijven bestaan en betekenen {@code UPLOAD}.
  * <p>
  * <b>Grens van deze service.</b> De intake registreert en archiveert alleen; de batch komt op
  * {@code RECEIVED} te staan en de {@code TaskRun} op {@code RUNNING}. De aanroeper (de upload-POST)
@@ -115,8 +123,37 @@ public class DeliveryIntakeService {
     public IntakeResult intake(long taskId, String deliveryReference, String uploadedBy,
                                Long expectedRecordCount, Long expectedByteSize,
                                String originalFileName, InputStream content) {
+        return intake(taskId, deliveryReference, ActorIdentity.unverified(uploadedBy), expectedRecordCount,
+                expectedByteSize, originalFileName, content);
+    }
+
+    /**
+     * Zoals hierboven, met de geverifieerde identiteit van de uploader (Fase 5-AUTH, 5A-5): de
+     * gebruikersnaam komt in {@code import_batch.created_by} (en {@code task_run.triggered_by}), het OIDC-subject
+     * in {@code import_batch.created_by_subject}. De Web-laag gebruikt uitsluitend deze overload.
+     */
+    public IntakeResult intake(long taskId, String deliveryReference, ActorIdentity actor,
+                               Long expectedRecordCount, Long expectedByteSize,
+                               String originalFileName, InputStream content) {
+        return intake(taskId, deliveryReference, actor, expectedRecordCount, expectedByteSize, originalFileName,
+                DeliverySourceKind.UPLOAD, content);
+    }
+
+    /**
+     * Zoals hierboven, met de <b>ontvangstweg</b> waarlangs de bytes binnenkwamen (beslissingslog
+     * 2026-09-27, Q2): {@link DeliverySourceKind#UPLOAD} voor de browser-upload,
+     * {@link DeliverySourceKind#LOCAL_DIRECTORY} voor een bestand uit de beheerde servermap. Puur additief:
+     * de ontvangst zelf, de idempotentie en de archivering zijn voor beide wegen identiek — de weg wordt
+     * enkel permanent vastgelegd op de {@link Delivery}, zodat later navertelbaar blijft waar een levering
+     * vandaan kwam. Een {@code null} betekent {@code UPLOAD}, nooit "onbekend".
+     */
+    public IntakeResult intake(long taskId, String deliveryReference, ActorIdentity actor,
+                               Long expectedRecordCount, Long expectedByteSize,
+                               String originalFileName, DeliverySourceKind sourceKind, InputStream content) {
         String reference = requireText(deliveryReference, "deliveryReference", MAX_DELIVERY_REFERENCE_LENGTH);
-        String uploader = requireText(uploadedBy, "uploadedBy", MAX_UPLOADED_BY_LENGTH);
+        String uploader = requireText(actor == null ? null : actor.username(), "uploadedBy",
+                MAX_UPLOADED_BY_LENGTH);
+        String uploaderSubject = actor.subject();
         String fileName = requireText(originalFileName, "file name", MAX_FILE_NAME_LENGTH);
         if (expectedRecordCount != null && expectedRecordCount < 0) {
             throw new IllegalArgumentException("expectedRecordCount must not be negative");
@@ -135,8 +172,8 @@ public class DeliveryIntakeService {
         try {
             // Stap B: registratie in één korte transactie.
             IntakeResult result = transaction.execute(status ->
-                    register(taskId, idempotencyKey, uploader, expectedRecordCount, expectedByteSize,
-                            fileName, archived));
+                    register(taskId, idempotencyKey, uploader, uploaderSubject, expectedRecordCount,
+                            expectedByteSize, fileName, sourceKind, archived));
             keepArchive = result != null && result.created();
             return result;
         } finally {
@@ -146,9 +183,9 @@ public class DeliveryIntakeService {
         }
     }
 
-    private IntakeResult register(long taskId, String idempotencyKey, String uploader,
+    private IntakeResult register(long taskId, String idempotencyKey, String uploader, String uploaderSubject,
                                   Long expectedRecordCount, Long expectedByteSize,
-                                  String fileName, ArchivedObject archived) {
+                                  String fileName, DeliverySourceKind sourceKind, ArchivedObject archived) {
         Resolved resolved = resolve(taskId, idempotencyKey);
 
         if (resolved.existing() != null) {
@@ -178,6 +215,7 @@ public class DeliveryIntakeService {
 
         Delivery delivery = new Delivery(task, idempotencyKey, now);
         delivery.setTaskRun(run);
+        delivery.setSourceKind(sourceKind);
         delivery.setExpectedFileCount(1);
         delivery.setActualFileCount(1);
         delivery.setExpectedRecordCount(expectedRecordCount);
@@ -192,6 +230,7 @@ public class DeliveryIntakeService {
 
         ImportBatch batch = new ImportBatch(delivery, task.getImportLink(), resolved.revision(), 1, uploader);
         batch.setTaskRun(run);
+        batch.setCreatedBySubject(uploaderSubject);
         batches.saveAndFlush(batch);
         recordBookmarkValuesHash(batch);
 

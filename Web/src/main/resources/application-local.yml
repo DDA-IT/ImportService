@@ -19,6 +19,29 @@ catalogimport:
   archive:
     # Lokale ontwikkelmap; productie zet catalogimport.archive.root expliciet (geen default in application.yml).
     root: C:/tmp/catalogimport-archive
+  local-source:
+    # Tweede ontvangstweg (docs/decisions.md 2026-09-27): de map waarin een mens een leveringsbestand zet,
+    # waarna het via de API ingelezen kan worden. De map MOET bestaan voor de applicatie opstart - is ze er
+    # niet, dan stopt het opstarten met een IllegalStateException (D3). Maak ze dus één keer aan:
+    #   mkdir C:\tmp\catalogimport-local-source
+    # Wil je deze ontvangstweg lokaal niet, zet dan deze regel in commentaar (afwezig = feature uit).
+    # Let op: dit geldt ook voor de tests van de Web-module, die het profiel local gebruiken.
+    directory: C:/tmp/catalogimport-local-source
+  # Fase 5-PERM (docs/design/fase5-perm-design.md par. 2): rechten per gebruiker, fail-closed.
+  # Er is GEEN wildcard en GEEN default, in geen enkel profiel: zonder een regel hieronder heeft
+  # niemand ook maar één recht en geeft elk beschermd endpoint 403 PERMISSION_DENIED.
+  #
+  # >>> VUL HIER JE EIGEN KEYCLOAK-USERNAME IN (claim preferred_username, zichtbaar via
+  # >>> GET /api/catalog-import/me). De placeholder hieronder komt met niemand overeen.
+  #
+  # Matching is getrimd en hoofdletterongevoelig. Toegelaten rechten: read, manage, approve
+  # (of hun volledige codes catalogImport.read/.manage/.approve). De hiërarchie doet de rest:
+  # approve impliceert manage en read, manage impliceert read.
+  # 'system' mag hier hoogstens read krijgen; met manage of approve start de applicatie niet.
+  permissions:
+    grants:
+      - username: vul-hier-je-keycloak-username-in
+        rights: read, manage, approve
 server:
   # Stel bijvoorbeeld CATALOG_SERVER_PORT=8083 in zonder de YAML te wijzigen.
   port: ${CATALOG_SERVER_PORT:8081}

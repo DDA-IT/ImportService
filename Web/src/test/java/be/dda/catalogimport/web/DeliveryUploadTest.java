@@ -1,5 +1,6 @@
 package be.dda.catalogimport.web;
 
+import static be.dda.catalogimport.testsupport.TestActors.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -62,6 +63,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder;
 
 /**
@@ -132,6 +134,9 @@ class DeliveryUploadTest {
                 .andExpect(jsonPath("$.newCount").value(2))
                 .andExpect(jsonPath("$.contentMutationCount").value(2))
                 .andExpect(jsonPath("$.blockedCode").doesNotExist())
+                // Additief sinds de tweede ontvangstweg (beslissingslog 2026-09-27): de referentie waaronder
+                // deze levering bekend is, staat nu ook in het antwoord.
+                .andExpect(jsonPath("$.deliveryReference").value("REF-1"))
                 .andReturn().getResponse().getContentAsString();
         long deliveryId = ((Number) JsonPath.read(body, "$.deliveryId")).longValue();
         long batchId = ((Number) JsonPath.read(body, "$.batchId")).longValue();
@@ -146,6 +151,9 @@ class DeliveryUploadTest {
         assertThat(delivery.getActualByteSize()).isEqualTo(CSV.length);
         assertThat(delivery.isCompletenessProven()).isFalse();
         assertThat(delivery.getManifestReference()).isNull();
+        // De ontvangstweg van een browser-upload blijft UPLOAD (beslissingslog 2026-09-27, Q2).
+        assertThat(jdbc.queryForObject("select source_kind from delivery where id = ?", String.class, deliveryId))
+                .isEqualTo("UPLOAD");
 
         List<DeliveryFile> files = deliveryFiles.findByDeliveryIdOrderBySequenceNumberAsc(deliveryId);
         assertThat(files).singleElement().satisfies(file -> {
@@ -214,6 +222,7 @@ class DeliveryUploadTest {
                 .andExpect(jsonPath("$.deliveryId").value(deliveryId))
                 .andExpect(jsonPath("$.taskId").value(f.task().getId()))
                 .andExpect(jsonPath("$.idempotencyKey").value("manual:REF-GET"))
+                .andExpect(jsonPath("$.sourceKind").value("UPLOAD"))
                 .andExpect(jsonPath("$.expectedRecordCount").doesNotExist())
                 .andExpect(jsonPath("$.actualByteSize").value(CSV.length))
                 .andExpect(jsonPath("$.completenessProven").value(false))
@@ -415,17 +424,22 @@ class DeliveryUploadTest {
 
     // --- Ongeldige aanvraag --------------------------------------------------------------------
 
+    /**
+     * Contractwijziging 5A-5 (ontwerp par. 3, A3): {@code uploadedBy} is optioneel en blanco = afwezig. De
+     * uploader is dan de aangemelde gebruiker (nooit stil een andere naam); een blanco waarde is dus geen
+     * 400 meer. Het afwijkende-naam- en {@code system}-geval staat in {@code UploadBaselineActorHttpTest}.
+     */
     @Test
-    void rejectsABlankUploadedByAndCreatesNothing() throws Exception {
+    void aBlankOrMissingUploadedByFallsBackToTheSignedInUser() throws Exception {
         Fixture f = fixture("NOUSER");
-        long archivedBefore = archivedFileCount();
 
-        upload(f.task(), "REF-1", "  ", "levering.csv", CSV).andExpect(status().isBadRequest());
-        upload(f.task(), "REF-1", "", "levering.csv", CSV).andExpect(status().isBadRequest());
+        upload(f.task(), "REF-1", "  ", "levering.csv", CSV).andExpect(status().isCreated());
 
-        assertThat(deliveries.findByTaskIdOrderByReceivedAtDesc(f.task().getId())).isEmpty();
-        assertThat(runs.findByTaskIdOrderByStartedAtDesc(f.task().getId())).isEmpty();
-        assertThat(archivedFileCount()).isEqualTo(archivedBefore);
+        java.util.Map<String, Object> row = jdbc.queryForMap(
+                "select created_by, created_by_subject from import_batch where import_link_id = ?",
+                f.link().getId());
+        assertThat(row.get("created_by")).isEqualTo("test.user");
+        assertThat(row.get("created_by_subject")).isEqualTo("test-sub-default");
     }
 
     @Test
@@ -436,6 +450,7 @@ class DeliveryUploadTest {
         upload(f.task(), " ", "tester@example.test", "levering.csv", CSV).andExpect(status().isBadRequest());
         mockMvc.perform(multipart("/api/catalog-import/tasks/{id}/deliveries", f.task().getId())
                         .file(new MockMultipartFile("file", "levering.csv", "text/csv", CSV))
+                        .with(as("tester@example.test"))
                         .param("uploadedBy", "tester@example.test"))
                 .andExpect(status().isBadRequest());
         upload(f.task(), "REF-1", "tester@example.test", "levering.csv", CSV, "expectedRecordCount", "-1")
@@ -473,8 +488,12 @@ class DeliveryUploadTest {
         return mockMvc.perform(request(task.getId(), reference, uploadedBy, fileName, bytes, extraParams));
     }
 
-    private MockMultipartHttpServletRequestBuilder request(long taskId, String reference, String uploadedBy,
-                                                           String fileName, byte[] bytes, String... extraParams) {
+    /**
+     * Sinds 5A-5 tekent de aangemelde gebruiker: een niet-blanco {@code uploadedBy} meldt de test ook als die
+     * gebruiker aan (gelijke naam = aanvaard); een blanco waarde blijft de standaardlogin {@code test.user}.
+     */
+    private MockHttpServletRequestBuilder request(long taskId, String reference, String uploadedBy,
+                                                  String fileName, byte[] bytes, String... extraParams) {
         MockMultipartHttpServletRequestBuilder builder = multipart("/api/catalog-import/tasks/{id}/deliveries", taskId)
                 .file(new MockMultipartFile("file", fileName, "text/csv", bytes));
         builder.param("deliveryReference", reference);
@@ -482,7 +501,7 @@ class DeliveryUploadTest {
         for (int i = 0; i + 1 < extraParams.length; i += 2) {
             builder.param(extraParams[i], extraParams[i + 1]);
         }
-        return builder;
+        return uploadedBy == null || uploadedBy.isBlank() ? builder : builder.with(as(uploadedBy));
     }
 
     private long archivedFileCount() throws Exception {

@@ -21,12 +21,14 @@
 
 import { useState, type ReactNode } from 'react';
 import * as bundlesApi from '../../api/bundles.ts';
-import type {
-  DecideGroupRequest,
-  DecisionFilter,
-  GroupDecisionView,
-  PublicationBundleStatus,
+import {
+  PERMISSION_APPROVE,
+  type DecideGroupRequest,
+  type DecisionFilter,
+  type GroupDecisionView,
+  type PublicationBundleStatus,
 } from '../../api/types.ts';
+import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import type { MutationFilter } from '../../components/MutationList/types.ts';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
@@ -116,7 +118,8 @@ export function GroupDecisionDialog({ bundleId, bundleStatus, filter, listedCoun
 
   // Eén omzetting, uit de filter die de lijst zelf gebruikt; nooit samengesteld uit iets anders.
   const decisionFilter = toDecisionFilter(filter);
-  const gate = groupDecisionGate(bundleStatus, decisionFilter, listedCount);
+  const approveGate = usePermissionGate(PERMISSION_APPROVE);
+  const gate = withPermission(approveGate, groupDecisionGate(bundleStatus, decisionFilter, listedCount));
 
   function open(kind: GroupDecisionKind) {
     if (!gate.allowed || listedCount === null) {

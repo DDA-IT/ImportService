@@ -1,28 +1,36 @@
 # CatalogImport — standaardflows
 
-Stand: 2026-09-24. Wordt bijgewerkt zodra de resterende schermen klaar zijn. Hoofdhandleiding:
+Stand: 2026-09-25. Hoofdhandleiding:
 [`README.md`](README.md). Begrippen: [`begrippen.md`](begrippen.md).
 
 ## Lees dit eerst
 
 - **UI-route** staat bij een flow als het scherm bestaat (zie sectie 4 van de hoofdhandleiding).
-  Anders staat er alleen de **API-route**. Sommige schermen zijn nog in aanbouw.
-- Alle API-voorbeelden zijn afgeleid van `scripts/scenario/manual-upload-scenario.sh` en de bestanden
-  `scripts/scenario/levering-1.csv` en `levering-2.csv`. Er draaide bij het schrijven geen backend.
+  Anders staat er alleen de **API-route** (inrichting en sjablonen: schermen 1a/1b zijn niet gebouwd).
+- Alle API-voorbeelden zijn afgeleid van het scenario in `scripts/scenario/manual-upload-scenario.sh` (sinds
+  5-AUTH een handmatige checklist, zie hieronder) en de bestanden `scripts/scenario/levering-1.csv` en
+  `levering-2.csv`. Er draaide bij het schrijven geen backend.
   De getallen zijn **afgeleid uit de CSV-bestanden en de code**, niet uit een opgeslagen uitvoer van het
   scenario. Waar ik iets niet kon bevestigen, staat **nog te verifiëren**.
-- Variabelen voor de voorbeelden (bash). De basis-URL is poort 8081 (profiel `local`):
-
-```bash
-BASE=http://localhost:8081
-A=$BASE/api/catalog-import          # gewone API
-S=$BASE/api/catalog-import/setup    # setup-API (alleen met profiel demo)
-J='Content-Type: application/json'
-```
-
-- In PowerShell: `curl.exe` in plaats van `curl`, en JSON tussen dubbele aanhalingstekens met `\"`.
-- De actor (`uploadedBy`, `acceptedBy`, `decidedBy`, `frozenBy`, ...) is een zelf gekozen naam, niet
-  `system` en niet leeg. Er is geen authenticatie.
+- **Aanmelden (5-AUTH).** Elke `/api/**`-aanroep vereist een Keycloak-login (BFF, sessiecookie). Zonder login:
+  **401 `AUTHENTICATION_REQUIRED`**. Schrijfaanroepen (`POST`/`PUT`) vereisen bovendien de CSRF-header
+  `X-XSRF-TOKEN` met de waarde van de cookie `XSRF-TOKEN` (anders 403 `CSRF_TOKEN_INVALID`). Er zijn geen
+  bearer-tokens en geen omzeiling voor scripts (V1 = A1), dus `curl`-voorbeelden bestaan niet meer. Lokaal
+  aanmelden: zie [README, "Lokaal aanmelden"](../../README.md) (Prodis-Keycloak op :9080, realm `prodis`,
+  client `catalog-import`, `CATALOG_OIDC_CLIENT_SECRET` in de omgeving); open daarna
+  `http://localhost:5173`.
+- **Verzoekvormen.** Voorbeelden staan als `METHODE pad` met een JSON-body en zijn uit te voeren in de
+  aangemelde browsersessie: `GET` door de URL `http://localhost:5173/<pad>` te openen, `POST`/`PUT` met
+  `fetch` in de browserconsole met de header `X-XSRF-TOKEN` (voorbeeld in de README), uploads via `/upload`.
+  Paden zijn relatief aan `/api/catalog-import` (`$A`); de setup-API (alleen met profiel `demo`) staat onder
+  `$A/setup` (`$S`).
+- De actor (`uploadedBy`, `acceptedBy`, `decidedBy`, `frozenBy`, ...) komt sinds 5-AUTH uit uw login
+  (`preferred_username`). Het requestveld is optioneel; is het aanwezig, dan moet het gelijk zijn aan die
+  naam (anders 400 `ACTOR_FIELD_MISMATCH`); `system` is verboden. In de voorbeelden hieronder laat ik het weg.
+  Rechten per actie (5-PERM) zijn er wel: `read` voor alle `GET`'s, `manage` voor upload, `continue`, bundel
+  aanmaken en batches toevoegen/verwijderen en setup/sjablonen, `approve` voor accept-baseline, beslissingen,
+  bevriezen en annuleren (`approve` omvat `manage` en `read`; `manage` omvat `read`). Zonder recht: 403
+  `PERMISSION_DENIED`, vóór alle andere controles op de actie. Zie sectie 7a van de hoofdhandleiding.
 
 De leverancierscode `SCN` en de referenties `S-1` ... `S-8` komen uit het scenario. Het scenario gebruikt
 een unieke suffix (`SFX`, standaard een tijdstempel) in codes zodat u het herhaaldelijk kunt draaien.
@@ -33,7 +41,7 @@ een unieke suffix (`SFX`, standaard een tijdstempel) in codes zodat u het herhaa
 | --- | --- | --- |
 | [1](#flow-1--nieuwe-leverancier-of-koppeling-inrichten) | Nieuwe leverancier/koppeling inrichten | Alleen via API (achter de setup-vlag) |
 | [2](#flow-2--handmatig-een-csv-uploaden-en-het-resultaat-lezen) | CSV uploaden en resultaat lezen | Frontend beschikbaar op `/upload`; ook via API |
-| [3](#flow-3--herupload-en-idempotentie) | Herupload en idempotentie | Alleen via API |
+| [3](#flow-3--herupload-en-idempotentie) | Herupload en idempotentie | Frontend beschikbaar op `/upload` (herstelroute); ook via API |
 | [4](#flow-4--eerste-levering-aanvaarden-als-nulmeting-en-daarna-een-delta-levering) | Nulmeting en delta-levering | Frontend beschikbaar (batchdetail); ook via API |
 | [5](#flow-5--batch-in-een-publicatiebundel-beslissen-controleren-bevriezen-annuleren) | Bundel, beslissen, bevriezen, annuleren | Beschikbaar in de UI |
 | [6](#flow-6--een-geblokkeerde-of-mislukte-batch-onderzoeken-en-hervatten) | Geblokkeerd/mislukt onderzoeken en hervatten | Frontend beschikbaar (batchdetail, `continue`); ook via API |
@@ -45,15 +53,16 @@ een unieke suffix (`SFX`, standaard een tijdstempel) in codes zodat u het herhaa
 ## Flow 1 — Nieuwe leverancier of koppeling inrichten
 
 **Status: Alleen via API.** Er is geen inrichtingsscherm; een productiewaardig beheerscherm volgt pas na
-Fase 5/Keycloak (`docs/decisions.md`, 2026-09-22).
+Fase 5 (`docs/decisions.md`, 2026-09-22); Keycloak-login (5-AUTH) en rechten per actie (5-PERM, lokale rechtenbron) zijn er al; de setup-API vraagt `manage`/`read`.
 
 **Doel:** een keten aanmaken waarmee u bestanden van een nieuwe leverancier kunt uploaden.
 
 **Voorwaarden:**
 
 - De backend draait met het profiel `demo` (of de vlag `catalogimport.setup-api.enabled=true`). Zonder die
-  vlag antwoordt elk `/setup`-pad met 404. **Zet de vlag nooit aan met echte gegevens**: er is geen
-  authenticatie en wie de API bereikt, kan drempels bepalen en dus de controle uitschakelen.
+  vlag antwoordt elk `/setup`-pad met 404 (na login). **Zet de vlag nooit aan met echte gegevens**: de
+  setup-API vereist een login en het recht `manage`/`read` (de vlag blijft een aparte, tweede beveiliging);
+  wie `manage` heeft kan drempels bepalen en dus de controle uitschakelen.
 - Vereist voor een werkende keten, in deze volgorde: **bronorganisatie** → **definitie** → **revisie** (met
   mappings) → revisie **activeren** → **koppeling** → **MANUAL-taak**. Zonder actieve revisie geeft een
   upload 409 `NO_ACTIVE_REVISION`; zonder taak is er geen `taskId` om naar te uploaden.
@@ -64,40 +73,50 @@ Neem de `id` uit elk antwoord over naar de volgende stap. Onderstaande volgorde 
 scenarioscript (`$OC` is een unieke bronorganisatiecode, `$DEF`, `$REV`, `$LINK` zijn ids uit de antwoorden).
 
 1. **Bronorganisatie:**
-   ```bash
-   curl -X POST $S/source-organisations -H "$J" -d '{"code":"SCN1","name":"Scenario 1","type":"SUPPLIER"}'
+   ```
+   POST $S/source-organisations
+   {"code":"SCN1","name":"Scenario 1","type":"SUPPLIER"}
    ```
 2. **Definitie** (`usageType` `OWN_DEFINITION` voor een eigen definitie):
-   ```bash
-   curl -X POST $S/definitions -H "$J" -d '{"sourceOrganisationCode":"SCN1","code":"SCN1-CSV","name":"Scenario 1","usageType":"OWN_DEFINITION"}'
+   ```
+   POST $S/definitions
+   {"sourceOrganisationCode":"SCN1","code":"SCN1-CSV","name":"Scenario 1","usageType":"OWN_DEFINITION"}
    ```
 3. **Revisie** (start als `DRAFT`). Het scenario gebruikt een CSV met `;`, een header, een driedelige
    identiteit en percentages voor de drempels:
-   ```bash
-   curl -X POST $S/definitions/$DEF/revisions -H "$J" -d '{"delimiter":";","hasHeader":true,"identityProfileKind":"THREE_PART","supplierField":"leverancier","supplierGroupField":"groep","supplierReferenceField":"referentie","basePriceField":"prijs","descriptionField":"omschrijving","currencyField":"valuta","canonicalisationVersion":2,"creationThresholdSharePercent":10,"maxCriticalSharePercent":25}'
    ```
+   POST $S/definitions/$DEF/revisions
+   {"delimiter":";","hasHeader":true,"identityProfileKind":"THREE_PART","supplierField":"leverancier","supplierGroupField":"groep","supplierReferenceField":"referentie","basePriceField":"prijs","descriptionField":"omschrijving","currencyField":"valuta","canonicalisationVersion":2,"creationThresholdSharePercent":10,"maxCriticalSharePercent":25}
+   ```
+   *Opmerking:* `currencyField` is optioneel. Staat er een munt in het bestand, dan gaat die voor (`SOURCE`); een ongeldige of lege munt in een gemapt veld blijft de regel verwerpen. Zonder munt in het bestand geldt de vaste valuta van de koppeling (`defaultCurrency` bij `POST /setup/links`), en anders `EUR`. Zie `docs/design/valuta-standaard-design.md`.
+   
    De drempels 10 en 25 zijn bewust ruimer dan de standaard (1): bij een klein bestand valt bij 1% elke
    creatie of fout boven de drempel (zie sectie 6.5 van de hoofdhandleiding).
 4. **Mappings** (extra kolommen, bv. de EAN). Alleen mogelijk op een `DRAFT`-revisie:
-   ```bash
-   curl -X POST $S/revisions/$REV/mappings -H "$J" -d '{"targetFieldCode":"EAN","sourceReference":"ean","sequenceNumber":1}'
+   ```
+   POST $S/revisions/$REV/mappings
+   {"targetFieldCode":"EAN","sourceReference":"ean","sequenceNumber":1}
    ```
    Filters (`/revisions/{id}/filters`) en kritiek-overrules (`/revisions/{id}/field-criticality`) bestaan
    ook, maar het scenario gebruikt ze niet.
 5. **Revisie activeren** (bevriest ze; een vorige actieve revisie wordt `SUPERSEDED`):
-   ```bash
-   curl -X POST $S/revisions/$REV/activate -H "$J" -d '{"approvedBy":"beheerder@example.test"}'
+   ```
+   POST $S/revisions/$REV/activate
+   {}          (approvedBy is optioneel; de naam komt uit uw login)
    ```
 6. **Koppeling** (leverancier + bibliotheek; `PSARF012` is de bibliotheekcode uit het scenario):
-   ```bash
-   curl -X POST $S/links -H "$J" -d '{"definitionId":'$DEF',"code":"SCN1-LINK","name":"Scenario 1","supplierCode":"SCN1","libraryCode":"PSARF012"}'
    ```
+   POST $S/links
+   {"definitionId":<DEF>,"code":"SCN1-LINK","name":"Scenario 1","supplierCode":"SCN1","libraryCode":"PSARF012","defaultCurrency":"EUR"}
+   ```
+   *Opmerking:* `defaultCurrency` is optioneel (ISO-4217, drie letters); standaard EUR als niet opgegeven. Dit is de vaste munt van de koppeling; ze geldt alleen als het bestand zelf geen munt levert.
 7. **Taak** (het aanmaken van de taak levert een `MANUAL`-taak; zie de opmerking hieronder):
-   ```bash
-   curl -X POST $S/tasks -H "$J" -d '{"linkId":'$LINK',"name":"Scenario manuele levering"}'
    ```
-8. **Controle**: `curl $S/overview` toont de hele boom met het `taskId`. Alleen-lezen en altijd bereikbaar
-   (ook zonder setup-vlag): `curl "$A/tasks"` (taken), `curl "$A/import-links"` (koppelingen).
+   POST $S/tasks
+   {"linkId":<LINK>,"name":"Scenario manuele levering"}
+   ```
+8. **Controle**: `GET $S/overview` toont de hele boom met het `taskId`. Alleen-lezen en (na login) altijd
+   bereikbaar, ook zonder setup-vlag: `GET $A/tasks` (taken), `GET $A/import-links` (koppelingen).
 
 **Verwachte uitkomst:** een `taskId` waar u naartoe kunt uploaden (flow 2).
 
@@ -109,7 +128,7 @@ scenarioscript (`$OC` is een unieke bronorganisatiecode, `$DEF`, `$REV`, `$LINK`
 | 409 `*_CODE_IN_USE` (bv. `DEFINITION_CODE_IN_USE`, `LINK_CODE_IN_USE`) | code bestaat al; kies een andere |
 | 400/409 `CONFIG_*` bij mapping of activeren | de revisie is onvolledig of tegenstrijdig, bv. `CONFIG_FIELD_MAPPING_DUPLICATES_REVISION` (u mapt een veld dat de revisie al bepaalt) |
 | 409 `REVISION_NOT_EDITABLE` | mappings/filters kunnen alleen op een `DRAFT` |
-| `CONFIG_CANONICALISATION_VERSION_REQUIRED` | versie 2 is verplicht zodra een munt gelezen wordt of een referentie (EAN/PIM/CAB) gemapt is |
+| `CONFIG_CANONICALISATION_VERSION_REQUIRED` | versie 2 is verplicht zodra een mapping (voor identiteit/referentie) bestaat.  |
 
 Voor een tweede leverancier met dezelfde bestandsopbouw hergebruikt u een eigen nieuwe keten (of het
 sjabloon, zie 1B). Het **demoprofiel** maakt bij het opstarten al een volledige keten aan (`DEMO`,
@@ -121,18 +140,21 @@ sjabloon, zie 1B). Het **demoprofiel** maakt bij het opstarten al een volledige 
 (`usageType` `REUSABLE_TEMPLATE`) met bookmarks (invulvelden). Het endpoint `templates` maakt daaruit in één
 transactie een leveranciersgebonden definitie, een revisie 1 (`DRAFT`) en een koppeling.
 
+(Sinds 5-AUTH: `materialisedBy`, `createdBy` en `updatedBy` zijn optioneel en moeten, indien meegegeven, gelijk
+zijn aan uw login.)
+
 1. `GET $A/templates` — de beschikbare sjablonen.
 2. `GET $A/templates/{definitionId}/revisions/{revisionId}/bookmarks` — welke bookmarks er ingevuld moeten
    worden (met een lijst `problems`).
 3. `POST $A/templates/{definitionId}/materialisations` met o.a. `templateRevisionId`, `mode`
    (`NEW_DEFINITION` of `REUSE_DEFINITION`, verplicht, geen default), `definitionCode`, `definitionName`,
-   `linkCode`, `linkName`, `supplierOrganisationCode`, `libraryCode`, `bookmarkValues`, `materialisedBy`.
+   `linkCode`, `linkName`, `supplierOrganisationCode`, `libraryCode`, `bookmarkValues`.
    Bij `REUSE_DEFINITION` (+ `reuseDefinitionId`) ontstaat alleen een koppeling; een definitie met een
    per-leverancier waarde is niet deelbaar (409 `DEFINITION_NOT_SHAREABLE`).
 4. **De materialisatie maakt géén taak** (beslissing 2026-09-23, V1). De revisie is `DRAFT`: activeer ze
    (stap 5 van 1A) en maak daarna een taak (stap 7 van 1A).
-5. Een LINK-bookmarkwaarde later wijzigen: `PUT $BASE/api/catalog-import/links/{linkId}/bookmark-values/{name}`
-   met `{"value":"...","updatedBy":"..."}`. Dat wordt met 409 `LINK_BOOKMARK_LOCKED_BY_OPEN_BATCH`
+5. Een LINK-bookmarkwaarde later wijzigen: `PUT $A/links/{linkId}/bookmark-values/{name}`
+   met `{"value":"..."}` (`updatedBy` optioneel; de naam komt uit uw login). Dat wordt met 409 `LINK_BOOKMARK_LOCKED_BY_OPEN_BATCH`
    geweigerd zolang de koppeling een open batch heeft.
 
 De exacte antwoordvelden van de materialisatie (onder meer de id's van de nieuwe definitie/revisie/koppeling)
@@ -161,11 +183,11 @@ Zeven datalijnen. Lijn S-6 heeft `abc` als prijs.
 
 **Stappen:**
 
-1. Zoek het `taskId` (`curl "$A/tasks"`, of `overview`, of de logregel bij het opstarten van het demoprofiel).
-2. Upload het bestand met een zelfgekozen, unieke `deliveryReference`:
-   ```bash
-   curl -F "file=@scripts/scenario/levering-1.csv" -F "deliveryReference=SCN-1" -F "uploadedBy=uw.naam" \
-        $A/tasks/$TASK/deliveries
+1. Zoek het `taskId` (`GET $A/tasks`, of `overview`, of de logregel bij het opstarten van het demoprofiel).
+2. Upload het bestand met een zelfgekozen, unieke `deliveryReference`. In de UI: `/upload`, taak kiezen,
+   `scripts/scenario/levering-1.csv` selecteren, referentie `SCN-1`. Verzoekvorm (multipart, enkel via de UI):
+   ```
+   POST $A/tasks/$TASK/deliveries    file=levering-1.csv, deliveryReference=SCN-1
    ```
    Het antwoord komt pas als de screening klaar is (synchroon). Bij een gewone uitkomst: **HTTP 201**.
 3. Lees het antwoord (`deliveryId`, `batchId`, `status`, `blockedCode`, tellers). Verwacht voor dit bestand
@@ -180,16 +202,16 @@ Zeven datalijnen. Lijn S-6 heeft `abc` als prijs.
    | `newCount` | 6 | alles is nieuw |
    | `contentMutationCount` | 6 | zes `CREATE`-mutaties (zonder marker) |
 
-4. Lees de batch: `curl $A/batches/$BATCHID`. Verwacht: `validationResult` = `REVIEW_REQUIRED`
+4. Lees de batch: `GET $A/batches/$BATCHID` (UI: `/batches/<id>`). Verwacht: `validationResult` = `REVIEW_REQUIRED`
    (een kritieke regel met een onleesbare prijs, en wachtende creaties), `creationOutcome` = `INITIAL_LOAD`,
    `creationScopeCount` = 0 (er was niets om tegen af te wegen), `criticalLineCount` = 1,
    `awaitingApprovalCount` = 6. Dat de kritieke lijn uit de onleesbare prijs volgt, is de lezing van het
    voorbeeld in `README.md` (hoofdmap); ik heb ze niet zelf gerund (**nog te verifiëren**).
-5. Lees de mutaties: `curl "$A/batches/$BATCHID/mutations?size=50"`. Zes `CREATE`-regels met status
+5. Lees de mutaties: `GET $A/batches/$BATCHID/mutations?size=50`. Zes `CREATE`-regels met status
    `AWAITING_APPROVAL` en `statusReason` `INITIAL_LOAD_REQUIRES_APPROVAL`, plus een `IMPORT_MARKER` (status
    `RECORDED`).
-6. Lees de problemen: `curl $A/batches/$BATCHID/issues` (voorbeeldregels; hier `PRICE_UNREADABLE` op de
-   regel van S-6, en de melding `INITIAL_LOAD_REQUIRES_APPROVAL`) en `curl $A/batches/$BATCHID/issue-groups`
+6. Lees de problemen: `GET $A/batches/$BATCHID/issues` (voorbeeldregels; hier `PRICE_UNREADABLE` op de
+   regel van S-6, en de melding `INITIAL_LOAD_REQUIRES_APPROVAL`) en `GET $A/batches/$BATCHID/issue-groups`
    (leeg: een groep ontstaat pas vanaf 10 gelijksoortige vaststellingen).
 7. Filter de mutaties zo nodig: `?status=PLANNED`, `?actionType=CREATE`,
    `?statusReason=INITIAL_LOAD_REQUIRES_APPROVAL` (exact, hoofdlettergevoelig), `?identityHash=<hex>`.
@@ -212,7 +234,11 @@ aanvaard of gepubliceerd.
 | 409 `NO_ACTIVE_REVISION` | activeer eerst een revisie (flow 1) |
 | 409 `TASK_RUN_IN_PROGRESS` | er loopt al een uitvoering voor deze taak |
 | 409 `DELIVERY_REFERENCE_REUSED_WITH_DIFFERENT_CONTENT` | referentie al gebruikt met een ander bestand; kies een nieuwe |
-| 400 zonder code | ontbrekend veld (`file`, `deliveryReference`, `uploadedBy`) of ongeldige waarde |
+| 400 zonder code | ontbrekend veld (`file`, `deliveryReference`) of ongeldige waarde |
+| 400 `ACTOR_FIELD_MISMATCH` | `uploadedBy` is meegegeven en verschilt van uw login (laat het veld weg) |
+| 401 `AUTHENTICATION_REQUIRED` / 403 `CSRF_TOKEN_INVALID` | geen sessie, of schrijfaanroep zonder `X-XSRF-TOKEN` |
+| 403 `PERMISSION_DENIED` (upload vraagt `manage`) | u heeft het vereiste recht niet; niets opgeslagen |
+| 503 `PERMISSION_SOURCE_UNAVAILABLE` | rechtenbron onbereikbaar; later opnieuw |
 | 413 zonder code | bestand te groot (limiet standaard 1 GB, `CATALOG_MAX_UPLOAD_SIZE`) |
 | geen antwoord / time-out | upload en screening zijn synchroon; herhaal met **dezelfde** referentie (veilig, zie flow 3) |
 
@@ -220,9 +246,10 @@ aanvaard of gepubliceerd.
 
 ## Flow 3 — Herupload en idempotentie
 
-**Status: Alleen via API** (deze uitleg volgt de rauwe API-aanroepen). Hetzelfde gedrag geldt ook via het
-uploadscherm (`/upload`): opnieuw uploaden met dezelfde referentie en hetzelfde bestand is daar de
-gedocumenteerde herstelroute (zie csv-importeren.md §4.4).
+**Status: Frontend beschikbaar** op `/upload`: de referentie is daar deterministisch
+(`<bestandsnaam>#<12 hex SHA-256>`) en bij een netwerkfout of 5xx is "Herhaal met dezelfde referentie" de
+herstelroute (zie csv-importeren.md §4.4). **201** = aangemaakt en gescreend; **200** = bestaande levering
+teruggevonden, niet opnieuw gescreend. De uitleg hieronder volgt de rauwe API-aanroepen.
 
 **Doel:** weten wat er gebeurt als u hetzelfde bestand nog eens aanbiedt, bijvoorbeeld na een afgebroken
 verzoek.
@@ -238,10 +265,10 @@ verzoek.
 **Stappen (uit het scenario, stap 5a):**
 
 1. Upload `levering-1.csv` met referentie `SCN-1` (zie flow 2). Antwoord: 201, batch 1.
-2. Herhaal exact hetzelfde verzoek:
-   ```bash
-   curl -F "file=@scripts/scenario/levering-1.csv" -F "deliveryReference=SCN-1" -F "uploadedBy=uw.naam" \
-        $A/tasks/$TASK/deliveries
+2. Herhaal exact hetzelfde verzoek (in de UI: hetzelfde bestand met dezelfde referentie, of "Herhaal met
+   dezelfde referentie"):
+   ```
+   POST $A/tasks/$TASK/deliveries    file=levering-1.csv, deliveryReference=SCN-1
    ```
 3. Verwacht: **HTTP 200** met dezelfde `batchId`. Er ontstaat geen tweede batch.
 
@@ -265,20 +292,20 @@ is een **nulmeting van de lokale bronstaat** en geen publicatie: er gaat niets n
 **Stappen:**
 
 1. Neem batch 1 uit flow 2 (`levering-1.csv`, 7 lijnen, 6 geldig, 1 afgewezen).
-2. **Aanvaard als nulmeting** (verplicht: `acceptedBy` en `reason`; `acceptedBy` niet `system`):
-   ```bash
-   curl -X POST $A/batches/$B1/accept-baseline -H "$J" \
-        -d '{"acceptedBy":"uw.naam","reason":"Scenario: eerste levering als baseline"}'
+2. **Aanvaard als nulmeting** (verplicht: `reason`; `acceptedBy` is optioneel en moet gelijk zijn aan uw
+   login, nooit `system`). In de UI: batchdetail, knop "Aanvaarden als nulmeting":
+   ```
+   POST $A/batches/$B1/accept-baseline
+   {"reason":"Scenario: eerste levering als baseline"}
    ```
    Verwacht: `{"batchId":..,"status":"BASELINE_ACCEPTED","skippedMutationCount":6}`. De zes `CREATE`-mutaties
    worden `SKIPPED` met reden `BASELINE_ACCEPTED_WITHOUT_PUBLICATION`; de `IMPORT_MARKER` blijft `RECORDED`.
    De bronstaat bevat nu zes aanbiedingen. Eén bevoegde persoon volstaat (geen vier-ogen).
    De afgewezen regel S-6 komt niet in de bronstaat.
-3. Controleer: `curl $A/batches/$B1` (status `BASELINE_ACCEPTED`) en `curl "$A/batches/$B1/mutations?size=50"`.
-4. **Upload de delta-levering** `levering-2.csv` (nieuwe referentie!):
-   ```bash
-   curl -F "file=@scripts/scenario/levering-2.csv" -F "deliveryReference=SCN-2" -F "uploadedBy=uw.naam" \
-        $A/tasks/$TASK/deliveries
+3. Controleer: `GET $A/batches/$B1` (status `BASELINE_ACCEPTED`) en `GET $A/batches/$B1/mutations?size=50`.
+4. **Upload de delta-levering** `levering-2.csv` (nieuwe referentie!). In de UI: `/upload`.
+   ```
+   POST $A/tasks/$TASK/deliveries    file=levering-2.csv, deliveryReference=SCN-2
    ```
    Verschillen met levering 1: S-1 kost nu `159,50` in plaats van `149,50`, en er is een nieuwe regel S-8.
 5. Verwacht voor deze tweede batch (afgeleid uit de CSV en de bronstaat van stap 2):
@@ -294,7 +321,7 @@ is een **nulmeting van de lokale bronstaat** en geen publicatie: er gaat niets n
 
    Mutaties: één `UPDATE` (S-1) en één `CREATE` (S-8), plus de marker. De vijf ongewijzigde regels geven
    **geen** mutatie: dat is de bedoeling van de nulmeting.
-6. Lees de statussen van die mutaties: `curl "$A/batches/$B2/mutations?size=50"`.
+6. Lees de statussen van die mutaties: `GET $A/batches/$B2/mutations?size=50`.
    - De `UPDATE` is `PLANNED`.
    - De `CREATE` van S-8 staat naar verwachting op `AWAITING_APPROVAL` met reden `BULK_CREATION_INCIDENT`:
      met `creationThresholdSharePercent` 10 en 6 bestaande aanbiedingen is 10% van 6 gelijk aan 0,6 en 1 creatie
@@ -314,7 +341,9 @@ regels `unchangedCount`. (Demo-voorbeeld in het hoofd-`README.md`: 10 ongewijzig
 | --- | --- |
 | 409 `BATCH_NOT_ACCEPTABLE` | batch is niet (meer) `SCREENED`, bv. al aanvaard |
 | 409 `BATCH_IN_PUBLICATION_BUNDLE` | batch zit al in een bundel |
-| 400 | `reason` of `acceptedBy` ontbreekt, of `acceptedBy` is `system` |
+| 400 | `reason` ontbreekt |
+| 403 `PERMISSION_DENIED` (accept-baseline vraagt `approve`) | u heeft het recht 'Goedkeuren' niet; wordt vóór de andere controles gegeven |
+| 400 `ACTOR_FIELD_MISMATCH` / 403 `SYSTEM_ACTOR_FORBIDDEN` | `acceptedBy` wijkt af van uw login / uw login-naam is `system` |
 | 409 `SOURCE_STATE_CHANGED_SINCE_SCREENING` | de bronstaat veranderde sinds de screening van deze batch (een andere batch van dezelfde koppeling werd eerst aanvaard); opnieuw uploaden |
 | Tweede levering toont weer alles als nieuw / `INITIAL_LOAD` | de eerste levering werd nog niet aanvaard; de bronstaat is leeg |
 
@@ -340,22 +369,24 @@ selecteren en toevoegen.
 
 API-route:
 
-1. Kandidaten (batches die in aanmerking komen): `curl "$A/bundles/candidates"` (optioneel `?importLinkId=`).
+1. Kandidaten (batches die in aanmerking komen): `GET $A/bundles/candidates` (optioneel `?importLinkId=`).
 2. Bundel aanmaken (idempotent op `bundleReference`; `targetMode` is verplicht):
-   ```bash
-   curl -X POST $A/bundles -H "$J" \
-        -d '{"bundleReference":"SCN-BUNDLE-1","description":"Scenario","targetMode":"SIMULATION","createdBy":"uw.naam"}'
+   ```
+   POST $A/bundles
+   {"bundleReference":"SCN-BUNDLE-1","description":"Scenario","targetMode":"SIMULATION"}
    ```
    Het antwoord bevat het id (`$BID`).
 3. Batch(es) toevoegen (alles of niets):
-   ```bash
-   curl -X POST $A/bundles/$BID/batches -H "$J" -d '{"batchIds":['$B2'],"addedBy":"uw.naam"}'
    ```
-4. Bekijken: `curl $A/bundles/$BID`, `curl "$A/bundles/$BID/mutations?size=50"`,
-   `curl $A/bundles/$BID/batches`.
+   POST $A/bundles/$BID/batches
+   {"batchIds":[<B2>]}
+   ```
+4. Bekijken: `GET $A/bundles/$BID`, `GET $A/bundles/$BID/mutations?size=50`,
+   `GET $A/bundles/$BID/batches`.
 5. Een batch weer verwijderen (reden verplicht; alleen zolang er geen beslissing op haar mutaties staat):
-   ```bash
-   curl -X POST $A/bundles/$BID/batches/$B2/remove -H "$J" -d '{"removedBy":"uw.naam","reason":"vergissing"}'
+   ```
+   POST $A/bundles/$BID/batches/$B2/remove
+   {"reason":"vergissing"}
    ```
 
 Vanaf hier kan de batch **niet meer** met `accept-baseline` aanvaard worden (409
@@ -365,11 +396,13 @@ Vanaf hier kan de batch **niet meer** met `accept-baseline` aanvaard worden (409
 
 **Individueel** — UI: bundel → tabblad **Mutaties** → knop goedkeuren of afkeuren op de rij. API:
 
-```bash
+```
 # goedkeuren (reden optioneel, verplicht bij een herziening)
-curl -X POST $A/bundles/$BID/mutations/$MID/approve -H "$J" -d '{"decidedBy":"uw.naam","reason":"bewust goedgekeurd"}'
+POST $A/bundles/$BID/mutations/$MID/approve
+{"reason":"bewust goedgekeurd"}
 # afkeuren (reden altijd verplicht)
-curl -X POST $A/bundles/$BID/mutations/$MID/reject  -H "$J" -d '{"decidedBy":"uw.naam","reason":"prijs onjuist"}'
+POST $A/bundles/$BID/mutations/$MID/reject
+{"reason":"prijs onjuist"}
 ```
 
 Effect: `READY_FOR_PUBLICATION` (goedgekeurd) of `REJECTED`. De beslissing (wie, wanneer, van welke status)
@@ -381,14 +414,15 @@ vraagt een reden en laat beide regels staan.
 werkt met exact de toegepaste lijstfilter (`GroupDecisionDialog.tsx`). API: één handeling over een
 gefilterde selectie:
 
-```bash
+```
 # alle PLANNED mutaties van de bundel goedkeuren
-curl -X POST $A/bundles/$BID/decisions -H "$J" \
-     -d '{"decisionKind":"APPROVE","decidedBy":"uw.naam","reason":"Scenario","filter":{"status":"PLANNED"}}'
+POST $A/bundles/$BID/decisions
+{"decisionKind":"APPROVE","reason":"Scenario","filter":{"status":"PLANNED"}}
 ```
 
 Het antwoord toont `decisionId`, `affectedCount` en `selectionFilter`. Regels:
 
+- Onbekende velden (topniveau of in `filter`) worden geweigerd met 400 `DECISION_FILTER_UNKNOWN_FIELD`.
 - **Minstens één filterveld** is verplicht, anders 400 `DECISION_FILTER_REQUIRED`. De velden:
   `batchId`, `status` (enkel `PLANNED` of `AWAITING_APPROVAL`), `statusReason` (exact, hoofdlettergevoelig,
   bv. `BULK_PRICE_INCIDENT`), `actionType` (enkel `CREATE` of `UPDATE`), `identityHash` (één wijzigingsgroep).
@@ -413,8 +447,8 @@ In het scenario: het `PLANNED`-filter keurt de ene `UPDATE` (S-1) goed. De `CREA
 UI: bundel → tabblad **Overzicht** → knop **Bevriezen** opent `FreezeDialog`, die de voorvlucht meteen
 laadt en toont. API:
 
-```bash
-curl $A/bundles/$BID/freeze-check
+```
+GET $A/bundles/$BID/freeze-check
 ```
 
 Antwoord: `freezable` (true/false), `blockerCodes` (de codes die bevriezen zou geven), `batchCount`,
@@ -429,14 +463,16 @@ opnieuw. Een niet-`ASSEMBLING` bundel is geen fout maar `freezable = false`. Onb
 `freeze` weigert zolang er mutaties op `AWAITING_APPROVAL` staan. Zo verloopt het in het scenario:
 
 1. Bevriezen zonder de wachtende creatie te beslissen:
-   ```bash
-   curl -X POST $A/bundles/$BID/freeze -H "$J" -d '{"frozenBy":"uw.naam","reason":"Scenario: simulatie bevriezen"}'
+   ```
+   POST $A/bundles/$BID/freeze
+   {"reason":"Scenario: simulatie bevriezen"}
    ```
    Verwacht: **409 `BUNDLE_HAS_UNDECIDED_MUTATIONS`**.
 2. De wachtende mutatie zoeken en individueel goedkeuren:
-   ```bash
-   curl "$A/bundles/$BID/mutations?status=AWAITING_APPROVAL"
-   curl -X POST $A/bundles/$BID/mutations/$MID/approve -H "$J" -d '{"decidedBy":"uw.naam","reason":"bulkcreatie bewust goedgekeurd"}'
+   ```
+   GET  $A/bundles/$BID/mutations?status=AWAITING_APPROVAL
+   POST $A/bundles/$BID/mutations/$MID/approve
+   {"reason":"bulkcreatie bewust goedgekeurd"}
    ```
 3. Opnieuw bevriezen (zelfde verzoek als stap 1). Verwacht: HTTP 200 met de volledige bundel, `status`
    `FROZEN`, tellers en `contentHash` (bundelhash).
@@ -444,22 +480,27 @@ opnieuw. Een niet-`ASSEMBLING` bundel is geen fout maar `freezable = false`. Onb
 Wat bevriezen doet, in één transactie: de voorwaarden controleren, alle resterende `PLANNED`-mutaties in
 bulk goedkeuren **op naam van de bevriezer** (beslissingssoort `AUTO_APPROVE_PLANNED`), de tellers en de
 bundelhash vaststellen, en de bundel afsluiten. Bij een fout blijft de bundel `ASSEMBLING`. Daarna kunnen er
-geen leden of beslissingen meer bij. `frozenBy` en `reason` zijn verplicht.
+geen leden of beslissingen meer bij. `reason` is verplicht; `frozenBy` is optioneel (de naam komt uit uw login).
 
 Wat bevriezen **niet** belet: `BLOCKED`-mutaties en identiteitsincidenten (die hebben in Fase 4 geen
 beslispad).
 
-Bekijken: `curl $A/bundles/$BID` (of het tabblad **Beslissingen**, zie README 4.3) en het register:
-`curl $A/bundles/$BID/decisions`. Dat register is alleen-toevoegen: een herziening voegt een regel toe.
+Optioneel, alleen via API: een read-only **PSIMPORT-preview** van de bevroren bundel:
+`GET $A/bundles/$BID/psimport-preview` (of `?format=csv`). Enkel voor `FROZEN` (anders 409
+`BUNDLE_NOT_FROZEN`), niet-contractueel (`previewOnly`, `UNVERIFIED_FIELD_INVENTORY`), niets wordt gepubliceerd.
+
+Bekijken: `GET $A/bundles/$BID` (of het tabblad **Beslissingen**, zie README 4.3) en het register:
+`GET $A/bundles/$BID/decisions`. Dat register is alleen-toevoegen: een herziening voegt een regel toe.
 
 ### 5.5 Annuleren (onomkeerbaar)
 
-UI: bundel → tabblad **Overzicht** → knop **Annuleren** opent `CancelDialog` (telt eerst hoeveel
-mutaties vervallen). API: annuleren kan vanuit `ASSEMBLING` **en** vanuit `FROZEN` (zolang Fase 5 niet
+UI: bundel → tabblad **Overzicht** → knop **Annuleren** opent `CancelDialog` (toont eerst hoeveel
+mutaties vervallen, uit `expirableCount` van de bundel; 0 is een geldig getal). API: annuleren kan vanuit `ASSEMBLING` **en** vanuit `FROZEN` (zolang Fase 5 niet
 begonnen is met publiceren):
 
-```bash
-curl -X POST $A/bundles/$BID/cancel -H "$J" -d '{"cancelledBy":"uw.naam","reason":"verkeerde batch"}'
+```
+POST $A/bundles/$BID/cancel
+{"reason":"verkeerde batch"}
 ```
 
 Effect: elke niet-terminale mutatie van de actieve leden wordt `EXPIRED`, de batches komen **vrij** (weer
@@ -480,7 +521,11 @@ is 409 `BUNDLE_NOT_CANCELLABLE`.
 | 409 `BUNDLE_OFFER_CONFLICT` | twee mutaties in de bundel raken dezelfde aanbieding: één afkeuren |
 | 409 `OFFER_ALREADY_IN_ANOTHER_BUNDLE` | die aanbieding is al bevroren in een andere bundel |
 | 400 `DECISION_FILTER_REQUIRED` | groepsbeslissing zonder filter |
-| 400 zonder code | reden of naam ontbreekt, of de actor is `system` |
+| 400 zonder code | reden ontbreekt |
+| 403 `PERMISSION_DENIED` | bundel aanmaken/batches beheren vragen `manage`; beslissen, bevriezen, annuleren vragen `approve`; wordt vóór 400/404/409 gegeven |
+| 503 `PERMISSION_SOURCE_UNAVAILABLE` | rechtenbron onbereikbaar; later opnieuw |
+| 400 `ACTOR_FIELD_MISMATCH` / 403 `SYSTEM_ACTOR_FORBIDDEN` | een meegegeven actorveld wijkt af van uw login / uw login-naam is `system` |
+| 401 `AUTHENTICATION_REQUIRED` / 403 `CSRF_TOKEN_INVALID` | geen sessie, of schrijfaanroep zonder `X-XSRF-TOKEN` |
 
 ---
 
@@ -493,12 +538,12 @@ foutgroepen; een batch op `MUTATING` toont de knop **Batch hervatten**, zie READ
 
 **Stappen:**
 
-1. Zoek de batch op in de werkvoorraad (flow 7) of via `curl "$A/batches?status=BLOCKED"`
+1. Zoek de batch op in de werkvoorraad (flow 7) of via `GET $A/batches?status=BLOCKED`
    (`status=FAILED`, `status=MUTATING` idem).
-2. Lees de batch: `curl $A/batches/$BATCHID`. Kijk naar `status`, `validationResult`, `blockedCode` en
+2. Lees de batch: `GET $A/batches/$BATCHID`. Kijk naar `status`, `validationResult`, `blockedCode` en
    `blockedReason`.
-3. Lees de details: `curl $A/batches/$BATCHID/issues` en `.../issue-groups`; de levering met
-   `curl $A/deliveries/$DELIVERYID`.
+3. Lees de details: `GET $A/batches/$BATCHID/issues` en `.../issue-groups`; de levering met
+   `GET $A/deliveries/$DELIVERYID`.
 4. Beslis op basis van de status:
 
 **`BLOCKED`** — de levering is onbruikbaar; er zijn geen inhoudelijke mutaties (wel een marker).
@@ -520,15 +565,15 @@ screenen: upload het bestand opnieuw met een **nieuwe** referentie. De exacte he
 **`MUTATING`** — de screening stopte halverwege de mutatiegeneratie; de batch is **hervatbaar** (de voortgang
 is per chunk vastgelegd):
 
-```bash
-curl -X POST $A/batches/$BATCHID/continue
+```
+POST $A/batches/$BATCHID/continue      (UI: knop "Batch hervatten")
 ```
 
 Antwoord: de eindstatus en tellers. Een technische fout blijft een 500; de batch blijft dan hervatbaar en u
 mag dezelfde aanroep herhalen. Een batch die niet op `MUTATING` staat: 409 `BATCH_NOT_RESUMABLE`.
 
-**`continue` wordt niet op naam vastgelegd.** Het endpoint heeft geen actorveld en is de enige
-schrijfactie zonder naam. Noteer zelf wie wat hervatte als dat nodig is.
+**`continue` wordt niet persistent op naam vastgelegd.** Het endpoint heeft geen actorveld; sinds 5-AUTH
+komt uw login-naam wel in een logregel van de server, maar niet in de database.
 
 **Veelvoorkomende fouten:** proberen dezelfde referentie opnieuw te gebruiken na een correctie
 (`DELIVERY_REFERENCE_REUSED_WITH_DIFFERENT_CONTENT` of een 200 met de oude, geblokkeerde batch); een teller
@@ -544,8 +589,8 @@ schrijfactie zonder naam. Noteer zelf wie wat hervatte als dat nodig is.
 
 **UI-stappen (scherm 0, `/`):**
 
-1. Open de app; de startpagina is de **Werkvoorraad**. Vul eerst uw naam in de actorbalk in (nodig voor
-   schrijfacties elders, niet voor deze pagina).
+1. Open de app op `http://localhost:5173`; u wordt bij Keycloak aangemeld en de startpagina is de
+   **Werkvoorraad**. Bovenaan staat "Aangemeld als ..." (uw naam uit het token) met een knop **Afmelden**.
 2. Lees de **telblokken**: totaal, per status (`SCREENED`, `BLOCKED`, `FAILED`, ...) en per eindoordeel
    (`VALID`, `VALID_WITH_WARNINGS`, `REVIEW_REQUIRED`, `BLOCKING`). De tegel **"Niet vastgesteld"** telt
    batches zonder eindoordeel. Lees die tegel nooit als "in orde".
@@ -559,9 +604,9 @@ schrijfactie zonder naam. Noteer zelf wie wat hervatte als dat nodig is.
 **Eerst kijken naar:** `BLOCKED` en `FAILED` (flow 6), eindoordeel `REVIEW_REQUIRED` of "Niet vastgesteld", en
 batches met een hoge teller bij "wacht op goedkeuring".
 
-**API-route:** `curl "$A/batches?status=SCREENED&validationResult=REVIEW_REQUIRED&size=20"` (parameters:
+**API-route:** `GET $A/batches?status=SCREENED&validationResult=REVIEW_REQUIRED&size=20` (parameters:
 `status`, `validationResult`, `importLinkId`, `createdFrom`, `createdTo`, `page`, `size`, vast gesorteerd op
-`id` aflopend) en `curl $A/batches/summary` (optioneel `?importLinkId=`).
+`id` aflopend) en `GET $A/batches/summary` (optioneel `?importLinkId=`).
 
 Een rij in de tabel linkt door naar het batchdetail (`/batches/:batchId`, zie README 4.2 en flow 2/6).
 

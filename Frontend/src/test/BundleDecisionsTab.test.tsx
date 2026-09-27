@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
+import { TEST_IDENTITY } from './testIdentity';
 import type { BundleDetail, DecisionRow } from '../api/types';
 import { BundleDecisionsTab } from '../features/bundles/BundleDecisionsTab';
 
@@ -81,7 +82,7 @@ function decisionsPage(content: DecisionRow[], totalElements?: number) {
 
 function renderTab(detail: BundleDetail) {
   return render(
-    <ActorProvider>
+    <ActorProvider identity={TEST_IDENTITY}>
       <MemoryRouter initialEntries={['/bundles/42/decisions']}>
         <Routes>
           <Route
