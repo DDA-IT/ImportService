@@ -105,6 +105,9 @@ class PermissionCoverageTest {
         m.put("GET /api/catalog-import/bundles/{}/publication-runs", "READ");
         m.put("GET /api/catalog-import/publication-runs/{}", "READ");
         m.put("GET /api/catalog-import/publication-runs/{}/artifact", "READ");
+        // Herstel van een vastgelopen PREPARING-run (docs/decisions.md 2026-09-27, optie A): zelfde
+        // rechtenconventie als het aanvragen zelf.
+        m.put("POST /api/catalog-import/publication-runs/{}/abort", "APPROVE");
         // Leveringen, koppelingen, taken
         m.put("POST /api/catalog-import/tasks/{}/deliveries", "MANAGE");
         // Tweede ontvangstweg (beslissingslog 2026-09-27, D8): het lijsten van de servermap vraagt MANAGE en
@@ -116,6 +119,11 @@ class PermissionCoverageTest {
         m.put("GET /api/catalog-import/tasks", "READ");
         // Setup
         m.put("GET " + s + "/overview", "READ");
+        // Inrichtingsendpoints voor scherm 1a (S1-B1, beslissingslog 27/09 keuze A1): buiten de
+        // setup-API-vlag, dus geen "/setup"-prefix.
+        m.put("GET /api/catalog-import/source-organisations", "READ");
+        m.put("GET /api/catalog-import/definitions", "READ");
+        m.put("GET /api/catalog-import/definitions/{}/revisions", "READ");
         for (String p : new String[] {"/source-organisations", "/definitions", "/definitions/{}/revisions",
                 "/revisions/{}/activate", "/revisions/{}/mappings", "/revisions/{}/filters",
                 "/revisions/{}/field-criticality", "/links", "/tasks"}) {
@@ -130,6 +138,8 @@ class PermissionCoverageTest {
         m.put("POST " + t + "/{}/materialisations", "MANAGE");
         m.put("GET /api/catalog-import/links/{}/bookmark-values", "READ");
         m.put("PUT /api/catalog-import/links/{}/bookmark-values/{}", "MANAGE");
+        // Behandelgeval (S2-B2, docs/design/issue-case-design.md par. 4): enkel MANAGE (design A5).
+        m.put("POST /api/catalog-import/issue-cases/{}/status", "MANAGE");
         // /me
         m.put("GET /api/catalog-import/me", NONE);
         return m;

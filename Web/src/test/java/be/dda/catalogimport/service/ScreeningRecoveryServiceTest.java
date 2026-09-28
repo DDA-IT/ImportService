@@ -8,6 +8,7 @@ import be.dda.catalogimport.dao.CandidateStageDao;
 import be.dda.catalogimport.dao.CandidateStageDao.StageRow;
 import be.dda.catalogimport.dao.CatalogImportTaskRepository;
 import be.dda.catalogimport.dao.ImportBatchRepository;
+import be.dda.catalogimport.dao.IssueCaseDao;
 import be.dda.catalogimport.dao.IssueGroupDao;
 import be.dda.catalogimport.dao.ImportDefinitionRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
@@ -99,6 +100,8 @@ class ScreeningRecoveryServiceTest {
     private RowIssueDao rowIssues;
     @Autowired
     private IssueGroupDao issueGroups;
+    @Autowired
+    private IssueCaseDao issueCases;
     @Autowired
     private PlatformTransactionManager transactionManager;
     @Autowired
@@ -205,12 +208,12 @@ class ScreeningRecoveryServiceTest {
         assertThat(batches.findById(stuck.batchId()).orElseThrow().getStatus()).isEqualTo(ImportBatchStatus.SCREENING);
 
         ScreeningRecoveryService disabled = new ScreeningRecoveryService(batches, runs, stage, rowIssues,
-                issueGroups, transactionManager, false);
+                issueGroups, issueCases, transactionManager, false);
         disabled.onApplicationReady();
         assertThat(batches.findById(stuck.batchId()).orElseThrow().getStatus()).isEqualTo(ImportBatchStatus.SCREENING);
 
         ScreeningRecoveryService enabled = new ScreeningRecoveryService(batches, runs, stage, rowIssues,
-                issueGroups, transactionManager, true);
+                issueGroups, issueCases, transactionManager, true);
         enabled.onApplicationReady();
         ImportBatch batch = batches.findById(stuck.batchId()).orElseThrow();
         assertThat(batch.getStatus()).isEqualTo(ImportBatchStatus.FAILED);

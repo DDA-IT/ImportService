@@ -281,6 +281,22 @@ export function publicationRunGate(
   return ALLOWED;
 }
 
+/**
+ * Herstel van een vastgelopen run (`docs/decisions.md` 2026-09-27, optie A) — mag "Afbreken" aangeboden
+ * worden voor déze run? Geen tijdsvoorwaarde (expliciete menskeuze): enkel de status telt. Spiegel van de
+ * backend, nooit de bron van waarheid — een 409 `PUBLICATION_RUN_NOT_STUCK` van de server wordt altijd
+ * getoond, ook wanneer deze poort "toegestaan" zei.
+ */
+export function abortRunGate(run: PublicationRunView): Gate {
+  if (run.status !== 'PREPARING') {
+    return denied(
+      `Kan niet afbreken: deze run staat niet (meer) op PREPARING (status ${run.status}) ` +
+        '(PUBLICATION_RUN_NOT_STUCK).',
+    );
+  }
+  return ALLOWED;
+}
+
 /** Alle blokkades uit de voorvlucht, in de volgorde van de server (R-FRZ), elk met een leesbare reden. */
 export function freezeBlockers(preflight: FreezePreflight): string[] {
   const reasons = preflight.blockerCodes.map((code) => freezeBlockerReason(code, preflight));

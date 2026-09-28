@@ -79,7 +79,8 @@ class PermissionWriteEndpointsHttpTest {
     private static final String[] TABLES = {"source_organisation", "import_definition", "import_definition_revision",
             "import_field_mapping", "import_record_filter", "import_revision_field_criticality", "import_link",
             "catalog_import_task", "delivery", "import_batch", "publication_bundle", "publication_bundle_batch",
-            "import_definition_bookmark", "import_definition_bookmark_usage", "import_link_bookmark_value"};
+            "import_definition_bookmark", "import_definition_bookmark_usage", "import_link_bookmark_value",
+            "issue_case", "issue_case_event"};
 
     @TempDir
     static Path archiveRoot;
@@ -125,6 +126,8 @@ class PermissionWriteEndpointsHttpTest {
         denied(post(API + "/bundles"), "{\"bundleReference\":\"X\",\"targetMode\":\"SIMULATION\"}");
         denied(post(API + "/bundles/{id}/batches", 1L), "{\"batchIds\":[1]}");
         denied(post(API + "/bundles/{id}/batches/{b}/remove", 1L, 1L), "{\"reason\":\"x\"}");
+        denied(post(API + "/issue-cases/{id}/status", 1L),
+                "{\"newStatus\":\"CORRECTED\",\"expectedStatus\":\"AWAITING_REVIEW\",\"reason\":\"x\"}");
 
         denied(post(API + "/setup/source-organisations"), "{}");
         denied(post(API + "/setup/definitions"), "{}");
@@ -216,6 +219,8 @@ class PermissionWriteEndpointsHttpTest {
         forbiddenSystem(post(API + "/batches/{id}/continue", 1L), "");
         forbiddenSystem(post(API + "/batches/{id}/accept-baseline", 1L), "{\"reason\":\"x\"}");
         forbiddenSystem(post(API + "/bundles"), "{\"bundleReference\":\"X\",\"targetMode\":\"SIMULATION\"}");
+        forbiddenSystem(post(API + "/issue-cases/{id}/status", 1L),
+                "{\"newStatus\":\"CORRECTED\",\"expectedStatus\":\"AWAITING_REVIEW\",\"reason\":\"x\"}");
         forbiddenSystem(post(API + "/setup/definitions"), "{}");
         forbiddenSystem(post(API + "/templates/{d}/materialisations", 1L), "{}");
         forbiddenSystem(put(API + "/links/{id}/bookmark-values/{name}", 1L, "X"), "{\"value\":\"NL\"}");
@@ -244,6 +249,12 @@ class PermissionWriteEndpointsHttpTest {
         json(post(API + "/batches/{id}/accept-baseline", unknown), as(USER, Permission.MANAGE),
                 "{\"reason\":\"x\"}")
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+        json(post(API + "/issue-cases/{id}/status", unknown), as(USER, Permission.READ),
+                "{\"newStatus\":\"CORRECTED\",\"expectedStatus\":\"AWAITING_REVIEW\",\"reason\":\"x\"}")
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+        json(post(API + "/issue-cases/{id}/status", unknown), as(USER, Permission.MANAGE),
+                "{\"newStatus\":\"CORRECTED\",\"expectedStatus\":\"AWAITING_REVIEW\",\"reason\":\"x\"}")
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("ISSUE_CASE_NOT_FOUND"));
         json(post(API + "/bundles/{id}/batches", unknown), withoutPermissions(USER), "{\"batchIds\":[1]}")
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
 

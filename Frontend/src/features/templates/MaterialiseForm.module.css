@@ -1,0 +1,126 @@
+.form {
+  max-width: 36rem;
+  padding: var(--spacing-4);
+  margin: 0 0 var(--spacing-6) 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.title {
+  margin: 0 0 var(--spacing-3) 0;
+  font-size: 1.05rem;
+}
+
+.revisionRow {
+  margin: 0 0 var(--spacing-4) 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.supersededNote {
+  font-style: italic;
+}
+
+.input,
+.select {
+  width: 100%;
+  padding: var(--spacing-2);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.input:disabled {
+  background: var(--color-surface-muted, #f3f4f6);
+  cursor: not-allowed;
+}
+
+.fieldset {
+  margin: 0 0 var(--spacing-4) 0;
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.legend {
+  padding: 0 var(--spacing-1);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.scopeNote,
+.fromBookmark {
+  margin: 0 0 var(--spacing-3) 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.bookmarkRow {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: 0 0 var(--spacing-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.checkboxRow {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.empty {
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.actorRow {
+  margin: 0 0 var(--spacing-4) 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.validationError {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--status-rejected-bg);
+  color: var(--status-rejected-text);
+  font-size: 0.875rem;
+}
+
+.notice {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+  font-size: 0.875rem;
+}
+
+.notice p {
+  margin: 0;
+}
+
+.warnings {
+  margin: var(--spacing-2) 0 0 0;
+  padding-left: var(--spacing-4);
+  font-size: 0.8125rem;
+}
+
+.submit {
+  padding: var(--spacing-2) var(--spacing-4);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: white;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

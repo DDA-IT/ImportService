@@ -18,12 +18,15 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.io.Writer;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -85,6 +88,16 @@ import org.springframework.transaction.support.TransactionTemplate;
  * {@code NOT_SNAPSHOTTED}-veld. Voor een bundel die bevroren werd vóór de bundelsnapshot bestond, zijn
  * dat <b>alle</b> rijen (keuze mens 2026-09-26: zo'n bundel mag een run krijgen, met zichtbare
  * onvolledigheid). Er wordt nooit een waarde stil ingevuld, leeggemaakt of op 0 gezet.
+ *
+ * <h2>Herstel van een vastgelopen {@code PREPARING}-run</h2>
+ * Een run die tussen het aanmaken en het afronden door een proces- of serverfout blijft staan, houdt
+ * {@code PREPARING} met de marker vast en blokkeert daarmee elke volgende run op die bundel (ontwerp par. 7;
+ * er is bewust geen scheduler, par. 5). {@code docs/decisions.md} 2026-09-27 ("herstel van een vastgelopen
+ * PREPARING-publicatierun") kiest <b>beide</b> herstelpaden: {@link #requestRun} ruimt zo'n run zelf op zodra
+ * ze langer dan {@link #stuckAfter} (config {@code catalogimport.publication-run.stuck-after}, default 60
+ * minuten) op {@code PREPARING} staat ({@link #FAILURE_TIMED_OUT}), en {@link #abortRun} laat wie
+ * {@code APPROVE} heeft een {@code PREPARING}-run op elk moment handmatig afbreken, zonder tijdsvoorwaarde
+ * ({@link #FAILURE_MANUALLY_ABORTED}). Beide hergebruiken {@link PublicationRun#recordFailed}.
  */
 @Service
 public class PublicationRunService {
@@ -117,11 +130,26 @@ public class PublicationRunService {
     public static final String CODE_RUN_NOT_FOUND = "PUBLICATION_RUN_NOT_FOUND";
     /** De run bestaat wel, maar draagt (nog) geen artefact (409): enkel een {@code SIMULATED}-run heeft er een. */
     public static final String CODE_ARTIFACT_NOT_AVAILABLE = "PUBLICATION_RUN_ARTIFACT_NOT_AVAILABLE";
+    /**
+     * De run bestaat, maar staat niet op {@code PREPARING} (409): enkel een vastgelopen {@code PREPARING}-run
+     * kan afgebroken worden ({@code docs/decisions.md} 2026-09-27 "herstel van een vastgelopen
+     * PREPARING-publicatierun", optie A). Geen tijdsvoorwaarde: elke {@code PREPARING}-run mag op elk moment
+     * afgebroken worden door wie {@code APPROVE} heeft.
+     */
+    public static final String CODE_RUN_NOT_STUCK = "PUBLICATION_RUN_NOT_STUCK";
 
     /** {@code failure_code}: het artefact kon niet naar het bestandssysteem geschreven worden. */
     public static final String FAILURE_ARTIFACT_WRITE_FAILED = "ARTIFACT_WRITE_FAILED";
     /** {@code failure_code}: het lezen of afbeelden van de bundelrijen liep mis. */
     public static final String FAILURE_PROJECTION_FAILED = "PROJECTION_FAILED";
+    /**
+     * {@code failure_code}: een eerdere aanvraag bleef op {@code PREPARING} hangen (server-/procescrash
+     * tijdens het bouwen van het artefact) en werd bij de eerstvolgende {@link #requestRun} voor die bundel
+     * automatisch als mislukt afgesloten (optie B, geen scheduler: de controle gebeurt enkel op aanvraag).
+     */
+    public static final String FAILURE_TIMED_OUT = "FAILURE_TIMED_OUT";
+    /** {@code failure_code}: een {@code PREPARING}-run werd expliciet afgebroken via {@link #abortRun} (optie A). */
+    public static final String FAILURE_MANUALLY_ABORTED = "FAILURE_MANUALLY_ABORTED";
 
     /** {@code publication_run.requested_by}: varchar(100). */
     static final int MAX_ACTOR_LENGTH = 100;
@@ -190,11 +218,13 @@ public class PublicationRunService {
     private final PublicationArtifactStore artifacts;
     private final TransactionTemplate transaction;
     private final Clock clock;
+    private final Duration stuckAfter;
 
     public PublicationRunService(PublicationRunRepository runs, PublicationBundleRepository bundles,
                                  PublicationBundleDao bundleDao, PsimportPreviewDao previewDao,
                                  PublicationArtifactStore artifacts,
-                                 PlatformTransactionManager transactionManager, Clock clock) {
+                                 PlatformTransactionManager transactionManager, Clock clock,
+                                 @Value("${catalogimport.publication-run.stuck-after:PT60M}") Duration stuckAfter) {
         this.runs = runs;
         this.bundles = bundles;
         this.bundleDao = bundleDao;
@@ -202,6 +232,7 @@ public class PublicationRunService {
         this.artifacts = artifacts;
         this.transaction = new TransactionTemplate(transactionManager);
         this.clock = clock;
+        this.stuckAfter = stuckAfter;
     }
 
     /**
@@ -299,6 +330,41 @@ public class PublicationRunService {
         return artifacts.open(reference);
     }
 
+    /**
+     * Breekt een vastgelopen run handmatig af (optie A, {@code docs/decisions.md} 2026-09-27): wie
+     * {@code APPROVE} heeft, mag een {@code PREPARING}-run op elk moment afbreken, op eigen oordeel — er is
+     * <b>bewust geen tijdsvoorwaarde</b> (afwijking van de aanbeveling van de denker, expliciete menskeuze).
+     * De run wordt {@code FAILED} met {@link #FAILURE_MANUALLY_ABORTED}, waarna de marker vrijkomt en een
+     * volgende aanvraag voor deze bundel gewoon weer kan slagen.
+     * <p>
+     * Er is geen kolom om wie dit deed vast te leggen (geen nieuwe migratie nodig, zie het beslissingsblok);
+     * de aanvrager wordt daarom net als bij een technische mislukking in {@code failure_message} bewaard, en
+     * in de logregel met het volledige subject.
+     *
+     * @param actor verplicht; dezelfde naamregels als een handtekening elders in dit domein
+     * @return de runview met status {@code FAILED}
+     * @throws NotFoundException        {@link #CODE_RUN_NOT_FOUND}
+     * @throws ConflictException        {@link #CODE_RUN_NOT_STUCK} — de run is niet (meer) {@code PREPARING}
+     * @throws IllegalArgumentException ontbrekende of ongeldige aanvrager
+     */
+    @Transactional
+    public PublicationRunView abortRun(long runId, ActorIdentity actor) {
+        if (actor == null) {
+            throw new IllegalArgumentException("Missing abortedBy");
+        }
+        String aborter = ActorNames.requireActorName(actor.username(), "abortedBy", MAX_ACTOR_LENGTH);
+        PublicationRun run = requireRun(runId);
+        if (run.getStatus() != PublicationRunStatus.PREPARING) {
+            throw new ConflictException(CODE_RUN_NOT_STUCK, "Publication run " + runId + " is " + run.getStatus()
+                    + "; only a PREPARING run can be aborted");
+        }
+        run.recordFailed(clock.instant(), FAILURE_MANUALLY_ABORTED, "Manually aborted by " + aborter);
+        runs.saveAndFlush(run);
+        LOG.info("Publication run {} for bundle {} manually aborted by {} (subject {})", runId,
+                run.getBundle().getId(), aborter, actor.subject());
+        return PublicationRunView.of(run, run.getBundle().getSnapshotSpecVersion());
+    }
+
     // --- Stap 1: de runrij ---------------------------------------------------------------------------
 
     /**
@@ -310,6 +376,14 @@ public class PublicationRunService {
      * garantie komt van {@code uk_publication_run_active}. Een tweede gelijktijdige aanvraag die het slot
      * net te laat krijgt, botst op die constraint en wordt hier eveneens 409
      * {@link #CODE_PUBLICATION_RUN_IN_PROGRESS} — nooit een naamloze 500.
+     * <p>
+     * <b>Automatische timeout (optie B, {@code docs/decisions.md} 2026-09-27):</b> vóór die weigering wordt
+     * gecontroleerd of de bestaande actieve run {@code PREPARING} is én haar {@code started_at} ouder is dan
+     * {@link #stuckAfter}. Zo ja, dan is er geen scheduler die dit ooit zou opmerken (ontwerp par. 5 verbiedt
+     * er één): deze aanvraag ruimt de vastgelopen run zelf op ({@code FAILED}/{@link #FAILURE_TIMED_OUT}, met
+     * een expliciete logregel — een volgende aanvrager "erft" dit nooit stilzwijgend) en gaat daarna gewoon
+     * door, zonder 409. Is de actieve run niet {@code PREPARING} of nog binnen de drempel, dan blijft het
+     * bestaande gedrag ongewijzigd.
      */
     private RunStart createRun(long bundleId, PublicationTargetMode mode, String requester,
                                String requesterSubject) {
@@ -320,7 +394,10 @@ public class PublicationRunService {
                 throw new ConflictException(CODE_BUNDLE_NOT_FROZEN, "Bundle " + bundleId + " is "
                         + bundle.getStatus() + "; only a FROZEN bundle can be published");
             }
-            if (runs.countByBundleIdAndActiveMarkerIsNotNull(bundleId) > 0) {
+            Optional<PublicationRun> active = runs.findByBundleIdAndActiveMarkerIsNotNull(bundleId);
+            if (active.isPresent() && isStuck(active.get())) {
+                timeOut(active.get());
+            } else if (active.isPresent()) {
                 throw new ConflictException(CODE_PUBLICATION_RUN_IN_PROGRESS, "Bundle " + bundleId
                         + " already has a publication run in progress; wait for it to finish");
             }
@@ -350,6 +427,32 @@ public class PublicationRunService {
                     bundle.getSnapshotHash() == null ? null : hex.formatHex(bundle.getSnapshotHash()),
                     bundle.getSnapshotSpecVersion());
         });
+    }
+
+    /**
+     * Is deze actieve run vastgelopen: status {@code PREPARING} en {@code started_at} langer dan
+     * {@link #stuckAfter} geleden? Een {@code REQUESTED}-run (het korte moment vóór {@code markPreparing}
+     * binnen dezelfde transactie) telt hier bewust niet mee — dat venster is te kort om ooit van buiten deze
+     * transactie zichtbaar te zijn, en de mens koos expliciet voor enkel {@code PREPARING}.
+     */
+    private boolean isStuck(PublicationRun run) {
+        return run.getStatus() == PublicationRunStatus.PREPARING && run.getStartedAt() != null
+                && Duration.between(run.getStartedAt(), clock.instant()).compareTo(stuckAfter) > 0;
+    }
+
+    /**
+     * Sluit een vastgelopen {@code PREPARING}-run automatisch af ({@code FAILED}/{@link #FAILURE_TIMED_OUT}),
+     * zodat de marker vrijkomt en de aanroepende aanvraag meteen kan doorgaan. Een expliciete logregel: een
+     * volgende aanvrager "erft" het opruimen van andermans vastgelopen run nooit stilzwijgend.
+     */
+    private void timeOut(PublicationRun run) {
+        Instant now = clock.instant();
+        run.recordFailed(now, FAILURE_TIMED_OUT, "Automatically timed out: still PREPARING after more than "
+                + stuckAfter + " (started at " + run.getStartedAt() + ")");
+        runs.saveAndFlush(run);
+        LOG.info("Publication run {} for bundle {} automatically timed out (PREPARING since {}, threshold {}); "
+                        + "a new request may now proceed", run.getId(), run.getBundle().getId(),
+                run.getStartedAt(), stuckAfter);
     }
 
     /**

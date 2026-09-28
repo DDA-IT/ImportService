@@ -461,8 +461,9 @@ public class BatchQueryService {
     }
 
     /**
-     * De regelproblemen van een batch, oplopend op bronregelnummer, optioneel beperkt tot één
-     * foutgroep.
+     * De regelproblemen van een batch, oplopend op bronregelnummer (met NULL-waarden achteraan —
+     * leveringsproblemen zonder rijnummer zijn minder specifiek dan regelproblemen en komen dus na),
+     * optioneel beperkt tot één foutgroep.
      *
      * @param issueGroupId enkel de voorbeeldrijen van deze groep; {@code null} voor alle problemen.
      *                     Een onbekende groep levert een lege pagina op en geen fout: de groep kan
@@ -473,7 +474,9 @@ public class BatchQueryService {
      */
     public PageResult<IssueRow> getIssues(long batchId, Long issueGroupId, Integer page, Integer size) {
         requireBatch(batchId);
-        PageRequest pageRequest = pageRequest(page, size, Sort.by("rowNumber", "id"));
+        // Sortering (rowNumber met NULLS LAST, dan id) is in de @Query van ImportRowIssueRepository
+        // vastgelegd, dus hier geven we Sort.unsorted() door zodat de Pageable die niet overschrijft.
+        PageRequest pageRequest = pageRequest(page, size);
         return PageResult.of(issueGroupId == null
                         ? issues.findByBatchId(batchId, pageRequest)
                         : issues.findByBatchIdAndIssueGroupId(batchId, issueGroupId, pageRequest),

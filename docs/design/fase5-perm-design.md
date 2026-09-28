@@ -22,6 +22,8 @@ leidt het effectieve recht af (één plek: `CurrentActor`/`PermissionService`). 
 | `POST /bundles/{id}/publication-runs` (5P-8, zie `fase5-pub-design.md` §4) | APPROVE |
 | `GET /bundles/{id}/publication-runs`, `GET /publication-runs/{runId}`, `GET /publication-runs/{runId}/artifact` (5P-8) | READ |
 | `POST /tasks/{taskId}/deliveries` (upload) | MANAGE |
+| `GET /local-source/files` (tweede ontvangstweg; bewust MANAGE, niet READ — zie D8, `docs/decisions.md` 2026-09-27) | MANAGE |
+| `POST /tasks/{taskId}/deliveries/local-source` (tweede ontvangstweg, inlezen uit servermap) | MANAGE |
 | `GET /deliveries/{id}`, `GET /import-links`, `GET /tasks` | READ |
 | `GET /setup/overview`, `GET /templates`, `/…/bookmarks`, `/…/materialisations`, `GET /links/{id}/bookmark-values` | READ |
 | `POST /setup/**`, `POST /templates/**`, `PUT /links/{id}/bookmark-values/{name}` | MANAGE |

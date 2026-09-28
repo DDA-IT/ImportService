@@ -102,12 +102,17 @@ describe('BundlePublicationTab', () => {
   const originalFetch = global.fetch;
   let runs: PublicationRunView[] = [];
   let requestResponse: { body: unknown; status: number } = { body: run(), status: 200 };
+  let abortResponse: { body: unknown; status: number } = { body: run({ status: 'FAILED' }), status: 200 };
 
   beforeEach(() => {
     runs = [];
     requestResponse = { body: run(), status: 200 };
+    abortResponse = { body: run({ status: 'FAILED', failureCode: 'FAILURE_MANUALLY_ABORTED' }), status: 200 };
     global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
+      if ((init?.method ?? 'GET') === 'POST' && url.includes('/abort')) {
+        return Promise.resolve(jsonResponse(abortResponse.body, abortResponse.status));
+      }
       if ((init?.method ?? 'GET') === 'POST' && url.includes('/publication-runs')) {
         return Promise.resolve(jsonResponse(requestResponse.body, requestResponse.status));
       }
@@ -185,5 +190,43 @@ describe('BundlePublicationTab', () => {
     renderTab(bundle());
 
     expect(await screen.findByText(/3 regel\(en\) zijn onvolledig/)).toBeInTheDocument();
+  });
+
+  it('een PREPARING-run toont een Afbreken-knop die de run afbreekt en de lijst herlaadt', async () => {
+    runs = [run({ id: 11, status: 'PREPARING' })];
+    renderTab(bundle());
+
+    const button = await screen.findByRole('button', { name: 'Afbreken' });
+    expect(button).toBeEnabled();
+
+    runs = [];
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      const post = vi.mocked(global.fetch).mock.calls.find((call) => call[0]?.toString().includes('/abort'));
+      expect(post).toBeDefined();
+    });
+    const post = vi.mocked(global.fetch).mock.calls.find((call) => call[0]?.toString().includes('/abort'));
+    expect(post?.[0]?.toString()).toContain('/publication-runs/11/abort');
+    expect(post?.[1]?.method).toBe('POST');
+  });
+
+  it('een niet-PREPARING-run toont geen Afbreken-knop', async () => {
+    runs = [run({ id: 12, status: 'SIMULATED' })];
+    renderTab(bundle());
+
+    await screen.findByText(/SHA-256/);
+    expect(screen.queryByRole('button', { name: 'Afbreken' })).not.toBeInTheDocument();
+  });
+
+  it('een mislukt afbreken toont de foutmelding', async () => {
+    runs = [run({ id: 13, status: 'PREPARING' })];
+    abortResponse = { body: { error: 'Publication run 13 is SIMULATED', code: 'PUBLICATION_RUN_NOT_STUCK' }, status: 409 };
+    renderTab(bundle());
+
+    const button = await screen.findByRole('button', { name: 'Afbreken' });
+    fireEvent.click(button);
+
+    expect(await screen.findByText(/Run kan niet afgebroken worden/)).toBeInTheDocument();
   });
 });

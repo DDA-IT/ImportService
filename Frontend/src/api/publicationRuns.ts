@@ -29,3 +29,12 @@ export function listRuns(bundleId: number, signal?: AbortSignal): Promise<Public
 export function getRun(runId: number, signal?: AbortSignal): Promise<PublicationRunView> {
   return request<PublicationRunView>(`/publication-runs/${runId}`, { signal });
 }
+
+/**
+ * POST /publication-runs/{runId}/abort — PublicationRunController.abort (herstel van een vastgelopen
+ * PREPARING-run, `docs/decisions.md` 2026-09-27, optie A). Geen body en geen actorveld: de aanvrager komt
+ * uit de login, net als `continueBatch`.
+ */
+export function abortRun(runId: number, signal?: AbortSignal): Promise<PublicationRunView> {
+  return request<PublicationRunView>(`/publication-runs/${runId}/abort`, { method: 'POST', signal });
+}

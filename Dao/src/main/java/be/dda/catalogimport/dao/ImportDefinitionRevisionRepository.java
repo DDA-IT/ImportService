@@ -5,6 +5,8 @@ import be.dda.catalogimport.domain.RevisionStatus;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -36,4 +38,14 @@ public interface ImportDefinitionRevisionRepository extends JpaRepository<Import
             + "where r.importDefinition.id in :definitionIds order by r.revisionNumber asc")
     List<ImportDefinitionRevision> findWithOriginByImportDefinitionIdIn(
             @Param("definitionIds") Collection<Long> definitionIds);
+
+    /**
+     * Opzoeklijst voor scherm 1a (S1-B1, buiten {@code catalogimport.setup-api.enabled}): alle revisies
+     * van één definitie, oplopend op {@code revisionNumber}.
+     */
+    @Query(value = "select r from ImportDefinitionRevision r where r.importDefinition.id = :definitionId "
+            + "order by r.revisionNumber asc",
+            countQuery = "select count(r) from ImportDefinitionRevision r "
+                    + "where r.importDefinition.id = :definitionId")
+    Page<ImportDefinitionRevision> findByDefinitionId(@Param("definitionId") long definitionId, Pageable pageable);
 }

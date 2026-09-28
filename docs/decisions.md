@@ -1290,3 +1290,110 @@ Daarnaast worden de vijf externe blokkades uit de gap-analyse (Keycloak-client +
 
 **Bewust nog niet:** bestandsvoorwaarden/voorwaardebouwer, per-koppeling-mappen, submappen, automatisch opruimen/verplaatsen, "minstens N seconden ongewijzigd"-versheidsfilter, en het volledige `Leveringsconfiguratie`+scheduler+connectormodel.
 **Bron:** mens (Q1, Q2) / denker-zwaar (ontwerp "tweede ontvangstweg — lokale servermap", 2026-09-27) / businessanalyse-catalogimport.md §9.1, business-analyse-leveranciersbibliotheken.md §14.17
+
+## 2026-09-27 — Ontwerp bindend: herstel van een vastgelopen PREPARING-publicatierun
+**Vraag:** `docs/design/fase5-pub-design.md` §7 markeerde expliciet "een aparte beslissing nodig" over herstel van een `publication_run` die op `PREPARING` blijft hangen (enkel bereikbaar via een servercrash tijdens de synchrone aanvraag — geen normaal foutpad, want elke gewone exception leidt al naar `FAILED`). Zolang dat niet hersteld wordt, blokkeert zo'n rij de bundel voorgoed (hoogstens één actieve run per bundel). Een denker-gemiddeld (27/09) werkte twee opties uit: (A) een expliciet "afbreken"-endpoint, (B) een automatische timeout-controle bij de eerstvolgende aanvraag (geen scheduler — dat zou de expliciete §5-ontwerpgrens "geen scheduler/retry-lus" doorbreken).
+**Beslissing:** Door de mens, alle vier deelvragen volgens de aanbeveling van de denker op drie na:
+- **Aanpak: beide.** Optie B (automatische timeout bij de eerstvolgende `requestRun`-aanvraag voor die bundel, geen achtergrondscheduler) als zelfherstellend vangnet, plus optie A (een expliciet `POST /publication-runs/{runId}/abort`-endpoint, recht `APPROVE` — consistent met de bestaande rechtenconventie voor bundel-levenscyclusacties) voor wie niet wil wachten. Beide hergebruiken dezelfde onderliggende Service-logica (`recordFailed` op `PublicationRun` bestaat al, geen nieuwe domeinovergang nodig) — geen dubbele code.
+- **Drempel: 60 minuten** (ruimer dan de aanbevolen 30 — expliciete menskeuze), als configuratieproperty (patroon van andere `catalogimport.*`-properties, bv. `catalogimport.publication-run.stuck-after`), geen hardcoded waarde.
+- **Voorwaarde bij A: geen tijdsvoorwaarde** (afwijking van de aanbeveling van de denker, die de drempel ook op A wilde toepassen). Wie `APPROVE` heeft, kan een `PREPARING`-run op elk moment handmatig afbreken, op eigen oordeel — geen 409 als de drempel nog niet verstreken is.
+- **Foutcodes: akkoord.** Nieuwe `failure_code`-waarden `FAILURE_TIMED_OUT` (optie B) en `FAILURE_MANUALLY_ABORTED` (optie A).
+Geen nieuwe Liquibase-migratie nodig: `started_at` bestaat al (changeset 009-1) als basis voor de timeout-controle; status/`finished_at`/`failure_code` bestaan al. Complexiteit van de bouwstap: Service + Web (+ een "Afbreken"-knop op een `PREPARING`-run in `BundlePublicationTab.tsx`), bestaande patronen, geen open architectuurvraag meer — bouwer-gemiddeld.
+**Bron:** mens (vier deelvragen) / denker-gemiddeld (ontwerp "herstel vastgelopen publicatierun", 2026-09-27) / docs/design/fase5-pub-design.md §7
+
+## 2026-09-27 — Heropening scherm 1a/1b: bereikbaarheid, mutatie-omvang en scope van 1b
+**Vraag:** Scherm 1a (beheer/inrichting) en 1b (leveringsconfiguratie/sjabloonwizard) waren op 22/09 uitgesteld "tot na Fase 5/Keycloak" — die voorwaarde is nu vervuld. Een denker-zwaar Fase 0-intake (27/09) vond dat de vervalconditie bereikt is, maar dat drie andere, nog niet genomen keuzes de heropening blokkeren: (A1) de setup-API-vlag zegt expliciet "vlag uit = endpoints bestaan niet, ongeacht rechten" (26/09), wat botst met "productiewaardig beheerscherm" (22/09); (A2) de bestaande setup-API is create-only (geen wijzigen/deactiveren); (A3) 1b zoals de businessanalyse (§14.17) het oorspronkelijk definieert (ophaalwijze/connector/planning/credentials) botst met de op 27/09 vastgelegde ontwerpgrens "geen Leveringsconfiguratie-entiteit, geen scheduler" én met het nog ontbrekende sleutelbeheerontwerp.
+**Beslissing:** Door de mens, alle drie volgens de aanbeveling van de denker:
+- **A1 — bereikbaarheid:** nieuwe alleen-lezen inrichtingsendpoints (`GET /source-organisations`, `GET /definitions`, `GET /definitions/{id}/revisions`, patroon van het bestaande vlagloze `GET /import-links`) komen **buiten** de setup-API-vlag, met recht `READ`. Schrijfpaden blijven achter de vlag + `MANAGE`, ongewijzigd. Scherm 1a is zo altijd bruikbaar als inzagescherm, en enkel met de vlag aan ook als beheerscherm.
+- **A2 — mutatie-omvang:** naast lezen en de bestaande create-acties komt er **wijzigen via een opvolgrevisie** (kopieer de actieve revisie naar een nieuwe DRAFT, wijzig, activeer — nooit een directe edit op een ACTIVE-revisie, conform de bestaande regel). Dit is zelf nog geen bouwbare slice: de denker markeerde expliciet dat de clone-semantiek (wat wordt gekopieerd, wat niet, wat met bookmarkwaarden) een eigen, apart Fase 1-achtig ontwerp vereist (spoor S1-X) vóór dit gebouwd wordt — niet inbegrepen in de eerste 1a/1b-slices.
+- **A3 — scope 1b:** enkel de **sjabloon-/materialisatiewizard** (sjabloon kiezen → revisie → bookmarkinvulset → nieuwe of hergebruikte definitie → koppeling + bookmarkwaarden beheren), volledig op het bestaande, geteste backendcontract (`CatalogImportTemplateController`/`CatalogImportLinkController`). De naam "leveringsconfiguratie" wordt hiermee bewust nog niet waargemaakt; de volledige BA1 §14.17-vorm blijft dicht (vereist eerst herroeping van de 27/09-ontwerpgrens, een sleutelbeheerontwerp, en een eigen domeinontwerp — niet nu).
+**Voorgestelde bouwvolgorde** (denker-zwaar, niet door de mens expliciet herzien): S1-0 (denker-gemiddeld: endpoints/routes/gates/foutcodes voor 1a/1b) → S1-B1 (bouwer: de nieuwe alleen-lezen inrichtingsendpoints) → S1-F1 (scherm 1a alleen-lezen boomweergave) → S1-F2 (scherm 1b sjabloonwizard, alleen-lezen deel) → S1-F3 (1b schrijfdeel: materialiseren + bookmarkwaarden wijzigen) → S1-X (apart ontwerp opvolgrevisie/clone) → S1-F4 (1a schrijfdeel: opvolgrevisie-wijzigen, ná S1-X).
+**Bron:** mens (A1-A3) / denker-zwaar (Fase 0-intake "heropening scherm 1a/1b en D14", 2026-09-27) / docs/decisions.md 22/09 ("correctie schermenindeling"), 26/09 ("setup-API-vlag blijft")
+
+## 2026-09-27 — Heropening D14-vervolg: behandelgeval-anker, niveau, effect op screening, toewijzing
+**Vraag:** Het D14-vervolg (behandelgeval-model, eigenaar/toewijzing, issue-afhandelacties) was op 23/09 uitgesteld op vier gronden (Q2-Q4), waarvan enkel de identiteitsgrond (Q3: geen geverifieerde identiteit) door Fase 5 vervallen is. Dezelfde denker-zwaar-intake (27/09) vond een harde tegenstrijdigheid die de bouwvolgorde blokkeerde: `import_issue_group` is strikt per batch/levering (`uk_import_issue_group_signature unique (batch_id, issue_code, signature)`), terwijl de businessanalyse eist dat herhaling van hetzelfde probleem geen nieuwe taak maakt maar het bestaande geval bijwerkt. Vier deelvragen (D1-D4) moesten daarom eerst beantwoord worden.
+**Beslissing:** Door de mens:
+- **D1 — anker/identiteit:** een **nieuwe tabel `issue_case`**, leveringsoverstijgend, met identiteit `(import_link_id, issue_code, signature)`; een nieuwe issuegroep koppelt aan het bestaande geval (`observation_count`/`last_seen_at` bijgewerkt) in plaats van een nieuwe taak te maken. Dit herroept de "geen nieuwe tabellen"-beslissing van 23/09 (Q2) — expliciet, met deze entry als herroeping. Dit is een eigen Fase 1-achtige ontwerpcyclus (migratie, koppeling naar `import_issue_group`, heropeningsregel na `REJECTED`), geen eenvoudige slice; de denker markeerde een verplichte **denker-zwaar**-ontwerpstap (S2-0) vóór er gebouwd wordt.
+- **D2 — niveaus:** **één niveau** (enkel behandelgeval, geen deeltaak/taaktype). De vier deeltaaktypes uit de businessanalyse verwijzen naar functies die niet bestaan (centraal artikel, staffels, ERP-context, deeltaaktypes); een taaktypelijst zonder die functies zou een lege schil zijn.
+- **D3 — effect op screening:** **zuiver administratief, met een statuslijst zonder "geaccepteerd"-achtige waarde** (bv. `AWAITING_REVIEW`/`CORRECTED`/`REJECTED`/`AUTO_RESOLVED`, geen `ACCEPTED_*`). Concreet scenario ter verduidelijking: bij een geblokkeerde prijsafwijking die telefonisch bevestigd wordt, documenteert het behandelgeval dat (`CORRECTED`, reden), maar de geblokkeerde mutatie zelf blijft geblokkeerd — om de data echt te verwerken is een nieuwe, correcte levering nodig, óf een mens keurt de mutatie apart goed via de bestaande weg (`accept-baseline`/bundelbeslissing). Het behandelgeval is dus nooit een tweede weg om tegengehouden data door te laten; `validation_result`, drempels en mutaties blijven ongewijzigd. Geen fase 3-regel (R-THR/R-ISS) wordt heropend.
+- **D4 — toewijzing: volledig uitgesteld.** Geen enkele toewijzings- of claimfunctie in deze ronde (ook geen self-claim) — enkel de rest van het behandelgeval (status, reden, audit). Een latere uitbreiding hangt af van een externe gebruikers-/groepenbron die vandaag niet bestaat (zie `docs/openstaande-externe-punten.md`).
+**Gevolg voor ST-11:** van de zeven genoemde velden (oorzaak, eigenaar, prioriteit, status, afhankelijkheden, actie, gereedcriterium) worden nu status, reden/oorzaak-als-vrije-tekst en audit gebouwd; eigenaar (D4), prioriteit, afhankelijkheden, actie-per-taaktype en gereedcriterium (D2) blijven bewust weg — expliciet gedocumenteerd, niet stilzwijgend als "later" gemarkeerd zonder motivering.
+**Voorgestelde bouwvolgorde** (denker-zwaar, niet door de mens expliciet herzien): S2-0 (denker-**zwaar**, verplicht: entiteit `issue_case`, identiteitssleutel, statusmachine, heropeningsregel, auditvelden — expliciet zonder eigenaar/claim gezien D4) → S2-B1 (migratie + entiteit + repository, geen gedrag) → S2-B2 (status wijzigen met reden, `MANAGE`) → S2-B3 (leesendpoints: gevallenlijst met filters, incl. de eerder uitgestelde batch-overstijgende weergave) → S2-F1 (scherm 0 uitgebreid met gevallenweergave) → S2-F2 (afhandelacties in de UI).
+**Bron:** mens (D1-D4) / denker-zwaar (Fase 0-intake "heropening scherm 1a/1b en D14", 2026-09-27) / docs/decisions.md 23/09 (D14 uitstel, Q2-Q4), docs/stories/catalog-import-v2.md (ST-11), Businessanalyse_artikelimport_en_prijsacceptatie-2.md §13
+
+## 2026-09-27 — Ontwerp bindend: scherm 1a/1b (S1-0, spoor S1-B1 t/m S1-F3)
+**Vraag:** Concreet ontwerp voor de eerste vier bouwstappen van spoor 1 (scherm 1a/1b), op basis van de bindende A1-A3-keuzes.
+**Beslissing:** Het ontwerp van denker-gemiddeld (27/09) is bindend:
+- **S1-B1 (bouwer-gemiddeld):** nieuwe `SetupQueryService` (bewust apart van het vlaggedekte `SetupService`, patroon van `ImportLinkQueryService`), drie nieuwe DAO-methoden, nieuwe controller `CatalogImportSetupQueryController` (`GET /source-organisations`, `GET /definitions`, `GET /definitions/{id}/revisions`, alle `READ`, geen vlag). Additieve uitbreiding van `ImportLinkRow`/`findLinkRows` met `importDefinitionId` (veld + optioneel filter) om de boom in S1-F1 tot op koppelingenniveau te kunnen sluiten — puur additief, geen rename.
+- **S1-F1 (bouwer-gemiddeld, na S1-B1):** scherm 1a (`/setup`, nieuwe feature-map `features/setup/`) bouwt de boom **client-side** op uit de drie S1-B1-lijstendpoints (lazy per niveau), NIET via het bestaande `GET /setup/overview` — dat endpoint blijft immers ook achter de vlag, wat het doel "altijd bruikbaar als inzagescherm" zou missen. Taken-niveau blijft in deze slice leeg met een expliciete tekst (geen vlagloos leesendpoint voor taken vandaag) — bewust niet meegenomen, niet stilzwijgend weggelaten.
+- **S1-F2 (bouwer-gemiddeld, na S1-B1):** scherm 1b sjabloonwizard, alleen-lezen deel (`features/templates/`), volledig op het bestaande, ongewijzigde vlaggedekte contract van `CatalogImportTemplateController`. Eigen, scherm-specifieke afhandeling voor de 404-zonder-code wanneer de vlag uit staat (niet via de generieke `describe()`-fallback). `problems`-lijst getoond als niet-blokkerende `<ul role="alert">`, patroon van `BundleOverviewTab`'s `staleWarning`.
+- **S1-F3 (bouwer-zwaar, na S1-F2):** materialiseren met expliciete `mode`-keuze zonder voorselectie (patroon `CreateBundleForm`'s `targetMode`-sentinel) en bookmarkwaarde-wijzigen met het bestaande vergrendelingsslot (`LINK_BOOKMARK_LOCKED_BY_OPEN_BATCH`, getoond bij de actie zelf). Sjabloondeclaratie zelf (`declareBookmark`/`addUsage`) blijft buiten scope (sjabloonbeheer, geen materialisatie-eindgebruikersfunctie).
+- **Bevestigd door de hoofdsessie (geen nieuwe §6-vraag, logisch gevolg van A1/A3):** scherm 1b blijft volledig achter `catalogimport.setup-api.enabled` — A1 opent alleen de drie nieuwe inrichtingsendpoints, A3 heropent `CatalogImportTemplateController`/`CatalogImportLinkController` niet. Dit moet expliciet zo gecommuniceerd blijven (niemand mag scherm 1b later als "productiewaardig" beschouwen).
+- **Nieuwe foutcodes:** ±25 nieuwe `errors/codes.ts`-entries voor de sjabloon-/materialisatiewizard (zie het volledige ontwerprapport voor de lijst), plus `DEFINITION_NOT_FOUND` voor S1-B1.
+**Bron:** denker-gemiddeld (ontwerp "scherm 1a/1b", 2026-09-27) / docs/decisions.md 2026-09-27 ("Heropening scherm 1a/1b"), docs/design/sjabloon-materialisatie-design.md, docs/design/frontend-scherm3-bundel-design.md
+
+---
+
+## 2026-09-28 — S2-0: ontwerp `issue_case` bindend (met `issue_case_event`) en bouwvolgorde S2-B1 … S2-F2
+**Vraag:** Concreet technisch ontwerp voor spoor S2-0 uit de entry "Heropening D14-vervolg" (2026-09-27) —
+de `issue_case`-entiteit, sleutel, statusmachine, koppeling in de screeningflow en heropeningsregel, binnen de
+bindende D1-D4-antwoorden van de mens.
+**Beslissing:** `docs/design/issue-case-design.md` is bindend (denker-zwaar, 2026-09-28). Kern: tabel
+`issue_case` (identiteit `import_link_id + issue_code + signature`, hard uniek in de database), statussen
+`AWAITING_REVIEW`/`CORRECTED`/`REJECTED`/`AUTO_RESOLVED` (geen `ACCEPTED_*`, geen effect op `validation_result`
+of mutatiestatussen — D3), koppeling gebeurt in `DeliveryScreeningService.aggregate(Context)` na de bestaande
+issue-aggregatie, heropeningsregel R-CASE-01..04 (herhaling verhoogt waarnemingen, afwijzing onderdrukt een
+identieke herlevering, een gewijzigde `import_definition_revision` heft de onderdrukking op). Bouwvolgorde
+S2-B1 (schema+Domain+Dao, `bouwer-gemiddeld`) → S2-B1b (koppeling+heropening in de screeningflow,
+`bouwer-zwaar`) → S2-B2 (statuswijziging, `bouwer-gemiddeld`) → S2-B3 (leesendpoints, `bouwer-gemiddeld`) →
+S2-F1 (scherm, alleen-lezen, `bouwer-gemiddeld`) → S2-F2 (afhandelacties, `bouwer-gemiddeld`).
+
+**O1 door de mens beantwoord: ja, met een aparte append-only `issue_case_event`-tabel** (naast `issue_case`
+zelf) — zodat een systeemheropening nooit de afwijzingsreden van een mens overschrijft. Dit is een uitbreiding
+van het "één nieuwe tabel"-gevoel uit D1, met motivatie in het ontwerp §1.
+
+**Ontdekkingen teruggeschreven, na akkoord van de mens (enkel de businessregel, niet de technische
+constraint):** de heropenings-/onderdrukkingsregel (R-CASE-01..04) is vastgelegd in
+`docs/design/issue-case-design.md` §2, omdat `docs/requirements/catalog-import-business-rules.md` zelf als
+"historische proefversie" gemarkeerd is en niet meer bijgewerkt wordt (banner verwijst naar
+`docs/analysis/current-project-vs-businessanalyse-2.md`) — het toevoegen van een actuele R-CASE-sectie daar
+zou de eigen banner van dat document tegenspreken. De technische-constraint-ontdekking
+(`IssueHandlingStatus`-valkuil) is bewust niet teruggeschreven naar `fase3-rules-design.md` (mens koos dit
+niet); ze blijft enkel in `issue-case-design.md` als waarschuwing voor S2-B1.
+
+**Bron:** mens (O1, terugschrijfkeuze) / denker-zwaar (`Ontwerp S2-0 issue_case`, 2026-09-28) /
+docs/decisions.md 2026-09-27 ("Heropening D14-vervolg")
+
+---
+
+## 2026-09-28 — S2-B1/S2-B1b uitgevoerd: schema, Domain/Dao en koppeling in de screeningflow
+**Vraag:** Zijn de eerste twee bouwstappen van het bindende ontwerp `docs/design/issue-case-design.md`
+afgerond en geverifieerd?
+**Beslissing:** Ja. S2-B1 (`bouwer-gemiddeld`): changeset `012-issue-case.sql` (tabellen `issue_case`,
+`issue_case_event`, additieve kolom `import_issue_group.issue_case_id`), Domain-klassen
+(`IssueCase`/`IssueCaseEvent`/`IssueCaseStatus`/`IssueCaseEventKind`/`IssueCaseEventSource`),
+`IssueCaseRepository`/`IssueCaseEventRepository`, javadoc-waarschuwing op `IssueHandlingStatus`, en
+`IssueCaseSchemaTest` — 11/11 groen. S2-B1b (`bouwer-zwaar`): `IssueCaseDao` (set-based, vijf stappen
+volgens ontwerp §3), `IssueCaseSyncService`, koppeling in `DeliveryScreeningService.aggregate(Context)`
+(dekt zowel `mutate()` als `block()`), herstelpad in `ScreeningRecoveryService`, en `IssueCaseSyncTest` —
+uiteindelijk 9/9 groen na een bugfix (zie hieronder).
+
+**Bug gevonden en gefixt tijdens verificatie door de hoofdsessie:** het herstelpad riep `recount()` (zet
+`observation_count` op 0 voor een op te ruimen geval) vóór `deleteWithoutObservationsOrHumanAction()` aan.
+Voor een geval zonder menselijke actie (`status_changed_at is null`) schond die tussentijdse UPDATE meteen
+`ck_issue_case_observations` — PostgreSQL controleert CHECK-constraints per statement en CHECK-constraints
+kunnen (anders dan UNIQUE/PK/FK) nooit `deferrable` gemaakt worden. Fix (`bouwer-licht`): volgorde
+omgedraaid (eerst verwijderen, dan hertellen) en het selectiecriterium van
+`deleteWithoutObservationsOrHumanAction` aangepast van `observation_count = 0` (nog niet herberekend op dat
+moment) naar een verse `not exists`-check op resterende gekoppelde `import_issue_group`-rijen.
+`docs/design/issue-case-design.md` §3 is bijgewerkt met deze volgorde-eis.
+
+**Ontdekking tijdens S2-B1b (al verwerkt in code en design, geen open vraag):** `fk_issue_case_event_case`
+maakt het onmogelijk een `issue_case` te verwijderen zolang zijn `CREATED`-event bestaat. Op het
+herstelpad verdwijnt een geval dat nooit geldig bestaan heeft dus samen met zijn geboorte-event; de
+append-only-regel blijft onverkort gelden voor elk geval dat blijft bestaan. Vastgelegd in de javadoc van
+`IssueCaseDao.deleteWithoutObservationsOrHumanAction` en in `docs/design/issue-case-design.md` §1.
+
+Totaal 23/23 tests groen (`IssueCaseSchemaTest`, `IssueCaseSyncTest`, `ScreeningRecoveryServiceTest`).
+Volgende stap: S2-B2 (statuswijziging door een mens, `bouwer-gemiddeld`).
+**Bron:** hoofdsessie na verificatie (gerichte testronde) / docs/design/issue-case-design.md

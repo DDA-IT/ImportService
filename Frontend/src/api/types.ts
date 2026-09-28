@@ -589,6 +589,7 @@ export type BatchSummary = {
 };
 
 // be.dda.catalogimport.service.ImportLinkQueryService.ImportLinkRow (Scherm 0/3, D14, bouwstap S0-B3)
+// `importDefinitionId` is additief (S1-B1): sluit de boom van scherm 1a tot op koppelingenniveau.
 export type ImportLinkRow = {
   id: number;
   code: string;
@@ -597,6 +598,58 @@ export type ImportLinkRow = {
   supplierName: string;
   libraryCode: string;
   active: boolean;
+  importDefinitionId: number;
+};
+
+// be.dda.catalogimport.domain.SourceOrganisationType (S1-B1)
+export const SOURCE_ORGANISATION_TYPES = ['SUPPLIER', 'PURCHASING_ASSOCIATION'] as const;
+export type SourceOrganisationType = (typeof SOURCE_ORGANISATION_TYPES)[number];
+
+// be.dda.catalogimport.domain.DefinitionUsageType (S1-B1)
+export const DEFINITION_USAGE_TYPES = ['OWN_DEFINITION', 'REUSABLE_TEMPLATE'] as const;
+export type DefinitionUsageType = (typeof DEFINITION_USAGE_TYPES)[number];
+
+// be.dda.catalogimport.domain.RevisionStatus (S1-B1)
+export const REVISION_STATUSES = [
+  'DRAFT',
+  'SCREENING',
+  'REVIEW_REQUIRED',
+  'PENDING_APPROVAL',
+  'ACTIVE',
+  'SUPERSEDED',
+  'WITHDRAWN',
+] as const;
+export type RevisionStatus = (typeof REVISION_STATUSES)[number];
+
+// be.dda.catalogimport.service.SetupQueryService.SourceOrganisationRow (S1-B1, scherm 1a)
+export type SourceOrganisationRow = {
+  id: number;
+  code: string;
+  name: string;
+  type: SourceOrganisationType;
+  active: boolean;
+};
+
+/**
+ * be.dda.catalogimport.service.SetupQueryService.DefinitionRow (S1-B1, scherm 1a).
+ * `activeRevisionId` is `null` als er geen ACTIVE-revisie is — nooit hetzelfde als "revisie #0".
+ */
+export type DefinitionRow = {
+  id: number;
+  code: string;
+  name: string;
+  usageType: DefinitionUsageType;
+  sourceOrganisationId: number;
+  sourceOrganisationCode: string;
+  activeRevisionId: number | null;
+};
+
+// be.dda.catalogimport.service.SetupQueryService.RevisionRow (S1-B1, scherm 1a)
+export type RevisionRow = {
+  id: number;
+  definitionId: number;
+  revisionNumber: number;
+  status: RevisionStatus;
 };
 
 /**
@@ -714,3 +767,234 @@ export type LocalSourceListing = {
   files: LocalSourceFile[];
   truncated: boolean;
 };
+
+/**
+ * be.dda.catalogimport.service.TemplateBookmarkService.TemplateView (S1-F2, sjabloon-/
+ * materialisatiewizard, scherm 1b alleen-lezen deel). `GET /templates`, achter
+ * `catalogimport.setup-api.enabled` (ongewijzigd, blijft dicht in productie — zie `docs/decisions.md`
+ * 2026-09-27 "scherm 1a/1b").
+ */
+export type TemplateView = {
+  id: number;
+  code: string;
+  name: string;
+  sourceOrganisationId: number;
+  sourceOrganisationCode: string;
+};
+
+// be.dda.catalogimport.service.TemplateBookmarkService.UsageView (S1-F2)
+export type BookmarkUsageView = {
+  id: number;
+  placeKind: string;
+  targetHint: string;
+};
+
+// be.dda.catalogimport.service.TemplateBookmarkService.BookmarkView (S1-F2)
+export type BookmarkView = {
+  id: number;
+  revisionId: number;
+  name: string;
+  label: string;
+  description: string | null;
+  dataType: string;
+  valueScope: string;
+  ownerRole: string;
+  required: boolean;
+  defaultValue: string | null;
+  allowedValues: string | null;
+  validationPattern: string | null;
+  sortOrder: number;
+  usages: BookmarkUsageView[];
+};
+
+// be.dda.catalogimport.service.TemplateBookmarkService.ProblemView (S1-F2) — niet-blokkerende fase
+// C-bevindingen, getoond als `<ul role="alert">`, patroon van BundleOverviewTab's `staleWarning`.
+export type ProblemView = {
+  code: string;
+  bookmarkName: string;
+  message: string;
+};
+
+/**
+ * be.dda.catalogimport.service.TemplateBookmarkService.BookmarkSetView (S1-F2) — de invulset van één
+ * sjabloonrevisie (`GET /templates/{definitionId}/revisions/{revisionId}/bookmarks`), inclusief de
+ * niet-blokkerende `problems`-lijst.
+ */
+export type BookmarkSetView = {
+  definitionId: number;
+  revisionId: number;
+  bookmarks: BookmarkView[];
+  problems: ProblemView[];
+};
+
+/**
+ * be.dda.catalogimport.service.TemplateMaterialisationService.MaterialisedDefinitionView (S1-F2) —
+ * één rij van `GET /templates/{definitionId}/materialisations`: een definitie die al uit dit sjabloon
+ * voortkwam. `definitionRevisionId`/`definitionRevisionNumber`/`definitionRevisionStatus` zijn `null`
+ * wanneer geen enkele revisie van deze definitie een herkomstrevisie uit dit sjabloon draagt.
+ */
+export type MaterialisedDefinitionView = {
+  definitionId: number;
+  definitionCode: string;
+  definitionName: string;
+  definitionRevisionId: number | null;
+  definitionRevisionNumber: number | null;
+  definitionRevisionStatus: string | null;
+  templateRevisionId: number | null;
+  templateRevisionNumber: number | null;
+  templateRevisionStatus: string | null;
+  importLinkCount: number;
+  shareable: boolean;
+  blockingBookmarkName: string | null;
+};
+
+// --- S1-F3: het schrijfdeel van scherm 1b (materialiseren + bookmarkwaarde wijzigen) ---------------
+// `docs/decisions.md` 2026-09-27 "scherm 1a/1b", S1-F3-alinea. Zelfde vlag als het leesdeel.
+
+/**
+ * be.dda.catalogimport.service.TemplateMaterialisationService.MaterialisationMode — `NEW_DEFINITION`
+ * maakt definitie + revisie + koppeling, `REUSE_DEFINITION` hangt alleen een koppeling aan een
+ * bestaande, deelbare definitie. **Bewust zonder default** (ontwerp §4 B1): een stil geraden keuze
+ * bepaalt of twee leveranciers voortaan één configuratie delen. De UI mag die default dus ook niet
+ * via een voorselectie terug invoeren.
+ */
+export const MATERIALISATION_MODES = ['NEW_DEFINITION', 'REUSE_DEFINITION'] as const;
+export type MaterialisationMode = (typeof MATERIALISATION_MODES)[number];
+
+/**
+ * be.dda.catalogimport.service.TemplateMaterialisationService.BookmarkValue — `value: ''` is een
+ * uitdrukkelijk lege waarde en wordt zo bewaard; een ontbrekend veld wordt geweigerd. Die twee zijn
+ * nooit hetzelfde (R-BMK-03), dus `value` is hier nooit `null`.
+ */
+export type MaterialiseBookmarkValue = { name: string; value: string };
+
+/**
+ * be.dda.catalogimport.service.TemplateMaterialisationService.MaterialiseRequest — body van
+ * `POST /templates/{definitionId}/materialisations`.
+ *
+ * Velden die bij de gekozen modus niet horen, worden `null` gelaten (niet weggelaten met een andere
+ * betekenis): `reuseDefinitionId` alleen bij `REUSE_DEFINITION` (anders 400
+ * `REUSE_DEFINITION_NOT_ALLOWED`), `definitionCode`/`definitionName`/`changeReason` alleen bij
+ * `NEW_DEFINITION` (bij hergebruik landen ze nergens en weigert de backend ze). Vult een bookmark een
+ * `LINK_*`-plaats, dan blijft het bijhorende requestveld `null` — één bron per waarde, anders 400
+ * `LINK_FIELD_BOTH_BOOKMARK_AND_EXPLICIT` (ontwerp §4 D7).
+ */
+export type MaterialiseRequest = {
+  templateRevisionId: number | null;
+  mode: MaterialisationMode;
+  reuseDefinitionId: number | null;
+  definitionCode: string | null;
+  definitionName: string | null;
+  changeReason: string | null;
+  linkCode: string;
+  linkName: string;
+  supplierOrganisationCode: string | null;
+  libraryCode: string | null;
+  librarySearchSupplierCode: string | null;
+  bookmarkValues: MaterialiseBookmarkValue[];
+  materialisedBy: string | null;
+};
+
+// be.dda.catalogimport.service.TemplateMaterialisationService.AppliedValue (S1-F3)
+export type AppliedValue = {
+  name: string;
+  dataType: string;
+  value: string;
+  placeKind: string;
+  targetHint: string;
+};
+
+/**
+ * be.dda.catalogimport.service.TemplateMaterialisationService.Warning (S1-F3) — getypeerd, geen vrije
+ * tekst: `OPTIONAL_BOOKMARK_NOT_FILLED` of `LINK_SEARCH_SUPPLIER_NOT_DERIVED` (dan is `bookmarkName`
+ * `null` wanneer geen enkele bookmark die plaats declareerde).
+ */
+export type MaterialisationWarning = {
+  code: string;
+  bookmarkName: string | null;
+  message: string;
+};
+
+/**
+ * be.dda.catalogimport.service.TemplateMaterialisationService.MaterialisationView (S1-F3) — het
+ * antwoord van de materialisatie. `templateRevisionNumber`/`templateRevisionStatus` tonen altijd welke
+ * sjabloonversie effectief gebruikt is (ook een `SUPERSEDED`: dat mag, maar nooit stilzwijgend);
+ * `definitionCreated` onderscheidt nieuw van hergebruikt.
+ */
+export type MaterialisationView = {
+  templateDefinitionId: number;
+  templateRevisionId: number;
+  templateRevisionNumber: number;
+  templateRevisionStatus: string;
+  definitionId: number;
+  definitionCode: string;
+  definitionCreated: boolean;
+  definitionRevisionId: number;
+  definitionRevisionNumber: number;
+  definitionRevisionStatus: string;
+  importLinkId: number;
+  importLinkCode: string;
+  definitionValues: AppliedValue[];
+  linkValues: AppliedValue[];
+  warnings: MaterialisationWarning[];
+};
+
+/**
+ * be.dda.catalogimport.service.LinkBookmarkValueService.LinkBookmarkValueRow (S1-F3) — één ingevulde
+ * LINK-bookmarkwaarde van een koppeling. `declared = false` is een wees: de naam staat niet (meer)
+ * gedeclareerd op de actieve revisie, de waarde wordt nooit toegepast en blijft enkel auditmateriaal.
+ * `filled = false` bij een uitdrukkelijk lege waarde (`''` telt niet als ingevuld, R-BMK-03).
+ */
+export type LinkBookmarkValueRow = {
+  bookmarkName: string;
+  label: string | null;
+  dataType: string | null;
+  valueText: string | null;
+  previousValueText: string | null;
+  declared: boolean;
+  required: boolean;
+  filled: boolean;
+  filledAt: string | null;
+  filledBy: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+};
+
+/**
+ * be.dda.catalogimport.service.LinkBookmarkValueService.LinkBookmarkValues (S1-F3) — leesmodel van
+ * `GET /links/{linkId}/bookmark-values`. `lockedByOpenBatch` is de UI-spiegel van het slot: zolang de
+ * koppeling een open batch heeft, weigert elke wijziging met 409
+ * `LINK_BOOKMARK_LOCKED_BY_OPEN_BATCH`.
+ */
+export type LinkBookmarkValues = {
+  importLinkId: number;
+  importLinkCode: string;
+  activeRevisionId: number | null;
+  lockedByOpenBatch: boolean;
+  values: LinkBookmarkValueRow[];
+  missingRequiredNames: string[];
+};
+
+/**
+ * be.dda.catalogimport.web.CatalogImportLinkController.SetBookmarkValueRequest (S1-F3) — body van
+ * `PUT /links/{linkId}/bookmark-values/{name}`. `value: ''` is een uitdrukkelijk lege waarde en wordt
+ * bewaard; een ontbrekend veld wordt geweigerd (R-BMK-03). `updatedBy` is sinds 5A-6 een optionele
+ * controle tegen de aangemelde gebruiker.
+ */
+export type SetBookmarkValueRequest = {
+  value: string;
+  updatedBy: string | null;
+};
+
+/**
+ * De `placeKind`-waarden (be.dda.catalogimport.domain.BookmarkUsagePlace) die een `LINK_*`-veld van het
+ * materialisatieverzoek vullen. Declareert een bookmark zo'n plaats, dan is die bookmark het invoerveld
+ * en blijft het requestveld leeg — één bron per waarde (ontwerp §4 D7).
+ */
+export const BOOKMARK_PLACE_LINK_SUPPLIER_ORGANISATION = 'LINK_SUPPLIER_ORGANISATION';
+export const BOOKMARK_PLACE_LINK_LIBRARY_CODE = 'LINK_LIBRARY_CODE';
+export const BOOKMARK_PLACE_LINK_SEARCH_SUPPLIER = 'LINK_SEARCH_SUPPLIER';
+
+/** `valueScope`-waarden van be.dda.catalogimport.domain.BookmarkValueScope. */
+export const BOOKMARK_SCOPE_DEFINITION = 'DEFINITION';
+export const BOOKMARK_SCOPE_LINK = 'LINK';

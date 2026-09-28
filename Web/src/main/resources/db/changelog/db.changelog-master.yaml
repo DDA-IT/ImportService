@@ -30,3 +30,5 @@ databaseChangeLog:
       file: db/changelog/010-valuta-standaard.sql
   - include:
       file: db/changelog/011-delivery-source-kind.sql
+  - include:
+      file: db/changelog/012-issue-case.sql

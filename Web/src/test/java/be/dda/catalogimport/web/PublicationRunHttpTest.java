@@ -28,6 +28,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -237,6 +238,64 @@ class PublicationRunHttpTest {
                 .andExpect(jsonPath("$.code").value("PUBLICATION_RUN_ARTIFACT_NOT_AVAILABLE"));
     }
 
+    // --- Afbreken (herstel van een vastgelopen PREPARING-run, docs/decisions.md 2026-09-27) --------------
+
+    @Test
+    void approveAbortsAStuckPreparingRunAndANewRequestThenSucceeds() throws Exception {
+        long bundleId = frozenBundle("ABORT", 1);
+        long runId = insertPreparingRun(bundleId, Instant.now());
+
+        mockMvc.perform(post(API + "/publication-runs/{id}/abort", runId).with(as(USER, Permission.APPROVE)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.failureCode").value("FAILURE_MANUALLY_ABORTED"));
+        assertThat(jdbc.queryForObject("select active_marker from publication_run where id = ?",
+                Boolean.class, runId)).isNull();
+
+        run(bundleId, as(USER), SIMULATION).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SIMULATED"));
+    }
+
+    @Test
+    void abortWithoutApproveIsA403AndTheRunStaysPreparing() throws Exception {
+        long bundleId = frozenBundle("ABORTDENY", 1);
+        long runId = insertPreparingRun(bundleId, Instant.now());
+
+        mockMvc.perform(post(API + "/publication-runs/{id}/abort", runId).with(as(USER, Permission.READ)))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+        mockMvc.perform(post(API + "/publication-runs/{id}/abort", runId).with(as(USER, Permission.MANAGE)))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+        mockMvc.perform(post(API + "/publication-runs/{id}/abort", runId).with(withoutPermissions("system")))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("SYSTEM_ACTOR_FORBIDDEN"));
+        assertThat(jdbc.queryForObject("select status from publication_run where id = ?", String.class, runId))
+                .isEqualTo("PREPARING");
+    }
+
+    /** Geen tijdsvoorwaarde: een run die pas net PREPARING werd, mag óók meteen afgebroken worden. */
+    @Test
+    void abortHasNoTimeConditionAndWorksOnAFreshlyPreparingRun() throws Exception {
+        long bundleId = frozenBundle("ABORTFRESH", 1);
+        long runId = insertPreparingRun(bundleId, Instant.now());
+
+        mockMvc.perform(post(API + "/publication-runs/{id}/abort", runId).with(as(USER, Permission.APPROVE)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"));
+    }
+
+    @Test
+    void abortingANonPreparingRunIs409AndUnknownRunIs404() throws Exception {
+        long bundleId = frozenBundle("ABORTBAD", 1);
+        String body = run(bundleId, as(USER), SIMULATION).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long simulatedRunId = ((Number) JsonPath.read(body, "$.id")).longValue();
+
+        mockMvc.perform(post(API + "/publication-runs/{id}/abort", simulatedRunId).with(as(USER, Permission.APPROVE)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PUBLICATION_RUN_NOT_STUCK"));
+        mockMvc.perform(post(API + "/publication-runs/{id}/abort", 999_999_999L).with(as(USER, Permission.APPROVE)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("PUBLICATION_RUN_NOT_FOUND"));
+    }
+
     @Test
     void cancellingTheBundleAfterARunIsStillPossible() throws Exception {
         long bundleId = frozenBundle("CANCEL", 1);
@@ -259,6 +318,18 @@ class PublicationRunHttpTest {
     private int runCount(long bundleId) {
         return jdbc.queryForObject("select count(*) from publication_run where bundle_id = ?", Integer.class,
                 bundleId);
+    }
+
+    /** Een kunstmatig actieve run op {@code PREPARING}, rechtstreeks in de database — dat kan niet via de
+     * gewone (synchrone) aanvraagflow. Zelfde patroon als {@code PublicationRunSimulationTest}. */
+    private long insertPreparingRun(long bundleId, Instant startedAt) {
+        String key = "run:" + bundleId + ":SIMULATION:" + System.nanoTime();
+        jdbc.update("insert into publication_run (bundle_id, target_mode, status, requested_by, requested_at, "
+                        + "started_at, bundle_content_hash, idempotency_key, active_marker) "
+                        + "values (?, 'SIMULATION', 'PREPARING', ?, ?, ?, ?, ?, true)",
+                bundleId, USER, java.sql.Timestamp.from(startedAt), java.sql.Timestamp.from(startedAt),
+                new byte[32], key);
+        return jdbc.queryForObject("select id from publication_run where idempotency_key = ?", Long.class, key);
     }
 
     private long createBundle() throws Exception {

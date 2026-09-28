@@ -42,6 +42,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -632,10 +633,9 @@ class BatchBaselineHttpTest {
 
         // Twee regelproblemen plus, sinds bouwstap 3h-3, één melding op leveringsniveau: deze eerste
         // levering van de koppeling is een initialisatie (ontwerp par. 15.2). De lijst wordt op
-        // regelnummer gesorteerd en een leveringsmelding heeft er geen; waar die in de volgorde belandt
-        // hangt van de database af (H2 zet NULL vooraan, PostgreSQL achteraan). De assertie zoekt haar
-        // daarom op foutcode in plaats van op positie.
-        mockMvc.perform(get("/api/catalog-import/batches/{id}/issues", first.batchId()))
+        // regelnummer gesorteerd, met NULL-waarden LAST: leveringsproblemen (zonder rijnummer) komen
+        // dus achter regelproblemen.
+        String issuesBody = mockMvc.perform(get("/api/catalog-import/batches/{id}/issues", first.batchId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(3))
                 .andExpect(jsonPath("$.content[?(@.issueCode=='PRICE_UNREADABLE')].rowNumber").value(3))
@@ -647,8 +647,18 @@ class BatchBaselineHttpTest {
                         .value("ERROR"))
                 .andExpect(jsonPath("$.content[?(@.issueCode=='PRICE_UNREADABLE')].message").exists())
                 .andExpect(jsonPath("$.content[?(@.issueCode=='PRICE_MISSING')].rowNumber").value(4))
-                .andExpect(jsonPath("$.content[?(@.issueCode=='INITIAL_LOAD_REQUIRES_APPROVAL')]"
-                        + ".rowNumber").value(org.hamcrest.Matchers.contains((Object) null)));
+                .andReturn().getResponse().getContentAsString();
+
+        // Verifieert dat de sortering database-onafhankelijk is: NULL-waarden aan het einde.
+        List<Map<String, Object>> content = JsonPath.read(issuesBody, "$.content[*]");
+        assertThat(content).hasSize(3);
+        // Eerste twee issues hebben rijnummers (3 en 4).
+        assertThat((Number) content.get(0).get("rowNumber")).isEqualTo(3);
+        assertThat((Number) content.get(1).get("rowNumber")).isEqualTo(4);
+        // Derde issue (INITIAL_LOAD_REQUIRES_APPROVAL) heeft NULL rijnummer en staat achteraan.
+        assertThat(content.get(2).get("rowNumber")).isNull();
+        assertThat(content.get(2).get("issueCode")).isEqualTo("INITIAL_LOAD_REQUIRES_APPROVAL");
+
         mockMvc.perform(get("/api/catalog-import/batches/{id}/issues", first.batchId())
                         .param("size", "1").param("page", "2"))
                 .andExpect(status().isOk())

@@ -19,6 +19,8 @@ function App() {
             <a href="/">Werkvoorraad</a>
             <a href="/upload">Levering uploaden</a>
             <a href="/bundles">Publicatiebundels</a>
+            <a href="/setup">Inrichting</a>
+            <a href="/templates">Sjablonen</a>
           </nav>
         </div>
       </header>

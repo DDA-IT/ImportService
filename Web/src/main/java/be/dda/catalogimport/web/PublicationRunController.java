@@ -31,6 +31,11 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code PUBLICATION_RUN_NOT_FOUND}; 409 {@code PUBLICATION_MODE_NOT_ENABLED}, {@code BUNDLE_NOT_FROZEN},
  * {@code PUBLICATION_RUN_IN_PROGRESS}, {@code BUNDLE_CONTENT_CHANGED_SINCE_FREEZE},
  * {@code PUBLICATION_RUN_ARTIFACT_NOT_AVAILABLE}.
+ * <p>
+ * <b>Afbreken.</b> {@code POST .../abort} (herstel van een vastgelopen run, {@code docs/decisions.md}
+ * 2026-09-27) draagt {@code APPROVE}, net als het aanvragen zelf: dezelfde rechtenconventie voor
+ * bundel-levenscyclusacties. Geen tijdsvoorwaarde — elke {@code PREPARING}-run mag afgebroken worden. Geen
+ * body en geen actorveld: de aanvrager komt uit de login, net als bij {@code /continue}.
  */
 @RestController
 @RequestMapping("/api/catalog-import")
@@ -53,6 +58,17 @@ public class PublicationRunController {
     @PostMapping("/bundles/{bundleId}/publication-runs")
     PublicationRunView request(@PathVariable("bundleId") long bundleId, @RequestBody RequestRunRequest request) {
         return service.requestRun(bundleId, request.targetMode(), currentActor.signer(null, "requestedBy"));
+    }
+
+    /**
+     * Breekt een vastgelopen {@code PREPARING}-run handmatig af. Geen tijdsvoorwaarde (keuze mens
+     * 2026-09-27): wie {@code APPROVE} heeft, mag dit op elk moment doen. Een andere status geeft 409
+     * {@code PUBLICATION_RUN_NOT_STUCK}.
+     */
+    @RequiresPermission(Permission.APPROVE)
+    @PostMapping("/publication-runs/{runId}/abort")
+    PublicationRunView abort(@PathVariable("runId") long runId) {
+        return service.abortRun(runId, currentActor.current());
     }
 
     /** Alle runs van een bundel, oudste eerst. */

@@ -46,6 +46,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -93,7 +94,10 @@ import org.springframework.test.context.DynamicPropertySource;
 @SpringBootTest(properties = {
         "catalogimport.screening.stage-batch-size=50",
         "catalogimport.screening.mutation-chunk-size=50",
-        "catalogimport.screening.recovery-on-startup=false"})
+        "catalogimport.screening.recovery-on-startup=false",
+        // Vast op 1 uur (i.p.v. de default van 60 min, toevallig gelijk) zodat "ouder dan de drempel" en
+        // "binnen de drempel" ondubbelzinnig met ruime marges getest kunnen worden (2 uur vs. "nu").
+        "catalogimport.publication-run.stuck-after=PT1H"})
 @ActiveProfiles("local")
 class PublicationRunSimulationTest {
 
@@ -390,6 +394,55 @@ class PublicationRunSimulationTest {
                 .hasFieldOrPropertyWithValue("code", PublicationRunService.CODE_PUBLICATION_RUN_IN_PROGRESS);
 
         assertThat(runs.findByBundleIdOrderByIdAsc(bundleId)).hasSize(1);
+    }
+
+    /**
+     * Herstel van een vastgelopen PREPARING-run (optie B, {@code docs/decisions.md} 2026-09-27): een run
+     * die langer dan de configureerde drempel op {@code PREPARING} staat, wordt door de eerstvolgende
+     * aanvraag zelf automatisch afgesloten ({@code FAILED}/{@code FAILURE_TIMED_OUT}, marker vrij, expliciete
+     * logregel) en die aanvraag gaat daarna gewoon door zonder 409. Het testprofiel zet de drempel op 1 uur
+     * (zie de klasse-annotatie); een run die 2 uur geleden startte, staat daar ondubbelzinnig ver overheen.
+     */
+    @Test
+    void aPreparingRunOlderThanTheThresholdIsAutomaticallyTimedOutAndTheNewRequestProceeds() {
+        long bundleId = frozenBundle("STUCK", HEADER, "ACME;G1;R1;1,00;Boormachine");
+        long stuckRunId = insertPreparingRun(bundleId, Instant.now().minus(Duration.ofHours(2)));
+
+        PublicationRunView view = runService.requestRun(bundleId, "SIMULATION", REQUESTER);
+
+        assertThat(view.status()).isEqualTo("SIMULATED");
+        assertThat(view.attempt()).isEqualTo(2); // attempt 1 is the timed-out run, this is attempt 2
+        Map<String, Object> stuck = runRow(stuckRunId);
+        assertThat(stuck.get("status")).isEqualTo("FAILED");
+        assertThat(stuck.get("failure_code")).isEqualTo(PublicationRunService.FAILURE_TIMED_OUT);
+        assertThat(stuck.get("active_marker")).isNull();
+        assertThat(stuck.get("finished_at")).isNotNull();
+    }
+
+    /** Binnen de drempel blijft het bestaande 409-gedrag ongewijzigd: geen stille opruiming te vroeg. */
+    @Test
+    void aPreparingRunWithinTheThresholdStillBlocksWithTheExistingConflict() {
+        long bundleId = frozenBundle("FRESHSTUCK", HEADER, "ACME;G1;R1;1,00;Boormachine");
+        long freshRunId = insertPreparingRun(bundleId, Instant.now());
+
+        assertThatThrownBy(() -> runService.requestRun(bundleId, "SIMULATION", REQUESTER))
+                .isInstanceOf(ConflictException.class)
+                .hasFieldOrPropertyWithValue("code", PublicationRunService.CODE_PUBLICATION_RUN_IN_PROGRESS);
+
+        assertThat(runRow(freshRunId).get("status")).isEqualTo("PREPARING");
+        assertThat(runs.findByBundleIdOrderByIdAsc(bundleId)).hasSize(1);
+    }
+
+    /** Een kunstmatig actieve run op {@code PREPARING}, rechtstreeks in de database (kan niet via de
+     * synchrone aanvraagflow). */
+    private long insertPreparingRun(long bundleId, Instant startedAt) {
+        String key = "run:" + bundleId + ":SIMULATION:" + System.nanoTime();
+        jdbc.update("insert into publication_run (bundle_id, target_mode, status, requested_by, requested_at, "
+                        + "started_at, bundle_content_hash, idempotency_key, active_marker) "
+                        + "values (?, 'SIMULATION', 'PREPARING', ?, ?, ?, ?, ?, true)",
+                bundleId, REQUESTER, java.sql.Timestamp.from(startedAt), java.sql.Timestamp.from(startedAt),
+                new byte[32], key);
+        return jdbc.queryForObject("select id from publication_run where idempotency_key = ?", Long.class, key);
     }
 
     /**

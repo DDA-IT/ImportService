@@ -23,6 +23,13 @@ public interface PublicationRunRepository extends JpaRepository<PublicationRun, 
     long countByBundleIdAndActiveMarkerIsNotNull(Long bundleId);
 
     /**
+     * De niet-terminale run van deze bundel, indien aanwezig ({@code active_marker is not null}). Hoogstens
+     * één rij door {@code uk_publication_run_active}; gebruikt om te bepalen of die run vastgelopen is
+     * (bouwstap "herstel van een vastgelopen PREPARING-publicatierun", {@code docs/decisions.md} 2026-09-27).
+     */
+    Optional<PublicationRun> findByBundleIdAndActiveMarkerIsNotNull(Long bundleId);
+
+    /**
      * Het hoogste {@code attempt} van deze bundel in deze modus, of 0 wanneer er nog geen run bestaat.
      * Per modus en niet over de bundel heen: {@code attempt} telt de pogingen naar één doel, en de
      * idempotentiesleutel {@code run:<bundleId>:<mode>:<attempt>} draagt de modus al.

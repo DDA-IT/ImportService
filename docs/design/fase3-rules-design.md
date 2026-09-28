@@ -480,8 +480,10 @@ verwijderen). Voor Fase 7: acceptatiedocument herschrijven met per regel-ID uit 
 - Changeset-nummering: 004-11 bevat enkel `validation_result`; de overige `import_batch`-kolommen
   (tellers, voortgangskolommen E1-E3, `baseline_approved_by`) komen in 3b-3h onder een eigen id
   `004-11b` (uitgevoerde changesets mogen niet wijzigen).
-- `GET /batches/{id}/issues` sorteert op rowNumber; NULL-volgorde verschilt tussen H2 (vooraan) en
-  PostgreSQL (achteraan); nog niet gelijkgetrokken.
+- `GET /batches/{id}/issues` sorteert op rowNumber (met NULL-waarden LAST — leveringsproblemen
+  zonder rijnummer zijn minder specifiek dan regelproblemen) en vervolgens op id. De NULL-volgorde
+  is via JPQL CASE WHEN database-onafhankelijk vastgelegd (H2 en PostgreSQL sorteren NULLs
+  identiek).
 
 ### Open punt vóór 3h (moet beslist zijn voordat 3h start)
 R-THR-06 noemt CRITICAL/BLOCKING en WARNING maar niet ERROR: letterlijk geïmplementeerd krijgt een

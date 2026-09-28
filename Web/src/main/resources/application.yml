@@ -78,6 +78,15 @@ catalogimport:
     # op MUTATING blijft hervatbaar via POST /api/catalog-import/batches/{id}/continue. Veronderstelt precies
     # één applicatie-instantie (geen lease/heartbeat tot Fase 5).
     recovery-on-startup: true
+  publication-run:
+    # Herstel van een vastgelopen PREPARING-publicatierun (docs/decisions.md 2026-09-27): een run die
+    # tussen aanmaken en afronden door een proces- of serverfout blijft staan, blokkeert anders voorgoed
+    # elke volgende run op die bundel (hoogstens één actieve run per bundel). Deze drempel bepaalt vanaf
+    # wanneer PublicationRunService.requestRun zo'n vastgelopen run zelf automatisch als FAILED/
+    # FAILURE_TIMED_OUT afsluit (geen scheduler: de controle gebeurt enkel bij de eerstvolgende aanvraag).
+    # Het expliciete afbreek-endpoint (POST .../abort, recht APPROVE) kent GEEN tijdsvoorwaarde en is dus
+    # niet aan deze drempel gebonden.
+    stuck-after: PT60M
 server:
   error:
     include-message: never

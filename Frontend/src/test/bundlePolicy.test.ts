@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  abortRunGate,
   BUNDLE_ACTIONS,
   bundleActionGate,
   cancelGate,
@@ -21,6 +22,7 @@ import {
   MUTATION_ACTION_TYPES,
   MUTATION_STATUSES,
   PUBLICATION_BUNDLE_STATUSES,
+  PUBLICATION_RUN_STATUSES,
   type FreezePreflight,
   type PublicationBundleStatus,
   type PublicationRunView,
@@ -421,5 +423,27 @@ describe('publicationRunGate — 5-PUB-a "Simulatierun starten"', () => {
       run({ id: 2, status: 'FAILED' }),
     ]);
     expect(gate).toEqual({ allowed: true });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// abortRunGate — herstel van een vastgelopen run, docs/decisions.md 2026-09-27, optie A
+// ---------------------------------------------------------------------------------------------------
+
+describe('abortRunGate — "Afbreken", geen tijdsvoorwaarde', () => {
+  it('A1: PREPARING => allowed', () => {
+    expect(abortRunGate(run({ status: 'PREPARING' }))).toEqual({ allowed: true });
+  });
+
+  it('A2: elke andere status => denied (PUBLICATION_RUN_NOT_STUCK), met de status letterlijk', () => {
+    const otherStatuses = PUBLICATION_RUN_STATUSES.filter((status) => status !== 'PREPARING');
+    for (const status of otherStatuses) {
+      const gate = abortRunGate(run({ status }));
+      expect(gate.allowed).toBe(false);
+      if (!gate.allowed) {
+        expect(gate.reason).toContain('PUBLICATION_RUN_NOT_STUCK');
+        expect(gate.reason).toContain(status);
+      }
+    }
   });
 });

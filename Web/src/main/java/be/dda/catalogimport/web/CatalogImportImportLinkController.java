@@ -28,12 +28,17 @@ public class CatalogImportImportLinkController {
         this.queries = queries;
     }
 
-    /** Alle koppelingen, oplopend op {@code code}, optioneel gefilterd op {@code active}. */
+    /**
+     * Alle koppelingen, oplopend op {@code code}, optioneel gefilterd op {@code active} en (additief,
+     * S1-B1) op {@code importDefinitionId}.
+     */
     @RequiresPermission(Permission.READ)
     @GetMapping
     PageResult<ImportLinkRow> importLinks(@RequestParam(value = "active", required = false) Boolean active,
+                                          @RequestParam(value = "importDefinitionId", required = false)
+                                          Long importDefinitionId,
                                           @RequestParam(value = "page", required = false) Integer page,
                                           @RequestParam(value = "size", required = false) Integer size) {
-        return queries.listImportLinks(active, page, size);
+        return queries.listImportLinks(active, importDefinitionId, page, size);
     }
 }

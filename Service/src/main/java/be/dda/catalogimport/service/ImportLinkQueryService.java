@@ -24,14 +24,17 @@ public class ImportLinkQueryService {
     public static final int DEFAULT_PAGE_SIZE = 50;
     public static final int MAX_PAGE_SIZE = 200;
 
-    /** Eén koppeling, met leverancierscode/-naam meegeleverd zodat de UI geen tweede opzoekactie doet. */
+    /**
+     * Eén koppeling, met leverancierscode/-naam meegeleverd zodat de UI geen tweede opzoekactie doet.
+     * {@code importDefinitionId} is additief (S1-B1): sluit de boom van scherm 1a tot op koppelingenniveau.
+     */
     public record ImportLinkRow(Long id, String code, String name, String supplierCode, String supplierName,
-                                String libraryCode, boolean active) {
+                                String libraryCode, boolean active, long importDefinitionId) {
 
         private static ImportLinkRow of(ImportLink link) {
             return new ImportLinkRow(link.getId(), link.getCode(), link.getName(),
                     link.getSupplierOrganisation().getCode(), link.getSupplierOrganisation().getName(),
-                    link.getLibraryCode(), link.isActive());
+                    link.getLibraryCode(), link.isActive(), link.getImportDefinition().getId());
         }
     }
 
@@ -42,13 +45,15 @@ public class ImportLinkQueryService {
     }
 
     /**
-     * Alle koppelingen, oplopend op {@code code}, optioneel gefilterd op {@code active}.
+     * Alle koppelingen, oplopend op {@code code}, optioneel gefilterd op {@code active} en (additief,
+     * S1-B1) op {@code importDefinitionId}.
      *
      * @throws IllegalArgumentException ongeldige paginering
      */
-    public PageResult<ImportLinkRow> listImportLinks(Boolean active, Integer page, Integer size) {
+    public PageResult<ImportLinkRow> listImportLinks(Boolean active, Long importDefinitionId, Integer page,
+                                                      Integer size) {
         PageRequest pageRequest = pageRequest(page, size);
-        Page<ImportLink> result = links.findLinkRows(active, pageRequest);
+        Page<ImportLink> result = links.findLinkRows(active, importDefinitionId, pageRequest);
         return PageResult.of(result, ImportLinkRow::of);
     }
 

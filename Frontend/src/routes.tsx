@@ -9,6 +9,9 @@ import { BundlePublicationTab } from './features/bundles/BundlePublicationTab.ts
 import { BatchDetailPage } from './features/batches/BatchDetailPage.tsx';
 import { UploadPage } from './features/upload/UploadPage.tsx';
 import { WorkQueuePage } from './features/workqueue/WorkQueuePage.tsx';
+import { SetupOverviewPage } from './features/setup/SetupOverviewPage.tsx';
+import { TemplateListPage } from './features/templates/TemplateListPage.tsx';
+import { TemplateDetailPage } from './features/templates/TemplateDetailPage.tsx';
 
 /* Placeholder pages for now */
 function NotFoundPage() {
@@ -47,6 +50,18 @@ export const routes: RouteObject[] = [
   {
     path: '/upload',
     element: <UploadPage />,
+  },
+  {
+    path: '/setup',
+    element: <SetupOverviewPage />,
+  },
+  {
+    path: '/templates',
+    element: <TemplateListPage />,
+  },
+  {
+    path: '/templates/:definitionId',
+    element: <TemplateDetailPage />,
   },
   {
     path: '*',

@@ -32,6 +32,11 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     title: 'Batch niet gevonden',
     explanation: 'Deze batch (levering) bestaat niet (meer).',
   },
+  DEFINITION_NOT_FOUND: {
+    title: 'Importdefinitie niet gevonden',
+    explanation: 'Deze importdefinitie bestaat niet (meer), of het id in de link klopt niet.',
+    whatNow: 'Ga terug naar het inrichtingsoverzicht en zoek de definitie opnieuw op.',
+  },
   DELIVERY_NOT_FOUND: {
     title: 'Levering niet gevonden',
     explanation: 'Deze levering bestaat niet (meer).',
@@ -291,6 +296,11 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     title: 'Geen artefact beschikbaar',
     explanation: 'Deze run draagt geen artefact; enkel een SIMULATED-run heeft er een.',
   },
+  PUBLICATION_RUN_NOT_STUCK: {
+    title: 'Run kan niet afgebroken worden',
+    explanation: 'Afbreken kan alleen zolang een run nog op PREPARING staat; deze run is dat niet (meer).',
+    whatNow: 'Laad de lijst opnieuw.',
+  },
   LOCAL_SOURCE_NOT_CONFIGURED: {
     title: 'Ontvangstweg niet ingesteld',
     explanation: 'Deze ontvangstweg is niet ingesteld op deze omgeving.',
@@ -320,6 +330,181 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     whatNow: 'Probeer later opnieuw.',
     showBackendDetail: true,
   },
+  // S1-F2 — sjabloon-/materialisatiewizard (scherm 1b, alleen-lezen deel), zie `docs/decisions.md`
+  // 2026-09-27 "scherm 1a/1b".
+  TEMPLATE_NOT_FOUND: {
+    title: 'Sjabloon niet gevonden',
+    explanation: 'Dit sjabloon bestaat niet (meer), of het id in de link klopt niet.',
+    whatNow: 'Ga terug naar de sjablonenlijst en kies het sjabloon opnieuw.',
+  },
+  TEMPLATE_REVISION_NOT_FOUND: {
+    title: 'Sjabloonrevisie niet gevonden',
+    explanation: 'Deze revisie van het sjabloon bestaat niet (meer).',
+    whatNow: 'Laad de revisielijst opnieuw en kies een bestaande revisie.',
+  },
+  DEFINITION_NOT_A_TEMPLATE: {
+    title: 'Geen sjabloon',
+    explanation: 'Deze importdefinitie is geen herbruikbaar sjabloon (REUSABLE_TEMPLATE).',
+  },
+  NO_ACTIVE_TEMPLATE_REVISION: {
+    title: 'Geen actieve sjabloonrevisie',
+    explanation: 'Dit sjabloon heeft geen actieve revisie; er kan geen sjabloonversie gekozen worden zonder er zelf één op te geven.',
+    whatNow: 'Kies expliciet een sjabloonrevisie.',
+  },
+  BOOKMARK_NOT_FOUND: {
+    title: 'Bookmark niet gevonden',
+    explanation: 'Deze bookmark bestaat niet (meer) op deze sjabloonrevisie.',
+  },
+  // S1-F3 — het schrijfdeel van scherm 1b: materialiseren + bookmarkwaarde wijzigen. Verschillende
+  // codes hieronder zouden via een familie-fallback (`CONFIG_*`, `_NOT_FOUND`, `_IN_USE`) al een
+  // algemene zin krijgen; ze staan hier expliciet omdat die zin niet zegt wát de gebruiker moet doen.
+  MATERIALISATION_MODE_REQUIRED: {
+    title: 'Kies nieuw of hergebruik',
+    explanation:
+      'Er is niet opgegeven of dit sjabloon een nieuwe definitie wordt of een bestaande definitie ' +
+      'hergebruikt. Die keuze heeft bewust geen standaardwaarde: ze bepaalt of twee leveranciers ' +
+      'voortaan één configuratie delen.',
+    whatNow: 'Kies expliciet "nieuwe definitie" of "bestaande definitie hergebruiken".',
+  },
+  REUSE_DEFINITION_REQUIRED: {
+    title: 'Geen bestaande definitie gekozen',
+    explanation: 'Hergebruiken kan alleen met een expliciet gekozen bestaande definitie.',
+    whatNow: 'Kies de bestaande definitie waaraan deze koppeling moet hangen.',
+  },
+  REUSE_DEFINITION_NOT_ALLOWED: {
+    title: 'Bestaande definitie hoort niet bij "nieuw"',
+    explanation:
+      'Er is een bestaande definitie meegegeven terwijl er een nieuwe definitie gematerialiseerd wordt. ' +
+      'De server corrigeert dat niet stil: één van de twee is verkeerd.',
+    whatNow: 'Kies "bestaande definitie hergebruiken", of verwijder de gekozen definitie.',
+  },
+  DEFINITION_SCOPE_VALUE_NOT_ALLOWED_ON_REUSE: {
+    title: 'Definitiewaarde kan niet bij hergebruik',
+    explanation:
+      'Bij het hergebruiken van een bestaande definitie blijft haar revisie ongewijzigd. Een bookmark met ' +
+      'scope DEFINITION zou die revisie wijzigen en dus de configuratie van elke andere leverancier op ' +
+      'die definitie mee veranderen.',
+    whatNow:
+      'Materialiseer een nieuwe definitie als deze waarde moet verschillen, of laat de definitiewaarden leeg.',
+    showBackendDetail: true,
+  },
+  LINK_FIELD_BOTH_BOOKMARK_AND_EXPLICIT: {
+    title: 'Twee bronnen voor dezelfde waarde',
+    explanation:
+      'Een bookmark van dit sjabloon vult dit koppelingsveld al. Datzelfde veld nog eens rechtstreeks ' +
+      'meegeven zou twee bronnen voor één waarde opleveren.',
+    whatNow: 'Vul de waarde enkel bij de bookmark in.',
+    showBackendDetail: true,
+  },
+  CONFIG_REQUIRED_BOOKMARK_MISSING: {
+    title: 'Verplichte bookmark niet ingevuld',
+    explanation:
+      'Eén of meer verplichte bookmarks hebben geen waarde. Een uitdrukkelijk lege waarde ("") geldt ' +
+      'niet als invulling van een verplichte bookmark.',
+    whatNow: 'Vul de genoemde bookmarks in en probeer opnieuw.',
+    showBackendDetail: true,
+  },
+  CONFIG_BOOKMARK_VALUE_INVALID: {
+    title: 'Ongeldige bookmarkwaarde',
+    explanation:
+      'De ingevulde waarde past niet bij het type, het patroon of de keuzelijst van deze bookmark.',
+    whatNow: 'Pas de waarde aan volgens de servertekst hieronder.',
+    showBackendDetail: true,
+  },
+  CONFIG_BOOKMARK_VALUE_TOO_LONG: {
+    title: 'Bookmarkwaarde te lang',
+    explanation: 'De ingevulde waarde is langer dan de kolom waarin ze terechtkomt.',
+    whatNow: 'Kort de waarde in.',
+    showBackendDetail: true,
+  },
+  DEFINITION_CODE_IN_USE: {
+    title: 'Definitiecode is al in gebruik',
+    explanation:
+      'Er bestaat al een importdefinitie met deze code bij deze bronorganisatie. Er is niets ' +
+      'gematerialiseerd.',
+    whatNow: 'Kies een andere definitiecode, of hergebruik de bestaande definitie.',
+    showBackendDetail: true,
+  },
+  LINK_CODE_IN_USE: {
+    title: 'Koppelingscode is al in gebruik',
+    explanation: 'Er bestaat al een importkoppeling met deze code. Er is niets gematerialiseerd.',
+    whatNow: 'Kies een andere koppelingscode.',
+    showBackendDetail: true,
+  },
+  LINK_SCOPE_IN_USE: {
+    title: 'Deze leverancier hangt al aan deze definitie',
+    explanation:
+      'Voor deze definitie bestaat al een koppeling met dezelfde leverancier en dezelfde bibliotheek. Er ' +
+      'is niets gematerialiseerd.',
+    whatNow: 'Gebruik de bestaande koppeling, of kies een andere leverancier/bibliotheek.',
+    showBackendDetail: true,
+  },
+  DEFINITION_NOT_FROM_TEMPLATE: {
+    title: 'Definitie komt niet uit dit sjabloon',
+    explanation:
+      'Alleen een definitie die zelf uit dit sjabloon gematerialiseerd is, kan hier hergebruikt worden.',
+    whatNow: 'Kies een definitie uit de materialisatiehistoriek van dit sjabloon.',
+  },
+  TEMPLATE_REVISION_MISMATCH_ON_REUSE: {
+    title: 'Andere sjabloonversie dan de gekozen definitie',
+    explanation:
+      'De gekozen bestaande definitie is bevroren op een andere sjabloonversie dan de versie die u nu ' +
+      'gekozen heeft. Stil hergebruiken zou de sjabloonversievergelijking half en onzichtbaar uitvoeren.',
+    whatNow:
+      'Kies de sjabloonrevisie waarop die definitie bevroren is, of materialiseer een nieuwe definitie.',
+    showBackendDetail: true,
+  },
+  DEFINITION_NOT_SHAREABLE: {
+    title: 'Definitie is niet deelbaar',
+    explanation:
+      'Deze definitie draagt een LINK-bookmark op een plaats die op revisieniveau ligt (en dus mee de ' +
+      'aanbiedingsidentiteit bepaalt). Zo’n definitie mag nooit door twee leveranciers gedeeld worden.',
+    whatNow: 'Materialiseer een nieuwe definitie voor deze leverancier.',
+    showBackendDetail: true,
+  },
+  TEMPLATE_REVISION_NOT_MATERIALISABLE: {
+    title: 'Deze sjabloonrevisie is niet materialiseerbaar',
+    explanation:
+      'Alleen een ACTIVE of SUPERSEDED sjabloonrevisie kan gematerialiseerd worden; een DRAFT-revisie ' +
+      'heeft haar eigen screening en validatie nog niet doorlopen.',
+    whatNow: 'Kies een actieve (of bewust een oudere, superseded) sjabloonrevisie.',
+  },
+  SOURCE_ORGANISATION_NOT_FOUND: {
+    title: 'Organisatie niet gevonden',
+    explanation: 'De opgegeven leveranciers-/organisatiecode bestaat niet.',
+    whatNow: 'Controleer de code in het inrichtingsoverzicht.',
+    showBackendDetail: true,
+  },
+  LINK_NOT_FOUND: {
+    title: 'Koppeling niet gevonden',
+    explanation: 'Deze importkoppeling bestaat niet (meer), of het id klopt niet.',
+    whatNow: 'Laad de koppelingenlijst opnieuw.',
+  },
+  LINK_BOOKMARK_LOCKED_BY_OPEN_BATCH: {
+    title: 'Koppeling is vergrendeld door een open levering',
+    explanation:
+      'Deze koppeling heeft een open batch (levering die nog loopt). Een bookmarkwaarde wijzigen zou ' +
+      'bepalen wat er in die lopende levering gefilterd, gemapt en gepubliceerd wordt, met andere ' +
+      'configuratie dan waarmee ze begonnen is. De waarde is niet gewijzigd.',
+    whatNow: 'Wacht tot de batch afgerond is, of annuleer/publiceer ze eerst.',
+  },
+  BOOKMARK_UNKNOWN: {
+    title: 'Onbekende bookmark',
+    explanation:
+      'Deze bookmarknaam is niet gedeclareerd op de betrokken revisie. Een onbekende naam wordt nooit ' +
+      'stil genegeerd.',
+    whatNow: 'Laad de bookmarklijst opnieuw; ze is mogelijk gewijzigd.',
+    showBackendDetail: true,
+  },
+  BOOKMARK_SCOPE_MISMATCH: {
+    title: 'Verkeerde scope voor deze bookmark',
+    explanation:
+      'Op een koppeling kunnen alleen LINK-bookmarkwaarden ingevuld worden. Een DEFINITION-waarde ligt ' +
+      'vast in de revisie en verandert nooit per koppeling.',
+    showBackendDetail: true,
+  },
+  // `NO_ACTIVE_REVISION` (409 bij het wijzigen van een bookmarkwaarde: niets declareert welke bookmarks
+  // deze koppeling heeft) staat hierboven al — niet gedupliceerd, de bestaande tekst dekt dit geval.
 };
 
 type FamilyFallback = { match: (code: string) => boolean; explanation: string };

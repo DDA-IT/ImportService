@@ -209,6 +209,64 @@ batch toont daar de knoppen "Aanvaarden als nulmeting" en "Opnemen in bundel", e
 en een typ-bevestiging. Alternatief: de API (flow 4 en 5 van [`standaardflows.md`](standaardflows.md)). Bij 409
 `BATCH_IN_PUBLICATION_BUNDLE` of `BATCH_NOT_ACCEPTABLE` legt het scherm uit waarom de actie niet kan.
 
+### 4.5 Tweede ontvangstweg: bestand op de server inlezen
+
+Naast de browser-upload (secties 4-4.4) bestaat een tweede manier om een bestand aan te leveren: het
+**vooraf plaatsen op een beheerde servermap** (bijvoorbeeld nadat u het per e-mail van een leverancier
+ontving en op de server gezet heeft), en het daarna **inlezen** in plaats van uploaden.
+
+Op het uploadscherm (`/upload`) kiest u de bron: **"Bestand van mijn computer"** (de gewone upload) of
+**"Bestand op de server"**. Bij de tweede optie kiest u een bestandsnaam uit een lijst van bestanden die in
+de beheerde servermap staan, in plaats van een bestand vanaf uw eigen machine te selecteren.
+
+**Hoe het verschilt van de gewone upload:**
+
+- U vult **geen** `deliveryReference` in. De server leidt ze zelf af — op dezelfde manier als bij een
+  gewone upload (SHA-256-hash van de bestandsinhoud, eerste 12 hexadecimale tekens, vorm
+  `<bestandsnaam>#<hash>`).
+- Verder is het gedrag **identiek**: dezelfde synchrone screening, dezelfde validatie (sectie 3), dezelfde
+  idempotentie. Hetzelfde bestand nogmaals inlezen geeft een idempotente **200**-herhaling, geen dubbele
+  levering — en dat geldt ook **kruislings** met een eerdere upload van precies datzelfde bestand via de
+  browser: één bestand, één levering, ongeacht de gekozen ontvangstweg.
+- Op de levering wordt de herkomst vastgelegd (`sourceKind`): `UPLOAD` voor de browser-upload,
+  `LOCAL_DIRECTORY` voor deze route.
+
+**Vereisten en rechten:**
+
+- Vereist het recht `catalogImport.manage` (`MANAGE`), net als een gewone upload.
+- De servermap is een applicatie-configuratie (`catalogimport.local-source.directory`). Is die niet
+  ingesteld op de omgeving, dan is deze ontvangstweg **niet beschikbaar**: het scherm toont een duidelijke
+  melding (`LOCAL_SOURCE_NOT_CONFIGURED`), geen crash. Vraag in dat geval de beheerder de property te
+  zetten.
+
+**Het bronbestand blijft ongemoeid.** Na het inlezen wordt het bestand in de servermap **nooit** verplaatst
+of verwijderd door de applicatie — de bytes zijn al onveranderlijk gearchiveerd (net als bij een upload).
+Opruimen van de servermap is een taak voor de beheerder, niet iets wat de applicatie doet.
+
+**De aanroep (verzoekvorm):**
+
+```
+GET  /api/catalog-import/local-source/files
+POST /api/catalog-import/tasks/{taskId}/deliveries/local-source     (application/json)
+     { "fileName": "levering.csv" }
+     [ "deliveryReference", "uploadedBy", "expectedRecordCount", "expectedByteSize": optioneel, zelfde
+       betekenis als bij de gewone upload ]
+```
+
+`fileName` is een **kale bestandsnaam** uit de servermap, nooit een pad. Het lijst-endpoint toont enkel
+bestandsnamen, geen pad; verborgen bestanden, submappen en symlinks staan er niet in.
+
+**Foutcodes specifiek voor deze ontvangstweg:**
+
+| Fout | HTTP | Oorzaak | Wat te doen |
+| --- | --- | --- | --- |
+| `LOCAL_SOURCE_NOT_CONFIGURED` | 404 | de property `catalogimport.local-source.directory` is niet ingesteld op deze omgeving | deze ontvangstweg is hier niet beschikbaar; gebruik de gewone upload, of vraag de beheerder de property te zetten |
+| `LOCAL_SOURCE_FILE_NAME_INVALID` | 400 | `fileName` is geen kale bestandsnaam (pad, `..`, stuurtekens, leeg of te lang) | een bestandsnaam uit de lijst kiezen, niet zelf samenstellen |
+| `LOCAL_SOURCE_FILE_NOT_FOUND` | 404 | er staat geen bestand met die naam (meer) in de map | lijst opnieuw ophalen en opnieuw kiezen |
+| `LOCAL_SOURCE_FILE_NOT_REGULAR` | 409 | de ingang is geen gewoon bestand (map, symlink, device) | met de beheerder overleggen; symlinks worden bewust nooit gelezen |
+| `LOCAL_SOURCE_FILE_CHANGED` | 409 | het bestand wijzigde terwijl het gelezen werd; er is niets geregistreerd | opnieuw proberen |
+| `LOCAL_SOURCE_DIRECTORY_UNAVAILABLE` | 409 | de servermap is na het opstarten onbereikbaar geworden (share losgekoppeld, rechten weg) | later opnieuw proberen; de beheerder inlichten |
+
 ## 5. De `deliveryReference`
 
 - **Uniek per levering, per taak.** Intern wordt de sleutel `manual:<referentie>`.

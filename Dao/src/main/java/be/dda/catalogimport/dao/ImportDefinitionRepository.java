@@ -36,4 +36,19 @@ public interface ImportDefinitionRepository extends JpaRepository<ImportDefiniti
             + "order by d.code asc, d.id asc",
             countQuery = "select count(d) from ImportDefinition d where d.basedOnDefinition.id = :templateId")
     Page<ImportDefinition> findMaterialisedFrom(@Param("templateId") Long templateId, Pageable pageable);
+
+    /**
+     * Opzoeklijst voor scherm 1a (S1-B1, buiten {@code catalogimport.setup-api.enabled}): alle
+     * importdefinities, optioneel gefilterd op bronorganisatie en gebruikstype, oplopend op {@code code}.
+     * {@code join fetch} op {@code sourceOrganisation} ({@code LAZY}) omdat {@code DefinitionRow} haar
+     * code toont en dat anders per rij een extra query zou kosten.
+     */
+    @Query(value = "select d from ImportDefinition d join fetch d.sourceOrganisation "
+            + "where (:sourceOrganisationId is null or d.sourceOrganisation.id = :sourceOrganisationId) "
+            + "and (:usageType is null or d.usageType = :usageType) order by d.code asc",
+            countQuery = "select count(d) from ImportDefinition d "
+                    + "where (:sourceOrganisationId is null or d.sourceOrganisation.id = :sourceOrganisationId) "
+                    + "and (:usageType is null or d.usageType = :usageType)")
+    Page<ImportDefinition> findDefinitionRows(@Param("sourceOrganisationId") Long sourceOrganisationId,
+                                              @Param("usageType") DefinitionUsageType usageType, Pageable pageable);
 }

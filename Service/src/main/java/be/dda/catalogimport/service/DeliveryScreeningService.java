@@ -414,6 +414,11 @@ public class DeliveryScreeningService {
     private final RowIssueDao rowIssues;
     private final IssueGroupDao issueGroups;
     private final IssueAggregationService aggregation;
+    /**
+     * Bouwstap S2-B1b: koppelt de overgebleven issuegroepen aan hun behandelgeval. Schrijft nooit in
+     * {@code import_batch}, {@code import_mutation} of {@code validation_result} (D3).
+     */
+    private final IssueCaseSyncService issueCaseSync;
     private final MutationDao mutations;
     private final TransactionTemplate transaction;
     private final int stageBatchSize;
@@ -430,6 +435,7 @@ public class DeliveryScreeningService {
                                     SourceStateDao sourceState,
                                     RowIssueDao rowIssues, IssueGroupDao issueGroups,
                                     IssueAggregationService aggregation,
+                                    IssueCaseSyncService issueCaseSync,
                                     MutationDao mutations, PlatformTransactionManager transactionManager,
                                     @Value("${catalogimport.screening.stage-batch-size:2000}") int stageBatchSize,
                                     @Value("${catalogimport.screening.max-sample-rows-per-code:"
@@ -451,6 +457,7 @@ public class DeliveryScreeningService {
         this.rowIssues = rowIssues;
         this.issueGroups = issueGroups;
         this.aggregation = aggregation;
+        this.issueCaseSync = issueCaseSync;
         this.mutations = mutations;
         this.transaction = new TransactionTemplate(transactionManager);
         this.stageBatchSize = stageBatchSize > 0 ? stageBatchSize : CandidateStageDao.DEFAULT_BATCH_SIZE;
@@ -951,11 +958,25 @@ public class DeliveryScreeningService {
      * het prijsbeleid. Elke bron wordt hoogstens één keer bevraagd, en alleen wanneer er werkelijk
      * een groep van die soort bestaat: een levering zonder prijs- of referentiegroepen kost dus geen
      * enkele extra query.
+     * <p>
+     * <b>Direct hierna volgt de koppeling aan het behandelgeval</b> (bouwstap S2-B1b, ontwerp
+     * docs/design/issue-case-design.md par. 3). Bewust ná {@code aggregation.aggregate(...)}: die
+     * eindigt met {@code deleteBelowThreshold(...)}, dus pas dan staat vast welke groepen blijven
+     * bestaan en wordt er nooit een geval aangemaakt voor een groep die meteen daarna verdwijnt.
+     * Bewust ook in déze helper en niet in {@link #mutate(Context)}: zowel het normale pad als
+     * {@link #block(Context, Blockage, Progress)} komt hier langs, dus één plek dekt beide paden. De
+     * signatuur van {@link IssueAggregationService#aggregate} blijft ongewijzigd.
+     * <p>
+     * Het behandelgeval is administratief (D3): het raakt {@code validation_result},
+     * {@code import_mutation.status}, de drempels en de bundelbeslissingen niet, en de teruggegeven
+     * {@link IssueAggregationService.Aggregation} blijft exact die van pass E4.
      */
     private IssueAggregationService.Aggregation aggregate(Context context) {
-        return aggregation.aggregate(context.batchId(), context.deliveryFileId(),
-                kind -> scopeFor(context, kind), context.bulkIncidentSharePercent(),
-                maxSampleRowsPerCode);
+        IssueAggregationService.Aggregation groups = aggregation.aggregate(context.batchId(),
+                context.deliveryFileId(), kind -> scopeFor(context, kind),
+                context.bulkIncidentSharePercent(), maxSampleRowsPerCode);
+        issueCaseSync.sync(context.batchId(), context.importLinkId(), context.definitionRevisionId());
+        return groups;
     }
 
     /**

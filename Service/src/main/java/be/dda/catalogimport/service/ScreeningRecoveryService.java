@@ -2,6 +2,7 @@ package be.dda.catalogimport.service;
 
 import be.dda.catalogimport.dao.CandidateStageDao;
 import be.dda.catalogimport.dao.ImportBatchRepository;
+import be.dda.catalogimport.dao.IssueCaseDao;
 import be.dda.catalogimport.dao.IssueGroupDao;
 import be.dda.catalogimport.dao.RowIssueDao;
 import be.dda.catalogimport.dao.TaskRunRepository;
@@ -34,6 +35,13 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       gecommit; die batch blijft hervatbaar via {@code POST /batches/{id}/continue}. Ze wordt enkel
  *       gelogd, zodat een operator ziet welke batches wachten.</li>
  * </ul>
+ * Sinds bouwstap S2-B1b (docs/design/issue-case-design.md par. 3) verdwijnen met de issuegroepen ook
+ * de waarnemingen van hun <b>behandelgeval</b>. De tellers van de betrokken gevallen worden daarom
+ * herteld, en een geval dat nooit een geldige waarneming gehad heeft én waaraan nog nooit een mens
+ * geraakt heeft, wordt verwijderd — <b>in deze volgorde: eerst verwijderen, dan hertellen</b>, omdat
+ * CHECK-constraints in PostgreSQL nooit deferrable zijn. Een geval met een menselijke beslissing
+ * blijft bestaan met {@code observation_count = 0}: die beslissing mag nooit door een technische
+ * onderbreking verdwijnen.
  * Uitschakelbaar met {@code catalogimport.screening.recovery-on-startup=false} (standaard aan); tests
  * gebruiken dat zodat gedeelde testdata elkaar niet beïnvloeden.
  * <p>
@@ -63,12 +71,17 @@ public class ScreeningRecoveryService {
     private final CandidateStageDao stage;
     private final RowIssueDao rowIssues;
     private final IssueGroupDao issueGroups;
+    /**
+     * Bouwstap S2-B1b: de behandelgevallen waarvan de waarnemingen mee verdwijnen
+     * (docs/design/issue-case-design.md par. 3, laatste alinea).
+     */
+    private final IssueCaseDao issueCases;
     private final TransactionTemplate transaction;
     private final boolean enabled;
 
     public ScreeningRecoveryService(ImportBatchRepository batches, TaskRunRepository runs,
                                     CandidateStageDao stage, RowIssueDao rowIssues,
-                                    IssueGroupDao issueGroups,
+                                    IssueGroupDao issueGroups, IssueCaseDao issueCases,
                                     PlatformTransactionManager transactionManager,
                                     @Value("${catalogimport.screening.recovery-on-startup:true}")
                                     boolean enabled) {
@@ -77,6 +90,7 @@ public class ScreeningRecoveryService {
         this.stage = stage;
         this.rowIssues = rowIssues;
         this.issueGroups = issueGroups;
+        this.issueCases = issueCases;
         this.transaction = new TransactionTemplate(transactionManager);
         this.enabled = enabled;
     }
@@ -128,9 +142,24 @@ public class ScreeningRecoveryService {
         }
         stage.deleteByBatchId(batchId);
         rowIssues.deleteByBatchId(batchId);
+        // Vóór het verwijderen van de groepen vastleggen welke behandelgevallen hierdoor een
+        // waarneming verliezen (S2-B1b, ontwerp par. 3): daarna is de verwijzing weg.
+        List<Long> observedCases = issueCases.findCaseIdsByBatchId(batchId);
         // Ná de issuerijen (foreign key): een samenvatting van verdwenen problemen zou een verzonnen
         // aantal zijn.
         issueGroups.deleteByBatchId(batchId);
+        // En dan de behandelgevallen bijwerken: EERST opruimen (verwijderen) voordat we hertellen.
+        // CHECK-constraints zijn in PostgreSQL nooit deferrable; een tussentoestand die de constraint
+        // ck_issue_case_observations schendt mag dus nooit als apart statement geschreven worden.
+        // Een geval opruimen betekent: nooit een geldige waarneming gehad én waaraan nog nooit een mens
+        // geraakt heeft. Een geval waar al een mens aan raakte blijft staan met observation_count = 0
+        // - exact wat ck_issue_case_observations toelaat, en zijn beslissing mag niet verdwijnen.
+        int discarded = issueCases.deleteWithoutObservationsOrHumanAction(observedCases);
+        issueCases.recount(observedCases, Instant.now());
+        if (!observedCases.isEmpty()) {
+            LOG.warn("Batch {} lost its observations for {} issue case(s); {} untouched case(s) removed",
+                    batchId, observedCases.size(), discarded);
+        }
         batch.setStagedRowCount(0);
         batch.setBlockedCode(CODE_SCREENING_INTERRUPTED);
         batch.setBlockedReason(truncate(CODE_SCREENING_INTERRUPTED

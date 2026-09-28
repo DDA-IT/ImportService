@@ -61,7 +61,8 @@ class PermissionReadEndpointsHttpTest {
     /** Lijsten: zonder recht 403, met READ 200. */
     private static List<String> lists() {
         return List.of(API + "/batches", API + "/batches/summary", API + "/bundles", API + "/bundles/candidates",
-                API + "/import-links", API + "/tasks", API + "/setup/overview", API + "/templates");
+                API + "/import-links", API + "/tasks", API + "/setup/overview", API + "/templates",
+                API + "/source-organisations", API + "/definitions");
     }
 
     /** Endpoints op een onbekend object: zonder recht 403 (recht eerst), met recht de service-uitkomst. */
@@ -74,7 +75,8 @@ class PermissionReadEndpointsHttpTest {
                 API + "/deliveries/" + UNKNOWN,
                 API + "/templates/" + UNKNOWN + "/revisions/" + UNKNOWN + "/bookmarks",
                 API + "/templates/" + UNKNOWN + "/materialisations",
-                API + "/links/" + UNKNOWN + "/bookmark-values");
+                API + "/links/" + UNKNOWN + "/bookmark-values",
+                API + "/definitions/" + UNKNOWN + "/revisions");
     }
 
     @Test

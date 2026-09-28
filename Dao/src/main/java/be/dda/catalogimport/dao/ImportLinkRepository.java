@@ -34,15 +34,20 @@ public interface ImportLinkRepository extends JpaRepository<ImportLink, Long> {
 
     /**
      * Opzoeklijst voor Scherm 0/3 (D14, bouwstap S0-B3): alle koppelingen, optioneel gefilterd op
-     * {@code active}, oplopend op {@code code}. {@code join fetch} op {@code supplierOrganisation}
-     * ({@code LAZY}) omdat {@code ImportLinkQueryService.ImportLinkRow} haar naam/code toont en dat
-     * anders per rij een extra query zou kosten. De sortering staat in de {@code order by}, niet in de
-     * {@link Pageable}: {@code code} bestaat op zowel {@code ImportLink} als de gejoinde
-     * {@code SourceOrganisation}, wat een door Spring Data afgeleide {@code order by} dubbelzinnig zou
-     * maken.
+     * {@code active} en, sinds S1-B1, op {@code importDefinitionId} (additief, sluit de boom van scherm
+     * 1a tot op koppelingenniveau), oplopend op {@code code}. {@code join fetch} op
+     * {@code supplierOrganisation} ({@code LAZY}) omdat {@code ImportLinkQueryService.ImportLinkRow} haar
+     * naam/code toont en dat anders per rij een extra query zou kosten. De sortering staat in de
+     * {@code order by}, niet in de {@link Pageable}: {@code code} bestaat op zowel {@code ImportLink} als
+     * de gejoinde {@code SourceOrganisation}, wat een door Spring Data afgeleide {@code order by}
+     * dubbelzinnig zou maken.
      */
     @Query(value = "select l from ImportLink l join fetch l.supplierOrganisation "
-            + "where (:active is null or l.active = :active) order by l.code asc",
-            countQuery = "select count(l) from ImportLink l where (:active is null or l.active = :active)")
-    Page<ImportLink> findLinkRows(@Param("active") Boolean active, Pageable pageable);
+            + "where (:active is null or l.active = :active) "
+            + "and (:importDefinitionId is null or l.importDefinition.id = :importDefinitionId) "
+            + "order by l.code asc",
+            countQuery = "select count(l) from ImportLink l where (:active is null or l.active = :active) "
+                    + "and (:importDefinitionId is null or l.importDefinition.id = :importDefinitionId)")
+    Page<ImportLink> findLinkRows(@Param("active") Boolean active,
+                                  @Param("importDefinitionId") Long importDefinitionId, Pageable pageable);
 }

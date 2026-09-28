@@ -1,0 +1,95 @@
+.page {
+  padding: var(--spacing-4) 0 var(--spacing-8) 0;
+}
+
+.breadcrumb {
+  margin: 0 0 var(--spacing-2) 0;
+}
+
+.title {
+  margin: 0 0 var(--spacing-4) 0;
+}
+
+.section {
+  margin: 0 0 var(--spacing-6) 0;
+}
+
+.sectionTitle {
+  margin: 0 0 var(--spacing-2) 0;
+}
+
+.loading {
+  color: var(--color-text-secondary);
+}
+
+.empty {
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.flagOff {
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-3);
+  margin: 0 0 var(--spacing-4) 0;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--spacing-2) 0;
+}
+
+.revisionButton {
+  background: none;
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-1) var(--spacing-2);
+  cursor: pointer;
+  font: inherit;
+}
+
+.revisionButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.revisionSelected {
+  border-color: var(--color-accent, #2563eb);
+  font-weight: 600;
+}
+
+.draftReason {
+  margin: var(--spacing-1) 0 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.code {
+  font-family: monospace;
+  font-weight: 600;
+}
+
+.problems {
+  margin: 0 0 var(--spacing-4) 0;
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  list-style: none;
+}
+
+.problemDetail {
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  margin-left: var(--spacing-2);
+}

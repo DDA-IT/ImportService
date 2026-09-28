@@ -6,6 +6,10 @@
  * `POST /bundles/{id}/publication-runs` is **synchroon** (het antwoord is al de terminale status
  * `SIMULATED`/`FAILED`): geen polling. De runlijst is de audittrail, alleen-lezen, chronologisch,
  * zonder paginering. Buiten `FROZEN`: uitleg in plaats van de actie, geen crash, geen lege pagina.
+ *
+ * Herstel van een vastgelopen `PREPARING`-run (`docs/decisions.md` 2026-09-27, optie A): een "Afbreken"-
+ * knop per `PREPARING`-run, gated op `APPROVE` (zelfde patroon als "Simulatierun starten"). Geen
+ * tijdsvoorwaarde: de knop staat aan zodra de status `PREPARING` is.
  */
 
 import { useState } from 'react';
@@ -16,7 +20,7 @@ import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
-import { publicationRunGate } from './bundlePolicy.ts';
+import { abortRunGate, publicationRunGate } from './bundlePolicy.ts';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
 import styles from './BundlePublicationTab.module.css';
 
@@ -42,6 +46,8 @@ export function BundlePublicationTab() {
   const [notice, setNotice] = useState<string | null>(null);
   const [startError, setStartError] = useState<ApiError | null>(null);
   const [copiedRunId, setCopiedRunId] = useState<number | null>(null);
+  const [abortingRunId, setAbortingRunId] = useState<number | null>(null);
+  const [abortError, setAbortError] = useState<ApiError | null>(null);
 
   const key = `bundle-publication-runs:${bundle.id}`;
   const {
@@ -74,6 +80,23 @@ export function BundlePublicationTab() {
       }
     } finally {
       setStarting(false);
+    }
+  }
+
+  async function handleAbort(run: PublicationRunView) {
+    setAbortingRunId(run.id);
+    setAbortError(null);
+    try {
+      await runsApi.abortRun(run.id);
+      reload();
+    } catch (cause) {
+      if (cause instanceof ApiError) {
+        setAbortError(cause);
+      } else {
+        throw cause;
+      }
+    } finally {
+      setAbortingRunId(null);
     }
   }
 
@@ -134,13 +157,16 @@ export function BundlePublicationTab() {
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Publicatieruns</h2>
         {listError !== null && <ErrorBanner error={listError} />}
+        {abortError !== null && <ErrorBanner error={abortError} />}
         {loading && runs === null && <p className={styles.loading}>Bezig met laden…</p>}
         {runs !== null && runs.length === 0 && (
           <p className={styles.notice}>Deze bundel heeft nog geen publicatierun.</p>
         )}
         {runs !== null && runs.length > 0 && (
           <ul className={styles.runList}>
-            {runs.map((run) => (
+            {runs.map((run) => {
+              const abortGate = withPermission(approveGate, abortRunGate(run));
+              return (
               <li key={run.id} className={styles.run}>
                 <div className={styles.runHeader}>
                   <span>
@@ -151,6 +177,20 @@ export function BundlePublicationTab() {
                     {formatDateTime(run.requestedAt)} door {run.requestedBy}
                   </span>
                 </div>
+
+                {run.status === 'PREPARING' && (
+                  <div className={styles.actionRow}>
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      disabled={!abortGate.allowed || abortingRunId === run.id}
+                      title={abortGate.allowed ? undefined : abortGate.reason}
+                      onClick={() => handleAbort(run)}
+                    >
+                      {abortingRunId === run.id ? 'Bezig…' : 'Afbreken'}
+                    </button>
+                  </div>
+                )}
 
                 <dl className={styles.runCounts}>
                   <div>
@@ -203,7 +243,8 @@ export function BundlePublicationTab() {
                   </div>
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </section>
