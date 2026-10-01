@@ -5,6 +5,11 @@
   --font-sans: 'Public Sans Variable', system-ui, sans-serif;
   --font-heading: 'Barlow', 'Public Sans Variable', system-ui, sans-serif;
 
+  /* Z-index-schaal (naar MUI): app-bar < drawer < modal */
+  --z-app-bar: 1100;
+  --z-drawer: 1200;
+  --z-modal: 1300;
+
   /* Spacing */
   --spacing-1: 0.25rem;
   --spacing-2: 0.5rem;

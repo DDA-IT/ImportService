@@ -10,7 +10,7 @@
  * geval staat de reden als tekst bij de knop — nooit een uitgeschakelde knop zonder uitleg (§9.1).
  */
 
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type SyntheticEvent } from 'react';
 import { formatActor, useActor } from '../actor/ActorContext';
 import { Field } from './Field';
 import styles from './ConfirmDialog.module.css';
@@ -62,6 +62,9 @@ export function ConfirmDialog({
   const [reason, setReason] = useState('');
   const [typedValue, setTypedValue] = useState('');
   const titleId = useId();
+  const reasonId = useId();
+  const typedId = useId();
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
     if (open) {
@@ -69,6 +72,36 @@ export function ConfirmDialog({
       setTypedValue('');
     }
   }, [open]);
+
+  // Native modale dialoog: showModal() geeft de focus trap, de top-layer en Escape. Bij sluiten gaat de
+  // focus terug naar het element dat focus had op het moment van openen.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!open || dialog === null) {
+      return;
+    }
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+    return () => {
+      if (dialog.open) {
+        dialog.close();
+      }
+      if (previouslyFocused !== null && previouslyFocused.isConnected) {
+        previouslyFocused.focus();
+      }
+    };
+  }, [open]);
+
+  // Escape = annuleren, tenzij er een actie loopt. De browser sluit de dialoog zelf nooit: de aanroeper
+  // beslist via `open`.
+  function handleCancelEvent(event: SyntheticEvent<HTMLDialogElement>) {
+    event.preventDefault();
+    if (!pending) {
+      onCancel();
+    }
+  }
 
   if (!open) {
     return null;
@@ -92,14 +125,9 @@ export function ConfirmDialog({
   }
 
   return (
-    <div className={styles.overlay} role="presentation">
-      <form
-        className={styles.dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        onSubmit={handleSubmit}
-      >
+    <dialog ref={dialogRef} className={styles.dialog} aria-labelledby={titleId} onCancel={handleCancelEvent}>
+      <form className={styles.form} onSubmit={handleSubmit}>
+        <div className={styles.scroll}>
         <h2 id={titleId} className={styles.title}>
           {title}
         </h2>
@@ -112,12 +140,12 @@ export function ConfirmDialog({
         {reasonRequirement !== 'none' && (
           <Field
             label={reasonRequirement === 'required' ? 'Reden' : 'Reden (optioneel)'}
-            htmlFor="confirm-dialog-reason"
+            htmlFor={reasonId}
             required={reasonRequirement === 'required'}
             error={reasonError}
           >
             <textarea
-              id="confirm-dialog-reason"
+              id={reasonId}
               className={styles.textarea}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
@@ -128,12 +156,12 @@ export function ConfirmDialog({
         {typedConfirmationText !== undefined && (
           <Field
             label={`Typ "${typedConfirmationText}" om te bevestigen`}
-            htmlFor="confirm-dialog-typed"
+            htmlFor={typedId}
             required
             error={typedConfirmationError}
           >
             <input
-              id="confirm-dialog-typed"
+              id={typedId}
               className={styles.input}
               type="text"
               value={typedValue}
@@ -150,6 +178,7 @@ export function ConfirmDialog({
             {confirmBlockedReason}
           </p>
         )}
+        </div>
 
         <div className={styles.actions}>
           <button type="button" className={styles.cancelButton} onClick={onCancel} disabled={pending}>
@@ -164,6 +193,6 @@ export function ConfirmDialog({
           </button>
         </div>
       </form>
-    </div>
+    </dialog>
   );
 }

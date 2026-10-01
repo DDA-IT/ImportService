@@ -10,7 +10,7 @@
   top: 0;
   left: 0;
   bottom: 0;
-  z-index: 1100;
+  z-index: var(--z-drawer);
   width: 280px;
   display: flex;
   flex-direction: column;
@@ -74,7 +74,7 @@
 .header {
   position: sticky;
   top: 0;
-  z-index: 1000;
+  z-index: var(--z-app-bar);
   display: flex;
   align-items: center;
   gap: 16px;
@@ -139,7 +139,7 @@
     display: block;
     position: fixed;
     inset: 0;
-    z-index: 1050;
+    z-index: calc(var(--z-app-bar) + 50); /* tussen app-bar en drawer */
     background: rgba(28, 37, 46, 0.48);
   }
 

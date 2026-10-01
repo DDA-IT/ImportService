@@ -1,21 +1,41 @@
-.overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: var(--spacing-8) var(--spacing-4);
-  background: rgba(0, 0, 0, 0.4);
-  z-index: 100;
-}
-
+/* Native <dialog> met showModal(): top-layer, focus trap en ::backdrop komen van de browser. */
 .dialog {
-  width: 100%;
+  width: calc(100% - 2 * var(--spacing-4));
   max-width: 32rem;
+  max-height: calc(100vh - 2 * var(--spacing-8));
+  margin: var(--spacing-8) auto;
+  padding: 0;
+  border: none;
   background: var(--color-background);
+  color: var(--color-text);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  padding: var(--spacing-6);
+  z-index: var(--z-modal);
+  overflow: hidden;
+}
+
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* Alleen dit deel scrolt: de bevestigknoppen blijven altijd bereikbaar. */
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--spacing-6) var(--spacing-6) 0;
 }
 
 .title {
@@ -57,7 +77,8 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-2);
-  margin-top: var(--spacing-4);
+  flex: 0 0 auto;
+  padding: var(--spacing-4) var(--spacing-6) var(--spacing-6);
 }
 
 .actions button {

@@ -25,7 +25,15 @@ export function useAction<A extends unknown[], R>(run: (...args: A) => Promise<R
     runRef.current = run;
   }, [run]);
 
+  // Ref, geen state: ook twee aanroepen in dezelfde tick (vóór de volgende render) versturen niet dubbel.
+  const runningRef = useRef(false);
+
   const execute = useCallback(async (...args: A): Promise<R | undefined> => {
+    if (runningRef.current) {
+      // Een tweede aanroep tijdens een lopende actie doet niets: `undefined`, zoals bij een mislukte actie.
+      return undefined;
+    }
+    runningRef.current = true;
     setPending(true);
     setError(null);
     try {
@@ -37,6 +45,8 @@ export function useAction<A extends unknown[], R>(run: (...args: A) => Promise<R
       setError(apiError);
       setPending(false);
       return undefined;
+    } finally {
+      runningRef.current = false;
     }
   }, []);
 

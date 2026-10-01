@@ -4,6 +4,7 @@
  * aanroeper geeft `page`/`size`/`totalElements` mee en krijgt terug wat er moet veranderen.
  */
 
+import { useId } from 'react';
 import styles from './Pager.module.css';
 
 const PAGE_SIZES = [25, 50, 100, 200] as const;
@@ -18,6 +19,7 @@ export type PagerProps = {
 };
 
 export function Pager({ page, size, totalElements, onPageChange, onSizeChange }: PagerProps) {
+  const sizeId = useId();
   const from = totalElements === 0 ? 0 : page * size + 1;
   const to = Math.min((page + 1) * size, totalElements);
   const hasPrevious = page > 0;
@@ -34,10 +36,10 @@ export function Pager({ page, size, totalElements, onPageChange, onSizeChange }:
       <button type="button" onClick={() => onPageChange(page + 1)} disabled={!hasNext}>
         Volgende
       </button>
-      <label className={styles.sizeLabel} htmlFor="pager-size">
+      <label className={styles.sizeLabel} htmlFor={sizeId}>
         Per pagina
         <select
-          id="pager-size"
+          id={sizeId}
           value={size}
           onChange={(event) => onSizeChange(Number(event.target.value))}
         >
