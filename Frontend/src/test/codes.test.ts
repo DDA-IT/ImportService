@@ -104,6 +104,32 @@ describe('describe(error) — errors/codes.ts', () => {
     });
   });
 
+  describe('T1.1d: eigen codes voor upload- en bodyfouten (analyse-opvolging stap 3a)', () => {
+    it('413 UPLOAD_TOO_LARGE ziet er uit zoals de vroegere 413 zonder code', () => {
+      const withCode = describeError(new ApiError(413, 'UPLOAD_TOO_LARGE', 'too large', '/deliveries'));
+      const withoutCode = describeError(new ApiError(413, null, null, '/deliveries'));
+      expect(withCode.title).toBe('Bestand te groot');
+      expect(withCode.title).toBe(withoutCode.title);
+      expect(withCode.explanation).toBe(withoutCode.explanation);
+      expect(withCode.whatNow).toBe(withoutCode.whatNow);
+      expect(withCode.technical).toBe('UPLOAD_TOO_LARGE · HTTP 413 · /deliveries');
+    });
+
+    it('400 REQUEST_BODY_UNREADABLE is vertaald en krijgt niet de generieke weigeringstekst', () => {
+      const result = describeError(new ApiError(400, 'REQUEST_BODY_UNREADABLE', 'unreadable', '/bundles/1/decisions'));
+      expect(result.title).toBe('Verzoek niet leesbaar');
+      expect(result.explanation).toContain('niets opgeslagen');
+      expect(result.technical).toBe('REQUEST_BODY_UNREADABLE · HTTP 400 · /bundles/1/decisions');
+    });
+
+    it('500 INTERNAL_ERROR valt onder de vaste serverfoutregel, ook met code', () => {
+      const result = describeError(new ApiError(500, 'INTERNAL_ERROR', 'An unexpected error occurred', '/x'));
+      expect(result.title).toBe('Onverwachte serverfout');
+      expect(result.detail).toBeNull();
+      expect(result.technical).toBe('INTERNAL_ERROR · HTTP 500 · /x');
+    });
+  });
+
   describe('T1.2: onbekende code — familie-fallback', () => {
     // NT-11a (V7): de titel en uitleg van een fallback zijn gewoon Nederlands; de code staat enkel in `technical`.
     it('CONFIG_* krijgt de configuratie-fallback, zonder de code in titel of uitleg', () => {

@@ -811,6 +811,20 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
       'Deze koppeling hoort bij een andere beschrijving van het bestand dan de gekozen versie. Er is niets gelezen.',
     whatNow: 'Herlaad de pagina en kies een versie van de beschrijving van deze koppeling.',
   },
+  // Analyse-opvolging stap 3a — `ApiExceptionHandler` geeft deze twee fouten nu een eigen code. Zelfde tekst als
+  // de regel "413 zonder code" hieronder, zodat een upload boven de limiet er hetzelfde uitziet als voorheen.
+  UPLOAD_TOO_LARGE: {
+    title: 'Bestand te groot',
+    explanation: 'De server weigert dit bestand omdat het groter is dan de toegelaten uploadgrootte.',
+    whatNow: 'Splits het bestand, of vraag de beheerder de maximale uploadgrootte te verhogen.',
+  },
+  REQUEST_BODY_UNREADABLE: {
+    title: 'Verzoek niet leesbaar',
+    explanation:
+      'De server kon de meegestuurde gegevens niet lezen (ontbrekend, onvolledig of met een onverwachte waarde). ' +
+      'Er is niets opgeslagen. Dit zou via dit scherm niet mogen gebeuren.',
+    whatNow: 'Herlaad de pagina en probeer het opnieuw; blijft het gebeuren, verwittig dan de beheerder.',
+  },
 };
 
 type FamilyFallback = { match: (code: string) => boolean; title: string; explanation: string };
