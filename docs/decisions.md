@@ -2431,3 +2431,27 @@ en `REQUEST_BODY_UNREADABLE`; (3) een niet-vastgelegd artefact wordt opgeruimd m
 batch die niet aanvaard wordt, en `addOneBatch` neemt het batchslot (R-BAS-02). De technische invulling (slotmechanisme, eventueel API-veld voor
 "loopt nog" vs "onderbroken", volgorde van schrijven) werkt een denker-zwaar uit; die wordt apart gelogd vóór een bouwer start.
 **Bron:** mens / analyse ImportService 2026-10-01
+
+## 2026-10-01 — Stap 4 en 5 uitgewerkt: verwerkingsclaim per batch en atomaire accept-baseline
+**Vraag:** Welk slotmechanisme voor screenen/hervatten, hoe ziet de UI "loopt nog", en hoe wordt accept-baseline veilig?
+**Beslissing:**
+- **Stap 4 — claimkolom met lease en fencing** (geen advisory lock). Changeset `017-batch-processing-claim.sql` op `import_batch`:
+  `processing_claim_token uuid`, `processing_claimed_at`, `processing_heartbeat_at` (timestamptz), `processing_claimed_by varchar(100)`
+  (`<instanceId>/<bootId>`), CHECK `processing_claim_token is null or open_marker = true`. Claim levend = token gezet, heartbeat binnen de lease, en niet
+  van een vorige boot van dezelfde instantie. Claim nemen in `start()`/`resume()` onder `findByIdForUpdate`; levend → 409 `BATCH_BEING_PROCESSED`.
+  Elke schrijvende transactie na de start is gefenced (`update … set processing_heartbeat_at … where id and token`; 0 rijen → `ClaimLostException` →
+  rollback/stop, geen `fail()`-opruiming). Vrijgeven in `complete()`/`block()`/`fail()` in dezelfde transactie. Opstartherstel met compare-and-set op de
+  token; een levende vreemde claim blijft ongemoeid. Config: `catalogimport.screening.claim-lease` default **PT60M** (mens), ongeldig/≤0 stopt de opstart;
+  `catalogimport.instance-id` default hostnaam, **verplicht uniek per instantie**.
+- **"Loopt nog":** additief veld `boolean processingActive` op `BatchDetail`; frontend: true → knop uit + uitleg, false → zoals nu, undefined (oudere
+  server) → neutrale tekst, knop aan.
+- **Stap 5 — accept-baseline in één transactie** (mens: alles-of-niets aanvaard, niet langer hervatbaar per chunk). Volgorde: koppeling NOWAIT → batch
+  NOWAIT → requireScreened + bundellidmaatschap + stale-check → chunklus → skipOpenContentMutations → BASELINE_ACCEPTED. Geen Liquibase.
+  Nieuwe code `BASELINE_ACCEPTANCE_IN_PROGRESS`. `addOneBatch`: batch-ids oplopend, `findByIdForUpdateNowait`, herlezen; slot bezet → 409
+  `BATCH_BEING_PROCESSED`. Meteen 409 bij een bezet slot, niet wachten (mens akkoord). Vertaling van lock-fouten buiten `TransactionTemplate.execute`.
+- **S5-d:** de stale-check geldt ook voor UNCHANGED-regels (mens: ook weigeren).
+- **Globale slotvolgorde:** bundel → run → koppeling(en, oplopende id) → batch(es, oplopende id); een taakslot nooit terwijl een van deze vastgehouden wordt.
+- **Stories:** S4-a schema+domein, S4-b claims+fencing in screening, S4-c opstartherstel, S4-d `processingActive`, S4-e frontend, S4-f concurrency-test,
+  S5-a NOWAIT-repositories, S5-b addOneBatch, S5-c atomaire baseline, S5-d stale-check UNCHANGED, S5-e frontend/handleiding. Eén commit per story.
+- Prestatietest van de atomaire aanvaarding op ~1M regels doet de mens op PostgreSQL. Geen gebruikerskolom op de claim (V2 2026-09-23 blijft).
+**Bron:** denker-zwaar + mens (lease 60 min, alles-of-niets, S5-d ja, DB-omgeving door de mens) / docs/design/fase2-screening-design.md §9, §18
