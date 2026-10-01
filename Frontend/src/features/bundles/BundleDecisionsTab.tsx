@@ -4,6 +4,9 @@
  *
  * Append-only register van alle beslissingen in chronologische volgorde. Een herziening staat hier
  * als extra regel naast de beslissing die ze herziet; ze overschrijft die niet.
+ *
+ * NT-11b (V7): soort, bereik, statussen en filter staan in gewoon Nederlands (woordenboek); de ruwe
+ * filtertekst zoals de server ze bewaart, staat onder "Technische details (voor support)".
  */
 
 import { useState } from 'react';
@@ -14,6 +17,10 @@ import { DataTable, type DataTableColumn } from '../../components/DataTable.tsx'
 import { Pager } from '../../components/Pager.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
+import { Term } from '../../terms/Term.tsx';
+import type { TermDomain } from '../../terms/index.ts';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
 import styles from './BundleDecisionsTab.module.css';
 
@@ -21,28 +28,80 @@ function formatDateTime(iso: string | null): string {
   return iso === null ? '—' : new Date(iso).toLocaleString('nl-BE');
 }
 
+/**
+ * Bevriezen en annuleren gaan over de status van de bundel; alle andere beslissingen (ook de automatische
+ * goedkeuring bij het bevriezen, die als bereik "hele bundel" bewaard wordt) over de status van mutaties.
+ * Daarom kiest de soort van de beslissing het woordenboek, niet het bereik.
+ */
+function statusDomain(row: DecisionRow): TermDomain {
+  return row.decisionKind === 'FREEZE' || row.decisionKind === 'CANCEL' ? 'bundleStatus' : 'mutationStatus';
+}
+
 function StatusTransition({ row }: { row: DecisionRow }) {
+  const domain = statusDomain(row);
   return (
     <div>
-      <StatusBadge status={row.previousStatus} />
+      {row.previousStatus === null || row.previousStatus === undefined ? (
+        '—'
+      ) : (
+        <StatusBadge status={row.previousStatus} domain={domain} />
+      )}
       {' → '}
-      <StatusBadge status={row.newStatus} />
+      {row.newStatus === null || row.newStatus === undefined ? (
+        '—'
+      ) : (
+        <StatusBadge status={row.newStatus} domain={domain} />
+      )}
     </div>
   );
 }
 
 function DecisionScopeLabel({ row }: { row: DecisionRow }) {
-  const scope = row.decisionScope;
-  if (scope === 'MUTATION' && row.mutationId !== null) {
+  if (row.decisionScope === 'MUTATION' && row.mutationId !== null) {
     return <>Mutatie {row.mutationId}</>;
   }
-  if (scope === 'GROUP') {
-    return <>Groep</>;
-  }
-  if (scope === 'BUNDLE') {
-    return <>Bundel</>;
-  }
-  return <>{scope}</>;
+  return <Term domain="decisionScope" code={row.decisionScope} unknownLabel="Ander bereik" />;
+}
+
+/** Het woordenboek voor de waarde van een filterveld; `batchId` en `identityHash` hebben er geen. */
+const FILTER_VALUE_DOMAIN: Record<string, { domain: TermDomain; unknownLabel: string } | undefined> = {
+  status: { domain: 'mutationStatus', unknownLabel: 'Andere status' },
+  statusReason: { domain: 'mutationStatusReason', unknownLabel: 'Andere reden' },
+  actionType: { domain: 'mutationAction', unknownLabel: 'Andere soort' },
+};
+
+/**
+ * De filter van een groepsbeslissing, bewaard als `veld=waarde;veld=waarde`, in gewoon Nederlands. De tekst zoals
+ * de server ze bewaart (inclusief de sleutel van een wijzigingsgroep) staat onder "Technische details".
+ */
+function SelectionFilterText({ filter }: { filter: string }) {
+  const parts = filter
+    .split(';')
+    .filter((part) => part !== '')
+    .map((part) => {
+      const separator = part.indexOf('=');
+      return separator > 0 ? { key: part.substring(0, separator), value: part.substring(separator + 1) } : { key: part, value: '' };
+    });
+  return (
+    <div className={styles.filter}>
+      {parts.map((part, index) => {
+        const valueTerm = FILTER_VALUE_DOMAIN[part.key];
+        return (
+          <span key={`${part.key}-${index}`}>
+            {index > 0 && '; '}
+            <Term domain="selectionFilterField" code={part.key} unknownLabel="Ander filterdeel" />
+            {part.key === 'identityHash' ? ': één wijzigingsgroep' : ': '}
+            {valueTerm !== undefined ? (
+              <Term domain={valueTerm.domain} code={part.value} unknownLabel={valueTerm.unknownLabel} />
+            ) : part.key === 'identityHash' ? null : (
+              part.value
+            )}
+          </span>
+        );
+      })}
+      <TechnicalDetails items={[{ name: 'Filter zoals bewaard', value: <code>{filter}</code> }]} />
+    </div>
+  );
 }
 
 export function BundleDecisionsTab() {
@@ -57,7 +116,11 @@ export function BundleDecisionsTab() {
 
   const columns: readonly DataTableColumn<DecisionRow>[] = [
     { key: 'decidedAt', header: 'Tijdstip', render: (row) => formatDateTime(row.decidedAt) },
-    { key: 'decisionKind', header: 'Soort', render: (row) => row.decisionKind },
+    {
+      key: 'decisionKind',
+      header: 'Soort',
+      render: (row) => <Term domain="decisionKind" code={row.decisionKind} unknownLabel="Andere beslissing" />,
+    },
     { key: 'decisionScope', header: 'Bereik', render: (row) => <DecisionScopeLabel row={row} /> },
     { key: 'decidedBy', header: 'Beslisser', render: (row) => row.decidedBy },
     {
@@ -74,7 +137,7 @@ export function BundleDecisionsTab() {
     {
       key: 'selectionFilter',
       header: 'Filter',
-      render: (row) => (row.selectionFilter === null ? '—' : <code className={styles.filter}>{row.selectionFilter}</code>),
+      render: (row) => (row.selectionFilter === null ? '—' : <SelectionFilterText filter={row.selectionFilter} />),
     },
     {
       key: 'reason',
@@ -85,9 +148,13 @@ export function BundleDecisionsTab() {
 
   return (
     <div className={styles.tab}>
-      <p className={styles.explanation}>
-        Append-only: een herziening staat hier als extra regel naast de beslissing die ze herziet.
-      </p>
+      <WhatIsThis>
+        <p>
+          Het beslissingsregister is het logboek van de bundel: wie wat goedgekeurd, afgekeurd, bevroren of geannuleerd
+          heeft, en wanneer. Er wordt alleen bijgeschreven, nooit aangepast: een herziening staat als extra regel naast
+          de beslissing die ze herziet.
+        </p>
+      </WhatIsThis>
 
       {error !== null && <ErrorBanner error={error} />}
       {loading && data === null && <p className={styles.loading}>Bezig met laden…</p>}

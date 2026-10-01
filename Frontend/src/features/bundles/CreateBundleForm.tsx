@@ -24,6 +24,7 @@ import { useActor } from '../../actor/ActorContext.tsx';
 import { useAction } from '../../hooks/useAction.ts';
 import { Field } from '../../components/Field.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import { term } from '../../terms/index.ts';
 import styles from './CreateBundleForm.module.css';
 
 export type CreateBundleFormProps = {
@@ -122,6 +123,18 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
         htmlFor="create-bundle-target-mode"
         required
         hint="Geen automatische keuze: er is bewust geen voorselectie."
+        help={
+          <>
+            <p>De doelmodus bepaalt waar de gepubliceerde wijzigingen uiteindelijk naartoe gaan.</p>
+            <ul>
+              {PUBLICATION_TARGET_MODES.map((mode) => (
+                <li key={mode}>
+                  <strong>{term('targetMode', mode).label}</strong>: {term('targetMode', mode).uitleg}
+                </li>
+              ))}
+            </ul>
+          </>
+        }
       >
         <select
           id="create-bundle-target-mode"
@@ -132,7 +145,7 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
           <option value={NO_TARGET_MODE}>— kies een doelmodus —</option>
           {PUBLICATION_TARGET_MODES.map((mode) => (
             <option key={mode} value={mode}>
-              {mode}
+              {term('targetMode', mode).label}
             </option>
           ))}
         </select>
@@ -140,12 +153,17 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
 
       {targetMode === 'PRODUCTION' && (
         <p className={styles.warning} role="alert">
-          Let op: deze bundel wordt door een latere publicatiefase als echte publicatie naar
-          ProDisWebbase behandeld.
+          Let op: een latere publicatiestap behandelt deze bundel als een echte publicatie naar
+          Prodis.
         </p>
       )}
 
-      <Field label="Doelmoment" htmlFor="create-bundle-target-moment" hint="Optioneel.">
+      <Field
+        label="Doelmoment"
+        htmlFor="create-bundle-target-moment"
+        hint="Optioneel."
+        help="Het moment waarop u de bundel gepubliceerd wilt zien; u mag dit leeg laten."
+      >
         <input
           id="create-bundle-target-moment"
           className={styles.input}
@@ -155,7 +173,12 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
         />
       </Field>
 
-      <Field label="Publicatiebeleid" htmlFor="create-bundle-policy" hint="Optioneel.">
+      <Field
+        label="Publicatiebeleid"
+        htmlFor="create-bundle-policy"
+        hint="Optioneel."
+        help="Een vrije tekst die bij de bundel bewaard wordt, bijvoorbeeld een afspraak over hoe of wanneer er gepubliceerd wordt."
+      >
         <input
           id="create-bundle-policy"
           className={styles.input}

@@ -121,7 +121,19 @@ Vervang de paden door de daadwerkelijke installatielocatie; zet de `PG*`-omgevin
 omgeving van de geplande taak (Task Scheduler: "Add new"-omgevingsvariabele of een wrapper-script;
 cron: in `/etc/environment`, een `.env`-bestand dat het script inleest, of user-crontab-omgeving).
 
-## 7. Aannames en bewust uitgestelde verbeteringen
+## 7. Sleutel en back-up
+
+Een pg_dump bevat de volledige database, inclusief alle ciphertext in de tabel `external_credential` en de sleutel-ID's in kolom `encryption_key_id`. Een back-up is echter enkel volledig herstelbaar als alle sleutels beschikbaar zijn die golden op het moment van de dump.
+
+**Bewaarperiode van sleutels:** Een oude sleutel (vervangen door een nieuwere) wordt minstens zo lang bewaard als de langste back-upretentie. In het standaard regime uit §3 (`daily/`: 7 dagen, `weekly/`: ~5 weken) betekent dit: oude sleutels minstens 5 weken bewaren, pas verwijderen wanneer geen enkele back-up meer dat sleutel-ID gebruikt (0 rijen in `external_credential` met `encryption_key_id` gelijk aan die sleutel).
+
+**Sleutellocatie en back-up:** De versleutelingssleutel(s) staan **nooit** in `CATALOG_BACKUP_DIR` of op dezelfde opslagmedium als de pg_dump-bestanden. Dit voorkomt dat beide tegelijk verloren gaan. Een aparte sleutel per omgeving (productie ≠ staging ≠ lokaal) geldt als harde regel — zie `docs/design/credentials-sleutelbeheer-design.md` V3.
+
+**Gevolg voor herstel:** Een pg_dump van productie kan in een andere omgeving (staging/lokaal) worden hersteld, maar de credentials in `external_credential` kunnen enkel ontsleuteld worden als de productiesleutel beschikbaar is. In het normale geval (nieuwe omgeving geeft geen toegang tot productie-geheimen nodig) hoeven de waarden niet ontsleuteld te worden. Een bevoegde gebruiker kan deze credentials opnieuw invoeren in de doelomgeving, met een nieuwe omgevingssleutel.
+
+**Zie ook:** `docs/design/credentials-sleutelbeheer-design.md` §2-5 (versleutelingstandaarden, sleutelring, rotatie).
+
+## 8. Aannames en bewust uitgestelde verbeteringen
 
 - Productie is Linux/cron (aanname uit D13-uitvoering); enkel de scheduling-laag verandert als dat
   niet klopt, niet de scripts zelf.

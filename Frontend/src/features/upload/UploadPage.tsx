@@ -3,7 +3,10 @@
  * batchdetail, scherm (2) ..." stap 9.
  *
  * - Taak kiezen uit `GET /tasks`; een niet-`MANUAL`-taak is uitgeschakeld mét reden (de intake weigert ze
- *   met `TASK_NOT_MANUAL`). Dit scherm maakt géén taak aan (V1: dat hoort bij het materialisatiewizard-spoor).
+ *   met `TASK_NOT_MANUAL`). Dit scherm maakt géén taak aan (dat hoort bij het NT-spoor: Inrichting → Nieuwe leverancier en taak).
+ * - NT-6: een taak zonder actieve versie (`activeRevisionId === null`) blijft zichtbaar maar uitgeschakeld,
+ *   met "(nog niet klaar: versie niet geactiveerd)" en een korte verwijzing naar Inrichting; sinds NT-10 ook per
+ *   koppeling een link "Controleren" naar `/setup/links/:linkId/check`.
  * - Geen voortgangsbalk: `fetch` kan de uploadvoortgang niet meten, en de server screent synchroon in
  *   hetzelfde verzoek. Daarom twee benoemde fasen (uploaden, screenen) en één tijdteller; het scherm kan
  *   niet zien wanneer fase 1 eindigt en zegt dat ook.
@@ -29,7 +32,10 @@ import { Field } from '../../components/Field.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
-import { Count } from '../batches/format.tsx';
+import { StatusBadge } from '../../components/StatusBadge.tsx';
+import { IssueCodeTerm } from '../../terms/IssueCodeTerm.tsx';
+import { Count, CounterLabel } from '../batches/format.tsx';
+import { linkCheckHref } from '../setup/check/linkCheck.ts';
 import { deriveDeliveryReference, MAX_DELIVERY_REFERENCE_LENGTH } from './deliveryReference.ts';
 import styles from './UploadPage.module.css';
 
@@ -85,10 +91,22 @@ function parseOptionalCount(raw: string): number | undefined | null {
   return Number.isSafeInteger(value) ? value : null;
 }
 
+/**
+ * NT-6: een taak waarvan de beschrijving nog geen actieve versie heeft (`activeRevisionId === null`, NT-4), is
+ * nog niet klaar — de intake zou ze weigeren met `NO_ACTIVE_REVISION`. Ze blijft zichtbaar (nooit verborgen),
+ * maar is niet te kiezen. Enkel `null` telt: een ontbrekend veld (oudere server) wordt niet als "niet klaar"
+ * gelezen.
+ */
+function isNotReady(task: TaskRow): boolean {
+  return task.activeRevisionId === null;
+}
+
 function taskLabel(task: TaskRow): string {
-  const notes = [task.triggerType === 'MANUAL' ? null : 'niet manueel', task.active ? null : 'inactief'].filter(
-    (note) => note !== null,
-  );
+  const notes = [
+    task.triggerType === 'MANUAL' ? null : 'niet manueel',
+    task.active ? null : 'inactief',
+    isNotReady(task) ? 'nog niet klaar: versie niet geactiveerd' : null,
+  ].filter((note) => note !== null);
   return `${task.importLinkCode} — ${task.name}${notes.length > 0 ? ` (${notes.join(', ')})` : ''}`;
 }
 
@@ -130,6 +148,11 @@ export function UploadPage() {
 
   const manualTasks = tasks.data?.content.filter((task) => task.triggerType === 'MANUAL') ?? [];
   const noManualTask = tasks.data !== null && manualTasks.length === 0;
+  const hasNotReadyTask = manualTasks.some(isNotReady);
+  // NT-10: per koppeling (niet per taak) één link naar het scherm "Controleren".
+  const notReadyLinks = manualTasks
+    .filter(isNotReady)
+    .filter((task, index, all) => all.findIndex((other) => other.importLinkId === task.importLinkId) === index);
 
   async function handleFileChange(next: File | null) {
     const pick = ++pickCounter.current;
@@ -264,9 +287,29 @@ export function UploadPage() {
         )}
         {noManualTask && (
           <p className={styles.note} role="status" data-testid="no-manual-task">
-            Er is geen manuele taak. Een levering kan alleen op een taak met trigger MANUAL geüpload worden. Dit
-            scherm maakt geen taak aan: dat gebeurt bij het inrichten van de koppeling (materialisatie van het
-            sjabloon).
+            Er is nog geen taak. Maak er een via <Link to="/setup">Inrichting</Link> → Nieuwe leverancier en taak (recht Beheren nodig).
+          </p>
+        )}
+        {hasNotReadyTask && (
+          <p className={styles.note} role="note" data-testid="not-ready-tasks">
+            Een taak met &laquo;nog niet klaar&raquo; kan nog geen levering aannemen: de versie van haar beschrijving
+            is nog niet geactiveerd. Controleer en activeer die versie bij <Link to="/setup">Inrichting</Link>, of
+            rechtstreeks:{' '}
+            {notReadyLinks.map((task, index) => (
+              <span key={task.importLinkId}>
+                {index > 0 && ', '}
+                <Link
+                  to={linkCheckHref({
+                    linkId: task.importLinkId,
+                    definitionId: typeof task.importDefinitionId === 'number' ? task.importDefinitionId : null,
+                  })}
+                  data-testid={`check-link-${task.importLinkId}`}
+                >
+                  Controleren ({task.importLinkCode})
+                </Link>
+              </span>
+            ))}
+            .
           </p>
         )}
 
@@ -280,7 +323,7 @@ export function UploadPage() {
           >
             <option value={NO_TASK}>— kies een taak —</option>
             {tasks.data?.content.map((task) => (
-              <option key={task.id} value={task.id} disabled={task.triggerType !== 'MANUAL'}>
+              <option key={task.id} value={task.id} disabled={task.triggerType !== 'MANUAL' || isNotReady(task)}>
                 {taskLabel(task)}
               </option>
             ))}
@@ -371,7 +414,7 @@ export function UploadPage() {
           hint={
             sourceKind === 'UPLOAD'
               ? `Afgeleid van bestandsnaam en inhoud (geen tijdstempel), max. ${MAX_DELIVERY_REFERENCE_LENGTH} tekens. Hetzelfde bestand met dezelfde referentie opnieuw uploaden is veilig; een ander bestand heeft een nieuwe referentie nodig.`
-              : `Optioneel: leeg gelaten leidt de server de referentie zelf af (hash van het bestand). Max. ${MAX_DELIVERY_REFERENCE_LENGTH} tekens.`
+              : `Optioneel: leeg gelaten leidt de server de referentie zelf af (uit de vingerafdruk van het bestand). Max. ${MAX_DELIVERY_REFERENCE_LENGTH} tekens.`
           }
         >
           <input
@@ -384,7 +427,7 @@ export function UploadPage() {
           />
         </Field>
 
-        <Field label="Verwacht aantal datalijnen" htmlFor="upload-expected-records" hint="Optioneel. Wijkt het af, dan wordt de levering geblokkeerd.">
+        <Field label="Verwacht aantal datalijnen" htmlFor="upload-expected-records" hint="Optioneel. Wijkt het af, dan wordt de levering tegengehouden.">
           <input
             id="upload-expected-records"
             className={styles.input}
@@ -396,7 +439,7 @@ export function UploadPage() {
           />
         </Field>
 
-        <Field label="Verwachte bestandsgrootte (bytes)" htmlFor="upload-expected-bytes" hint="Optioneel. Wijkt ze af, dan wordt de levering geblokkeerd.">
+        <Field label="Verwachte bestandsgrootte (bytes)" htmlFor="upload-expected-bytes" hint="Optioneel. Wijkt ze af, dan wordt de levering tegengehouden.">
           <input
             id="upload-expected-bytes"
             className={styles.input}
@@ -425,11 +468,11 @@ export function UploadPage() {
             </p>
             <ol className={styles.phases}>
               <li>Uploaden — het bestand wordt naar de server gestuurd.</li>
-              <li>Screenen — de server leest en beoordeelt elke regel.</li>
+              <li>Controleren — de server leest en beoordeelt elke regel.</li>
             </ol>
             <p>
-              Beide fasen lopen in één verzoek: er is geen voortgangsbalk en dit scherm ziet niet wanneer fase 1
-              klaar is. Dit kan lang duren (minuten bij grote bestanden). Laat dit tabblad open.
+              Beide fasen lopen in één verzoek: er is geen voortgangsbalk en dit scherm ziet niet wanneer de eerste
+              fase klaar is. Dit kan lang duren (minuten bij grote bestanden). Laat dit tabblad open.
             </p>
           </div>
         )}
@@ -444,8 +487,8 @@ export function UploadPage() {
                 (<strong>{reference.trim()}</strong>)
               </>
             )}
-            : is ze al verwerkt, dan krijgt u de bestaande levering terug (HTTP 200, geen nieuwe screening); zo niet,
-            dan wordt ze nu verwerkt. Wijzig de referentie niet.
+            : is ze al verwerkt, dan krijgt u de bestaande levering terug (zonder nieuwe controle); zo niet, dan
+            wordt ze nu verwerkt. Wijzig de referentie niet.
           </p>
         )}
 
@@ -467,21 +510,26 @@ export function UploadPage() {
 
       {delivery !== null && outcome !== null && (
         <section className={styles.result} data-testid="upload-result" aria-label="Resultaat van de upload">
-          <h2>{outcome.created ? 'Levering aangemaakt en gescreend' : 'Bestaande levering teruggevonden'}</h2>
+          <h2>{outcome.created ? 'Levering aangemaakt en gecontroleerd' : 'Bestaande levering teruggevonden'}</h2>
           {!outcome.created && (
             <p role="status">
-              Deze referentie was al verwerkt met een identiek bestand (HTTP 200). Er is niet opnieuw gescreend en
-              er is geen nieuwe batch ontstaan.
+              Deze referentie was al verwerkt met een identiek bestand. Er is niet opnieuw gecontroleerd en er is
+              geen nieuwe batch ontstaan.
             </p>
           )}
           <p>
             Levering #{delivery.deliveryId} · Batch{' '}
             <Link to={`/batches/${delivery.batchId}`}>#{delivery.batchId}</Link> · status{' '}
-            <strong>{delivery.status}</strong>
+            <strong>
+              <StatusBadge status={delivery.status} domain="batchStatus" />
+            </strong>
             {delivery.blockedCode !== null && (
               <>
                 {' '}
-                · reden <strong>{delivery.blockedCode}</strong>
+                · reden van tegenhouden{' '}
+                <strong>
+                  <IssueCodeTerm code={delivery.blockedCode} />
+                </strong>
               </>
             )}
           </p>
@@ -489,14 +537,14 @@ export function UploadPage() {
             Referentie: <strong data-testid="upload-result-reference">{delivery.deliveryReference}</strong>
           </p>
           <dl className={styles.counters}>
-            <Counter label="Ruwe records" value={delivery.rawRecordCount} />
-            <Counter label="Geldig" value={delivery.validRecordCount} />
-            <Counter label="Verworpen" value={delivery.rejectedRecordCount} />
-            <Counter label="Dubbele identiteit" value={delivery.duplicateIdentityCount} />
-            <Counter label="Nieuw" value={delivery.newCount} />
-            <Counter label="Gewijzigd" value={delivery.changedCount} />
-            <Counter label="Ongewijzigd" value={delivery.unchangedCount} />
-            <Counter label="Inhoudsmutaties" value={delivery.contentMutationCount} />
+            <Counter counter="rawRecordCount" value={delivery.rawRecordCount} />
+            <Counter counter="validRecordCount" value={delivery.validRecordCount} />
+            <Counter counter="rejectedRecordCount" value={delivery.rejectedRecordCount} />
+            <Counter counter="duplicateIdentityCount" value={delivery.duplicateIdentityCount} />
+            <Counter counter="newCount" value={delivery.newCount} />
+            <Counter counter="changedCount" value={delivery.changedCount} />
+            <Counter counter="unchangedCount" value={delivery.unchangedCount} />
+            <Counter counter="contentMutationCount" value={delivery.contentMutationCount} />
           </dl>
         </section>
       )}
@@ -504,10 +552,12 @@ export function UploadPage() {
   );
 }
 
-function Counter({ label, value }: { label: string; value: number | null }) {
+function Counter({ counter, value }: { counter: string; value: number | null }) {
   return (
     <div className={styles.counter}>
-      <dt>{label}</dt>
+      <dt>
+        <CounterLabel counter={counter} />
+      </dt>
       <dd>
         <Count value={value} />
       </dd>

@@ -1,6 +1,8 @@
 /**
- * Toont een `ApiError` volgens `describe()` (zie `codes.ts`): titel, uitleg, "wat nu" en — altijd,
- * ook bij een bekende code — de technische regel `<code> · HTTP <status> · <pad>` (§4 regel 1).
+ * Toont een `ApiError` volgens `describe()` (zie `codes.ts`): titel, uitleg en "wat nu" in gewoon Nederlands.
+ * De technische regel `<code> · HTTP <status> · <pad>` (§4 regel 1) staat er altijd, ook bij een bekende code,
+ * maar klein en inklapbaar onder "Technische details (voor support)" (V7: de code is altijd opvraagbaar, niet
+ * de hoofdtekst).
  *
  * Draagt de code volgens `codes.ts` concrete servergegevens (`detail`, bv. de tot tien
  * conflictvoorbeelden bij `BUNDLE_OFFER_CONFLICT`), dan staat die tekst volledig en letterlijk onder de
@@ -12,6 +14,7 @@
 
 import { describe } from './codes';
 import type { ApiError } from '../api/http';
+import { TechnicalDetails } from '../terms/TechnicalDetails.tsx';
 import styles from './ErrorBanner.module.css';
 
 export type ErrorBannerProps = { error: ApiError };
@@ -32,7 +35,9 @@ export function ErrorBanner({ error }: ErrorBannerProps) {
           </p>
         </div>
       )}
-      <p className={styles.technical}>{technical}</p>
+      <div className={styles.technical}>
+        <TechnicalDetails items={[{ name: 'Melding', value: technical }]} />
+      </div>
     </div>
   );
 }

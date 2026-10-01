@@ -1,1 +1,9 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion><parent><groupId>be.dda.catalogimport</groupId><artifactId>catalog-import</artifactId><version>0.1.0-SNAPSHOT</version></parent><artifactId>Service</artifactId><dependencies><dependency><groupId>be.dda.catalogimport</groupId><artifactId>Dao</artifactId><version>${project.version}</version></dependency><dependency><groupId>org.springframework</groupId><artifactId>spring-context</artifactId></dependency></dependencies></project>
+<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion><parent><groupId>be.dda.catalogimport</groupId><artifactId>catalog-import</artifactId><version>0.1.0-SNAPSHOT</version></parent><artifactId>Service</artifactId><dependencies><dependency><groupId>be.dda.catalogimport</groupId><artifactId>Dao</artifactId><version>${project.version}</version></dependency><dependency><groupId>org.springframework</groupId><artifactId>spring-context</artifactId></dependency>
+    <!-- K-4a (L8): enkel de SFTP-CLIENT wordt in main-code gebruikt (SftpConnector). De serverklassen zitten in dezelfde
+         jars maar worden uitsluitend in Web/src/test gebruikt (embedded testserver); versie in de root-pom. -->
+    <dependency><groupId>org.apache.sshd</groupId><artifactId>sshd-core</artifactId></dependency>
+    <dependency><groupId>org.apache.sshd</groupId><artifactId>sshd-sftp</artifactId></dependency>
+    <!-- K-4a (2026-09-29): BouncyCastle ed25519-ondersteuning voor ssh-ed25519 hostsleutels in MINA SSHD. Runtime-scope
+         omdat MINA het detecteert via de classpath; de Service-code roept BC niet rechtstreeks aan. -->
+    <dependency><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk18on</artifactId><scope>runtime</scope></dependency>
+</dependencies></project>

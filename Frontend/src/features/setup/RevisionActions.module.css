@@ -1,0 +1,73 @@
+/* S1-F4 — gedeelde opmaak van CreateSuccessorAction en ActivateRevisionAction (scherm 1a). */
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+  margin: var(--spacing-3) 0;
+}
+
+.actionButton {
+  padding: var(--spacing-1) var(--spacing-2);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+  font: inherit;
+  cursor: pointer;
+}
+
+.primaryButton {
+  padding: var(--spacing-2) var(--spacing-4);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: white;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.actionButton:disabled,
+.primaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Nooit een uitgeschakelde knop zonder uitleg: de reden staat er als tekst naast. */
+.reason {
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  font-style: italic;
+}
+
+.dialogBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  font-size: 0.875rem;
+}
+
+.dialogBody p {
+  margin: 0;
+}
+
+.warning {
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--status-awaiting-bg);
+  color: var(--status-awaiting-text);
+}
+
+.muted {
+  color: var(--color-text-secondary);
+}
+
+.flagOff {
+  margin: 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: 0.875rem;
+}

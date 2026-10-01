@@ -5,6 +5,12 @@ spring:
     url: ${CATALOG_DB_URL:jdbc:postgresql://localhost:5432/catalog_import}
     username: ${CATALOG_DB_USERNAME:catalog_import}
     password: ${CATALOG_DB_PASSWORD:catalog_import}
+    hikari:
+      data-source-properties:
+        # pgjdbc-property (geldt voor alle profielen, de URL blijft ongewijzigd): zonder dit bevat een
+        # constraint-fout de hele rij ("Failing row contains ..."), dus ook de ciphertext van een credential
+        # (docs/decisions.md 2026-09-29, K-2a (a); credentials-sleutelbeheer-design par. 2.5).
+        logServerErrorDetail: false
   jpa:
     hibernate:
       ddl-auto: validate
@@ -46,17 +52,44 @@ spring:
 # pas bij de eerste levering opvallen). Het OS-account van de applicatie heeft er enkel LEESRECHT nodig:
 # CatalogImport verplaatst of verwijdert er nooit iets; opruimen is een operatortaak.
 #
-# catalogimport.setup-api.enabled staat hier BEWUST NIET: zonder die vlag bestaat de setup-API
-# (/api/catalog-import/setup/**) niet en antwoordt elk setup-pad met 404. Die API kan importdefinities
-# en hun drempels bepalen; ze vereist een login en (5-PERM) het recht catalogImport.manage (schrijven)
-# of catalogImport.read (lezen). De vlag is een tweede, onafhankelijke beveiliging naast dat recht.
-# Alleen het demo-profiel zet ze aan.
+# catalogimport.setup-api.enabled staat hier BEWUST NIET. Sinds NT-3 (docs/decisions.md 2026-09-30,
+# NT-spoor V2 = a) schermt de vlag enkel nog GET /api/catalog-import/setup/overview en het sjabloonbeheer
+# (POST /templates/{id}/revisions/{r}/bookmarks en .../bookmarks/{name}/usages) af: zonder vlag bestaan die
+# niet (404; 405 voor POST .../bookmarks, omdat GET op dat pad altijd bestaat). De schrijfpaden van de inrichting (/setup/**), sjablonen lezen/materialiseren en de bookmarkwaarden
+# van een koppeling bestaan altijd en zijn enkel beschermd door een login en het recht catalogImport.manage
+# (schrijven) of catalogImport.read (lezen). Alleen het demo-profiel zet de vlag aan.
 #
 # catalogimport.permissions.grants staat hier BEWUST NIET (Fase 5-PERM, docs/design/fase5-perm-design.md
 # par. 2): geen wildcard en geen default, in geen enkel profiel. Zonder expliciete toekenning heeft
 # niemand ook maar een enkel recht (fail-closed) en geeft elk beschermd endpoint 403 PERMISSION_DENIED.
 # Zie application-local.yml / application-demo.yml voor de vorm van een toekenning.
 catalogimport:
+  # Sleutelring voor de versleutelde opslag van externe credentials (docs/decisions.md 2026-09-29, K-1;
+  # docs/design/credentials-sleutelbeheer-design.md). BEWUST GEEN sleutel en geen default in geen enkel profiel.
+  # Niet gezet (beide leeg) = functie uit: de app start, opslaan/ontsleutelen geeft SECRETS_NOT_CONFIGURED.
+  # Wel gezet maar ongeldig (geen base64, niet 32 bytes, dubbele id, actieve id ontbreekt, zelfde materiaal
+  # onder twee id's, keys zonder actieve id of omgekeerd) = de applicatie start niet.
+  # Zet per omgeving:  CATALOG_SECRETS_KEYS=<id1>:<base64>,<id2>:<base64>   (id = [A-Za-z0-9-]{1,32})
+  #                    CATALOG_SECRETS_ACTIVE_KEY_ID=<id1>
+  # Genereer een sleutel met:  openssl rand -base64 32
+  secrets:
+    keys: ${CATALOG_SECRETS_KEYS:}
+    active-key-id: ${CATALOG_SECRETS_ACTIVE_KEY_ID:}
+  # catalogimport.fetch.* staat hier BEWUST NIET als waarde (K-4a; docs/decisions.md 2026-09-29 L4b, A12;
+  # docs/design/leveringsconfiguratie-design.md par. 5 en 8). Enkel deze toelichting:
+  #   fetch.allowed-hosts   (env CATALOGIMPORT_FETCH_ALLOWED_HOSTS) exacte hostnamen, komma-gescheiden in EEN string,
+  #                         beheerd door infra; geen wildcards. Niet gezet = hostsleutelscan, verbindingstest en ophalen
+  #                         bestaan niet (404 FETCH_NOT_CONFIGURED). Ongeldige ingang = de applicatie start niet.
+  #                         Een YAML-lijst wordt niet gelezen (de functie blijft dan uit).
+  #   fetch.allow-loopback  default false. Laat 127.0.0.0/8 en ::1 toe - ENKEL voor ontwikkeling en tests (embedded
+  #                         SFTP-server). Link-local, multicast en 0.0.0.0/:: blijven altijd geweigerd.
+  #   fetch.connect-timeout default PT15S (TCP + sleuteluitwisseling), fetch.auth-timeout default PT15S,
+  #   fetch.idle-timeout    default PT60S, fetch.listing-cap default 10000 (meer ingangen = FETCH_LISTING_TOO_LARGE).
+  #   fetch.stuck-after     default PT60M (K-4c, zoals publication-run.stuck-after): een ophaalrun die RUNNING blijft zonder
+  #                         levering (procescrash) is daarna "vastgelopen". Een ongeldige of niet-positieve waarde laat de
+  #                         applicatie niet opstarten. Het afbreek-endpoint (POST /task-runs/{id}/abort, MANAGE) kent
+  #                         GEEN tijdsvoorwaarde. fetch.recovery-on-startup default true: bij het opstarten worden
+  #                         vastgelopen runs FAILED/FETCH_TIMED_OUT (veronderstelt één instantie; tests zetten dit uit).
   screening:
     # Aantal rijen per microbatch-transactie tijdens het stagen (design par. 2 en par. 9 stap C).
     stage-batch-size: 2000
@@ -78,6 +111,18 @@ catalogimport:
     # op MUTATING blijft hervatbaar via POST /api/catalog-import/batches/{id}/continue. Veronderstelt precies
     # één applicatie-instantie (geen lease/heartbeat tot Fase 5).
     recovery-on-startup: true
+  trial-read:
+    # Proefinlezing POST /api/catalog-import/revisions/{id}/trial-reads (NT-9, docs/design/proefinlezing-design.md
+    # par. 3). Er wordt niets bewaard; de bestandsgrootte is begrensd door de bestaande multipartlimiet en de
+    # regellengte door screening.max-line-length hierboven.
+    # Aantal voorbeeldrijen (de eerste datarecords, ongeacht hun lot); 0 of negatief = default 20.
+    sample-rows: 20
+    # Aantal voorbeelden per issuegroep in het antwoord; het aantal voorvallen blijft altijd het werkelijke aantal.
+    max-issue-examples-per-code: 5
+    # Hoeveel aanbiedingsidentiteiten hoogstens in het geheugen gevolgd worden voor de controle op dubbele
+    # identiteiten (grofweg 100 bytes per identiteit). Wordt de grens bereikt, dan is duplicateIdentityCount null
+    # en staat de controle als TRACKING_LIMIT_REACHED in notEvaluated - nooit een stille 0.
+    max-tracked-identities: 2000000
   publication-run:
     # Herstel van een vastgelopen PREPARING-publicatierun (docs/decisions.md 2026-09-27): een run die
     # tussen aanmaken en afronden door een proces- of serverfout blijft staan, blokkeert anders voorgoed

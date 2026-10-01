@@ -47,7 +47,7 @@ export function BundleDetailPage() {
         <>
           <div className={styles.header}>
             <h1 className={styles.title}>{data.bundleReference}</h1>
-            <StatusBadge status={data.status} />
+            <StatusBadge status={data.status} domain="bundleStatus" />
           </div>
 
           <nav className={styles.tabs}>

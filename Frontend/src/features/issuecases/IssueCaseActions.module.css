@@ -1,0 +1,22 @@
+.actions {
+  margin: var(--spacing-4) 0;
+}
+
+.buttons {
+  display: flex;
+  gap: var(--spacing-3);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.notice {
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 0.875rem;
+}

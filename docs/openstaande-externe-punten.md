@@ -106,3 +106,48 @@ en van de leesbehoefte richting legacy-Zen, zie punt 4) voordat het verder uitge
 **Wie levert dit:** Prodis/extern (beheerder van de Pervasive-omgeving).
 
 **Blokkeert:** 5-PUB-b (TRIAL_LIBRARY).
+
+## 6. Secrets en sleutelbeheer bij DDA-infra (versleutelde credentials)
+
+**Wat is nodig:** antwoord van DDA-infra op drie vragen rond de versleutelde opslag van
+SFTP/API-credentials (zie `docs/decisions.md`, 2026-09-29 "Sleutelbeheer credentials"):
+
+- **Hoe komen secrets in staging en productie in de app terecht?** (bv. omgevingsvariabele,
+  `_FILE`/Docker-secrets, systemd `EnvironmentFile`, CI-variabelen.)
+- **Bestaat er bij DDA een vault of kluis** (secrets-manager, KMS, gedeelde wachtwoordkluis) voor de
+  opslag van de hoofdsleutel?
+- **Wie bewaart de reservekopie van de sleutel,** waar, gescheiden van de databaseback-up (pg_dump), en
+  minstens zo lang als de back-upretentie na een sleutelwissel?
+
+**Wie levert dit:** Jeff/DDA-infra.
+
+**Blokkeert:** niet de bouwstappen K-1 (versleutelcomponent) en K-2 (opslagtabel) — lokaal en in tests
+volstaat een omgevingsvariabele. Wél de uiteindelijke inzet in productie (de eerste echte connector, K-4).
+
+## 7. SFTP-ophaling: DDA-infra, eerste leverancier(s) en pilotkeuze
+
+**Wat is nodig:** gegevens en afspraken voor het automatisch ophalen van leveringsbestanden via SFTP
+(zie `docs/decisions.md`, 2026-09-29 "Leveringsconfiguratie en verbindingsprofiel (SFTP)" en
+`docs/design/leveringsconfiguratie-design.md`):
+
+- **DDA-infra:**
+  - uitgaande firewall open voor poort 22 naar de leveranciers;
+  - een vast uitgaand IP-adres, zodat leveranciers dat kunnen whitelisten;
+  - wie de property `catalogimport.fetch.allowed-hosts` (exacte hostnamen) beheert en hoe een nieuwe
+    host daarin komt;
+  - de productiehosting (Linux/cron of Windows/TaskScheduler; zie ook punt 6).
+- **Eerste leverancier(s):**
+  - host, poort, login en authenticatiemethode (v1 enkel wachtwoord);
+  - de hostsleutelvingerafdruk (SHA-256), via een apart kanaal dan de verbinding zelf;
+  - de map en de naamconventie van de bestanden (overschreven of gedateerd);
+  - het publicatietijdstip van nieuwe bestanden;
+  - de bewaartermijn bij de leverancier;
+  - of verplaatsen of verwijderen na het ophalen ooit gewenst en toegestaan is.
+- **Keuze van de pilotleverancier.** VROOAM is het gedeelde-mapgeval: zonder `BESTANDS_PREFIX` is die
+  enkel bruikbaar met recordfilters.
+
+**Wie levert dit:** (a) Jeff/DDA-infra; (b) en (c) de business/leveranciersbeheer, met de betrokken
+leverancier(s) als bron.
+
+**Blokkeert:** niet de bouwstappen K-2 t/m K-4a/b in dev en test (embedded testserver). Wél de eerste
+echte ophaling bij een leverancier en de productie-inzet.

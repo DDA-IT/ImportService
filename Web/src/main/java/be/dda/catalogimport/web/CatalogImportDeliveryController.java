@@ -6,13 +6,12 @@ import be.dda.catalogimport.service.ConflictException;
 import be.dda.catalogimport.service.DeliveryIntakeService;
 import be.dda.catalogimport.service.DeliveryIntakeService.IntakeResult;
 import be.dda.catalogimport.service.DeliveryQueryService;
+import be.dda.catalogimport.service.DeliveryReceptionService;
 import be.dda.catalogimport.service.DeliveryReferences;
-import be.dda.catalogimport.service.DeliveryScreeningService;
 import be.dda.catalogimport.service.DeliveryView;
 import be.dda.catalogimport.service.DeliveryView.BatchView;
 import be.dda.catalogimport.service.LocalSourceDirectory;
 import be.dda.catalogimport.service.LocalSourceDirectory.LocalSourceFile;
-import be.dda.catalogimport.service.NotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -47,6 +46,9 @@ import org.springframework.web.multipart.MultipartFile;
  * Sinds Fase 5-AUTH (5A-5) tekent de geverifieerde gebruiker: {@code uploadedBy} is optioneel en enkel nog
  * een controle (afwijkende naam = 400 {@code ACTOR_FIELD_MISMATCH}, {@code system} = 403
  * {@code SYSTEM_ACTOR_FORBIDDEN}); bewaard wordt de token-naam en het subject.
+ * <p>
+ * Sinds bouwstap K-4b zit de orkestratie intake → screening in {@link DeliveryReceptionService#screenIfCreated}
+ * (gedeeld met de ophaalrun); endpoints, statuscodes en antwoorden zijn ongewijzigd.
  */
 @RestController
 @RequestMapping("/api/catalog-import")
@@ -100,17 +102,17 @@ public class CatalogImportDeliveryController {
     }
 
     private final DeliveryIntakeService intake;
-    private final DeliveryScreeningService screening;
+    private final DeliveryReceptionService reception;
     private final DeliveryQueryService queries;
     private final LocalSourceDirectory localSource;
 
     private final CurrentActor currentActor;
 
-    public CatalogImportDeliveryController(DeliveryIntakeService intake, DeliveryScreeningService screening,
+    public CatalogImportDeliveryController(DeliveryIntakeService intake, DeliveryReceptionService reception,
                                            DeliveryQueryService queries, LocalSourceDirectory localSource,
                                            CurrentActor currentActor) {
         this.intake = intake;
-        this.screening = screening;
+        this.reception = reception;
         this.queries = queries;
         this.localSource = localSource;
         this.currentActor = currentActor;
@@ -216,32 +218,15 @@ public class CatalogImportDeliveryController {
         return respond(result, reference);
     }
 
-    /** Screent een nieuwe levering synchroon en geeft de bijgewerkte toestand terug (gemeenschappelijk pad). */
-    private ResponseEntity<UploadResponse> respond(IntakeResult result, String deliveryReference) {
-        DeliveryView delivery = result.delivery();
-        if (result.created()) {
-            screen(delivery.batch().batchId());
-            // Opnieuw lezen: de screening heeft status en tellers ondertussen bijgewerkt.
-            delivery = queries.getDelivery(delivery.deliveryId());
-        }
-        return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
-                .body(UploadResponse.of(delivery, deliveryReference));
-    }
-
     /**
-     * Een technische fout laat de batch op {@code FAILED} (of, halverwege de mutatiegeneratie, op het
-     * hervatbare {@code MUTATING}) achter; die toestand is het antwoord, niet een verloren upload.
-     * Een {@code NotFound}/{@code Conflict} uit de screening blijft wél doorgaan naar de
-     * foutafhandeling: dat wijst op een inconsistentie die de aanroeper moet zien.
+     * Screent een nieuwe levering synchroon (via {@link DeliveryReceptionService#screenIfCreated}, zelfde
+     * foutsemantiek als vóór K-4b) en bouwt het antwoord: 201 bij een nieuwe levering, 200 bij een retry.
      */
-    private void screen(long batchId) {
-        try {
-            screening.screen(batchId);
-        } catch (NotFoundException | ConflictException expected) {
-            throw expected;
-        } catch (RuntimeException technical) {
-            LOG.error("Screening of batch {} failed technically", batchId, technical);
-        }
+    private ResponseEntity<UploadResponse> respond(IntakeResult result, String deliveryReference) {
+        IntakeResult screened = reception.screenIfCreated(result);
+        DeliveryView delivery = screened.delivery();
+        return ResponseEntity.status(screened.created() ? HttpStatus.CREATED : HttpStatus.OK)
+                .body(UploadResponse.of(delivery, deliveryReference));
     }
 
     /** De levering met haar bestand(en) en de status van de laatste batch. */

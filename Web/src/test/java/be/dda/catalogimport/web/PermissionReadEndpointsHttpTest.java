@@ -28,13 +28,15 @@ import org.springframework.test.web.servlet.MockMvc;
  *       {@code PERMISSION_DENIED} in de interceptor, per endpointfamilie bewezen.</li>
  *   <li><b>Regel:</b> recht eerst. <b>Implementatie:</b> een onbekend object geeft zonder recht 403, niet
  *       404; met recht wél de gewone service-uitkomst (dus nooit 403).</li>
- *   <li><b>Regel (par. 5):</b> de setup-vlag blijft de buitenste beveiliging. Hier staat ze aan: zonder
- *       {@code READ} 403. Vlag uit = 404 blijft in {@code SetupApiDisabledTest}.</li>
+ *   <li><b>Regel (NT-3, beslissingslog 2026-09-30 V2 = a):</b> sjablonen lezen en de bookmarkwaarden van een
+ *       koppeling staan niet meer achter {@code catalogimport.setup-api.enabled}; {@code READ} is hun enige slot.
+ *       Deze klasse draait daarom bewust met de vlag <b>uit</b> (de default). {@code GET /setup/overview} blijft
+ *       achter de vlag en staat hier dus niet: 403/200 met de vlag aan in
+ *       {@code SetupApiFlagOnlyPermissionHttpTest}, 404 zonder vlag in {@code SetupApiDisabledTest}.</li>
  * </ul>
  * Enkel lezen: er wordt niets geschreven, de database wordt niet gedeeld-vervuild.
  */
-@SpringBootTest(properties = {"catalogimport.setup-api.enabled=true",
-        "catalogimport.screening.recovery-on-startup=false"})
+@SpringBootTest(properties = {"catalogimport.screening.recovery-on-startup=false"})
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
 class PermissionReadEndpointsHttpTest {
@@ -61,8 +63,9 @@ class PermissionReadEndpointsHttpTest {
     /** Lijsten: zonder recht 403, met READ 200. */
     private static List<String> lists() {
         return List.of(API + "/batches", API + "/batches/summary", API + "/bundles", API + "/bundles/candidates",
-                API + "/import-links", API + "/tasks", API + "/setup/overview", API + "/templates",
-                API + "/source-organisations", API + "/definitions");
+                API + "/import-links", API + "/tasks", API + "/templates",
+                API + "/source-organisations", API + "/definitions", API + "/issue-cases",
+                API + "/issue-cases/summary");
     }
 
     /** Endpoints op een onbekend object: zonder recht 403 (recht eerst), met recht de service-uitkomst. */
@@ -76,7 +79,26 @@ class PermissionReadEndpointsHttpTest {
                 API + "/templates/" + UNKNOWN + "/revisions/" + UNKNOWN + "/bookmarks",
                 API + "/templates/" + UNKNOWN + "/materialisations",
                 API + "/links/" + UNKNOWN + "/bookmark-values",
-                API + "/definitions/" + UNKNOWN + "/revisions");
+                // NT-8: gereedheidscontrole van een koppeling (READ).
+                API + "/import-links/" + UNKNOWN + "/readiness",
+                API + "/definitions/" + UNKNOWN + "/revisions",
+                API + "/definitions/" + UNKNOWN + "/revisions/" + UNKNOWN,
+                API + "/issue-cases/" + UNKNOWN, API + "/issue-cases/" + UNKNOWN + "/observations",
+                API + "/issue-cases/" + UNKNOWN + "/events",
+                // K-4b (design leveringsconfiguratie par. 6, L7b): runlijst en rundetail vragen READ.
+                API + "/tasks/" + UNKNOWN + "/runs", API + "/task-runs/" + UNKNOWN);
+    }
+
+    /** K-4b: met READ geven runlijst en rundetail van een onbekend object de eigen 404-codes. */
+    @Test
+    void withReadTheRunReadsOfAnUnknownObjectAre404WithTheirOwnCode() throws Exception {
+        mockMvc.perform(get(API + "/tasks/" + UNKNOWN + "/runs").with(as(USER, Permission.READ)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("TASK_NOT_FOUND"));
+        mockMvc.perform(get(API + "/task-runs/" + UNKNOWN).with(as(USER, Permission.READ)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("TASK_RUN_NOT_FOUND"));
+        // NT-8: de gereedheidscontrole van een onbekende koppeling.
+        mockMvc.perform(get(API + "/import-links/" + UNKNOWN + "/readiness").with(as(USER, Permission.READ)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("LINK_NOT_FOUND"));
     }
 
     @Test
@@ -154,6 +176,59 @@ class PermissionReadEndpointsHttpTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.truncated").value(false))
                 .andExpect(jsonPath("$.files").isArray());
+    }
+
+    /**
+     * Credentials (K-3; design leveringsconfiguratie par. 6, beslissingslog 2026-09-29 L7b): de drie GET's vragen
+     * {@code MANAGE}, niet {@code READ} — elk antwoord toont {@code boundHost}. Daarom staan ze bewust niet in
+     * {@link #lists()}/{@link #byUnknownId()}. Lezen werkt ook zonder sleutelring (deze context heeft er geen nodig).
+     */
+    @Test
+    void theCredentialReadsNeedManageAndReadIsNotEnough() throws Exception {
+        String unknown = java.util.UUID.randomUUID().toString();
+        List<String> paths = List.of(API + "/credentials", API + "/credentials/" + unknown,
+                API + "/credentials/" + unknown + "/events");
+        for (String path : paths) {
+            mockMvc.perform(get(path).with(withoutPermissions(USER)))
+                    .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+            mockMvc.perform(get(path).with(as(USER, Permission.READ)))
+                    .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+        }
+
+        mockMvc.perform(get(API + "/credentials").with(as(USER, Permission.MANAGE)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isArray());
+        mockMvc.perform(get(API + "/credentials").with(as(USER, Permission.APPROVE))).andExpect(status().isOk());
+        // Recht eerst, spiegelbeeld: met MANAGE is een onbekende ref de gewone 404, nooit 403.
+        for (String path : paths.subList(1, 3)) {
+            mockMvc.perform(get(path).with(as(USER, Permission.MANAGE)))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("CREDENTIAL_NOT_FOUND"));
+        }
+    }
+
+    /**
+     * Verbindingsprofielen en Leveringsconfiguraties (LC-2; design leveringsconfiguratie par. 6, L7b): lijst en detail
+     * vragen {@code MANAGE}, zoals de credentials - het detail toont host, login en map. Daarom staan ze bewust niet in
+     * {@link #lists()}/{@link #byUnknownId()}. Recht eerst: een onbekend id is zonder recht 403, met MANAGE 404.
+     */
+    @Test
+    void theProfileAndDeliveryConfigurationReadsNeedManageAndReadIsNotEnough() throws Exception {
+        for (String base : List.of(API + "/connection-profiles", API + "/delivery-configurations")) {
+            for (String path : List.of(base, base + "/" + UNKNOWN)) {
+                mockMvc.perform(get(path).with(withoutPermissions(USER)))
+                        .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+                mockMvc.perform(get(path).with(as(USER, Permission.READ)))
+                        .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+            }
+            mockMvc.perform(get(base).with(as(USER, Permission.MANAGE)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$").isArray());
+            mockMvc.perform(get(base).with(as(USER, Permission.APPROVE))).andExpect(status().isOk());
+            mockMvc.perform(get(base + "/" + UNKNOWN).with(as(USER, Permission.MANAGE)))
+                    .andExpect(status().isNotFound());
+        }
+        mockMvc.perform(get(API + "/connection-profiles/" + UNKNOWN).with(as(USER, Permission.MANAGE)))
+                .andExpect(jsonPath("$.code").value("CONNECTION_PROFILE_NOT_FOUND"));
+        mockMvc.perform(get(API + "/delivery-configurations/" + UNKNOWN).with(as(USER, Permission.MANAGE)))
+                .andExpect(jsonPath("$.code").value("DELIVERY_CONFIGURATION_NOT_FOUND"));
     }
 
     /** {@code /me} is uitgezonderd: een rechtenloze gebruiker krijgt 200. De inhoud van {@code permissions} is 5B-4. */

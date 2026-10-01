@@ -32,12 +32,19 @@ import { useQuery } from '../../hooks/useQuery.ts';
 import { Pager } from '../../components/Pager.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import { describeIssue } from '../../terms/IssueCodeTerm.tsx';
+import { Term } from '../../terms/Term.tsx';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
+import { INVULPUNT, INVULPUNTEN, INVULPUNTEN_CAP } from '../../terms/wording.ts';
+import { FlagOffNotice } from '../setup/FlagOffNotice.tsx';
+import { AddTaskAfterMaterialise } from './AddTaskAfterMaterialise.tsx';
 import { LinkBookmarkValuesSection } from './LinkBookmarkValuesSection.tsx';
 import { MaterialiseForm } from './MaterialiseForm.tsx';
 import { isSetupApiDisabledError, SETUP_API_DISABLED_MESSAGE } from './setupApiFlag.ts';
 import styles from './TemplateDetailPage.module.css';
 
-const DRAFT_REASON = 'een DRAFT-sjabloonrevisie is nog niet materialiseerbaar';
+/** Waarom een conceptversie van een sjabloon niet te kiezen is (V7: gewoon Nederlands, geen statuscode). */
+const DRAFT_REASON = 'een concept van een sjabloon is nog niet bruikbaar om uit te materialiseren';
 
 /** De koppeling waarvan de bookmarkwaarden open staan. */
 type SelectedLink = { linkId: number; linkCode: string };
@@ -63,13 +70,18 @@ function BookmarkSetSection({
 
   return (
     <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>Bookmarks — revisie #{revision.id}</h2>
+      <h2 className={styles.sectionTitle}>
+        {INVULPUNTEN_CAP} — versie {revision.revisionNumber}
+      </h2>
+      <WhatIsThis>
+        Een {INVULPUNT} is een waarde die u invult wanneer u uit dit sjabloon materialiseert, bijvoorbeeld de code van
+        de leverancier. Sommige gelden voor de hele beschrijving van het bestand, andere worden per koppeling
+        ingevuld. Verplichte {INVULPUNTEN} moeten een waarde hebben voor een levering kan starten.
+      </WhatIsThis>
 
       {bookmarkSet.error !== null &&
         (isSetupApiDisabledError(bookmarkSet.error) ? (
-          <p role="alert" className={styles.flagOff}>
-            {SETUP_API_DISABLED_MESSAGE}
-          </p>
+          <FlagOffNotice message={SETUP_API_DISABLED_MESSAGE} className={styles.flagOff} />
         ) : (
           <ErrorBanner error={bookmarkSet.error} />
         ))}
@@ -78,26 +90,37 @@ function BookmarkSetSection({
         <>
           {bookmarkSet.data.problems.length > 0 && (
             <ul className={styles.problems} role="alert" data-testid="bookmark-problems">
-              {bookmarkSet.data.problems.map((problem, index) => (
-                <li key={`${problem.code}-${problem.bookmarkName}-${index}`}>
-                  {problem.message}
-                  <span className={styles.problemDetail}>
-                    ({problem.code} · {problem.bookmarkName})
-                  </span>
-                </li>
-              ))}
+              {bookmarkSet.data.problems.map((problem, index) => {
+                const described = describeIssue(problem.code);
+                const bookmarkLabel =
+                  bookmarkSet.data?.bookmarks.find((bookmark) => bookmark.name === problem.bookmarkName)?.label ?? null;
+                return (
+                  <li
+                    key={`${problem.code}-${problem.bookmarkName}-${index}`}
+                    title={`technische code: ${problem.code} · ${problem.bookmarkName} · ${problem.message}`}
+                  >
+                    {described.label}: {described.uitleg}
+                    {bookmarkLabel !== null && (
+                      <span className={styles.problemDetail}>({INVULPUNT} &laquo;{bookmarkLabel}&raquo;)</span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
           {bookmarkSet.data.bookmarks.length === 0 ? (
-            <p className={styles.empty}>Geen bookmarks gedeclareerd op deze revisie.</p>
+            <p className={styles.empty}>Geen {INVULPUNTEN} gedeclareerd op deze versie.</p>
           ) : (
             <ul className={styles.list}>
               {bookmarkSet.data.bookmarks.map((bookmark) => (
                 <li key={bookmark.id} className={styles.listItem}>
-                  <span className={styles.code}>{bookmark.name}</span>
-                  <span>{bookmark.label}</span>
+                  {/* De technische naam staat in de tooltip (V7), niet als zichtbare tekst. */}
+                  <span className={styles.code} title={`Technische naam: ${bookmark.name}`}>
+                    {bookmark.label}
+                  </span>
                   <span>
-                    {bookmark.dataType} / {bookmark.valueScope}
+                    <Term domain="bookmarkDataType" code={bookmark.dataType} unknownLabel="Ander soort waarde" /> ·{' '}
+                    <Term domain="bookmarkScope" code={bookmark.valueScope} unknownLabel="Andere geldigheid" />
                   </span>
                   <span>{bookmark.required ? 'verplicht' : 'optioneel'}</span>
                 </li>
@@ -144,11 +167,14 @@ function MaterialisationHistorySection({
     <section className={styles.section}>
       <h2 className={styles.sectionTitle}>Materialisatiehistoriek</h2>
 
+      <WhatIsThis>
+        Hier staan de beschrijvingen van bestanden die al uit dit sjabloon gemaakt zijn (gematerialiseerd). Een
+        beschrijving is &laquo;deelbaar&raquo; als er een tweede leverancier een koppeling aan mag krijgen; dat kan
+        niet als een {INVULPUNT} dat per koppeling ingevuld wordt, iets in de gedeelde versie zou veranderen.
+      </WhatIsThis>
       {query.error !== null &&
         (isSetupApiDisabledError(query.error) ? (
-          <p role="alert" className={styles.flagOff}>
-            {SETUP_API_DISABLED_MESSAGE}
-          </p>
+          <FlagOffNotice message={SETUP_API_DISABLED_MESSAGE} className={styles.flagOff} />
         ) : (
           <ErrorBanner error={query.error} />
         ))}
@@ -165,14 +191,20 @@ function MaterialisationHistorySection({
                   <span>{row.definitionName}</span>
                   <span>
                     {row.definitionRevisionNumber !== null
-                      ? `revisie #${row.definitionRevisionNumber}`
-                      : 'geen herkomstrevisie'}
+                      ? `versie ${row.definitionRevisionNumber}`
+                      : 'geen herkomstversie'}
                   </span>
                   <span>{row.importLinkCount} koppeling(en)</span>
-                  <span>
+                  <span
+                    title={
+                      row.blockingBookmarkName !== null
+                        ? `Technische naam van het ${INVULPUNT}: ${row.blockingBookmarkName}`
+                        : undefined
+                    }
+                  >
                     {row.shareable
                       ? 'deelbaar'
-                      : `niet deelbaar${row.blockingBookmarkName !== null ? ` (${row.blockingBookmarkName})` : ''}`}
+                      : `niet deelbaar${row.blockingBookmarkName !== null ? ` (door een ${INVULPUNT} dat per koppeling ingevuld wordt)` : ''}`}
                   </span>
                   <button
                     type="button"
@@ -220,12 +252,12 @@ function DefinitionLinksSection({
 
   return (
     <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>Koppelingen van definitie #{definitionId}</h2>
+      <h2 className={styles.sectionTitle}>Koppelingen van beschrijving #{definitionId}</h2>
       {links.error !== null && <ErrorBanner error={links.error} />}
       {links.loading && links.data === null && <p className={styles.loading}>Bezig met laden…</p>}
       {links.data !== null &&
         (links.data.content.length === 0 ? (
-          <p className={styles.empty}>Deze definitie heeft nog geen koppelingen.</p>
+          <p className={styles.empty}>Deze beschrijving heeft nog geen koppelingen.</p>
         ) : (
           <ul className={styles.list} data-testid="definition-links">
             {links.data.content.map((row) => (
@@ -267,6 +299,12 @@ export function TemplateDetailPage() {
   const [historySize, setHistorySize] = useState(50);
   const [linksDefinitionId, setLinksDefinitionId] = useState<number | null>(null);
   const [selectedLink, setSelectedLink] = useState<SelectedLink | null>(null);
+  /** NT-7: de laatst gematerialiseerde koppeling, voor "Taak toevoegen". */
+  const [justMaterialised, setJustMaterialised] = useState<{
+    definitionId: number;
+    linkId: number;
+    linkCode: string;
+  } | null>(null);
 
   const revisionsKey = `template-revisions:${definitionId}:${page}:${size}`;
   const revisions = useQuery(revisionsKey, (signal) =>
@@ -286,13 +324,13 @@ export function TemplateDetailPage() {
       <h1 className={styles.title}>Sjabloon #{definitionId}</h1>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Revisie kiezen</h2>
+        <h2 className={styles.sectionTitle}>Versie kiezen</h2>
         {revisions.error !== null && <ErrorBanner error={revisions.error} />}
         {revisions.loading && revisions.data === null && <p className={styles.loading}>Bezig met laden…</p>}
         {revisions.data !== null && (
           <>
             {revisions.data.content.length === 0 ? (
-              <p className={styles.empty}>Geen revisies voor dit sjabloon.</p>
+              <p className={styles.empty}>Geen versies voor dit sjabloon.</p>
             ) : (
               <ul className={styles.list} data-testid="template-revisions">
                 {revisions.data.content.map((revision: RevisionRow) => {
@@ -310,9 +348,9 @@ export function TemplateDetailPage() {
                         title={isDraft ? DRAFT_REASON : undefined}
                         onClick={() => setSelectedRevision(revision)}
                       >
-                        Revisie #{revision.revisionNumber}
+                        Versie {revision.revisionNumber}
                       </button>
-                      <StatusBadge status={revision.status} />
+                      <StatusBadge status={revision.status} domain="revisionStatus" />
                       {isDraft && <p className={styles.draftReason}>{DRAFT_REASON}</p>}
                     </li>
                   );
@@ -344,7 +382,22 @@ export function TemplateDetailPage() {
             materialisations.reload();
             setLinksDefinitionId(materialisedDefinitionId);
             setSelectedLink(link);
+            setJustMaterialised({
+              definitionId: materialisedDefinitionId,
+              linkId: link.linkId,
+              linkCode: link.linkCode,
+            });
           }}
+        />
+      )}
+
+      {justMaterialised !== null && (
+        <AddTaskAfterMaterialise
+          key={justMaterialised.linkId}
+          templateId={definitionId}
+          definitionId={justMaterialised.definitionId}
+          linkId={justMaterialised.linkId}
+          linkCode={justMaterialised.linkCode}
         />
       )}
 

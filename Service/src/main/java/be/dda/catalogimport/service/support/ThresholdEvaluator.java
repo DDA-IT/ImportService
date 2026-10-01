@@ -142,6 +142,23 @@ public final class ThresholdEvaluator {
     }
 
     /**
+     * De voorrang tussen de twee drempels (precedentie par. 15.3): een overschreden kritieke drempel wint
+     * van een overschreden drempel op de verworpen regels — die gaat over de betrouwbaarheid van wat wél
+     * door de validatie kwam. Gedeeld door de screening en de proefinlezing (NT-9).
+     *
+     * @return de drempel die de levering blokkeert, of {@code null} wanneer geen van beide overschreden is
+     */
+    public static Judgement leading(Judgement critical, Judgement rejected) {
+        if (critical != null && critical.blocks()) {
+            return critical;
+        }
+        if (rejected != null && rejected.blocks()) {
+            return rejected;
+        }
+        return null;
+    }
+
+    /**
      * De melding bij een overschrijding, met de aantallen, het percentage en de scope erin
      * (meldingsstijl par. 15.12) — nooit enkel een oordeel. Blijft ruim onder de 500 tekens van
      * {@code import_row_issue.message}.

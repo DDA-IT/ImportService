@@ -48,4 +48,18 @@ public interface ImportDefinitionRevisionRepository extends JpaRepository<Import
             countQuery = "select count(r) from ImportDefinitionRevision r "
                     + "where r.importDefinition.id = :definitionId")
     Page<ImportDefinitionRevision> findByDefinitionId(@Param("definitionId") long definitionId, Pageable pageable);
+
+    /**
+     * Batch-query: ACTIVE revisie-id's per definitie-id, voor batch-loading zonder N+1.
+     * Alleen definitie-id's met een ACTIVE revisie zijn in het resultaat; afwezige of revisieloos
+     * definities zitten niet in het resultaat.
+     * <p>
+     * Deze query volgt het patroon van {@link #findLatestRunsByTaskIds(Collection)} in TaskRunRepository
+     * en {@link #findActiveRevisionsForDefinitions(Collection)} in TaskDefinitionRepository.
+     */
+    @Query("select new map(r.importDefinition.id as definitionId, r.id as revisionId) "
+            + "from ImportDefinitionRevision r "
+            + "where r.importDefinition.id in :definitionIds and r.status = 'ACTIVE'")
+    List<java.util.Map<String, Long>> findActiveRevisionsByDefinitionIds(
+            @Param("definitionIds") Collection<Long> definitionIds);
 }

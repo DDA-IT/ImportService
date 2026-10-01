@@ -13,7 +13,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ActorProvider, type ActorIdentity } from '../actor/ActorContext';
 import { TEST_IDENTITY, testIdentityWith } from './testIdentity';
@@ -169,11 +169,13 @@ describe('UploadPage', () => {
     submit();
 
     const result = await screen.findByTestId('upload-result');
-    expect(result).toHaveTextContent('Levering aangemaakt en gescreend');
-    expect(result).toHaveTextContent('SCREENED');
+    expect(result).toHaveTextContent('Levering aangemaakt en gecontroleerd');
+    // NT-11a (V7): het Nederlandse woord voor de status; de technische code enkel in de tooltip.
+    expect(result).toHaveTextContent('Gecontroleerd');
+    expect(result).not.toHaveTextContent('SCREENED');
     expect(screen.getByRole('link', { name: '#55' })).toHaveAttribute('href', '/batches/55');
-    // Dubbele identiteit is null = niet vastgesteld: "—", nooit 0.
-    const label = screen.getByText('Dubbele identiteit');
+    // Dubbele artikelen is null = niet vastgesteld: "—", nooit 0.
+    const label = screen.getByText('Dubbele artikelen');
     expect(label.closest('div')).toHaveTextContent('—');
 
     const [[url, init]] = posts();
@@ -212,14 +214,20 @@ describe('UploadPage', () => {
     await fillIn();
     submit();
     const result = await screen.findByTestId('upload-result');
-    expect(result).toHaveTextContent('BLOCKED');
-    expect(result).toHaveTextContent('RECORD_COUNT_MISMATCH');
+    expect(result).toHaveTextContent('Tegengehouden');
+    expect(result).toHaveTextContent('Ander aantal regels dan verwacht');
+    expect(result).not.toHaveTextContent('RECORD_COUNT_MISMATCH');
+    expect(screen.getByText('Ander aantal regels dan verwacht')).toHaveAttribute(
+      'title',
+      expect.stringContaining('RECORD_COUNT_MISMATCH'),
+    );
   });
 
   it('leeg: zonder manuele taak een uitleg (en geen taak aanmaken), niet-manuele taak uitgeschakeld', async () => {
     mockFetch(EMPTY_TASKS, () => Promise.reject(new Error('mag niet aangeroepen worden')));
     renderPage();
-    expect(await screen.findByTestId('no-manual-task')).toHaveTextContent('geen manuele taak');
+    expect(await screen.findByTestId('no-manual-task')).toHaveTextContent('Er is nog geen taak');
+    expect(screen.getByTestId('no-manual-task')).toHaveTextContent('Inrichting');
     cleanup();
 
     mockFetch({ ...TASKS, content: [TASKS.content[1]] }, () => Promise.reject(new Error('nee')));
@@ -227,6 +235,49 @@ describe('UploadPage', () => {
     const option = await screen.findByRole('option', { name: /LNK-2 — Nachtelijke import \(niet manueel\)/ });
     expect(option).toBeDisabled();
     expect(screen.getByTestId('no-manual-task')).toBeInTheDocument();
+  });
+
+  it('NT-6: een taak zonder actieve versie blijft zichtbaar maar uitgeschakeld, met uitleg en link naar Inrichting', async () => {
+    const notReady = {
+      ...TASKS.content[0],
+      id: 7,
+      name: 'Nieuwe taak',
+      importLinkCode: 'LNK-3',
+      importDefinitionId: 30,
+      activeRevisionId: null,
+    };
+    const ready = { ...TASKS.content[0], importDefinitionId: 10, activeRevisionId: 100 };
+    mockFetch({ ...TASKS, content: [ready, notReady], totalElements: 2 }, () =>
+      Promise.reject(new Error('mag niet aangeroepen worden')),
+    );
+    renderPage();
+
+    const option = await screen.findByRole('option', {
+      name: 'LNK-3 — Nieuwe taak (nog niet klaar: versie niet geactiveerd)',
+    });
+    expect(option).toBeDisabled();
+    // Een klare taak blijft gewoon kiesbaar, zonder die vermelding.
+    const readyOption = screen.getByRole('option', { name: 'LNK-1 — Handmatige levering' });
+    expect(readyOption).toBeEnabled();
+
+    const note = screen.getByTestId('not-ready-tasks');
+    expect(note).toHaveTextContent('nog niet geactiveerd');
+    expect(within(note).getByRole('link', { name: 'Inrichting' })).toHaveAttribute('href', '/setup');
+    // NT-10: per koppeling een link naar het scherm "Controleren"; enkel voor de koppeling van de niet-klare taak.
+    expect(within(note).getByRole('link', { name: 'Controleren (LNK-3)' })).toHaveAttribute(
+      'href',
+      '/setup/links/1/check?definitionId=30',
+    );
+    expect(within(note).getAllByRole('link', { name: /^Controleren/ })).toHaveLength(1);
+    // Er is wel een manuele taak: de "geen taak"-melding verschijnt niet.
+    expect(screen.queryByTestId('no-manual-task')).not.toBeInTheDocument();
+  });
+
+  it('NT-6: zonder activeRevisionId-veld (oudere server) wordt een taak niet als "niet klaar" getoond', async () => {
+    mockFetch(TASKS, () => Promise.reject(new Error('mag niet aangeroepen worden')));
+    renderPage();
+    expect(await screen.findByRole('option', { name: 'LNK-1 — Handmatige levering' })).toBeEnabled();
+    expect(screen.queryByTestId('not-ready-tasks')).not.toBeInTheDocument();
   });
 
   it('fout met code: 409 DELIVERY_REFERENCE_REUSED_WITH_DIFFERENT_CONTENT krijgt een Nederlandse uitleg', async () => {
@@ -258,7 +309,9 @@ describe('UploadPage', () => {
     renderPage();
     await fillIn();
     submit();
-    expect(await screen.findByText('Geweigerd (CONFIG_PRICE_FIELD_MISSING)')).toBeInTheDocument();
+    expect(await screen.findByText('De beschrijving van het bestand klopt niet')).toBeInTheDocument();
+    // De code is niet de titel; ze blijft opvraagbaar onder "Technische details (voor support)".
+    expect(screen.getByText(/CONFIG_PRICE_FIELD_MISSING · HTTP 409/)).toBeInTheDocument();
   });
 
   it('fout: 413 zonder code toont "Bestand te groot"', async () => {
@@ -305,14 +358,14 @@ describe('UploadPage', () => {
     expect(posts()).toHaveLength(0);
   });
 
-  it('herhaalde actie: 200 meldt een bestaande levering zonder nieuwe screening', async () => {
+  it('herhaalde actie: 200 meldt een bestaande levering zonder nieuwe controle', async () => {
     mockFetch(TASKS, () => Promise.resolve(json(UPLOAD_OK, 200)));
     renderPage();
     await fillIn();
     submit();
     const result = await screen.findByTestId('upload-result');
     expect(result).toHaveTextContent('Bestaande levering teruggevonden');
-    expect(result).toHaveTextContent('niet opnieuw gescreend');
+    expect(result).toHaveTextContent('niet opnieuw gecontroleerd');
   });
 
   it('herhaalde actie: twee fasen + tijdteller zolang de upload loopt, en een dubbele klik geeft één POST', async () => {
@@ -330,7 +383,7 @@ describe('UploadPage', () => {
     submit();
     const progress = await screen.findByTestId('upload-progress');
     expect(progress).toHaveTextContent('Uploaden');
-    expect(progress).toHaveTextContent('Screenen');
+    expect(progress).toHaveTextContent('Controleren');
     expect(progress).toHaveTextContent('Laat dit tabblad open');
     expect(screen.getByRole('button', { name: 'Bezig…' })).toBeDisabled();
 
@@ -415,7 +468,7 @@ describe('UploadPage', () => {
       submit();
 
       const result = await screen.findByTestId('upload-result');
-      expect(result).toHaveTextContent('Levering aangemaakt en gescreend');
+      expect(result).toHaveTextContent('Levering aangemaakt en gecontroleerd');
       expect(screen.getByTestId('upload-result-reference')).toHaveTextContent('ABP4-2026.csv#deadbeef0001');
 
       const [[url, init]] = localSourcePosts();

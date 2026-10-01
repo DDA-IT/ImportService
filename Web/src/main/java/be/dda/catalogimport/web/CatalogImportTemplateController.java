@@ -3,17 +3,12 @@ package be.dda.catalogimport.web;
 import be.dda.catalogimport.service.ActorIdentity;
 import be.dda.catalogimport.service.PageResult;
 import be.dda.catalogimport.service.TemplateBookmarkService;
-import be.dda.catalogimport.service.TemplateBookmarkService.AddUsageCommand;
 import be.dda.catalogimport.service.TemplateBookmarkService.BookmarkSetView;
-import be.dda.catalogimport.service.TemplateBookmarkService.BookmarkView;
-import be.dda.catalogimport.service.TemplateBookmarkService.DeclareBookmarkCommand;
 import be.dda.catalogimport.service.TemplateBookmarkService.TemplateView;
-import be.dda.catalogimport.service.TemplateBookmarkService.UsageView;
 import be.dda.catalogimport.service.TemplateMaterialisationService;
 import be.dda.catalogimport.service.TemplateMaterialisationService.MaterialisationView;
 import be.dda.catalogimport.service.TemplateMaterialisationService.MaterialisedDefinitionView;
 import be.dda.catalogimport.service.TemplateMaterialisationService.MaterialiseRequest;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,34 +21,35 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * De materialisatiewizard (sjabloon-materialisatie-design.md §5, bouwstappen 5b, 5c en 5d): sjablonen
- * opzoeken, de bookmarks van één sjabloonrevisie declareren/lezen, opvragen wat er al uit dit sjabloon
+ * opzoeken, de bookmarks van één sjabloonrevisie lezen, opvragen wat er al uit dit sjabloon
  * gematerialiseerd is, en een sjabloon materialiseren tot een leveranciersgebonden definitie + revisie +
  * koppeling — of enkel een koppeling bij een al bestaande, deelbare definitie.
  *
- * <h2>WAARSCHUWING — dit endpoint staat standaard uit en mag nooit in productie aan</h2>
- * Zelfde vlag als {@link CatalogImportSetupController} ({@code catalogimport.setup-api.enabled}, default
- * {@code false}, decisions.md 2026-09-23 Q1). Sinds Fase 5-AUTH (5A-1) vereist elk pad hieronder een
- * login, maar er is nog geen rechtencontrole per actie (5-PERM), en wie deze endpoints bereikt, kan een
- * sjabloondeclaratie wijzigen die later in leveranciersdefinities gematerialiseerd wordt. Zet de vlag
- * dus uitsluitend aan op een ontwikkelmachine met wegwerpgegevens.
+ * <h2>Rechten — niet (meer) achter de setup-vlag</h2>
+ * Sinds NT-3 (beslissingslog 2026-09-30 "Nieuwe leverancier + taak (NT-spoor)", V2 = a) bestaat deze
+ * controller <b>altijd</b>, ongeacht {@code catalogimport.setup-api.enabled}: sjablonen lezen en
+ * materialiseren hoort bij het inrichten van een nieuwe leverancier. De bescherming is uitsluitend het recht
+ * per actie: lezen vraagt {@code READ}, materialiseren {@code MANAGE} (zonder recht 403
+ * {@code PERMISSION_DENIED}, vóór elke andere controle). Paden, bodies en statuscodes zijn ongewijzigd.
+ * <p>
+ * <b>Sjabloonbeheer blijft achter de vlag:</b> bookmarks en hun usages declareren
+ * ({@code POST .../bookmarks}, {@code POST .../bookmarks/{name}/usages}) staat in
+ * {@link CatalogImportTemplateDeclarationController}, die enkel met de vlag aan bestaat.
  *
  * <h2>Wie tekent (5A-6)</h2>
- * {@code declareBookmark} en {@code materialise} roepen {@link CurrentActor#signer} aan <b>vóór</b> de
- * service: 400 {@code ACTOR_FIELD_MISMATCH} bij een afwijkende {@code createdBy}/{@code materialisedBy},
- * 403 {@code SYSTEM_ACTOR_FORBIDDEN} voor {@code system} — allebei vóór 404/409 en zonder iets te
- * schrijven. Beide velden zijn daardoor <b>optioneel</b> geworden ({@code materialisedBy} was verplicht);
- * bewaard wordt de token-naam plus het OIDC-subject (changeset 007-4). {@code addUsage} heeft geen
- * {@code *_by}-kolom en vraagt enkel een bruikbare, niet-{@code system} login.
+ * {@code materialise} roept {@link CurrentActor#signer} aan <b>vóór</b> de service: 400
+ * {@code ACTOR_FIELD_MISMATCH} bij een afwijkende {@code materialisedBy}, 403 {@code SYSTEM_ACTOR_FORBIDDEN}
+ * voor {@code system} — allebei vóór 404/409 en zonder iets te schrijven. {@code materialisedBy} is daardoor
+ * <b>optioneel</b> geworden (het was verplicht); bewaard wordt de token-naam plus het OIDC-subject
+ * (changeset 007-4).
  *
  * <h2>Statuscodes</h2>
- * 201 bij een aangemaakte bookmark/usage-rij en bij een geslaagde materialisatie, 200 bij lezen. 404 met
+ * 201 bij een geslaagde materialisatie, 200 bij lezen. 404 met
  * een stabiele {@code code}: {@code TEMPLATE_NOT_FOUND}, {@code TEMPLATE_REVISION_NOT_FOUND},
- * {@code BOOKMARK_NOT_FOUND}, {@code DEFINITION_NOT_FOUND}, {@code SOURCE_ORGANISATION_NOT_FOUND}. 409
+ * {@code DEFINITION_NOT_FOUND}, {@code SOURCE_ORGANISATION_NOT_FOUND}. 409
  * met een stabiele {@code code}:
- * {@code REVISION_NOT_EDITABLE} (declareren mag alleen op een DRAFT-revisie),
  * {@code DEFINITION_NOT_A_TEMPLATE}, {@code TEMPLATE_REVISION_NOT_MATERIALISABLE},
- * {@code NO_ACTIVE_TEMPLATE_REVISION}, {@code BOOKMARK_NAME_IN_USE}, {@code BOOKMARK_ORDER_IN_USE},
- * {@code BOOKMARK_USAGE_IN_USE}, {@code DEFINITION_CODE_IN_USE}, {@code LINK_CODE_IN_USE},
+ * {@code NO_ACTIVE_TEMPLATE_REVISION}, {@code DEFINITION_CODE_IN_USE}, {@code LINK_CODE_IN_USE},
  * {@code LINK_SCOPE_IN_USE}, {@code DEFINITION_NOT_FROM_TEMPLATE},
  * {@code TEMPLATE_REVISION_MISMATCH_ON_REUSE}, {@code DEFINITION_NOT_SHAREABLE}, of één van de fase
  * C-codes ({@code CONFIG_BOOKMARK_SCOPE_PLACE_CONFLICT},
@@ -72,7 +68,6 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/catalog-import/templates")
-@ConditionalOnProperty(prefix = "catalogimport.setup-api", name = "enabled", havingValue = "true")
 public class CatalogImportTemplateController {
 
     private final TemplateBookmarkService templateBookmarks;
@@ -104,30 +99,6 @@ public class CatalogImportTemplateController {
     BookmarkSetView bookmarks(@PathVariable("definitionId") long definitionId,
                               @PathVariable("revisionId") long revisionId) {
         return templateBookmarks.getBookmarkSet(definitionId, revisionId);
-    }
-
-    /** Declareert een nieuwe bookmark; alleen toegelaten op een {@code DRAFT}-sjabloonrevisie. */
-    @RequiresPermission(Permission.MANAGE)
-    @PostMapping("/{definitionId}/revisions/{revisionId}/bookmarks")
-    @ResponseStatus(HttpStatus.CREATED)
-    BookmarkView declareBookmark(@PathVariable("definitionId") long definitionId,
-                                 @PathVariable("revisionId") long revisionId,
-                                 @RequestBody DeclareBookmarkCommand request) {
-        ActorIdentity actor = currentActor.signer(request == null ? null : request.createdBy(), "createdBy");
-        return templateBookmarks.declareBookmark(definitionId, revisionId, request, actor);
-    }
-
-    /** Voegt een toegelaten configuratieplaats (witte lijst) toe aan een bestaande bookmark. */
-    @RequiresPermission(Permission.MANAGE)
-    @PostMapping("/{definitionId}/revisions/{revisionId}/bookmarks/{name}/usages")
-    @ResponseStatus(HttpStatus.CREATED)
-    UsageView addUsage(@PathVariable("definitionId") long definitionId,
-                       @PathVariable("revisionId") long revisionId, @PathVariable("name") String name,
-                       @RequestBody AddUsageCommand request) {
-        // Geen actorveld en geen *_by-kolom op import_definition_bookmark_usage: enkel een bruikbare,
-        // niet-'system' login is vereist (ontwerp par. 1.1 en par. 3).
-        currentActor.signer(null, "createdBy");
-        return templateBookmarks.addUsage(definitionId, revisionId, name, request);
     }
 
     /**

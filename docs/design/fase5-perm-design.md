@@ -25,8 +25,17 @@ leidt het effectieve recht af (één plek: `CurrentActor`/`PermissionService`). 
 | `GET /local-source/files` (tweede ontvangstweg; bewust MANAGE, niet READ — zie D8, `docs/decisions.md` 2026-09-27) | MANAGE |
 | `POST /tasks/{taskId}/deliveries/local-source` (tweede ontvangstweg, inlezen uit servermap) | MANAGE |
 | `GET /deliveries/{id}`, `GET /import-links`, `GET /tasks` | READ |
-| `GET /setup/overview`, `GET /templates`, `/…/bookmarks`, `/…/materialisations`, `GET /links/{id}/bookmark-values` | READ |
-| `POST /setup/**`, `POST /templates/**`, `PUT /links/{id}/bookmark-values/{name}` | MANAGE |
+| `GET /import-links/{id}/readiness` (NT-8; gereedheidscontrole zonder bestand, schrijft niets, niet achter de setup-vlag) | READ |
+| `GET /setup/overview` (enige setup-pad dat nog achter de setup-vlag staat, §5) | READ |
+| `GET /templates`, `/…/bookmarks`, `/…/materialisations`, `GET /links/{id}/bookmark-values` (sinds NT-3 niet meer achter de setup-vlag, §5) | READ |
+| `POST /setup/**`, `PATCH /setup/revisions/{id}`, `DELETE /setup/revisions/{id}/mappings/{m}` en `/filters/{f}`, `POST /templates/{id}/materialisations`, `PUT /links/{id}/bookmark-values/{name}` (sinds NT-3 niet meer achter de setup-vlag, §5) | MANAGE |
+| `POST /templates/{id}/revisions/{r}/bookmarks`, `POST /templates/{id}/revisions/{r}/bookmarks/{name}/usages` (sjabloonbeheer; blijft achter de setup-vlag, §5) | MANAGE |
+| `GET /credentials`, `/credentials/{ref}`, `/credentials/{ref}/events`, `POST /credentials`, `PUT /credentials/{ref}/secret`, `POST /credentials/{ref}/revoke` (K-3; ook de GET's MANAGE, L7b — zie `leveringsconfiguratie-design.md` §6) | MANAGE |
+| `GET /connection-profiles`, `/connection-profiles/{id}`, `POST /connection-profiles`, `GET /delivery-configurations`, `/delivery-configurations/{id}`, `POST /delivery-configurations`, `PUT` en `DELETE /tasks/{id}/delivery-configuration` (LC-2; ook lijst en detail MANAGE, zelfde keuze als K-3 — L7b, zie `leveringsconfiguratie-design.md` §6) | MANAGE |
+| `POST /connection-profiles/host-key-scan`, `POST /connection-profile-versions/{id}/test`, `POST /delivery-configuration-versions/{id}/test` (K-4a; hostsleutelscan en verbindingstests, niet achter de setup-vlag, in tweede lijn de allowlist `catalogimport.fetch.allowed-hosts` — L4b/L7, zie `leveringsconfiguratie-design.md` §5) | MANAGE |
+| `POST /tasks/{taskId}/fetch-runs` (K-4b; "Nu ophalen", synchroon, niet achter de setup-vlag, in tweede lijn de allowlist — L4b/L7a, zie `leveringsconfiguratie-design.md` §4 en §6) | MANAGE |
+| `GET /tasks/{taskId}/runs`, `GET /task-runs/{runId}` (K-4b; runlijst van de laatste 20 en rundetail met waarnemingen — bestandsnamen, geen host/login/map, L7b) | READ |
+| `POST /task-runs/{runId}/abort` (K-4c; vastgelopen ophaalrun afbreken, body `{reason}`, niet achter de allowlist — herstel moet werken als ophalen uitgezet is; MANAGE zoals "Nu ophalen", geen APPROVE want het is geen bundel-levenscyclusactie) | MANAGE |
 | `GET /api/catalog-import/me` | geen recht (`@NoPermissionRequired`) |
 
 `/me` is uitgezonderd: een rechtenloze gebruiker krijgt 200 met `permissions: []` in plaats van een 403 zonder uitleg.
@@ -72,13 +81,24 @@ Bron stuk = 503 `PERMISSION_SOURCE_UNAVAILABLE`. Frontend: `useActor()` krijgt `
 `permissions: []` = één vlak "U heeft geen rechten voor CatalogImport" zonder data-fetches; 403 `PERMISSION_DENIED` tijdens een actie toont de code en herlaadt `/me`.
 Lokale dev: één regel in `application-local.yml` met de eigen Keycloak-username.
 
-## 5. Setup-API-vlag blijft als echte beveiliging (keuze mens, 2026-09-26, herzien)
+## 5. Setup-API-vlag: enkel nog voor overzicht en sjabloonbeheer (keuze mens 2026-09-26, herzien 2026-09-30)
 
-De vlag `catalogimport.setup-api.enabled` en de `@ConditionalOnProperty` op `CatalogImportSetupController`, `CatalogImportTemplateController` en `CatalogImportLinkController` **blijven**
-en gelden als een tweede, onafhankelijke beveiliging naast `MANAGE`/`READ` (dubbele bescherming). Een eerdere keuze om de vlag te laten vervallen is op 2026-09-26 door de mens herroepen.
-Gevolgen: met de vlag uit bestaan die endpoints niet (404, ongeacht de rechten); met de vlag aan is `MANAGE` (schrijven) of `READ` (lezen) vereist (403 `PERMISSION_DENIED` zonder recht).
-De vlag is geen tijdelijke schakelaar meer: ze wordt niet uit `application*.yml`, README en handleiding verwijderd, en `SetupApiDisabledTest` blijft bestaan (vlag uit = 404, ook mét `.manage`).
-Er komen extra tests bij: vlag aan + zonder recht = 403; vlag aan + met recht = ongewijzigd gedrag.
+**Stand sinds NT-3 (beslissingslog 2026-09-30 "Nieuwe leverancier + taak (NT-spoor)", V2 = a; gedeeltelijke herroeping van 2026-09-26).**
+Een gebruiker met `MANAGE` moet zelf een leverancier en een taak kunnen inrichten. Daarom staan de schrijfpaden van de inrichting
+(bronorganisatie, definitie, revisie, `PATCH` revisie, mappings/filters/kritiekheid, activeren, opvolger, koppeling, taak), sjablonen lezen +
+materialiseren en de bookmarkwaarden van een koppeling **niet meer** achter `catalogimport.setup-api.enabled`: `CatalogImportSetupController`,
+`CatalogImportTemplateController` en `CatalogImportLinkController` bestaan altijd, met dezelfde paden, bodies en statuscodes; het recht
+(`MANAGE` schrijven, `READ` lezen) is hun enige slot (403 `PERMISSION_DENIED` zonder recht).
+
+**Achter de vlag blijven** enkel `GET /setup/overview` (`CatalogImportSetupOverviewController`) en het sjabloonbeheer — bookmarks en hun usages
+declareren (`CatalogImportTemplateDeclarationController`). Voor die drie paden geldt de oorspronkelijke regel van 2026-09-26 nog: met de vlag uit
+bestaan ze niet (404, ongeacht de rechten — uitgezonderd `POST /templates/{id}/revisions/{r}/bookmarks`, dat 405 geeft omdat `GET` op hetzelfde
+pad sinds NT-3 altijd bestaat; ook dan is er geen handler en wordt er niets geschreven); met de vlag aan is het recht vereist. De vlag blijft een config-property en wordt niet uit
+`application*.yml`, README en handleiding verwijderd.
+
+Tests: `SetupApiDisabledTest` (vlag uit: de verplaatste paden geven 401/403/2xx, de drie overgebleven paden 404 ook mét alle rechten),
+`PermissionReadEndpointsHttpTest`/`PermissionWriteEndpointsHttpTest` (draaien met de vlag uit), `SetupApiFlagOnlyPermissionHttpTest` (vlag aan +
+zonder recht = 403 voor de drie overgebleven paden).
 ## 6. Audit
 
 Een geweigerde poging wordt gelogd, niet bewaard: één WARN-regel `PERMISSION_DENIED user=<username> required=<code> <METHOD> <padtemplate>`. Geen subject, body of querystring.
@@ -111,5 +131,6 @@ Volledige ronde na 5B-3 en na 5B-5 via `scripts/test/run-full-tests.ps1`; klasse
 
 > **Important technical constraint discovered**
 >
-> De setup-, template- en linkcontrollers bestaan als bean alleen met `catalogimport.setup-api.enabled=true` (`@ConditionalOnProperty`). Een rechtencheck kan daar dus nooit een 403 geven wanneer de vlag uit staat
-> (dan 404). Die volgorde "vlag vóór recht" is een gevolg van de beanconditie en is bewust behouden (§5): de vlag is de buitenste beveiliging, het recht de binnenste. Tests moeten beide gevallen apart vastleggen.
+> Een controller met `@ConditionalOnProperty` op `catalogimport.setup-api.enabled` bestaat als bean alleen met de vlag aan. Een rechtencheck kan daar dus nooit een 403 geven wanneer de vlag uit staat
+> (dan 404). Die volgorde "vlag vóór recht" is een gevolg van de beanconditie. **Sinds NT-3 geldt ze enkel nog voor `CatalogImportSetupOverviewController` en `CatalogImportTemplateDeclarationController`**
+> (§5); voor de verplaatste inrichtings-, materialisatie- en bookmarkwaardepaden is er geen vlag meer en komt het recht (403) als eerste. Tests leggen beide gevallen apart vast.

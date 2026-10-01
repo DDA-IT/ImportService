@@ -79,6 +79,31 @@ public class TaskRun {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    // --- Ophaalrun (changeset 015-1, bouwstap K-4b; leveringsconfiguratie-design par. 3.3 en 4.4) ----------------
+
+    /** Hoe de run gestart werd; {@code null} bij runs van vóór 015 (geen backfill). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "trigger_source", length = 20)
+    private TaskRunTriggerSource triggerSource;
+
+    /** De Leveringsconfiguratie-versie waarmee opgehaald werd; {@code null} bij upload en servermap. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "delivery_configuration_version_id",
+            foreignKey = @ForeignKey(name = "fk_task_run_dc_version"))
+    private DeliveryConfigurationVersion deliveryConfigurationVersion;
+
+    /** Uitkomst van het ophalen ({@code FETCHED}, {@code NO_NEW_FILE} of een foutcode); {@code null} bij upload. */
+    @Column(name = "outcome_code", length = 60)
+    private String outcomeCode;
+
+    /** Vaste, mensleesbare toelichting; nooit een secret, serverbanner of archiefpad. */
+    @Column(name = "outcome_message", length = 500)
+    private String outcomeMessage;
+
+    /** Aantal bestanden dat na deze run nog wacht (L6, {@code DEFERRED}); {@code null} als er niet gelijst werd. */
+    @Column(name = "pending_file_count")
+    private Integer pendingFileCount;
+
     protected TaskRun() {
         // JPA
     }
@@ -174,5 +199,53 @@ public class TaskRun {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public TaskRunTriggerSource getTriggerSource() {
+        return triggerSource;
+    }
+
+    public void setTriggerSource(TaskRunTriggerSource triggerSource) {
+        this.triggerSource = triggerSource;
+    }
+
+    public DeliveryConfigurationVersion getDeliveryConfigurationVersion() {
+        return deliveryConfigurationVersion;
+    }
+
+    public void setDeliveryConfigurationVersion(DeliveryConfigurationVersion deliveryConfigurationVersion) {
+        this.deliveryConfigurationVersion = deliveryConfigurationVersion;
+    }
+
+    public String getOutcomeCode() {
+        return outcomeCode;
+    }
+
+    public String getOutcomeMessage() {
+        return outcomeMessage;
+    }
+
+    /**
+     * Legt de uitkomst van het ophalen vast. De melding wordt zichtbaar ingekort tot de kolombreedte (500): het is
+     * audittekst, geen businessgegeven.
+     */
+    public void setOutcome(String outcomeCode, String outcomeMessage) {
+        if (outcomeCode != null && outcomeCode.length() > 60) {
+            throw new IllegalArgumentException("outcomeCode exceeds 60 characters");
+        }
+        this.outcomeCode = outcomeCode;
+        this.outcomeMessage = outcomeMessage == null || outcomeMessage.length() <= 500 ? outcomeMessage
+                : outcomeMessage.substring(0, 497) + "...";
+    }
+
+    public Integer getPendingFileCount() {
+        return pendingFileCount;
+    }
+
+    public void setPendingFileCount(Integer pendingFileCount) {
+        if (pendingFileCount != null && pendingFileCount < 0) {
+            throw new IllegalArgumentException("pendingFileCount must not be negative");
+        }
+        this.pendingFileCount = pendingFileCount;
     }
 }

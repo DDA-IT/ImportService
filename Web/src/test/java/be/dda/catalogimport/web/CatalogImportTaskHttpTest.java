@@ -8,12 +8,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import be.dda.catalogimport.dao.CatalogImportTaskRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRepository;
+import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import be.dda.catalogimport.dao.TaskRunRepository;
 import be.dda.catalogimport.domain.CatalogImportTask;
 import be.dda.catalogimport.domain.ImportDefinition;
+import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportLink;
+import be.dda.catalogimport.domain.RevisionStatus;
 import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.domain.SourceOrganisationType;
 import be.dda.catalogimport.domain.TaskRun;
@@ -61,6 +64,8 @@ class CatalogImportTaskHttpTest {
     @Autowired
     private ImportDefinitionRepository definitions;
     @Autowired
+    private ImportDefinitionRevisionRepository revisions;
+    @Autowired
     private ImportLinkRepository links;
     @Autowired
     private CatalogImportTaskRepository tasks;
@@ -104,6 +109,8 @@ class CatalogImportTaskHttpTest {
                 // lastRun* = de meest recente run, niet de oudste.
                 .andExpect(jsonPath("$.content[0].lastRunStartedAt").value(newer.toString()))
                 .andExpect(jsonPath("$.content[0].lastRunFinishedAt").value(newer.plusSeconds(7).toString()))
+                // NT-spoor V1: importDefinitionId en activeRevisionId worden altijd meegegeven
+                .andExpect(jsonPath("$.content[0].importDefinitionId").exists())
                 .andExpect(jsonPath("$.content[1].id").value(manual.getId()))
                 .andExpect(jsonPath("$.content[1].triggerType").value("MANUAL"))
                 .andExpect(jsonPath("$.content[1].preventConcurrentRuns").value(true))
@@ -198,6 +205,28 @@ class CatalogImportTaskHttpTest {
         assertThat(task.getId()).isNotNull();
     }
 
+    @Test
+    void tasksReturnImportDefinitionIdAndActiveRevisionId() throws Exception {
+        // Task with ACTIVE revision
+        Fixture withActive = fixture(unique() + "-A", null);
+        // Task with DRAFT revision (no ACTIVE)
+        Fixture withDraft = fixture(unique() + "-D", rev -> rev.setStatus(RevisionStatus.DRAFT));
+
+        // Task with ACTIVE revision should return the revision id
+        mockMvc.perform(get(TASKS).param("importLinkId", String.valueOf(withActive.link().getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(withActive.task().getId()))
+                .andExpect(jsonPath("$.content[0].importDefinitionId").value(withActive.definition().getId()))
+                .andExpect(jsonPath("$.content[0].activeRevisionId").value(withActive.revision().getId()));
+
+        // Task with only DRAFT revision should return null for activeRevisionId
+        mockMvc.perform(get(TASKS).param("importLinkId", String.valueOf(withDraft.link().getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(withDraft.task().getId()))
+                .andExpect(jsonPath("$.content[0].importDefinitionId").value(withDraft.definition().getId()))
+                .andExpect(jsonPath("$.content[0].activeRevisionId").isEmpty());
+    }
+
     private static String unique() {
         return "TSK" + Long.toString(System.nanoTime(), 36);
     }
@@ -211,5 +240,42 @@ class CatalogImportTaskHttpTest {
                 new SourceOrganisation(unique + "-SUP", unique + "-SUP BV", SourceOrganisationType.SUPPLIER));
         return links.saveAndFlush(
                 new ImportLink(unique + "-LINK", unique + " koppeling", definition, supplier, "PSARF050"));
+    }
+
+    /**
+     * Volledige keten tot en met een MANUAL-taak met een ACTIEVE revisie.
+     * Volgt hetzelfde patroon als DeliveryUploadTest.fixture().
+     */
+    private Fixture fixture(String prefix, java.util.function.Consumer<ImportDefinitionRevision> revisionCustomiser) {
+        SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
+                new SourceOrganisation(prefix + "-ORG", prefix + "-ORG BV", SourceOrganisationType.SUPPLIER));
+        ImportDefinition definition = definitions.saveAndFlush(
+                new ImportDefinition(organisation, prefix + "-DEF", prefix + " catalogus", "beheerder@example.test"));
+        ImportDefinitionRevision revision = new ImportDefinitionRevision(definition, 1,
+                be.dda.catalogimport.domain.IdentityProfileKind.THREE_PART, "beheerder@example.test");
+        revision.setAccessConfigHash("1".repeat(64));
+        revision.setStructureConfigHash("2".repeat(64));
+        revision.setRecordRulesConfigHash("3".repeat(64));
+        revision.setCompositeConfigHash("4".repeat(64));
+        revision.setIdentitySupplierField("LEVERANCIER");
+        revision.setIdentitySupplierGroupField("GROEP");
+        revision.setIdentitySupplierReferenceField("REFERENTIE");
+        revision.setStructureDelimiter(";");
+        revision.setRecordBasePriceField("PRIJS");
+        revision.setStatus(RevisionStatus.ACTIVE);
+        if (revisionCustomiser != null) {
+            revisionCustomiser.accept(revision);
+        }
+        revision = revisions.saveAndFlush(revision);
+        SourceOrganisation supplier = sourceOrganisations.saveAndFlush(
+                new SourceOrganisation(prefix + "-SUP", prefix + "-SUP BV", SourceOrganisationType.SUPPLIER));
+        ImportLink linkLink = links.saveAndFlush(
+                new ImportLink(prefix + "-LINK", prefix + " koppeling", definition, supplier, "PSARF050"));
+        CatalogImportTask task = tasks.saveAndFlush(new CatalogImportTask(linkLink, prefix + "-taak", TaskTriggerType.MANUAL));
+        return new Fixture(task, linkLink, definition, revision);
+    }
+
+    private record Fixture(CatalogImportTask task, ImportLink link, ImportDefinition definition,
+                          ImportDefinitionRevision revision) {
     }
 }

@@ -20,6 +20,15 @@ public class BadRequestException extends IllegalArgumentException {
         this.code = code;
     }
 
+    /**
+     * Zoals hierboven, met de oorzaak bewaard (NT-3: een {@code CONFIG_*}-fout uit de
+     * configuratievalidatie behoudt zo haar oorspronkelijke {@code ScreeningBlockedException} in de log).
+     */
+    public BadRequestException(String code, String message, Throwable cause) {
+        super(message, cause);
+        this.code = code;
+    }
+
     public String getCode() {
         return code;
     }

@@ -30,6 +30,7 @@ import be.dda.catalogimport.domain.Delivery;
 import be.dda.catalogimport.domain.DeliveryFile;
 import be.dda.catalogimport.domain.ImportBatch;
 import be.dda.catalogimport.domain.ImportBatchStatus;
+import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.IssueIncidentKind;
 import be.dda.catalogimport.domain.RowIssueSeverity;
 import be.dda.catalogimport.domain.TaskRun;
@@ -54,7 +55,7 @@ import be.dda.catalogimport.service.support.PriceDeviationEvaluator;
 import be.dda.catalogimport.service.support.PriceDeviationEvaluator.Reference;
 import be.dda.catalogimport.service.support.PriceDeviationEvaluator.ReferenceKind;
 import be.dda.catalogimport.service.support.PriceRules;
-import be.dda.catalogimport.service.support.RecordFilterEvaluator;
+import be.dda.catalogimport.service.support.RecordScreeningCore;
 import be.dda.catalogimport.service.support.ReferenceControlEvaluator;
 import be.dda.catalogimport.service.support.ReferenceControlEvaluator.RecordOutcome;
 import be.dda.catalogimport.service.support.ReferenceControlEvaluator.ReferenceOutcome;
@@ -328,11 +329,6 @@ public class DeliveryScreeningService {
             return new MutationContext(batchId, deliveryId, importLinkId, definitionRevisionId, taskRunId,
                     deliveryFileId);
         }
-
-        /** Zonder geconfigureerde recordfilters blijft het gedrag exact dat van fase 2. */
-        private boolean hasRecordFilters() {
-            return mappingConfig != null && mappingConfig.hasFilters();
-        }
     }
 
     /**
@@ -366,6 +362,20 @@ public class DeliveryScreeningService {
         }
     }
 
+    /**
+     * De geladen en gevalideerde configuratie van één revisie (stap B' uit ontwerp fase 3 par. 3.1), of
+     * de reden waarom ze niet bruikbaar is. Gedeeld met de proefinlezing (NT-9, contract
+     * {@code docs/design/proefinlezing-design.md} par. 7), zodat beide exact dezelfde configuratie en
+     * dezelfde {@code CONFIG_*}-fout zien.
+     *
+     * @param config        de bronconfiguratie, of {@code null} wanneer die al niet te bouwen was
+     * @param mappingConfig de veldmapping en recordfilters, of {@code null} bij een configuratiefout
+     * @param failure       de eerste configuratiefout, of {@code null} wanneer alles bruikbaar is
+     */
+    public record LoadedConfiguration(SourceStructureConfig config, ImportMappingConfig mappingConfig,
+                                      ScreeningBlockedException failure) {
+    }
+
     /** Lopende stand van één screening; enkel binnen één {@link #screen(long)}-aanroep gebruikt. */
     private static final class Progress {
         private final List<StageRow> pendingRows = new ArrayList<>();
@@ -374,29 +384,20 @@ public class DeliveryScreeningService {
         /** De kritieke koppelreferenties van dezelfde microbatch, in dezelfde transactie. */
         private final List<ReferenceRow> pendingReferences = new ArrayList<>();
         private final List<IssueRow> pendingIssues = new ArrayList<>();
-        /**
-         * Volledige aantallen per foutsignatuur (foutcode + logisch veld), de basis voor de
-         * issuegroepen van pass E4. Deze telling loopt door boven de voorbeeldcap: zij is de enige
-         * plek waar het werkelijke aantal van een verworpen regel nog bestaat.
-         */
-        private final IssueTally tally = new IssueTally();
         /** Aantal reeds bewaarde voorbeeldrijen per foutcode. */
         private final Map<String, Integer> recordedSamples = new HashMap<>();
-        private long validCount;
-        private long rejectedCount;
         /**
-         * Het aantal kritieke lijnen (3h-2, ontwerp par. 15.1): ongecapt, ontdubbeld per regelnummer en
-         * onafhankelijk van de voorbeeldcap. Wordt samen met {@link #rejectedCount} vastgelegd.
+         * De gedeelde beslisboom en tellerregels (NT-9): geldig, verworpen, uitgefilterd, fout vóór het
+         * filter, kritieke lijnen en de volledige aantallen per foutsignatuur (de basis voor de issuegroepen
+         * van pass E4; die telling loopt door boven de voorbeeldcap). {@code null} zolang er niet gelezen
+         * wordt — een configuratiefout blokkeert vóór het lezen.
          */
-        private final CriticalLineCounter criticalLines = new CriticalLineCounter();
-        private long filteredOutCount;
-        private long errorBeforeFilterCount;
+        private RecordScreeningCore core;
         private long stagedCount;
         private Long rawRecordCount;
     }
 
     private final CsvRecordStreamer streamer = new CsvRecordStreamer();
-    private final CandidateNormaliser normaliser = new CandidateNormaliser();
 
     private final DeliveryArchiveStore archive;
     private final SourceStructureConfigFactory configFactory;
@@ -533,22 +534,14 @@ public class DeliveryScreeningService {
 
         // De configuratie wordt hier gelezen omdat de revisie een lazy JPA-entiteit is. Een fout
         // blokkeert de batch en mag deze transactie dus niet terugdraaien: ze reist mee als resultaat.
-        // Dit is stap B' uit ontwerp fase 3 par. 3.1: structuur, veldmapping, recordfilters en
-        // drempels worden één keer per batch geladen en gevalideerd, vóór er één byte gelezen is.
-        SourceStructureConfig config = null;
-        ImportMappingConfig mappingConfig = null;
-        ScreeningBlockedException configFailure = null;
-        try {
-            // De vaste valuta hoort bij de KOPPELING en niet bij de revisie (valuta-standaard par. 2).
-            // Ze wordt hier, binnen de openende transactie, exact één keer per batch van de (lazy)
-            // koppeling gelezen en reist als momentopname mee in de bronconfiguratie; zo bereikt ze de
-            // normaliser zonder dat die een entiteit of een query nodig heeft.
-            config = configFactory.from(batch.getDefinitionRevision(),
-                    batch.getImportLink().getDefaultCurrency());
-            mappingConfig = mappingConfigFactory.from(batch.getDefinitionRevision(), config);
-        } catch (ScreeningBlockedException failure) {
-            configFailure = failure;
-        }
+        // De vaste valuta hoort bij de KOPPELING en niet bij de revisie (valuta-standaard par. 2). Ze
+        // wordt hier, binnen de openende transactie, exact één keer per batch van de (lazy) koppeling
+        // gelezen en reist als momentopname mee in de bronconfiguratie.
+        LoadedConfiguration loaded = loadConfiguration(batch.getDefinitionRevision(),
+                batch.getImportLink().getDefaultCurrency());
+        SourceStructureConfig config = loaded.config();
+        ImportMappingConfig mappingConfig = loaded.mappingConfig();
+        ScreeningBlockedException configFailure = loaded.failure();
 
         // Het prijsbeleid komt van dezelfde (lazy) revisie en wordt hier, binnen de transactie, exact
         // één keer per batch gelezen - nooit per regel en nooit per chunk (R-PRI-10).
@@ -559,6 +552,29 @@ public class DeliveryScreeningService {
         batches.saveAndFlush(batch);
 
         return context(batch, delivery, file, config, mappingConfig, priceControl, configFailure);
+    }
+
+    /**
+     * Stap B' uit ontwerp fase 3 par. 3.1: structuur, veldmapping en recordfilters van één revisie laden
+     * en valideren, vóór er één byte gelezen is. Een {@code CONFIG_*}-fout wordt niet geworpen maar
+     * teruggegeven: ze blokkeert de levering en is dus een resultaat, geen technische fout.
+     * <p>
+     * Gedeeld met de proefinlezing (NT-9). Moet binnen een (lees)transactie aangeroepen worden: de revisie
+     * is een lazy JPA-entiteit. Schrijft niets.
+     *
+     * @param linkDefaultCurrency de vaste valuta van de koppeling, of {@code null}
+     */
+    public LoadedConfiguration loadConfiguration(ImportDefinitionRevision revision, String linkDefaultCurrency) {
+        SourceStructureConfig config = null;
+        ImportMappingConfig mappingConfig = null;
+        ScreeningBlockedException failure = null;
+        try {
+            config = configFactory.from(revision, linkDefaultCurrency);
+            mappingConfig = mappingConfigFactory.from(revision, config);
+        } catch (ScreeningBlockedException blocked) {
+            failure = blocked;
+        }
+        return new LoadedConfiguration(config, mappingConfig, failure);
     }
 
     private static PriceControl priceControl(ImportBatch batch) {
@@ -652,12 +668,12 @@ public class DeliveryScreeningService {
 
     private ReadSummary readAndStage(Context context, Progress progress) {
         ImportMappingConfig mappingConfig = context.mappingConfig();
-        RecordFilterEvaluator filters = new RecordFilterEvaluator(mappingConfig.filters());
+        StagingSink sink = new StagingSink(context, progress);
+        progress.core = new RecordScreeningCore(context.config(), mappingConfig, sink);
         try (InputStream archived = archive.open(context.archiveReference());
              CountingInputStream counting = new CountingInputStream(archived)) {
             ReadSummary summary = streamer.read(counting, context.config(),
-                    mappingConfig.headerExpectations(), maxLineLength,
-                    new StagingSink(context, progress, filters));
+                    mappingConfig.headerExpectations(), maxLineLength, sink);
             if (counting.count() != context.fileByteSize()) {
                 // Het archief is onveranderlijk: een ander byte-aantal betekent een beschadigd of
                 // afgekapt object. Dat is technisch, geen leveringsprobleem.
@@ -679,71 +695,67 @@ public class DeliveryScreeningService {
      * enkele verdere controle: het kan nooit een identiteits-, prijs- of referentieprobleem
      * veroorzaken en telt in {@code filtered_out_count} in plaats van in
      * {@code rejected_record_count}.
+     * <p>
+     * <b>Adapter sinds NT-9.</b> De beslisboom per regel en de tellerregels zitten in de gedeelde
+     * {@link RecordScreeningCore} (ook gebruikt door de proefinlezing); deze sink doet enkel wat de
+     * screening eigen is: stagen, de voorbeeldcap per foutcode en committen per microbatch. Het gedrag is
+     * ongewijzigd.
      */
-    private final class StagingSink implements CsvRecordStreamer.Sink {
+    private final class StagingSink implements CsvRecordStreamer.Sink, RecordScreeningCore.Callbacks {
 
         private final Context context;
         private final Progress progress;
-        private final RecordFilterEvaluator filters;
 
-        private StagingSink(Context context, Progress progress, RecordFilterEvaluator filters) {
+        private StagingSink(Context context, Progress progress) {
             this.context = context;
             this.progress = progress;
-            this.filters = filters;
         }
 
         @Override
         public void record(ParsedRow row) {
-            RecordFilterEvaluator.Decision decision = filters.evaluate(row);
-            switch (decision.kind()) {
-                case FILTERED_OUT -> {
-                    // Geen probleemrij: buiten de scope vallen is geen fout. Het aantal blijft wel
-                    // zichtbaar, zodat de reconciliatie van de tellers klopt.
-                    progress.filteredOutCount++;
-                    return;
-                }
-                case REJECTED -> {
-                    addIssue(context, progress, row.lineNumber(),
-                            RecordFilterEvaluator.CODE_FILTER_RECORD_REJECTED, decision.fieldName(),
-                            decision.sourceValue(), decision.message(), false);
-                    return;
-                }
-                case IN_SCOPE -> {
-                    // Verder met de gewone recordcontroles.
-                }
-            }
-            CandidateNormaliser.Result result = normaliser.normalise(row, context.config(),
-                    context.mappingConfig());
-            if (result instanceof NormalisedCandidate candidate) {
-                progress.pendingRows.add(stageRow(context, candidate));
-                progress.pendingPrices.addAll(priceRows(context, candidate));
-                progress.pendingReferences.addAll(referenceRows(context, candidate));
-                progress.validCount++;
-                // Informatieve vaststellingen (een toegepaste standaardwaarde) horen bij een geldige
-                // regel: ze verwerpen niets, maar ze mogen ook niet onzichtbaar blijven.
-                for (CandidateNormaliser.RowIssue notice : candidate.notices()) {
-                    addIssue(context, progress, notice.rowNumber(), notice.code(), notice.fieldName(),
-                            notice.sourceValue(), notice.message(), false);
-                }
-                if (progress.pendingRows.size() >= stageBatchSize) {
-                    flush(context, progress);
-                }
-            } else if (result instanceof CandidateNormaliser.RowIssue rejected) {
-                addIssue(context, progress, rejected.rowNumber(), rejected.code(), rejected.fieldName(),
-                        rejected.sourceValue(), rejected.message(), false);
+            progress.core.record(row);
+            // Enkel een geldige kandidaat voegt een stagingrij toe, en elke toevoeging wordt hier meteen
+            // gevolgd door deze controle: na elke regel is de wachtrij dus kleiner dan de microbatch,
+            // exact zoals vóór NT-9 (toen stond de controle in de tak van de geldige kandidaat).
+            if (progress.pendingRows.size() >= stageBatchSize) {
+                flush(context, progress);
             }
         }
 
-        /**
-         * Een probleem dat bij het lezen zelf ontstaat (kolomaantal, niet-gesloten aanhalingsteken, te
-         * lange regel) of een waarschuwing over de header. Zo'n regel is niet parseerbaar en kan dus
-         * <b>niet</b> aan de importscope toegewezen worden: met geconfigureerde filters telt ze in
-         * {@code error_before_filter_count} en niet in {@code rejected_record_count}.
-         */
+        /** Zie {@link RecordScreeningCore#lineIssue(LineIssue)}: telt als fout vóór het filter. */
         @Override
         public void issue(LineIssue issue) {
-            addIssue(context, progress, issue.lineNumber(), issue.code(), issue.fieldName(),
-                    issue.sourceValue(), issue.message(), true);
+            progress.core.lineIssue(issue);
+        }
+
+        @Override
+        public void onCandidate(ParsedRow row, NormalisedCandidate candidate) {
+            progress.pendingRows.add(stageRow(context, candidate));
+            progress.pendingPrices.addAll(priceRows(context, candidate));
+            progress.pendingReferences.addAll(referenceRows(context, candidate));
+        }
+
+        /**
+         * Bewaart hoogstens {@code maxSampleRowsPerCode} voorbeeldrijen per foutcode. Omdat er in
+         * leesvolgorde gestreamd wordt, zijn dat deterministisch de laagste regelnummers (R-ISS-03). De
+         * telling in de kern loopt boven de cap door, dus {@code rejected_record_count} en de aantallen in
+         * de issuegroepen blijven exact.
+         */
+        @Override
+        public void onIssue(long rowNumber, String code, String field, String sourceValue, String message,
+                            RowIssueSeverity severity) {
+            int recorded = progress.recordedSamples.getOrDefault(code, 0);
+            if (recorded >= maxSampleRowsPerCode) {
+                // Geen voorbeeldrij meer, maar de telling in de kern loopt door: het werkelijke aantal
+                // belandt in de issuegroep en de cap-melding komt uit pass E4.
+                return;
+            }
+            progress.recordedSamples.put(code, recorded + 1);
+            progress.pendingIssues.add(ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(),
+                    rowNumber, code, field, sourceValue, null, message, Instant.now()));
+            if (progress.pendingIssues.size() >= stageBatchSize) {
+                flush(context, progress);
+            }
         }
     }
 
@@ -795,50 +807,6 @@ public class DeliveryScreeningService {
                     reference.referenceType(), reference.valueRaw(), reference.valueNormalised()));
         }
         return rows;
-    }
-
-    /**
-     * Legt één vastgesteld probleem vast. De ernst komt uit {@link ImportIssueCatalog} en nooit uit
-     * de aanroeper: zo kan geen enkel pad een eigen oordeel wegschrijven (R-ISS-02/R-ISS-06).
-     * <p>
-     * <b>Alle voorvallen tellen, niet alle voorvallen worden bewaard.</b> De teller per code loopt
-     * altijd door — {@code rejected_record_count} blijft dus exact — maar per code worden hoogstens
-     * {@code maxSampleRowsPerCode} voorbeeldrijen bewaard. Omdat er in leesvolgorde gestreamd wordt,
-     * zijn dat deterministisch de laagste regelnummers (R-ISS-03).
-     *
-     * @param beforeFilter of dit probleem ontstond vóór het recordfilter kon draaien. Alleen wanneer
-     *                     er werkelijk filters geconfigureerd zijn, krijgt zo'n regel een eigen teller
-     *                     ({@code error_before_filter_count}); zonder filters is er geen scope om
-     *                     buiten te vallen en blijft het fase 2-gedrag gelden (R-FLT-04).
-     */
-    private void addIssue(Context context, Progress progress, long rowNumber, String code, String field,
-                          String sourceValue, String message, boolean beforeFilter) {
-        RowIssueSeverity severity = ImportIssueCatalog.classify(code).severity();
-        // Élk voorval telt, ook het voorval waarvan geen voorbeeldrij bewaard wordt: het aantal in de
-        // issuegroep is het werkelijke aantal en nooit het aantal bewaarde voorbeelden (R-ISS-03).
-        progress.tally.add(code, IssueSignature.generic(field), null, rowNumber, Instant.now());
-        if (severity == RowIssueSeverity.ERROR) {
-            if (beforeFilter && context.hasRecordFilters()) {
-                progress.errorBeforeFilterCount++;
-            } else {
-                progress.rejectedCount++;
-            }
-        }
-        // Kritieke lijn (3h-2, par. 15.1): vóór de voorbeeldcap, zodat de teller ongecapt blijft. Het
-        // tellen zelf verandert niets aan de verwerking; de beoordeling komt in latere bouwstappen.
-        progress.criticalLines.record(context.mappingConfig(), rowNumber, severity, code, field);
-        int recorded = progress.recordedSamples.getOrDefault(code, 0);
-        if (recorded >= maxSampleRowsPerCode) {
-            // Geen voorbeeldrij meer, maar de telling hierboven loopt door: het werkelijke aantal
-            // belandt in de issuegroep en de cap-melding komt uit pass E4.
-            return;
-        }
-        progress.recordedSamples.put(code, recorded + 1);
-        progress.pendingIssues.add(ImportIssueCatalog.issue(context.batchId(), context.deliveryFileId(),
-                rowNumber, code, field, sourceValue, null, message, Instant.now()));
-        if (progress.pendingIssues.size() >= stageBatchSize) {
-            flush(context, progress);
-        }
     }
 
     /**
@@ -1152,7 +1120,8 @@ public class DeliveryScreeningService {
                 counts.scope(), context.maxCriticalSharePercent());
         ThresholdEvaluator.Judgement rejected = ThresholdEvaluator.evaluateRejected(
                 counts.rejectedRecordCount(), counts.scope(), context.maxRejectedSharePercent());
-        if (!critical.blocks() && !rejected.blocks()) {
+        ThresholdEvaluator.Judgement leading = ThresholdEvaluator.leading(critical, rejected);
+        if (leading == null) {
             return null;
         }
         transaction.executeWithoutResult(status -> {
@@ -1164,8 +1133,7 @@ public class DeliveryScreeningService {
                 recordThresholdIssue(context, rejected, ThresholdEvaluator.rejectedMessage(rejected));
             }
         });
-        ThresholdEvaluator.Judgement leading = critical.blocks() ? critical : rejected;
-        String reason = critical.blocks()
+        String reason = leading == critical
                 ? ThresholdEvaluator.criticalMessage(critical, counts.criticalLineCount(),
                         counts.identityIncidentCount())
                 : ThresholdEvaluator.rejectedMessage(rejected);
@@ -1237,8 +1205,9 @@ public class DeliveryScreeningService {
      * {@code maxSampleRowsPerCode} voorbeeldrijen bewaard.
      */
     private void persistStagingTallies(Context context, Progress progress) {
-        if (!progress.tally.isEmpty()) {
-            issueGroups.accumulate(context.batchId(), progress.tally.drain());
+        // Zonder kern is er niet gelezen (configuratiefout vóór het lezen) en dus niets geteld.
+        if (progress.core != null && !progress.core.tally().isEmpty()) {
+            issueGroups.accumulate(context.batchId(), progress.core.tally().drain());
         }
     }
 
@@ -2022,13 +1991,15 @@ public class DeliveryScreeningService {
      */
     private static void applyCounts(ImportBatch batch, Progress progress) {
         batch.setStagedRowCount(progress.stagedCount);
-        if (progress.rawRecordCount != null) {
+        // Een bekend ruw aantal bestaat enkel na een volledige lezing, en een lezing heeft altijd een kern.
+        if (progress.rawRecordCount != null && progress.core != null) {
+            RecordScreeningCore core = progress.core;
             batch.setRawRecordCount(progress.rawRecordCount);
-            batch.setValidRecordCount(progress.validCount);
-            batch.setRejectedRecordCount(progress.rejectedCount);
-            batch.setCriticalLineCount(progress.criticalLines.count());
-            batch.setFilteredOutCount(progress.filteredOutCount);
-            batch.setErrorBeforeFilterCount(progress.errorBeforeFilterCount);
+            batch.setValidRecordCount(core.validCount());
+            batch.setRejectedRecordCount(core.rejectedCount());
+            batch.setCriticalLineCount(core.criticalLineCount());
+            batch.setFilteredOutCount(core.filteredOutCount());
+            batch.setErrorBeforeFilterCount(core.errorBeforeFilterCount());
         }
     }
 

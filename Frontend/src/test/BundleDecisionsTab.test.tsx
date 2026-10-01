@@ -173,9 +173,12 @@ describe('BundleDecisionsTab', () => {
     ];
     renderTab(bundle());
 
-    await screen.findByText('APPROVE');
-    expect(screen.getByText('FREEZE')).toBeInTheDocument();
-    expect(screen.getByText('AUTO_APPROVE_PLANNED')).toBeInTheDocument();
+    await screen.findByText('Goedkeuring');
+    expect(screen.getByText('Bevriezing')).toBeInTheDocument();
+    expect(screen.getByText('Automatische goedkeuring bij het bevriezen')).toBeInTheDocument();
+    // Bereik in gewoon Nederlands; een beslissing over één mutatie noemt het nummer.
+    expect(screen.getByText('Hele bundel')).toBeInTheDocument();
+    expect(screen.getByText('Groep mutaties')).toBeInTheDocument();
     // Mutatie 501 moet eenmaal zichtbaar zijn (in de eerste rij)
     const mutationRefs = screen.queryAllByText(/Mutatie 501/);
     expect(mutationRefs.length).toBeGreaterThanOrEqual(1);

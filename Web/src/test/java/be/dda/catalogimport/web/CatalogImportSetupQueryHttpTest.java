@@ -5,15 +5,36 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import be.dda.catalogimport.dao.ImportDefinitionBookmarkRepository;
+import be.dda.catalogimport.dao.ImportDefinitionBookmarkUsageRepository;
+import be.dda.catalogimport.dao.ImportDefinitionBookmarkValueRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
+import be.dda.catalogimport.dao.ImportFieldCatalogRepository;
+import be.dda.catalogimport.dao.ImportFieldMappingRepository;
 import be.dda.catalogimport.dao.ImportLinkRepository;
+import be.dda.catalogimport.dao.ImportRecordFilterRepository;
+import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
+import be.dda.catalogimport.domain.BookmarkDataType;
+import be.dda.catalogimport.domain.BookmarkUsagePlace;
+import be.dda.catalogimport.domain.BookmarkValueScope;
+import be.dda.catalogimport.domain.Criticality;
 import be.dda.catalogimport.domain.DefinitionUsageType;
+import be.dda.catalogimport.domain.FieldValueKind;
+import be.dda.catalogimport.domain.FilterOperator;
+import be.dda.catalogimport.domain.FilterOutcome;
 import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.ImportDefinition;
+import be.dda.catalogimport.domain.ImportDefinitionBookmark;
+import be.dda.catalogimport.domain.ImportDefinitionBookmarkUsage;
+import be.dda.catalogimport.domain.ImportDefinitionBookmarkValue;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
+import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
+import be.dda.catalogimport.domain.ImportFieldMapping;
 import be.dda.catalogimport.domain.ImportLink;
+import be.dda.catalogimport.domain.ImportRecordFilter;
+import be.dda.catalogimport.domain.ImportRevisionFieldCriticality;
 import be.dda.catalogimport.domain.RevisionStatus;
 import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.domain.SourceOrganisationType;
@@ -66,11 +87,27 @@ class CatalogImportSetupQueryHttpTest {
     private ImportDefinitionRevisionRepository revisions;
     @Autowired
     private ImportLinkRepository links;
+    @Autowired
+    private ImportFieldCatalogRepository fieldCatalog;
+    @Autowired
+    private ImportFieldMappingRepository fieldMappings;
+    @Autowired
+    private ImportRecordFilterRepository recordFilters;
+    @Autowired
+    private ImportRevisionFieldCriticalityRepository fieldCriticalities;
+    @Autowired
+    private ImportDefinitionBookmarkRepository bookmarks;
+    @Autowired
+    private ImportDefinitionBookmarkUsageRepository bookmarkUsages;
+    @Autowired
+    private ImportDefinitionBookmarkValueRepository bookmarkValues;
 
     @Test
     void sourceOrganisationsAreReachableWithoutTheSetupApiFlagOrderedByCodeAndFilterableByActive()
             throws Exception {
-        String unique = unique();
+        // De lijst is oplopend op code en gepagineerd (max. 200); in een gedeeld schema staan er andere rijen. Het
+        // voorvoegsel "000" sorteert vóór alle gewone codes, zodat de rijen altijd op de eerste pagina staan.
+        String unique = "000" + unique();
         SourceOrganisation active = organisations.saveAndFlush(
                 new SourceOrganisation(unique + "-B", unique + " actief", SourceOrganisationType.SUPPLIER));
         SourceOrganisation inactive = new SourceOrganisation(unique + "-A", unique + " inactief",
@@ -175,6 +212,139 @@ class CatalogImportSetupQueryHttpTest {
                 .andExpect(jsonPath("$.code").value("DEFINITION_NOT_FOUND"));
     }
 
+    /**
+     * Bouwstap S1-X-3 (revision-successor-design.md §6 endpoint E1): het volledige revisiedetail, met
+     * alle vijf configuratie-kindtabellen gevuld — precies wat een gebruiker moet zien vóór hij een
+     * opvolger wijzigt.
+     */
+    @Test
+    void revisionDetailShowsAllScalarFieldsAndAllFiveConfigurationChildTables() throws Exception {
+        String unique = unique();
+        SourceOrganisation organisation = organisations.saveAndFlush(
+                new SourceOrganisation(unique + "-ORG", unique + " org", SourceOrganisationType.SUPPLIER));
+        ImportDefinition definition = definitions.saveAndFlush(
+                new ImportDefinition(organisation, unique + "-DEF", unique + " definitie", USER));
+        ImportDefinitionRevision revision = revisions.saveAndFlush(revision(definition, RevisionStatus.ACTIVE, 1));
+
+        ImportFieldCatalogEntry target = fieldCatalog.findById("E_SUPPLIER").orElseThrow();
+        ImportFieldMapping mapping = new ImportFieldMapping(revision, 1, target, FieldValueKind.FIXED_VALUE,
+                target.getDataType(), target.getDefaultOwner(), target.getIdentityClass());
+        mapping.setFixedValue("VASTE-WAARDE");
+        mapping.setCriticality(Criticality.NON_CRITICAL);
+        mapping.setCreatedBy(USER);
+        mapping = fieldMappings.saveAndFlush(mapping);
+
+        ImportRecordFilter filter = new ImportRecordFilter(revision, 1, "CULTUUR", FilterOperator.EQUALS,
+                "NL", FilterOutcome.INCLUDE);
+        filter.setCreatedBy(USER);
+        filter = recordFilters.saveAndFlush(filter);
+
+        ImportRevisionFieldCriticality criticality =
+                new ImportRevisionFieldCriticality(revision.getId(), "CURRENCY", Criticality.CRITICAL);
+        criticality.setCreatedBy(USER);
+        fieldCriticalities.saveAndFlush(criticality);
+
+        ImportDefinitionBookmark bookmark = new ImportDefinitionBookmark(revision, unique + "_BM",
+                "label", BookmarkDataType.TEXT, BookmarkValueScope.DEFINITION, "catalogImport.manage", 1);
+        bookmark.setCreatedBy(USER);
+        bookmark = bookmarks.saveAndFlush(bookmark);
+        ImportDefinitionBookmarkUsage usage = new ImportDefinitionBookmarkUsage(bookmark,
+                BookmarkUsagePlace.RECORD_FILTER_COMPARE_VALUE, String.valueOf(filter.getSequenceNumber()));
+        bookmarkUsages.saveAndFlush(usage);
+
+        ImportDefinitionBookmarkValue value = new ImportDefinitionBookmarkValue(revision, bookmark.getName(),
+                BookmarkDataType.TEXT, "ingevulde-waarde", USER);
+        bookmarkValues.saveAndFlush(value);
+
+        mockMvc.perform(get(API + "/definitions/{definitionId}/revisions/{revisionId}",
+                        definition.getId(), revision.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(revision.getId()))
+                .andExpect(jsonPath("$.definitionId").value(definition.getId()))
+                .andExpect(jsonPath("$.revisionNumber").value(1))
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.identityProfileKind").value("THREE_PART"))
+                .andExpect(jsonPath("$.identitySupplierField").value("LEVERANCIER"))
+                .andExpect(jsonPath("$.recordBasePriceField").value("PRIJS"))
+                .andExpect(jsonPath("$.recordCanonicalisationVersion").value(2))
+                .andExpect(jsonPath("$.accessConfigHash").isNotEmpty())
+                .andExpect(jsonPath("$.compositeConfigHash").isNotEmpty())
+                .andExpect(jsonPath("$.createdBy").value(USER))
+                .andExpect(jsonPath("$.mappings.length()").value(1))
+                .andExpect(jsonPath("$.mappings[0].targetFieldCode").value("E_SUPPLIER"))
+                .andExpect(jsonPath("$.mappings[0].valueKind").value("FIXED_VALUE"))
+                .andExpect(jsonPath("$.filters.length()").value(1))
+                .andExpect(jsonPath("$.filters[0].sourceReference").value("CULTUUR"))
+                .andExpect(jsonPath("$.filters[0].compareValue").value("NL"))
+                .andExpect(jsonPath("$.fieldCriticalities.length()").value(1))
+                .andExpect(jsonPath("$.fieldCriticalities[0].fieldKey").value("CURRENCY"))
+                .andExpect(jsonPath("$.fieldCriticalities[0].criticality").value("CRITICAL"))
+                .andExpect(jsonPath("$.bookmarks.length()").value(1))
+                .andExpect(jsonPath("$.bookmarks[0].name").value(unique + "_BM"))
+                .andExpect(jsonPath("$.bookmarks[0].usages.length()").value(1))
+                .andExpect(jsonPath("$.bookmarks[0].usages[0].placeKind")
+                        .value("RECORD_FILTER_COMPARE_VALUE"))
+                .andExpect(jsonPath("$.bookmarkValues.length()").value(1))
+                .andExpect(jsonPath("$.bookmarkValues[0].bookmarkName").value(bookmark.getName()))
+                .andExpect(jsonPath("$.bookmarkValues[0].valueText").value("ingevulde-waarde"));
+    }
+
+    /** Geen statusbeperking op lezen: een DRAFT- en een SUPERSEDED-revisie zijn beide gewoon zichtbaar. */
+    @Test
+    void revisionDetailWorksForDraftAndSupersededRevisionsWithoutAnyStatusRestriction() throws Exception {
+        String unique = unique();
+        SourceOrganisation organisation = organisations.saveAndFlush(
+                new SourceOrganisation(unique + "-ORG", unique + " org", SourceOrganisationType.SUPPLIER));
+        ImportDefinition definition = definitions.saveAndFlush(
+                new ImportDefinition(organisation, unique + "-DEF", unique + " definitie", USER));
+        ImportDefinitionRevision draft = revisions.saveAndFlush(revision(definition, RevisionStatus.DRAFT, 1));
+        ImportDefinitionRevision superseded =
+                revisions.saveAndFlush(revision(definition, RevisionStatus.SUPERSEDED, 2));
+
+        mockMvc.perform(get(API + "/definitions/{definitionId}/revisions/{revisionId}",
+                        definition.getId(), draft.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.mappings").isArray())
+                .andExpect(jsonPath("$.mappings.length()").value(0));
+
+        mockMvc.perform(get(API + "/definitions/{definitionId}/revisions/{revisionId}",
+                        definition.getId(), superseded.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUPERSEDED"));
+    }
+
+    @Test
+    void revisionDetailGivesStableNotFoundCodesForAnUnknownDefinitionOrAnUnrelatedRevision()
+            throws Exception {
+        String unique = unique();
+        SourceOrganisation organisation = organisations.saveAndFlush(
+                new SourceOrganisation(unique + "-ORG", unique + " org", SourceOrganisationType.SUPPLIER));
+        ImportDefinition definition = definitions.saveAndFlush(
+                new ImportDefinition(organisation, unique + "-DEF", unique + " definitie", USER));
+        ImportDefinitionRevision revision = revisions.saveAndFlush(revision(definition, RevisionStatus.ACTIVE, 1));
+
+        ImportDefinition otherDefinition = definitions.saveAndFlush(
+                new ImportDefinition(organisation, unique + "-OTH", unique + " andere definitie", USER));
+
+        mockMvc.perform(get(API + "/definitions/{definitionId}/revisions/{revisionId}", 999_999_999L,
+                        revision.getId()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("DEFINITION_NOT_FOUND"));
+
+        mockMvc.perform(get(API + "/definitions/{definitionId}/revisions/{revisionId}", definition.getId(),
+                        999_999_999L))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("REVISION_NOT_FOUND"));
+
+        // Bestaat wel, maar hoort bij een andere definitie: ook REVISION_NOT_FOUND, geen 500 op een
+        // stille mismatch.
+        mockMvc.perform(get(API + "/definitions/{definitionId}/revisions/{revisionId}",
+                        otherDefinition.getId(), revision.getId()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("REVISION_NOT_FOUND"));
+    }
+
     @Test
     void listsArePaginatedWithTheSharedDefaultAndMaximumAndRejectInvalidPaging() throws Exception {
         mockMvc.perform(get(API + "/source-organisations")).andExpect(status().isOk())
@@ -204,7 +374,8 @@ class CatalogImportSetupQueryHttpTest {
     /** Regressietest voor de additieve uitbreiding: de bestaande vorm zonder het nieuwe filter verandert niet. */
     @Test
     void importLinksWithoutTheNewFilterStillWorkUnchanged() throws Exception {
-        String unique = unique();
+        // Gedeeld schema + sortering op code + pagina's: "000" sorteert vóór gewone codes (eerste pagina).
+        String unique = "000" + unique();
         SourceOrganisation organisation = organisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + " org", SourceOrganisationType.SUPPLIER));
         ImportDefinition definition = definitions.saveAndFlush(
@@ -214,7 +385,7 @@ class CatalogImportSetupQueryHttpTest {
         ImportLink link = links.saveAndFlush(
                 new ImportLink(unique + "-LINK", unique + " koppeling", definition, supplier, "PSARF050"));
 
-        mockMvc.perform(get(API + "/import-links").param("active", "true"))
+        mockMvc.perform(get(API + "/import-links").param("active", "true").param("size", "200"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id == " + link.getId() + ")].importDefinitionId")
                         .value(definition.getId().intValue()));

@@ -41,17 +41,28 @@ import { usePermissionGate } from '../../actor/permissions.ts';
 import { useAction } from '../../hooks/useAction.ts';
 import { Field } from '../../components/Field.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import { term, termLabel } from '../../terms/index.ts';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
+import { INVULPUNT, INVULPUNTEN, INVULPUNTEN_CAP } from '../../terms/wording.ts';
 import styles from './MaterialiseForm.module.css';
 
 const NO_MODE = '';
 type ModeSelection = MaterialisationMode | typeof NO_MODE;
 
-const MODE_LABELS: Record<MaterialisationMode, string> = {
-  NEW_DEFINITION: 'NEW_DEFINITION — nieuwe definitie + revisie + koppeling',
-  REUSE_DEFINITION: 'REUSE_DEFINITION — alleen een koppeling bij een bestaande, deelbare definitie',
-};
+/** NT-11c (V7): de twee manieren komen als Nederlandse zin uit het woordenboek (`materialisationMode`). */
+function modeLabel(mode: MaterialisationMode): string {
+  return term('materialisationMode', mode).label;
+}
 
-/** Eén invulveld: onaangeroerd (geen entry) ≠ uitdrukkelijk leeg (`explicitEmpty`) — R-BMK-03. */
+/** De melding van de server bij een geslaagde materialisatie in gewoon Nederlands; de code staat in de tooltip. */
+function describeWarning(code: string): { label: string; uitleg: string } {
+  const known = term('materialisationWarning', code);
+  return known.uitleg === ''
+    ? { label: 'Een melding van de server', uitleg: 'Voor deze melding bestaat nog geen Nederlandse uitleg.' }
+    : { label: known.label, uitleg: known.uitleg };
+}
+
+/** Eén invulpunt: onaangeroerd (geen entry) ≠ uitdrukkelijk leeg (`explicitEmpty`) — R-BMK-03. */
 type ValueEntry = { text: string; explicitEmpty: boolean };
 
 export type MaterialiseFormProps = {
@@ -66,6 +77,12 @@ export type MaterialiseFormProps = {
   materialisations: MaterialisedDefinitionView[];
   /** Na een geslaagde materialisatie: historiek herladen en de nieuwe koppeling openen. */
   onMaterialised: (result: MaterialisationView) => void;
+  /**
+   * NT-7 — voorinvulling van "Leverancierscode" (het stappenplan kent de leverancier al). Enkel een beginwaarde:
+   * het veld blijft bewerkbaar en de server valideert zoals altijd. Wijzigt de waarde, dan hoort de aanroeper
+   * het formulier met een nieuwe `key` opnieuw te monteren.
+   */
+  defaultSupplierCode?: string;
 };
 
 /** Welke `LINK_*`-plaatsen al door een bookmark gevuld worden (§4 D7). */
@@ -92,6 +109,7 @@ export function MaterialiseForm({
   bookmarks,
   materialisations,
   onMaterialised,
+  defaultSupplierCode,
 }: MaterialiseFormProps) {
   const { actor } = useActor();
   const manageGate = usePermissionGate(PERMISSION_MANAGE);
@@ -103,7 +121,7 @@ export function MaterialiseForm({
   const [changeReason, setChangeReason] = useState('');
   const [linkCode, setLinkCode] = useState('');
   const [linkName, setLinkName] = useState('');
-  const [supplierOrganisationCode, setSupplierOrganisationCode] = useState('');
+  const [supplierOrganisationCode, setSupplierOrganisationCode] = useState(defaultSupplierCode ?? '');
   const [libraryCode, setLibraryCode] = useState('');
   const [librarySearchSupplierCode, setLibrarySearchSupplierCode] = useState('');
   const [values, setValues] = useState<Record<string, ValueEntry>>({});
@@ -164,16 +182,16 @@ export function MaterialiseForm({
   /** De eerste cliëntvalidatiefout, of `null`. De server valideert alles opnieuw. */
   function firstValidationError(): string | null {
     if (mode === NO_MODE) {
-      return 'Kies of dit een nieuwe definitie wordt of een bestaande hergebruikt.';
+      return 'Kies of dit een nieuwe beschrijving van het bestand wordt of een bestaande hergebruikt.';
     }
     if (reuse && reuseDefinitionId === '') {
-      return 'Kies de bestaande definitie waaraan deze koppeling moet hangen.';
+      return 'Kies de bestaande beschrijving waaraan deze koppeling moet hangen.';
     }
     if (!reuse && definitionCode.trim() === '') {
-      return 'Vul een definitiecode in.';
+      return 'Vul de code van de beschrijving in.';
     }
     if (!reuse && definitionName.trim() === '') {
-      return 'Vul een definitienaam in.';
+      return 'Vul de naam van de beschrijving in.';
     }
     if (linkCode.trim() === '') {
       return 'Vul een koppelingscode in.';
@@ -193,7 +211,7 @@ export function MaterialiseForm({
       }
       const entry = values[bookmark.name];
       if (entry === undefined || entry.explicitEmpty || entry.text.trim() === '') {
-        return `Vul de verplichte bookmark '${bookmark.name}' in; een uitdrukkelijk lege waarde geldt niet als invulling.`;
+        return `Vul het verplichte ${INVULPUNT} "${bookmark.label}" in; een uitdrukkelijk lege waarde geldt niet als invulling.`;
       }
     }
     return null;
@@ -257,7 +275,7 @@ export function MaterialiseForm({
     <form className={styles.form} onSubmit={handleSubmit} data-testid="materialise-form">
       <h3 className={styles.title}>Materialiseren</h3>
       <p className={styles.revisionRow}>
-        Sjabloonrevisie: <strong>#{templateRevisionNumber}</strong> ({templateRevisionStatus})
+        Sjabloonversie: <strong>{templateRevisionNumber}</strong> ({term('revisionStatus', templateRevisionStatus).label})
         {templateRevisionStatus === 'SUPERSEDED' && (
           <span className={styles.supersededNote}>
             {' '}
@@ -267,10 +285,18 @@ export function MaterialiseForm({
       </p>
 
       <Field
-        label="Modus"
+        label="Nieuw of hergebruik"
         htmlFor="materialise-mode"
         required
         hint="Geen automatische keuze: er is bewust geen voorselectie. Deze keuze bepaalt of twee leveranciers één configuratie delen."
+        help={
+          <>
+            <strong>Nieuw</strong> maakt een nieuwe beschrijving van het bestand met een conceptversie en een
+            koppeling; die beschrijving is dan van de organisatie van het sjabloon. <strong>Hergebruik</strong>{' '}
+            hangt alleen een koppeling aan een bestaande beschrijving die gedeeld mag worden; die beschrijving blijft
+            ongewijzigd en heeft daarna meerdere leveranciers.
+          </>
+        }
       >
         <select
           id="materialise-mode"
@@ -281,7 +307,7 @@ export function MaterialiseForm({
           <option value={NO_MODE}>— kies nieuw of hergebruik —</option>
           {MATERIALISATION_MODES.map((option) => (
             <option key={option} value={option}>
-              {MODE_LABELS[option]}
+              {modeLabel(option)}
             </option>
           ))}
         </select>
@@ -289,7 +315,12 @@ export function MaterialiseForm({
 
       {mode === 'NEW_DEFINITION' && (
         <>
-          <Field label="Definitiecode" htmlFor="materialise-definition-code" required>
+          <Field
+            label="Code van de beschrijving"
+            htmlFor="materialise-definition-code"
+            required
+            help={term('setupField', 'code').uitleg}
+          >
             <input
               id="materialise-definition-code"
               className={styles.input}
@@ -299,7 +330,7 @@ export function MaterialiseForm({
               maxLength={50}
             />
           </Field>
-          <Field label="Definitienaam" htmlFor="materialise-definition-name" required>
+          <Field label="Naam van de beschrijving"htmlFor="materialise-definition-name" required>
             <input
               id="materialise-definition-name"
               className={styles.input}
@@ -312,7 +343,7 @@ export function MaterialiseForm({
           <Field
             label="Wijzigingsreden"
             htmlFor="materialise-change-reason"
-            hint="Optioneel; zonder opgave bewaart de server een vaste zin met sjabloon en revisie."
+            hint="Optioneel; zonder opgave bewaart de server een vaste zin met sjabloon en versie."
           >
             <input
               id="materialise-change-reason"
@@ -328,10 +359,10 @@ export function MaterialiseForm({
 
       {reuse && (
         <Field
-          label="Bestaande definitie"
+          label="Bestaande beschrijving"
           htmlFor="materialise-reuse-definition"
           required
-          hint="Alleen een deelbare definitie uit dit sjabloon; de definitie en haar revisie blijven ongewijzigd."
+          hint="Alleen een deelbare beschrijving uit dit sjabloon; de beschrijving en haar versie blijven ongewijzigd."
         >
           <select
             id="materialise-reuse-definition"
@@ -339,16 +370,33 @@ export function MaterialiseForm({
             value={reuseDefinitionId}
             onChange={(event) => setReuseDefinitionId(event.target.value)}
           >
-            <option value="">— kies een bestaande definitie —</option>
+            <option value="">— kies een bestaande beschrijving —</option>
             {materialisations.map((row) => {
+              // De technische naam van de bookmark staat niet in de zichtbare tekst (V7): het label van de bookmark,
+              // of — bij een onbekende naam — een neutrale omschrijving.
+              const blockingLabel =
+                row.blockingBookmarkName === null
+                  ? null
+                  : (bookmarks.find((bookmark) => bookmark.name === row.blockingBookmarkName)?.label ?? null);
               const reason =
                 row.blockingBookmarkName !== null
-                  ? `niet deelbaar door bookmark '${row.blockingBookmarkName}'`
-                  : 'niet deelbaar: geen herkomstrevisie uit dit sjabloon';
+                  ? blockingLabel !== null
+                    ? `niet deelbaar door ${INVULPUNT} "${blockingLabel}"`
+                    : `niet deelbaar door een ${INVULPUNT} van dit sjabloon`
+                  : 'niet deelbaar: geen herkomstversie uit dit sjabloon';
               const revisionPart =
-                row.templateRevisionNumber !== null ? `sjabloonrevisie #${row.templateRevisionNumber}` : 'geen sjabloonrevisie';
+                row.templateRevisionNumber !== null ? `sjabloonversie ${row.templateRevisionNumber}` : 'geen sjabloonversie';
               return (
-                <option key={row.definitionId} value={String(row.definitionId)} disabled={!row.shareable}>
+                <option
+                  key={row.definitionId}
+                  value={String(row.definitionId)}
+                  disabled={!row.shareable}
+                  title={
+                    row.blockingBookmarkName !== null
+                      ? `Technische naam van het ${INVULPUNT}: ${row.blockingBookmarkName}`
+                      : undefined
+                  }
+                >
                   {row.definitionCode} — {row.definitionName} ({revisionPart}, {row.importLinkCount}{' '}
                   koppeling(en))
                   {row.shareable ? '' : ` — ${reason}`}
@@ -384,11 +432,17 @@ export function MaterialiseForm({
 
           {supplierFromBookmark ? (
             <p className={styles.fromBookmark}>
-              De leverancierscode komt uit een bookmark van dit sjabloon (plaats{' '}
-              {BOOKMARK_PLACE_LINK_SUPPLIER_ORGANISATION}); vul ze hieronder bij die bookmark in.
+              De leverancierscode komt uit een {INVULPUNT} van dit sjabloon (bestemming:{' '}
+              {term('bookmarkPlace', BOOKMARK_PLACE_LINK_SUPPLIER_ORGANISATION).label}); vul ze hieronder bij dat{' '}
+              {INVULPUNT} in.
             </p>
           ) : (
-            <Field label="Leverancierscode" htmlFor="materialise-supplier-code" required>
+            <Field
+              label="Leverancierscode"
+              htmlFor="materialise-supplier-code"
+              required
+              help={term('setupField', 'supplierCode').uitleg}
+            >
               <input
                 id="materialise-supplier-code"
                 className={styles.input}
@@ -402,11 +456,16 @@ export function MaterialiseForm({
 
           {libraryFromBookmark ? (
             <p className={styles.fromBookmark}>
-              De bibliotheekcode komt uit een bookmark van dit sjabloon (plaats{' '}
-              {BOOKMARK_PLACE_LINK_LIBRARY_CODE}); vul ze hieronder bij die bookmark in.
+              De bibliotheekcode komt uit een {INVULPUNT} van dit sjabloon (bestemming:{' '}
+              {term('bookmarkPlace', BOOKMARK_PLACE_LINK_LIBRARY_CODE).label}); vul ze hieronder bij dat {INVULPUNT} in.
             </p>
           ) : (
-            <Field label="Bibliotheekcode" htmlFor="materialise-library-code" required>
+            <Field
+              label="Bibliotheekcode"
+              htmlFor="materialise-library-code"
+              required
+              help={term('setupField', 'libraryCode').uitleg}
+            >
               <input
                 id="materialise-library-code"
                 className={styles.input}
@@ -420,14 +479,15 @@ export function MaterialiseForm({
 
           {searchSupplierFromBookmark ? (
             <p className={styles.fromBookmark}>
-              De bibliotheekzoekleverancier komt uit een bookmark van dit sjabloon (plaats{' '}
-              {BOOKMARK_PLACE_LINK_SEARCH_SUPPLIER}).
+              De bibliotheekzoekleverancier komt uit een {INVULPUNT} van dit sjabloon (bestemming:{' '}
+              {term('bookmarkPlace', BOOKMARK_PLACE_LINK_SEARCH_SUPPLIER).label}).
             </p>
           ) : (
             <Field
               label="Bibliotheekzoekleverancier"
               htmlFor="materialise-search-supplier-code"
-              hint="Optioneel en wordt nooit automatisch uit de leverancier afgeleid (R-BMK-04); blijft ze leeg, dan meldt de server dat met een waarschuwing."
+              hint="Optioneel en wordt nooit automatisch uit de leverancier afgeleid; blijft ze leeg, dan meldt de server dat met een waarschuwing."
+              help={term('setupField', 'librarySearchSupplierCode').uitleg}
             >
               <input
                 id="materialise-search-supplier-code"
@@ -441,15 +501,21 @@ export function MaterialiseForm({
           )}
 
           <fieldset className={styles.fieldset} data-testid="materialise-bookmark-values">
-            <legend className={styles.legend}>Bookmarkwaarden</legend>
+            <legend className={styles.legend}>{INVULPUNTEN_CAP}</legend>
+            <WhatIsThis>
+              Een {INVULPUNT} is een waarde die u hier invult. Een waarde &laquo;voor de hele beschrijving&raquo; wordt bij
+              het materialiseren vastgelegd; een waarde &laquo;per koppeling&raquo; geldt alleen voor deze koppeling.
+              Laat u een optionele waarde leeg, dan geldt de standaardwaarde van het sjabloon, als die er is.
+            </WhatIsThis>
             {reuse && (
               <p className={styles.scopeNote}>
-                Bij hergebruik worden alleen LINK-waarden gevraagd: de DEFINITION-waarden liggen vast in de
-                bestaande revisie en zouden bij elke leverancier op die definitie tegelijk veranderen.
+                Bij hergebruik worden alleen de waarden per koppeling gevraagd: de waarden voor de hele beschrijving
+                liggen vast in de bestaande versie en zouden bij elke leverancier op die beschrijving tegelijk
+                veranderen.
               </p>
             )}
             {scopedBookmarks.length === 0 ? (
-              <p className={styles.empty}>Geen bookmarks om in te vullen.</p>
+              <p className={styles.empty}>Geen {INVULPUNTEN} om in te vullen.</p>
             ) : (
               scopedBookmarks.map((bookmark) => {
                 const entry = values[bookmark.name];
@@ -458,13 +524,19 @@ export function MaterialiseForm({
                 return (
                   <div key={bookmark.id} className={styles.bookmarkRow} data-testid={`bookmark-field-${bookmark.name}`}>
                     <Field
-                      label={`${bookmark.name} (${bookmark.valueScope})`}
+                      label={bookmark.label}
                       htmlFor={inputId}
                       required={bookmark.required}
                       hint={
                         hasUsableDefault(bookmark)
-                          ? `${bookmark.label} · standaard uit het sjabloon: ${bookmark.defaultValue}`
-                          : bookmark.label
+                          ? `${termLabel('bookmarkScope', bookmark.valueScope, 'Andere geldigheid')} · standaard uit het sjabloon: ${bookmark.defaultValue}`
+                          : termLabel('bookmarkScope', bookmark.valueScope, 'Andere geldigheid')
+                      }
+                      help={
+                        <>
+                          {bookmark.description !== null && bookmark.description !== '' && <>{bookmark.description} </>}
+                          Soort waarde: {termLabel('bookmarkDataType', bookmark.dataType, 'Ander soort waarde')}.
+                        </>
                       }
                     >
                       <input
@@ -512,20 +584,31 @@ export function MaterialiseForm({
         <div className={styles.notice} role="status" data-testid="materialise-result">
           <p>
             {outcome.definitionCreated
-              ? `Nieuwe definitie ${outcome.definitionCode} gematerialiseerd`
-              : `Bestaande definitie ${outcome.definitionCode} hergebruikt`}{' '}
-            — koppeling <strong>{outcome.importLinkCode}</strong>, revisie #
-            {outcome.definitionRevisionNumber} ({outcome.definitionRevisionStatus}). Gebruikte
-            sjabloonversie: #{outcome.templateRevisionNumber} ({outcome.templateRevisionStatus}).
+              ? `Nieuwe beschrijving ${outcome.definitionCode} gematerialiseerd`
+              : `Bestaande beschrijving ${outcome.definitionCode} hergebruikt`}{' '}
+            — koppeling <strong>{outcome.importLinkCode}</strong>, versie{' '}
+            {outcome.definitionRevisionNumber} ({term('revisionStatus', outcome.definitionRevisionStatus).label}).
+            Gebruikte sjabloonversie: {outcome.templateRevisionNumber} (
+            {term('revisionStatus', outcome.templateRevisionStatus).label}).
           </p>
           {outcome.warnings.length > 0 && (
             <ul className={styles.warnings} data-testid="materialise-warnings">
-              {outcome.warnings.map((warning, index) => (
-                <li key={`${warning.code}-${warning.bookmarkName ?? ''}-${index}`}>
-                  {warning.code}
-                  {warning.bookmarkName !== null ? ` · ${warning.bookmarkName}` : ''} — {warning.message}
-                </li>
-              ))}
+              {outcome.warnings.map((warning, index) => {
+                const described = describeWarning(warning.code);
+                const bookmarkLabel =
+                  warning.bookmarkName === null
+                    ? null
+                    : (bookmarks.find((bookmark) => bookmark.name === warning.bookmarkName)?.label ?? null);
+                return (
+                  <li
+                    key={`${warning.code}-${warning.bookmarkName ?? ''}-${index}`}
+                    title={`technische code: ${warning.code}${warning.bookmarkName !== null ? ` · ${warning.bookmarkName}` : ''} · ${warning.message}`}
+                  >
+                    {described.label}
+                    {bookmarkLabel !== null ? ` (${INVULPUNT} "${bookmarkLabel}")` : ''} — {described.uitleg}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

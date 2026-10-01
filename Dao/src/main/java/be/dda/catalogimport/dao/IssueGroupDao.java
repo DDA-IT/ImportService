@@ -70,7 +70,14 @@ public class IssueGroupDao {
                           Long firstRowNumber, Instant detectedAt) {
     }
 
-    /** Eén groep zoals ze in de database staat; ook het leesmodel van de groepenlijst. */
+    /**
+     * Eén groep zoals ze in de database staat; ook het leesmodel van de groepenlijst.
+     * <p>
+     * {@code issueCaseId} is additief toegevoegd in bouwstap S2-B3 (docs/design/issue-case-design.md
+     * §6, compatibiliteitsparagraaf): het behandelgeval waaraan deze groep gekoppeld is, of
+     * {@code null} voor een groep van vóór changeset 012-3 die nog niet gesynchroniseerd is. Bewust
+     * achteraan: de bestaande velden en hun volgorde blijven ongewijzigd.
+     */
     public record GroupRow(long id, long batchId, String issueCode, String signature, String severity,
                            String issueDomain, String controlLevel, String impactScope,
                            String incidentKind, long occurrenceCount, int recordedSampleCount,
@@ -78,7 +85,17 @@ public class IssueGroupDao {
                            String priceComponentCode, String deviationDirection,
                            BigDecimal dominantFactor, String referenceType, String patternDescription,
                            Long firstRowNumber, Instant firstDetectedAt, Instant lastDetectedAt,
-                           String handlingStatus) {
+                           String handlingStatus, Long issueCaseId) {
+    }
+
+    /**
+     * Eén waarneming van een behandelgeval (S2-B3): de groep náást de batch/leveringsreferentie en de
+     * revisie waaronder ze gescreend is — "voor welke leveringen dit probleem vastgesteld is" (ontwerp
+     * §6, {@code GET /issue-cases/{id}/observations}).
+     */
+    public record CaseObservationRow(long issueGroupId, long batchId, long deliveryId, int attemptNo,
+                                     long definitionRevisionId, long occurrenceCount,
+                                     Instant firstDetectedAt, Instant lastDetectedAt) {
     }
 
     /** Het werkelijke aantal voorvallen náást het aantal bewaarde voorbeelden, per foutcode. */
@@ -89,7 +106,7 @@ public class IssueGroupDao {
             + "control_level, impact_scope, incident_kind, occurrence_count, recorded_sample_count, "
             + "scope_record_count, share_percent, is_bulk_incident, price_component_code, "
             + "deviation_direction, dominant_factor, reference_type, pattern_description, "
-            + "first_row_number, first_detected_at, last_detected_at, handling_status";
+            + "first_row_number, first_detected_at, last_detected_at, handling_status, issue_case_id";
 
     // dominant_factor en pattern_description blijven leeg: patroonherkenning van bulktransformaties
     // hoort niet in fase 3 (aanname A20) en wordt nooit met een geraden waarde ingevuld.
@@ -376,7 +393,22 @@ public class IssueGroupDao {
                 resultSet.getBigDecimal(13), resultSet.getBoolean(14), resultSet.getString(15),
                 resultSet.getString(16), resultSet.getBigDecimal(17), resultSet.getString(18),
                 resultSet.getString(19), nullableLong(resultSet, 20), instant(resultSet, 21),
-                instant(resultSet, 22), resultSet.getString(23));
+                instant(resultSet, 22), resultSet.getString(23), nullableLong(resultSet, 24));
+    }
+
+    /**
+     * De waarnemingen van één behandelgeval (S2-B3): elke gekoppelde groep met haar batch-, leverings-
+     * en revisiereferentie, oplopend op groep-id (= volgorde van ontstaan).
+     */
+    public List<CaseObservationRow> findByIssueCaseId(long issueCaseId) {
+        return jdbc.query("select g.id, g.batch_id, b.delivery_id, b.attempt_no, b.definition_revision_id, "
+                + "g.occurrence_count, g.first_detected_at, g.last_detected_at "
+                + "from import_issue_group g join import_batch b on b.id = g.batch_id "
+                + "where g.issue_case_id = ? order by g.id",
+                (resultSet, index) -> new CaseObservationRow(resultSet.getLong(1), resultSet.getLong(2),
+                        resultSet.getLong(3), resultSet.getInt(4), resultSet.getLong(5),
+                        resultSet.getLong(6), instant(resultSet, 7), instant(resultSet, 8)),
+                issueCaseId);
     }
 
     private static Instant instant(ResultSet resultSet, int index) throws SQLException {

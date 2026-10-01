@@ -2,7 +2,7 @@ package be.dda.catalogimport.service;
 
 import be.dda.catalogimport.dao.CatalogImportTaskRepository;
 import be.dda.catalogimport.dao.ImportDefinitionBookmarkRepository;
-import be.dda.catalogimport.dao.ImportDefinitionBookmarkValueRepository;
+import be.dda.catalogimport.dao.ImportDefinitionBookmarkUsageRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.ImportFieldCatalogRepository;
@@ -11,7 +11,7 @@ import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
 import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
-import be.dda.catalogimport.domain.BookmarkValueScope;
+import be.dda.catalogimport.dao.SourceStateDao;
 import be.dda.catalogimport.domain.CatalogImportTask;
 import be.dda.catalogimport.domain.Criticality;
 import be.dda.catalogimport.domain.DefinitionUsageType;
@@ -23,7 +23,7 @@ import be.dda.catalogimport.domain.FilterOutcome;
 import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.ImportDefinition;
 import be.dda.catalogimport.domain.ImportDefinitionBookmark;
-import be.dda.catalogimport.domain.ImportDefinitionBookmarkValue;
+import be.dda.catalogimport.domain.ImportDefinitionBookmarkUsage;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
 import be.dda.catalogimport.domain.ImportFieldMapping;
@@ -37,16 +37,21 @@ import be.dda.catalogimport.domain.RowIssueSeverity;
 import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.domain.SourceOrganisationType;
 import be.dda.catalogimport.domain.TaskTriggerType;
+import be.dda.catalogimport.service.support.BookmarkDeclarations;
 import be.dda.catalogimport.service.support.ImportMappingConfigFactory;
 import be.dda.catalogimport.service.support.RevisionConfigHashes;
-import be.dda.catalogimport.service.support.ScreeningBlockedException;
-import be.dda.catalogimport.service.support.SourceStructureConfig;
 import be.dda.catalogimport.service.support.SourceStructureConfigFactory;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,16 +59,30 @@ import org.springframework.transaction.annotation.Transactional;
  * Configuratie van een importketen: bronorganisatie → importdefinitie → revisie (met mappings,
  * filters en kritiek-overrules) → koppeling → taak.
  * <p>
- * <b>Waarvoor deze service bestaat.</b> Fase 1-3 bouwden het model en de verwerking, maar er is nog
- * geen beheerscherm: een keten kon tot nu toe alleen via testcode of SQL ontstaan. Deze service is de
- * ontwikkelhulp die dat met expliciete opdrachten kan doen, zodat een mens de applicatie lokaal kan
- * uitproberen.
+ * <b>Waarvoor deze service bestaat.</b> Een keten met expliciete opdrachten inrichten: sinds NT-3
+ * (beslissingslog 2026-09-30 "Nieuwe leverancier + taak (NT-spoor)", V2 = a) is dat de manier waarop een
+ * gebruiker zelf een nieuwe leverancier en taak aanmaakt in de UI.
  * <p>
- * <b>Veiligheid — lees dit vóór u ze aanzet.</b> De bijhorende REST-laag staat standaard <b>uit</b>
- * ({@code catalogimport.setup-api.enabled}, default {@code false}). Sinds Fase 5-AUTH (5A-1) vereist ze
- * bovendien een login, en de vlag blijft een extra bescherming daarbovenop (A12): wie de setup-API kan
- * bereiken, kan een importdefinitie en haar drempels bepalen en dus de controle op een catalogus
- * uitschakelen. Zet ze daarom nooit aan in een omgeving met echte gegevens.
+ * <b>Veiligheid.</b> Wie deze schrijfmethodes kan aanroepen, kan een importdefinitie en haar drempels
+ * bepalen en dus de controle op een catalogus beïnvloeden. De bijhorende REST-laag
+ * ({@code CatalogImportSetupController}) vraagt daarom een login en het recht {@code catalogImport.manage}
+ * per actie (403 {@code PERMISSION_DENIED} zonder recht); ze staat sinds NT-3 <b>niet</b> meer achter
+ * {@code catalogimport.setup-api.enabled}. Enkel {@link #overview()} ({@code GET /setup/overview}) is nog
+ * achter die vlag bereikbaar.
+ * <p>
+ * <b>Gelijktijdig aanmaken (NT-3; bronorganisatie, definitie, koppeling, taak).</b> De controle "bestaat deze
+ * code/naam al?" gebeurt vóór het
+ * wegschrijven en geeft de gewone 409 {@code *_IN_USE}. Twee gelijktijdige verzoeken kunnen die controle
+ * allebei passeren; de tweede botst dan op de unieke databasesleutel. Die botsing wordt op constraintnaam
+ * vertaald naar <b>dezelfde</b> 409-code ({@link #translateCreateConflict}) — nooit een 500, en elke andere
+ * integriteitsfout gaat ongewijzigd door.
+ * <p>
+ * <b>Foutcodes op een 400 (NT-3, additief).</b> Een ongeldige aanvraag werpt een {@link BadRequestException}
+ * (een {@link IllegalArgumentException}) met een stabiele code naast de ongewijzigde tekst: de
+ * {@code CONFIG_*}-code van de configuratievalidatie, of voor een veldfout {@code <VELD>_REQUIRED},
+ * {@code <VELD>_TOO_LONG} of {@code <VELD>_INVALID}, waarbij {@code <VELD>} de veldnaam uit het verzoek in
+ * hoofdletters met underscores is (bv. {@code delimiter} → {@code DELIMITER_REQUIRED}) — dezelfde vorm als
+ * het bestaande {@code CHANGE_REASON_REQUIRED}.
  * <p>
  * <b>Wie tekent (5A-6).</b> Elke schrijfmethode hieronder heeft naast haar bestaande {@code String}-vorm
  * een overload met {@link ActorIdentity}. De Web-laag gebruikt uitsluitend die overload en bewaart naam
@@ -80,9 +99,16 @@ import org.springframework.transaction.annotation.Transactional;
  * dan enkel getoetst aan wat de database/entiteit al afdwingt (verplichte velden, veldlengtes). De
  * volledige configuratievalidatie gebeurt bij het toevoegen van een mapping/filter/kritiek-overrule en
  * bij {@link #activateRevision(long, String)} — het moment waarop de revisie echt bruikbaar wordt.
- * Een ongeldige configuratie levert daar {@link IllegalArgumentException} op (HTTP 400) met de
- * {@code CONFIG_*}-code van de bestaande validatie in de boodschap; de transactie rolt terug, zodat er
+ * Een ongeldige configuratie levert daar een {@link BadRequestException} op (HTTP 400) met de
+ * {@code CONFIG_*}-code van de bestaande validatie in de boodschap én als code; de transactie rolt terug, zodat er
  * nooit een half opgeslagen definitie achterblijft.
+ * <p>
+ * <b>Wijzigen en verwijderen binnen een DRAFT</b> ({@link #updateRevision}, {@link #deleteMapping},
+ * {@link #deleteFilter} — bouwstap S1-X-4) valideren de configuratie <b>niet</b> opnieuw: een werkversie
+ * mag tussentijds onvolledig zijn, en bij het activeren gebeurt de volledige validatie alsnog. Wat daar wél
+ * bewaakt wordt, zijn de twee onomkeerbare wijzigingen uit
+ * {@code docs/design/revision-successor-design.md} §5 (R-REV-X2/R-REV-X3) en de integriteit van de
+ * bookmarkdeclaratie na een verwijdering.
  * <p>
  * Er wordt hier nooit een geheim, wachtwoord of bestandsinhoud bewaard of gelogd.
  */
@@ -102,6 +128,8 @@ public class SetupService {
     private static final int MAX_USER_LENGTH = 100;
     /** {@code identity_*_field}, {@code record_*_field}, {@code source_reference}. */
     private static final int MAX_FIELD_REFERENCE_LENGTH = 200;
+    /** {@code import_definition_revision.change_reason}. */
+    private static final int MAX_CHANGE_REASON_LENGTH = 500;
     /** Wie een rij aanmaakte wanneer de aanroeper niets meegeeft; nooit een echte gebruikersnaam. */
     private static final String DEFAULT_CREATED_BY = "setup-api";
 
@@ -114,6 +142,36 @@ public class SetupService {
     /** @param usageType {@code null} betekent {@link DefinitionUsageType#OWN_DEFINITION} */
     public record CreateDefinitionCommand(String sourceOrganisationCode, String code, String name,
                                           DefinitionUsageType usageType) {
+    }
+
+    /**
+     * De negen drempel- en prijsbeleidsvelden die zowel het aanmaken ({@link CreateRevisionCommand}) als
+     * het wijzigen ({@link UpdateRevisionCommand}) van een revisie kent, zodat
+     * {@link #applyThresholds(ImportDefinitionRevision, RevisionThresholds)} één implementatie blijft.
+     * <p>
+     * Deze velden zijn financieel bepalend (blokkeerdrempels, prijsafwijking, prijsreconstructie). Twee
+     * kopieën van dezelfde toepassingsregels zouden op termijn uit elkaar lopen en dan zou dezelfde
+     * ingevoerde waarde op het ene pad wél en op het andere níet een negatief percentage weigeren.
+     */
+    interface RevisionThresholds {
+
+        BigDecimal creationThresholdSharePercent();
+
+        BigDecimal maxCriticalSharePercent();
+
+        BigDecimal maxRejectedSharePercent();
+
+        BigDecimal bulkIncidentSharePercent();
+
+        BigDecimal priceDeviationPercent();
+
+        RowIssueSeverity priceDeviationSeverity();
+
+        Boolean basePriceZeroAllowed();
+
+        Boolean basePriceNegativeAllowed();
+
+        BigDecimal priceDerivationTolerance();
     }
 
     /**
@@ -135,7 +193,64 @@ public class SetupService {
                                         RowIssueSeverity priceDeviationSeverity,
                                         Boolean basePriceZeroAllowed, Boolean basePriceNegativeAllowed,
                                         BigDecimal priceDerivationTolerance, String changeReason,
-                                        String createdBy) {
+                                        String createdBy) implements RevisionThresholds {
+    }
+
+    /**
+     * De gevraagde wijziging aan de scalaire velden van een {@link RevisionStatus#DRAFT}-revisie (endpoint
+     * E3, {@code docs/design/revision-successor-design.md} §6; bouwstap S1-X-4). <b>Exact dezelfde
+     * veldnamen</b> als {@link CreateRevisionCommand}, plus {@link #acknowledgeIdentityChange()}.
+     *
+     * <h2>{@code null} betekent altijd "ongewijzigd"</h2>
+     * Een afwezig of {@code null} veld laat de bestaande waarde van de revisie staan — deze opdracht kan
+     * dus nooit stilzwijgend een veld leegmaken dat de aanroeper niet noemde. Dat is dezelfde conventie
+     * als bij {@link CreateRevisionCommand}, waar {@code null} de bestaande default laat staan.
+     * <p>
+     * <b>Gevolg voor de optionele velden.</b> Voor {@code discountCodeField}, {@code descriptionField},
+     * {@code currencyField} en {@code quoteChar} betekent een uitdrukkelijk lege tekst ({@code ""}) wél
+     * "wissen" — hetzelfde onderscheid dat {@link CreateRevisionCommand#quoteChar()} al maakt tussen
+     * {@code null} ("niets gezegd") en {@code ""} ("deze bron kent geen quoting"). Voor de verplichte
+     * velden ({@code delimiter}, de drie leveranciersvelden, {@code basePriceField}) is een lege tekst
+     * een 400: ze worden nooit stil leeggemaakt. {@code expectedColumnCount} en
+     * {@code maxRejectedSharePercent} zijn langs dit pad niet terug op {@code null} te zetten; dat is een
+     * bewuste beperking van "{@code null} = ongewijzigd" en geen stille wijziging.
+     *
+     * @param acknowledgeIdentityChange R-REV-X3 (§5): een wijziging aan {@code identityProfileKind} of aan
+     *                                  een van de vier {@code identity*Field}-velden verandert de canonieke
+     *                                  identiteitstekst en laat élke bestaande aanbieding als {@code NEW}
+     *                                  terugkomen. Zonder een uitdrukkelijke {@code true} wordt zo'n
+     *                                  wijziging geweigerd met 409 {@code IDENTITY_CHANGE_NOT_ACKNOWLEDGED}
+     *                                  (patroon {@code MATERIALISATION_MODE_REQUIRED}: geen default, want
+     *                                  een geraden keuze bepaalt hier de identiteit van de catalogus).
+     *                                  Afwezig of {@code null} = {@code false}.
+     * @param createdBy                 optioneel en sinds 5A-6 enkel nog een controle tegen de aangemelde
+     *                                  gebruiker; een wijziging aan een DRAFT heeft geen eigen
+     *                                  {@code *_by}-kolom, dus er wordt hier geen naam bewaard
+     */
+    public record UpdateRevisionCommand(String delimiter, String quoteChar, String charset, Boolean hasHeader,
+                                        Integer headerLineNumber, String fieldReferenceKind,
+                                        Integer expectedColumnCount, IdentityProfileKind identityProfileKind,
+                                        String supplierField, String supplierGroupField,
+                                        String supplierReferenceField, String discountCodeField,
+                                        String basePriceField, String descriptionField, String currencyField,
+                                        Integer canonicalisationVersion,
+                                        BigDecimal creationThresholdSharePercent,
+                                        BigDecimal maxCriticalSharePercent,
+                                        BigDecimal maxRejectedSharePercent,
+                                        BigDecimal bulkIncidentSharePercent,
+                                        BigDecimal priceDeviationPercent,
+                                        RowIssueSeverity priceDeviationSeverity,
+                                        Boolean basePriceZeroAllowed, Boolean basePriceNegativeAllowed,
+                                        BigDecimal priceDerivationTolerance, String changeReason,
+                                        Boolean acknowledgeIdentityChange,
+                                        String createdBy) implements RevisionThresholds {
+
+        /** Een leeg verzoek: elke wijziging afwezig, dus alles ongewijzigd. */
+        static UpdateRevisionCommand empty() {
+            return new UpdateRevisionCommand(null, null, null, null, null, null, null, null, null, null,
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                    null, null, null, null);
+        }
     }
 
     /**
@@ -238,18 +353,22 @@ public class SetupService {
     private final ImportLinkRepository links;
     private final CatalogImportTaskRepository tasks;
     private final ImportDefinitionBookmarkRepository bookmarks;
-    private final ImportDefinitionBookmarkValueRepository bookmarkValues;
-    private final SourceStructureConfigFactory structureFactory;
-    private final ImportMappingConfigFactory mappingFactory;
+    private final ImportDefinitionBookmarkUsageRepository bookmarkUsages;
+    private final SourceStateDao sourceStates;
+    private final ChainConfigurationChecks checks;
 
+    /**
+     * Sinds NT-8 lopen de configuratievalidatie (screeningfabrieken) en de DEFINITION-bookmarkcontrole via
+     * {@link ChainConfigurationChecks}; de fabrieken en de waarderepository zijn daarom geen parameter meer
+     * (enkel Spring bouwt deze service).
+     */
     public SetupService(SourceOrganisationRepository organisations, ImportDefinitionRepository definitions,
                         ImportDefinitionRevisionRepository revisions, ImportFieldCatalogRepository fieldCatalog,
                         ImportFieldMappingRepository fieldMappings, ImportRecordFilterRepository recordFilters,
                         ImportRevisionFieldCriticalityRepository fieldCriticalities, ImportLinkRepository links,
                         CatalogImportTaskRepository tasks, ImportDefinitionBookmarkRepository bookmarks,
-                        ImportDefinitionBookmarkValueRepository bookmarkValues,
-                        SourceStructureConfigFactory structureFactory,
-                        ImportMappingConfigFactory mappingFactory) {
+                        ImportDefinitionBookmarkUsageRepository bookmarkUsages, SourceStateDao sourceStates,
+                        ChainConfigurationChecks checks) {
         this.organisations = organisations;
         this.definitions = definitions;
         this.revisions = revisions;
@@ -260,9 +379,9 @@ public class SetupService {
         this.links = links;
         this.tasks = tasks;
         this.bookmarks = bookmarks;
-        this.bookmarkValues = bookmarkValues;
-        this.structureFactory = structureFactory;
-        this.mappingFactory = mappingFactory;
+        this.bookmarkUsages = bookmarkUsages;
+        this.sourceStates = sourceStates;
+        this.checks = checks;
     }
 
     // --- Bronorganisatie --------------------------------------------------------------------------
@@ -276,11 +395,21 @@ public class SetupService {
         String name = requireText(command.name(), "name", MAX_NAME_LENGTH);
         SourceOrganisationType type = require(command.type(), "type");
         if (organisations.existsByCode(code)) {
-            throw new ConflictException("SOURCE_ORGANISATION_CODE_IN_USE",
-                    "Source organisation code '" + code + "' already exists");
+            throw sourceOrganisationCodeInUse(code);
         }
-        SourceOrganisation stored = organisations.saveAndFlush(new SourceOrganisation(code, name, type));
-        return view(stored);
+        try {
+            SourceOrganisation stored = organisations.saveAndFlush(new SourceOrganisation(code, name, type));
+            return view(stored);
+        } catch (DataIntegrityViolationException violation) {
+            // NT-3: een gelijktijdig verzoek met dezelfde code passeerde de controle hierboven ook.
+            throw translateCreateConflict(violation, "uk_source_organisation_code",
+                    sourceOrganisationCodeInUse(code));
+        }
+    }
+
+    private static ConflictException sourceOrganisationCodeInUse(String code) {
+        return new ConflictException("SOURCE_ORGANISATION_CODE_IN_USE",
+                "Source organisation code '" + code + "' already exists");
     }
 
     // --- Importdefinitie --------------------------------------------------------------------------
@@ -305,8 +434,7 @@ public class SetupService {
         String name = requireText(command.name(), "name", MAX_NAME_LENGTH);
         SourceOrganisation organisation = organisation(command.sourceOrganisationCode());
         if (definitions.findBySourceOrganisationIdAndCode(organisation.getId(), code).isPresent()) {
-            throw new ConflictException("DEFINITION_CODE_IN_USE", "Definition code '" + code
-                    + "' already exists for source organisation '" + organisation.getCode() + "'");
+            throw definitionCodeInUse(code, organisation);
         }
         ImportDefinition definition = new ImportDefinition(organisation, code, name,
                 requireText(orDefault(actor.username(), DEFAULT_CREATED_BY), "createdBy", MAX_USER_LENGTH));
@@ -314,7 +442,18 @@ public class SetupService {
         if (command.usageType() != null) {
             definition.setUsageType(command.usageType());
         }
-        return view(definitions.saveAndFlush(definition));
+        try {
+            return view(definitions.saveAndFlush(definition));
+        } catch (DataIntegrityViolationException violation) {
+            // NT-3: een gelijktijdig verzoek met dezelfde code passeerde de controle hierboven ook.
+            throw translateCreateConflict(violation, "uk_import_definition_code",
+                    definitionCodeInUse(code, organisation));
+        }
+    }
+
+    private static ConflictException definitionCodeInUse(String code, SourceOrganisation organisation) {
+        return new ConflictException("DEFINITION_CODE_IN_USE", "Definition code '" + code
+                + "' already exists for source organisation '" + organisation.getCode() + "'");
     }
 
     // --- Revisie ----------------------------------------------------------------------------------
@@ -343,7 +482,15 @@ public class SetupService {
                         "Import definition " + definitionId + " does not exist"));
         IdentityProfileKind identityKind = command.identityProfileKind() == null
                 ? IdentityProfileKind.THREE_PART : command.identityProfileKind();
-        int revisionNumber = revisions.findByImportDefinitionIdOrderByRevisionNumberDesc(definitionId).stream()
+        List<ImportDefinitionRevision> existing =
+                revisions.findByImportDefinitionIdOrderByRevisionNumberDesc(definitionId);
+        // NT-13: hoogstens één DRAFT per definitie, ook hier (niet enkel in het opvolgerpad). Zelfde 409-code en
+        // -tekst als RevisionSuccessorService; de racevariant wordt onderaan op de unieke sleutel vertaald.
+        existing.stream().filter(open -> open.getStatus() == RevisionStatus.DRAFT).findFirst()
+                .ifPresent(open -> {
+                    throw draftAlreadyExists(definitionId, open);
+                });
+        int revisionNumber = existing.stream()
                 .mapToInt(ImportDefinitionRevision::getRevisionNumber).max().orElse(0) + 1;
 
         ImportDefinitionRevision revision = new ImportDefinitionRevision(definition, revisionNumber,
@@ -360,14 +507,7 @@ public class SetupService {
         // consistent: null (niet gemapt) en "" (expliciet leeg) zijn verschillende toestanden.
         String discountCodeField = optionalText(command.discountCodeField(), "discountCodeField",
                 MAX_FIELD_REFERENCE_LENGTH);
-        if (identityKind == IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE && discountCodeField == null) {
-            throw new IllegalArgumentException("identityProfileKind FOUR_PART_WITH_DISCOUNT_CODE requires "
-                    + "discountCodeField");
-        }
-        if (identityKind == IdentityProfileKind.THREE_PART && discountCodeField != null) {
-            throw new IllegalArgumentException("identityProfileKind THREE_PART must not carry a "
-                    + "discountCodeField; use FOUR_PART_WITH_DISCOUNT_CODE when the discount code is mapped");
-        }
+        requireIdentityConsistency(identityKind, discountCodeField);
         revision.setIdentityDiscountCodeField(discountCodeField);
         revision.setRecordBasePriceField(
                 requireText(command.basePriceField(), "basePriceField", MAX_FIELD_REFERENCE_LENGTH));
@@ -399,19 +539,55 @@ public class SetupService {
             revision.setRecordCanonicalisationVersion(command.canonicalisationVersion());
         }
         applyThresholds(revision, command);
-        revision.setChangeReason(optionalText(command.changeReason(), "changeReason", 500));
+        revision.setChangeReason(optionalText(command.changeReason(), "changeReason", MAX_CHANGE_REASON_LENGTH));
         // Bouwstap 5c: dezelfde vier regels als voorheen, nu als één gedeelde berekening. De
         // materialisatiewizard moet exact dezelfde hashes op een afgeleide revisie kunnen zetten; twee
         // kopieën van deze opbouw zouden op termijn uit elkaar lopen (zie RevisionConfigHashes#applyAll).
         RevisionConfigHashes.applyAll(revision);
-        return view(revisions.saveAndFlush(revision));
+        try {
+            return view(revisions.saveAndFlush(revision));
+        } catch (DataIntegrityViolationException violation) {
+            throw translateDraftConflict(violation, definitionId);
+        }
+    }
+
+    /**
+     * NT-13: 409 {@code REVISION_DRAFT_ALREADY_EXISTS} — er staat al een DRAFT open op deze definitie. Gedeeld
+     * door {@link #createRevision} en {@code RevisionSuccessorService}, zodat code en tekst nooit uit elkaar lopen.
+     */
+    static ConflictException draftAlreadyExists(long definitionId, ImportDefinitionRevision openDraft) {
+        return new ConflictException("REVISION_DRAFT_ALREADY_EXISTS", "Import definition " + definitionId
+                + " already has a DRAFT revision (revision " + openDraft.getRevisionNumber()
+                + ", id " + openDraft.getId() + "); finish or activate that one first — two open "
+                + "drafts would mean two people are preparing the next configuration side by side");
+    }
+
+    /**
+     * NT-13: de racevariant — een gelijktijdig verzoek zette tussen controle en insert zelf een DRAFT. De botsing op
+     * {@code uk_import_definition_revision_draft} wordt dezelfde 409 (de transactie is afgebroken, het nummer van de
+     * andere DRAFT is hier niet meer op te vragen). Elke andere integriteitsfout gaat ongewijzigd door.
+     * <p>
+     * Ook {@code uk_import_definition_revision_number} telt mee: twee gelijktijdige verzoeken berekenen hetzelfde
+     * volgnummer, en PostgreSQL meldt dan die (oudere) sleutel vóór de draft-sleutel. Revisies worden alleen via
+     * deze twee paden (aanmaken en opvolger) ingevoegd en beide maken een DRAFT: een nummerbotsing betekent dus
+     * altijd dat er gelijktijdig een andere DRAFT bijkwam.
+     */
+    static RuntimeException translateDraftConflict(DataIntegrityViolationException violation, long definitionId) {
+        if (violates(violation, "uk_import_definition_revision_draft")
+                || violates(violation, "uk_import_definition_revision_number")) {
+            return new ConflictException("REVISION_DRAFT_ALREADY_EXISTS", "Import definition " + definitionId
+                    + " already has a DRAFT revision (created at the same moment by another request); finish "
+                    + "or activate that one first — two open drafts would mean two people are preparing the "
+                    + "next configuration side by side");
+        }
+        return violation;
     }
 
     /**
      * Thresholds zijn altijd een percentage (beslissingslog 20/09). {@code null} laat de bestaande
      * default staan; een negatief percentage wordt geweigerd in plaats van stil op 0 gezet.
      */
-    private static void applyThresholds(ImportDefinitionRevision revision, CreateRevisionCommand command) {
+    private static void applyThresholds(ImportDefinitionRevision revision, RevisionThresholds command) {
         if (command.creationThresholdSharePercent() != null) {
             revision.setCreationThresholdSharePercent(
                     requireNotNegative(command.creationThresholdSharePercent(), "creationThresholdSharePercent"));
@@ -447,6 +623,247 @@ public class SetupService {
         }
     }
 
+    // --- Een DRAFT-revisie wijzigen (endpoint E3, bouwstap S1-X-4) ---------------------------------
+
+    /**
+     * Wijzigt de <b>scalaire</b> velden van een {@link RevisionStatus#DRAFT}-revisie (endpoint E3,
+     * {@code docs/design/revision-successor-design.md} §5, §6). Een bevroren revisie wordt nooit
+     * bijgewerkt (§14.14): daarvoor bestaat de opvolgrevisie
+     * ({@link RevisionSuccessorService#createSuccessor}).
+     *
+     * <h2>Wat hier bewaakt wordt en waarom</h2>
+     * De kloonstap zelf is byte-identiek (R-REV-X1); de <b>betekenis</b> van een importdefinitie verandert
+     * pas door een wijziging in de DRAFT. Twee wijzigingen zijn daarbij niet zichtbaar gevaarlijk maar wel
+     * onomkeerbaar, en die krijgen elk hun eigen blokkade (§5, O3 = beide invoeren):
+     * <ul>
+     *   <li><b>R-REV-X2 — {@code recordCanonicalisationVersion}.</b> Het versienummer zit vooraan in
+     *       {@code identity_hash}. Bestaat er voor enige koppeling van deze definitie al aanvaarde
+     *       bronstaat, dan zou elke bestaande aanbieding na deze wijziging als {@code NEW} terugkomen
+     *       (massa-CREATE) en is de wijziging niet migreerbaar: 409
+     *       {@code REVISION_CANONICALISATION_CHANGE_BLOCKED}. <b>Onvoorwaardelijk</b> — er is geen
+     *       bevestigingsveld dat deze blokkade opheft, in tegenstelling tot R-REV-X3 hieronder. Wie deze
+     *       versie wil verhogen, doet dat op een koppeling die nog niets aanvaard heeft.</li>
+     *   <li><b>R-REV-X3 — identiteitsprofiel en de vier {@code identity*Field}-velden.</b> Zelfde gevolg
+     *       (andere canonieke identiteitstekst ⇒ massa-{@code NEW}), maar hier is de wijziging wél legitiem
+     *       zolang ze bewust is: zonder {@code acknowledgeIdentityChange = true} 409
+     *       {@code IDENTITY_CHANGE_NOT_ACKNOWLEDGED}.</li>
+     * </ul>
+     * Beide controles gebeuren <b>na</b> het toepassen van de wijzigingen (de vergelijking is er een tussen
+     * oud en nieuw) maar <b>vóór</b> het wegschrijven; ze werpen, en de omringende transactie rolt terug.
+     * Er blijft dus nooit een half gewijzigde revisie achter: ook de drempelwijziging die in hetzelfde
+     * verzoek meekwam, is dan niet opgeslagen.
+     *
+     * <h2>Wat hier bewust niet gebeurt</h2>
+     * <ul>
+     *   <li><b>Geen volledige configuratievalidatie.</b> Een DRAFT is een werkversie; een tussenstap mag
+     *       tijdelijk onvolledig zijn. De {@code CONFIG_*}-validatie met de screeningfabrieken blijft staan
+     *       waar ze hoort: bij {@link #activateRevision(long, ActorIdentity)}, het moment waarop de revisie
+     *       echt bruikbaar wordt. Zou ze hier al gelden, dan was een mapping niet meer te vervangen — de
+     *       tussentoestand tussen verwijderen en opnieuw toevoegen zou permanent blokkeren.</li>
+     *   <li><b>Geen statuswijziging en geen goedkeuring.</b> De revisie blijft DRAFT; activeren blijft een
+     *       aparte, ondertekende handeling.</li>
+     *   <li><b>Geen eigen {@code *_by}-audit.</b> Er is geen {@code updated_by}-kolom (§7: geen migratie in
+     *       S1-X); {@code updated_at} wordt door de entiteit bijgewerkt. Wie de DRAFT wijzigde, is dus niet
+     *       apart vastgelegd — wie hem aanmaakte ({@code created_by}) en wie hem activeert
+     *       ({@code approved_by}) wel.</li>
+     * </ul>
+     *
+     * @param command {@code null} of een volledig leeg verzoek is toegestaan en wijzigt niets; elk
+     *                {@code null}-veld betekent "ongewijzigd" (zie {@link UpdateRevisionCommand})
+     * @return dezelfde revisieweergave als {@code createRevision}, {@code successor} en {@code activate}
+     * @throws NotFoundException        {@code REVISION_NOT_FOUND}
+     * @throws ConflictException        {@code REVISION_NOT_EDITABLE} (alleen een DRAFT is bewerkbaar),
+     *                                  {@code REVISION_CANONICALISATION_CHANGE_BLOCKED} (R-REV-X2),
+     *                                  {@code IDENTITY_CHANGE_NOT_ACKNOWLEDGED} (R-REV-X3)
+     * @throws IllegalArgumentException een lege verplichte waarde, een te lange waarde, een negatief
+     *                                  percentage of een identiteitsprofiel dat niet bij het
+     *                                  kortingscodeveld past
+     */
+    public RevisionView updateRevision(long revisionId, UpdateRevisionCommand command) {
+        ImportDefinitionRevision revision = editableRevision(revisionId);
+        UpdateRevisionCommand request = command == null ? UpdateRevisionCommand.empty() : command;
+        IdentityBefore before = IdentityBefore.of(revision);
+
+        applyScalars(revision, request);
+
+        // R-REV-X2 gaat voor: die blokkade is met geen enkele bevestiging te omzeilen, dus ze is het
+        // eerste dat de aanroeper hoort te lezen wanneer hij beide wijzigingen in één verzoek stuurt.
+        requireCanonicalisationChangeAllowed(revision, before);
+        requireIdentityChangeAcknowledged(revision, before, request);
+
+        // Altijd ná het zetten van alle velden: de hash beschrijft de revisie zoals ze nu is. Drempels en
+        // prijsbeleid zitten bewust niet in enige hash (zie de ontdekking in ontwerp §9), dus een verzoek
+        // dat enkel drempels wijzigt, laat de vier hashes terecht ongewijzigd.
+        RevisionConfigHashes.applyAll(revision);
+        return view(revisions.saveAndFlush(revision));
+    }
+
+    /**
+     * Zet elk veld dat het verzoek noemt; {@code null} laat de bestaande waarde staan. De regels per veld
+     * zijn letterlijk die van {@link #createRevision(long, CreateRevisionCommand, ActorIdentity)} —
+     * verplichte velden via {@link #requireText}, optionele via {@link #optionalText} (waarbij {@code ""}
+     * "uitdrukkelijk leeg" betekent) en de drempels via de gedeelde {@link #applyThresholds}.
+     */
+    private static void applyScalars(ImportDefinitionRevision revision, UpdateRevisionCommand command) {
+        if (command.identityProfileKind() != null) {
+            revision.setIdentityProfileKind(command.identityProfileKind());
+        }
+        if (command.supplierField() != null) {
+            revision.setIdentitySupplierField(
+                    requireText(command.supplierField(), "supplierField", MAX_FIELD_REFERENCE_LENGTH));
+        }
+        if (command.supplierGroupField() != null) {
+            revision.setIdentitySupplierGroupField(requireText(command.supplierGroupField(),
+                    "supplierGroupField", MAX_FIELD_REFERENCE_LENGTH));
+        }
+        if (command.supplierReferenceField() != null) {
+            revision.setIdentitySupplierReferenceField(requireText(command.supplierReferenceField(),
+                    "supplierReferenceField", MAX_FIELD_REFERENCE_LENGTH));
+        }
+        if (command.discountCodeField() != null) {
+            revision.setIdentityDiscountCodeField(optionalText(command.discountCodeField(),
+                    "discountCodeField", MAX_FIELD_REFERENCE_LENGTH));
+        }
+        // Het paar profiel + kortingscodeveld wordt beoordeeld op de toestand ná de wijziging, niet op wat
+        // het verzoek meebracht: wie enkel het profiel omzet, moet hier al de leesbare fout krijgen in
+        // plaats van een databasefout op ck_import_definition_revision_identity.
+        requireIdentityConsistency(revision.getIdentityProfileKind(), revision.getIdentityDiscountCodeField());
+        if (command.basePriceField() != null) {
+            revision.setRecordBasePriceField(
+                    requireText(command.basePriceField(), "basePriceField", MAX_FIELD_REFERENCE_LENGTH));
+        }
+        if (command.descriptionField() != null) {
+            revision.setRecordDescriptionField(optionalText(command.descriptionField(), "descriptionField",
+                    MAX_FIELD_REFERENCE_LENGTH));
+        }
+        if (command.currencyField() != null) {
+            revision.setRecordCurrencyField(optionalText(command.currencyField(), "currencyField",
+                    MAX_FIELD_REFERENCE_LENGTH));
+        }
+        if (command.delimiter() != null) {
+            revision.setStructureDelimiter(requireText(command.delimiter(), "delimiter", 1));
+        }
+        if (command.quoteChar() != null) {
+            // "" betekent hier uitdrukkelijk: deze bron kent geen quoting.
+            revision.setStructureQuoteChar(command.quoteChar().isEmpty() ? null
+                    : requireText(command.quoteChar(), "quoteChar", 1));
+        }
+        if (command.charset() != null) {
+            revision.setStructureCharset(requireText(command.charset(), "charset", 40));
+        }
+        if (command.hasHeader() != null) {
+            revision.setStructureHasHeader(command.hasHeader());
+        }
+        if (command.headerLineNumber() != null) {
+            revision.setStructureHeaderLineNumber(command.headerLineNumber());
+        }
+        if (command.fieldReferenceKind() != null) {
+            revision.setStructureFieldReferenceKind(
+                    requireText(command.fieldReferenceKind(), "fieldReferenceKind", 20));
+        }
+        if (command.expectedColumnCount() != null) {
+            revision.setStructureExpectedColumnCount(command.expectedColumnCount());
+        }
+        if (command.canonicalisationVersion() != null) {
+            revision.setRecordCanonicalisationVersion(command.canonicalisationVersion());
+        }
+        applyThresholds(revision, command);
+        if (command.changeReason() != null) {
+            revision.setChangeReason(
+                    optionalText(command.changeReason(), "changeReason", MAX_CHANGE_REASON_LENGTH));
+        }
+    }
+
+    /**
+     * De identiteits- en canonicalisatievelden zoals ze <b>vóór</b> de wijziging op de revisie stonden:
+     * R-REV-X2 en R-REV-X3 zijn beide een vergelijking tussen oud en nieuw, niet een controle op wat het
+     * verzoek meebracht. Wie een veld op exact dezelfde waarde zet, wijzigt niets en heeft dus ook geen
+     * bevestiging nodig.
+     */
+    private record IdentityBefore(IdentityProfileKind profileKind, String supplierField,
+                                  String supplierGroupField, String supplierReferenceField,
+                                  String discountCodeField, int canonicalisationVersion) {
+
+        static IdentityBefore of(ImportDefinitionRevision revision) {
+            return new IdentityBefore(revision.getIdentityProfileKind(), revision.getIdentitySupplierField(),
+                    revision.getIdentitySupplierGroupField(), revision.getIdentitySupplierReferenceField(),
+                    revision.getIdentityDiscountCodeField(), revision.getRecordCanonicalisationVersion());
+        }
+
+        /** R-REV-X3: het profiel of een van de vier identiteitsvelden verschilt van de huidige waarde. */
+        boolean identityChangedIn(ImportDefinitionRevision revision) {
+            return profileKind != revision.getIdentityProfileKind()
+                    || !Objects.equals(supplierField, revision.getIdentitySupplierField())
+                    || !Objects.equals(supplierGroupField, revision.getIdentitySupplierGroupField())
+                    || !Objects.equals(supplierReferenceField, revision.getIdentitySupplierReferenceField())
+                    || !Objects.equals(discountCodeField, revision.getIdentityDiscountCodeField());
+        }
+    }
+
+    /**
+     * R-REV-X2 (§5). De bronstaat wordt alleen bevraagd wanneer de versie werkelijk wijzigt: dat is één
+     * extra query op een wijziging die zelden voorkomt, en nul query's op elke andere wijziging.
+     * <p>
+     * <b>Elke wijziging, niet enkel een verhoging.</b> Het ontwerp beschrijft het geval "verhoogd" — dat is
+     * het geval dat in de praktijk voorkomt — maar een <i>verlaging</i> heeft exact hetzelfde gevolg: het
+     * versienummer staat vooraan in {@code identity_hash}, dus ook 2 → 1 laat elke bestaande aanbieding als
+     * {@code NEW} terugkomen. De blokkade sluit daarom beide richtingen af; een uitzondering voor
+     * verlagen zou een even onomkeerbare wijziging stil doorlaten.
+     */
+    private void requireCanonicalisationChangeAllowed(ImportDefinitionRevision revision,
+                                                      IdentityBefore before) {
+        int after = revision.getRecordCanonicalisationVersion();
+        if (after == before.canonicalisationVersion()) {
+            return;
+        }
+        long definitionId = revision.getImportDefinition().getId();
+        if (!sourceStates.existsForImportDefinition(definitionId)) {
+            return;
+        }
+        throw new ConflictException("REVISION_CANONICALISATION_CHANGE_BLOCKED", "Revision "
+                + revision.getId() + " cannot change recordCanonicalisationVersion from "
+                + before.canonicalisationVersion() + " to " + after + ": import definition " + definitionId
+                + " already has accepted source state. The version is part of the offer identity hash, so "
+                + "every existing offer would come back as NEW (a mass creation) and there is no migration "
+                + "for that. Nothing was saved");
+    }
+
+    /**
+     * R-REV-X3 (§5). Patroon {@code MATERIALISATION_MODE_REQUIRED}: er is geen default en geen stille
+     * correctie, want een geraden keuze bepaalt hier of de volledige catalogus van deze koppeling opnieuw
+     * als nieuw beschouwd wordt.
+     */
+    private static void requireIdentityChangeAcknowledged(ImportDefinitionRevision revision,
+                                                          IdentityBefore before,
+                                                          UpdateRevisionCommand command) {
+        if (!before.identityChangedIn(revision)
+                || Boolean.TRUE.equals(command.acknowledgeIdentityChange())) {
+            return;
+        }
+        throw new ConflictException("IDENTITY_CHANGE_NOT_ACKNOWLEDGED", "Revision " + revision.getId()
+                + " changes the offer identity (identityProfileKind or one of the identity fields). That "
+                + "changes the canonical identity text, so every existing offer comes back as NEW. Resend "
+                + "with acknowledgeIdentityChange=true if that is intended; nothing was saved");
+    }
+
+    /**
+     * De databasecheck {@code ck_import_definition_revision_identity} houdt profiel en kortingscodeveld
+     * consistent: {@code null} (niet gemapt) en {@code ""} (expliciet leeg) zijn verschillende toestanden.
+     * Deze controle staat vóór het flushen, zodat een verkeerde combinatie een leesbare 400 oplevert in
+     * plaats van een databasefout.
+     */
+    private static void requireIdentityConsistency(IdentityProfileKind identityKind, String discountCodeField) {
+        if (identityKind == IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE && discountCodeField == null) {
+            throw new BadRequestException(fieldCode("discountCodeField", "REQUIRED"),
+                    "identityProfileKind FOUR_PART_WITH_DISCOUNT_CODE requires discountCodeField");
+        }
+        if (identityKind == IdentityProfileKind.THREE_PART && discountCodeField != null) {
+            throw new BadRequestException(fieldCode("discountCodeField", "INVALID"),
+                    "identityProfileKind THREE_PART must not carry a "
+                    + "discountCodeField; use FOUR_PART_WITH_DISCOUNT_CODE when the discount code is mapped");
+        }
+    }
+
     /**
      * Zet de revisie op {@link RevisionStatus#ACTIVE} en de vorige actieve revisie van dezelfde
      * definitie op {@link RevisionStatus#SUPERSEDED}.
@@ -457,11 +874,23 @@ public class SetupService {
      * <p>
      * De volledige configuratie wordt hier nog eens gevalideerd met exact dezelfde fabrieken als de
      * screening: een revisie die pas bij de eerste levering blijkt te blokkeren, is onbruikbaar.
+     * <p>
+     * <b>Gelijktijdige activatie (S1-X-2, 3a).</b> Twee transacties die elk een DRAFT van dezelfde
+     * definitie activeren, botsen op {@code uk_import_definition_revision_active}. Dat gaf tot nu toe een
+     * 500; sinds deze bouwstap wordt die botsing vertaald naar 409
+     * {@code REVISION_ACTIVATION_CONFLICT} — zelfde patroon als
+     * {@code TemplateMaterialisationService.translate} voor haar drie unieke sleutels. De hele transactie
+     * rolt terug: er is dan niets geactiveerd en niets op {@code SUPERSEDED} gezet.
+     * <p>
+     * <b>Laagversienummers (S1-X-2, 3b).</b> Activeren is het moment waarop
+     * {@code access_version}/{@code structure_version}/{@code record_rules_version} betekenis krijgen —
+     * zie {@link #applyLayerVersions}.
      *
      * @throws NotFoundException        {@code REVISION_NOT_FOUND}
      * @throws ConflictException        {@code REVISION_NOT_ACTIVATABLE} (al ACTIVE of niet meer DRAFT),
      *                                  {@code CONFIG_REQUIRED_BOOKMARK_MISSING} (een verplichte
-     *                                  DEFINITION-bookmark van deze revisie is niet ingevuld)
+     *                                  DEFINITION-bookmark van deze revisie is niet ingevuld),
+     *                                  {@code REVISION_ACTIVATION_CONFLICT} (gelijktijdige activatie)
      * @throws IllegalArgumentException een {@code CONFIG_*}-fout in de configuratie
      */
     public RevisionView activateRevision(long revisionId, String approvedBy) {
@@ -483,23 +912,104 @@ public class SetupService {
             throw new ConflictException("REVISION_NOT_ACTIVATABLE", "Revision " + revisionId + " is "
                     + revision.getStatus() + "; only a DRAFT revision is activated by this setup API");
         }
-        validateConfiguration(revision);
-        requireDefinitionBookmarkValues(revision);
+        // NT-8: configuratievalidatie (400) en verplichte DEFINITION-bookmarks (409) uit de gedeelde implementatie,
+        // in dezelfde volgorde als vroeger; de eerste bevinding wordt geworpen.
+        ChainConfigurationChecks.throwFirst(checks.activationProblems(revision));
         long definitionId = revision.getImportDefinition().getId();
-        Optional<ImportDefinitionRevision> current =
-                revisions.findByImportDefinitionIdAndStatus(definitionId, RevisionStatus.ACTIVE);
-        current.ifPresent(active -> {
-            active.setStatus(RevisionStatus.SUPERSEDED);
-            revisions.saveAndFlush(active);
-        });
-        revision.setStatus(RevisionStatus.ACTIVE);
-        revision.setApprovedAt(Instant.now());
-        revision.setApprovedBy(requireText(orDefault(actor.username(), DEFAULT_CREATED_BY), "approvedBy",
-                MAX_USER_LENGTH));
-        // Naam en subject altijd samen: ck_import_definition_revision_approved_subject weigert een
-        // subject zonder naam.
-        revision.setApprovedBySubject(actor.subject());
-        return view(revisions.saveAndFlush(revision));
+        String approver = requireText(orDefault(actor.username(), DEFAULT_CREATED_BY), "approvedBy",
+                MAX_USER_LENGTH);
+        try {
+            Optional<ImportDefinitionRevision> current =
+                    revisions.findByImportDefinitionIdAndStatus(definitionId, RevisionStatus.ACTIVE);
+            current.ifPresent(active -> {
+                active.setStatus(RevisionStatus.SUPERSEDED);
+                revisions.saveAndFlush(active);
+            });
+            revision.setStatus(RevisionStatus.ACTIVE);
+            revision.setApprovedAt(Instant.now());
+            revision.setApprovedBy(approver);
+            // Naam en subject altijd samen: ck_import_definition_revision_approved_subject weigert een
+            // subject zonder naam.
+            revision.setApprovedBySubject(actor.subject());
+            applyLayerVersions(revision);
+            return view(revisions.saveAndFlush(revision));
+        } catch (DataIntegrityViolationException violation) {
+            throw translateActivation(violation);
+        }
+    }
+
+    /**
+     * 3b van {@code docs/design/revision-successor-design.md} §3: bij activatie krijgen de drie
+     * laagversienummers voor het eerst betekenis. Per laag geldt {@code versie = bron.versie + 1} zodra
+     * de laaghash van de bronrevisie verschilt, en {@code versie = bron.versie} wanneer die laag
+     * inhoudelijk onveranderd bleef. Zo leest een mens aan het versienummer af of er in die laag
+     * werkelijk iets veranderd is, in plaats van aan drie kolommen die altijd op 1 stonden.
+     * <p>
+     * <b>Alleen binnen dezelfde definitie.</b> Draagt de revisie geen herkomstrevisie, of hoort die
+     * herkomstrevisie bij een <i>andere</i> definitie, dan blijft alles staan. Dat tweede geval is de
+     * gematerialiseerde revisie 1: haar {@code based_on_revision_id} wijst naar een sjabloonrevisie van
+     * een andere definitie, en de versiereeks van dat sjabloon is niet de hare
+     * (zie {@code TemplateMaterialisationService.copyRevision}: "revisie 1 van een nieuwe definitie, niet
+     * de voortzetting van de versiereeks van het sjabloon").
+     * <p>
+     * Additief en risicoloos: vandaag leest geen enkele productiecode deze drie kolommen, en de
+     * bestaande paden ({@link #createRevision} zet geen herkomstrevisie, materialisatie verwijst naar een
+     * andere definitie) blijven onaangeroerd op 1.
+     */
+    private static void applyLayerVersions(ImportDefinitionRevision revision) {
+        ImportDefinitionRevision source = revision.getBasedOnRevision();
+        if (source == null || !source.getImportDefinition().getId()
+                .equals(revision.getImportDefinition().getId())) {
+            return;
+        }
+        revision.setAccessVersion(nextLayerVersion(source.getAccessVersion(),
+                source.getAccessConfigHash(), revision.getAccessConfigHash()));
+        revision.setStructureVersion(nextLayerVersion(source.getStructureVersion(),
+                source.getStructureConfigHash(), revision.getStructureConfigHash()));
+        revision.setRecordRulesVersion(nextLayerVersion(source.getRecordRulesVersion(),
+                source.getRecordRulesConfigHash(), revision.getRecordRulesConfigHash()));
+    }
+
+    /** Gelijke laaghash = dezelfde laagversie; elke afwijking is precies één stap. */
+    private static int nextLayerVersion(int sourceVersion, String sourceHash, String hash) {
+        return Objects.equals(sourceHash, hash) ? sourceVersion : sourceVersion + 1;
+    }
+
+    /**
+     * 3a van {@code docs/design/revision-successor-design.md} §3: de unieke sleutel op de actieve revisie
+     * naar haar 409-code, hetzelfde patroon als {@code TemplateMaterialisationService.translate}. Elke
+     * andere integriteitsfout blijft ongewijzigd doorgaan — een fout stil als "race" bestempelen zou de
+     * echte oorzaak verbergen.
+     */
+    private static RuntimeException translateActivation(DataIntegrityViolationException violation) {
+        String text = String.valueOf(violation.getMostSpecificCause().getMessage())
+                .toLowerCase(Locale.ROOT);
+        if (text.contains("uk_import_definition_revision_active")) {
+            return new ConflictException("REVISION_ACTIVATION_CONFLICT", "Another revision of this import "
+                    + "definition was activated at the same moment; nothing was activated and nothing was "
+                    + "superseded. Read the revision list again before retrying");
+        }
+        return violation;
+    }
+
+    /**
+     * NT-3: de racevariant van de controle "bestaat deze sleutel al?" bij het aanmaken. Botst het
+     * wegschrijven op precies de verwachte unieke sleutel {@code constraint}, dan is dat hetzelfde feit als
+     * de controle vooraf al meldt en wordt het {@code conflict} — met dezelfde 409-code, nooit een 500.
+     * Zelfde patroon als {@link #translateActivation} en {@code TemplateMaterialisationService.translate}:
+     * er wordt uitsluitend op constraintnaam gematcht, en elke andere integriteitsfout (een andere sleutel,
+     * een foreign key, een check) gaat ongewijzigd door — een fout stil als "bestaat al" bestempelen zou de
+     * echte oorzaak verbergen. De omringende transactie rolt in beide gevallen terug.
+     */
+    private static RuntimeException translateCreateConflict(DataIntegrityViolationException violation,
+                                                            String constraint, ConflictException conflict) {
+        return violates(violation, constraint) ? conflict : violation;
+    }
+
+    /** {@code true} wanneer de meest specifieke oorzaak de unieke sleutel {@code constraint} noemt. */
+    private static boolean violates(DataIntegrityViolationException violation, String constraint) {
+        String text = String.valueOf(violation.getMostSpecificCause().getMessage()).toLowerCase(Locale.ROOT);
+        return text.contains(constraint);
     }
 
     // --- Mappings, filters en kritiek-overrules ---------------------------------------------------
@@ -637,15 +1147,15 @@ public class SetupService {
         ImportDefinitionRevision revision = editableRevision(revisionId);
         String fieldKey = requireText(command.fieldKey(), "fieldKey", 60);
         RevisionCriticalityField field = RevisionCriticalityField.byKey(fieldKey)
-                .orElseThrow(() -> new IllegalArgumentException("fieldKey '" + fieldKey + "' is not a field "
-                        + "of the revision itself; known keys are "
+                .orElseThrow(() -> new BadRequestException(fieldCode("fieldKey", "INVALID"), "fieldKey '"
+                        + fieldKey + "' is not a field of the revision itself; known keys are "
                         + List.of(RevisionCriticalityField.values())));
         Criticality criticality = require(command.criticality(), "criticality");
         // Dezelfde regels als de databasecheck en de configuratievalidatie, maar vóór het flushen: een
         // constraintfout zou hier een 500 opleveren in plaats van een leesbaar antwoord.
         if (field.isIdentity() && criticality == Criticality.NON_CRITICAL) {
-            throw new IllegalArgumentException("Field '" + fieldKey + "' is part of the offer identity and "
-                    + "can never be " + Criticality.NON_CRITICAL);
+            throw new BadRequestException(fieldCode("criticality", "INVALID"), "Field '" + fieldKey
+                    + "' is part of the offer identity and can never be " + Criticality.NON_CRITICAL);
         }
         if (fieldCriticalities.findByDefinitionRevisionId(revisionId).stream()
                 .anyMatch(existing -> fieldKey.equals(existing.getFieldKey()))) {
@@ -660,6 +1170,103 @@ public class SetupService {
         ImportRevisionFieldCriticality stored = fieldCriticalities.saveAndFlush(row);
         validateConfiguration(revision);
         return new FieldCriticalityView(revisionId, stored.getFieldKey(), stored.getCriticality().name());
+    }
+
+    // --- Een geërfde kindrij verwijderen (endpoint E4, bouwstap S1-X-4) ----------------------------
+
+    /**
+     * Verwijdert één veldmapping van een {@link RevisionStatus#DRAFT}-revisie (endpoint E4,
+     * {@code docs/design/revision-successor-design.md} §6).
+     * <p>
+     * Een opvolgrevisie erft alle mappings van haar bron (§2). Zonder dit pad kon een geërfde mapping
+     * alleen nog toegevoegd, nooit verwijderd worden — wie een kolom niet meer wil overnemen, moest de
+     * volledige revisie opnieuw opbouwen.
+     * <p>
+     * <b>Ná het verwijderen wordt de bookmarkdeclaratie van deze revisie hercontroleerd</b>
+     * ({@link #requireBookmarkDeclarationsStillResolve}): een {@code FIELD_MAPPING_FIXED_VALUE}-usage die
+     * naar deze mapping wees, zou anders een invulveld achterlaten dat nergens meer landt.
+     *
+     * @throws NotFoundException {@code REVISION_NOT_FOUND}, {@code MAPPING_NOT_FOUND} (onbekend of niet van
+     *                           deze revisie — een id van een andere revisie is hier geen geldig doel)
+     * @throws ConflictException {@code REVISION_NOT_EDITABLE}, of een {@code CONFIG_BOOKMARK_*}-code uit de
+     *                           hercontrole; in dat geval is er niets verwijderd
+     */
+    public void deleteMapping(long revisionId, long mappingId) {
+        ImportDefinitionRevision revision = editableRevision(revisionId);
+        ImportFieldMapping mapping = fieldMappings.findById(mappingId)
+                .filter(row -> row.getDefinitionRevision().getId().equals(revision.getId()))
+                .orElseThrow(() -> new NotFoundException("MAPPING_NOT_FOUND", "Field mapping " + mappingId
+                        + " does not exist in revision " + revisionId));
+        fieldMappings.delete(mapping);
+        fieldMappings.flush();
+        requireBookmarkDeclarationsStillResolve(revisionId);
+    }
+
+    /**
+     * Verwijdert één recordfilter van een {@link RevisionStatus#DRAFT}-revisie (endpoint E4); zelfde
+     * regels en dezelfde hercontrole als {@link #deleteMapping}, hier voor een
+     * {@code RECORD_FILTER_COMPARE_VALUE}-usage die naar het volgnummer van dit filter wees.
+     *
+     * @throws NotFoundException {@code REVISION_NOT_FOUND}, {@code FILTER_NOT_FOUND}
+     * @throws ConflictException {@code REVISION_NOT_EDITABLE}, of een {@code CONFIG_BOOKMARK_*}-code
+     */
+    public void deleteFilter(long revisionId, long filterId) {
+        ImportDefinitionRevision revision = editableRevision(revisionId);
+        ImportRecordFilter filter = recordFilters.findById(filterId)
+                .filter(row -> row.getDefinitionRevision().getId().equals(revision.getId()))
+                .orElseThrow(() -> new NotFoundException("FILTER_NOT_FOUND", "Record filter " + filterId
+                        + " does not exist in revision " + revisionId));
+        recordFilters.delete(filter);
+        recordFilters.flush();
+        requireBookmarkDeclarationsStillResolve(revisionId);
+    }
+
+    /**
+     * Toetst de bookmarkdeclaratie van deze revisie opnieuw met dezelfde
+     * {@link BookmarkDeclarations#findProblems} als {@code TemplateBookmarkService} (bij declareren) en
+     * {@code TemplateMaterialisationService} (defensief bij materialiseren) — één implementatie, nu drie
+     * aanroepplaatsen.
+     * <p>
+     * <b>Waarom na een verwijdering.</b> Een usage verwijst naar een doel in déze revisie: een doelveldcode
+     * (mapping) of een filtervolgnummer. Verdwijnt dat doel, dan is de declaratie stil onbruikbaar
+     * geworden: het invulveld blijft in het scherm staan en de ingevulde waarde landt nergens. Het eerste
+     * gevonden probleem wordt een 409 met zijn eigen bestaande {@code CONFIG_BOOKMARK_*}-code en de
+     * verwijdering rolt terug — er is bewust geen nieuwe foutcode voor, want het probleem is exact hetzelfde
+     * als bij het declareren.
+     * <p>
+     * <b>Alle bevindingen tellen mee, ook een die er al stond.</b> {@code findProblems} is een toets op de
+     * hele declaratie, niet op het verschil. Een revisie die al met een onbruikbare declaratie rondliep,
+     * blokkeert dus ook op een verwijdering die daar niets mee te maken heeft. Dat is dezelfde defensieve
+     * keuze als bij materialisatie: de declaratie moet eerst kloppen.
+     * <p>
+     * De bookmarks worden <b>eerst</b> geladen en daarna hun usages: {@code findProblems} groepeert op
+     * objectidentiteit, en binnen één persistentiecontext is {@code usage.getBookmark()} dan dezelfde
+     * instantie als de rij in {@code declared}.
+     */
+    private void requireBookmarkDeclarationsStillResolve(long revisionId) {
+        List<ImportDefinitionBookmark> declared =
+                bookmarks.findByDefinitionRevisionIdOrderBySortOrderAsc(revisionId);
+        if (declared.isEmpty()) {
+            return;
+        }
+        List<ImportDefinitionBookmarkUsage> allUsages = new ArrayList<>();
+        for (ImportDefinitionBookmark bookmark : declared) {
+            allUsages.addAll(bookmarkUsages.findByBookmarkId(bookmark.getId()));
+        }
+        Set<String> mappedTargetFieldCodes = fieldMappings.findByRevisionIdWithTargetField(revisionId).stream()
+                .map(mapping -> mapping.getTargetField().getCode())
+                .collect(Collectors.toSet());
+        Set<Integer> filterSequenceNumbers =
+                recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId).stream()
+                        .map(ImportRecordFilter::getSequenceNumber)
+                        .collect(Collectors.toSet());
+        List<BookmarkDeclarations.Problem> problems = BookmarkDeclarations.findProblems(declared, allUsages,
+                mappedTargetFieldCodes, filterSequenceNumbers);
+        if (!problems.isEmpty()) {
+            BookmarkDeclarations.Problem problem = problems.get(0);
+            throw new ConflictException(problem.code(), problem.message()
+                    + "; nothing was deleted from revision " + revisionId);
+        }
     }
 
     // --- Koppeling en taak -------------------------------------------------------------------------
@@ -679,14 +1286,13 @@ public class SetupService {
         String libraryCode = requireText(command.libraryCode(), "libraryCode", MAX_LIBRARY_CODE_LENGTH);
         SourceOrganisation supplier = organisation(command.supplierCode());
         if (links.findByCode(code).isPresent()) {
-            throw new ConflictException("LINK_CODE_IN_USE", "Import link code '" + code + "' already exists");
+            throw linkCodeInUse(code);
         }
         boolean scopeTaken = links.findByImportDefinitionId(definitionId).stream()
                 .anyMatch(existing -> existing.getLibraryCode().equals(libraryCode)
                         && existing.getSupplierOrganisation().getId().equals(supplier.getId()));
         if (scopeTaken) {
-            throw new ConflictException("LINK_SCOPE_IN_USE", "This definition already has a link for supplier '"
-                    + supplier.getCode() + "' and library '" + libraryCode + "'");
+            throw linkScopeInUse(supplier, libraryCode);
         }
         String defaultCurrency = command.defaultCurrency();
         if (defaultCurrency != null && defaultCurrency.isBlank()) {
@@ -700,7 +1306,25 @@ public class SetupService {
         link.setDefaultCurrency(defaultCurrency);
         link.setLibrarySearchSupplierCode(
                 optionalText(command.librarySearchSupplierCode(), "librarySearchSupplierCode", MAX_CODE_LENGTH));
-        return view(links.saveAndFlush(link));
+        try {
+            return view(links.saveAndFlush(link));
+        } catch (DataIntegrityViolationException violation) {
+            // NT-3: een gelijktijdig verzoek passeerde de controles hierboven ook. Twee sleutels, elk met
+            // hun eigen bestaande code; een botsing op de code gaat voor, zoals in de controle vooraf.
+            if (violates(violation, "uk_import_link_code")) {
+                throw linkCodeInUse(code);
+            }
+            throw translateCreateConflict(violation, "uk_import_link_scope", linkScopeInUse(supplier, libraryCode));
+        }
+    }
+
+    private static ConflictException linkCodeInUse(String code) {
+        return new ConflictException("LINK_CODE_IN_USE", "Import link code '" + code + "' already exists");
+    }
+
+    private static ConflictException linkScopeInUse(SourceOrganisation supplier, String libraryCode) {
+        return new ConflictException("LINK_SCOPE_IN_USE", "This definition already has a link for supplier '"
+                + supplier.getCode() + "' and library '" + libraryCode + "'");
     }
 
     /**
@@ -715,14 +1339,23 @@ public class SetupService {
                         "Import link " + linkId + " does not exist"));
         String name = requireText(command.name(), "name", MAX_NAME_LENGTH);
         if (tasks.findByImportLinkIdAndName(linkId, name).isPresent()) {
-            throw new ConflictException("TASK_NAME_IN_USE",
-                    "Task '" + name + "' already exists for import link " + linkId);
+            throw taskNameInUse(name, linkId);
         }
         CatalogImportTask task = new CatalogImportTask(link, name, TaskTriggerType.MANUAL);
         if (command.preventConcurrentRuns() != null) {
             task.setPreventConcurrentRuns(command.preventConcurrentRuns());
         }
-        return view(tasks.saveAndFlush(task));
+        try {
+            return view(tasks.saveAndFlush(task));
+        } catch (DataIntegrityViolationException violation) {
+            // NT-3: een gelijktijdig verzoek met dezelfde naam passeerde de controle hierboven ook.
+            throw translateCreateConflict(violation, "uk_catalog_import_task_name", taskNameInUse(name, linkId));
+        }
+    }
+
+    private static ConflictException taskNameInUse(String name, long linkId) {
+        return new ConflictException("TASK_NAME_IN_USE",
+                "Task '" + name + "' already exists for import link " + linkId);
     }
 
     // --- Overzicht ---------------------------------------------------------------------------------
@@ -768,64 +1401,18 @@ public class SetupService {
 
     /**
      * Valideert de volledige configuratie met dezelfde fabrieken als de screening. Een
-     * {@link ScreeningBlockedException} is hier geen leveringsblokkade maar een ongeldige aanvraag:
-     * ze wordt vertaald naar een 400 met de {@code CONFIG_*}-code in de boodschap, en de omringende
-     * transactie rolt terug.
+     * {@code ScreeningBlockedException} is hier geen leveringsblokkade maar een ongeldige aanvraag:
+     * ze wordt vertaald naar een 400 met de {@code CONFIG_*}-code in de boodschap (en sinds NT-3 als
+     * code), en de omringende transactie rolt terug.
+     * <p>
+     * Sinds NT-8 staat de validatie zelf in {@link ChainConfigurationChecks#configurationProblem} (gedeeld
+     * met de gereedheidscontrole); het blokkeerpunt van de verplichte DEFINITION-bookmarks bij het activeren
+     * in {@link ChainConfigurationChecks#definitionBookmarkProblem}. Code, status en tekst zijn ongewijzigd.
      */
-    /**
-     * Blokkeerpunt bij het activeren (beslissingslog 23/09 keuze 6, ontwerp §7): elke <b>verplichte</b>
-     * {@link BookmarkValueScope#DEFINITION}-bookmark van deze revisie moet een
-     * {@code import_definition_bookmark_value}-rij met een niet-lege waarde hebben, anders 409
-     * {@code CONFIG_REQUIRED_BOOKMARK_MISSING}. Een revisie die live gaat met een open invulveld zou
-     * dat veld stil leeg toepassen op elke levering die erop draait.
-     * <p>
-     * <b>{@code ""} bevredigt een verplichte bookmark niet</b> (R-BMK-03/R-VAL-04): afwezigheid van een
-     * rij is "niet ingevuld", een lege waarde is "uitdrukkelijk leeg" — voor een verplicht veld is geen
-     * van beide een invulling.
-     * <p>
-     * <b>LINK-scope wordt hier niet beoordeeld</b>: op dit moment bestaat er nog geen of meer dan één
-     * koppeling. Die controle gebeurt bij de start van een levering
-     * ({@code DeliveryIntakeService.resolve}).
-     * <p>
-     * <b>Een sjabloon wordt overgeslagen.</b> Een {@link DefinitionUsageType#REUSABLE_TEMPLATE} is per
-     * definitie een blauwdruk: zijn DEFINITION-bookmarks worden pas bij materialisatie ingevuld
-     * (§14.16 stap 4, R-MAT-02) en de waarderijen ontstaan op de <i>afgeleide</i> revisie. Zou de
-     * controle hier ook op een sjabloon slaan, dan kon een sjabloon met een verplichte
-     * DEFINITION-bookmark nooit {@code ACTIVE} worden en dus nooit gematerialiseerd worden (fase A3/A4
-     * eist een niet-{@code DRAFT} sjabloonrevisie) — het mechanisme zou zichzelf blokkeren. Zie de
-     * levenscyclus in ontwerp §8: dit blokkeerpunt staat op de afgeleide revisie, niet op het sjabloon.
-     */
-    private void requireDefinitionBookmarkValues(ImportDefinitionRevision revision) {
-        if (revision.getImportDefinition().getUsageType() == DefinitionUsageType.REUSABLE_TEMPLATE) {
-            return;
-        }
-        List<String> missing = bookmarks.findByDefinitionRevisionIdOrderBySortOrderAsc(revision.getId()).stream()
-                .filter(bookmark -> bookmark.getValueScope() == BookmarkValueScope.DEFINITION)
-                .filter(ImportDefinitionBookmark::isRequired)
-                .map(ImportDefinitionBookmark::getName)
-                .filter(name -> !hasDefinitionBookmarkValue(revision.getId(), name))
-                .sorted()
-                .toList();
-        if (!missing.isEmpty()) {
-            throw new ConflictException("CONFIG_REQUIRED_BOOKMARK_MISSING", "Revision " + revision.getId()
-                    + " declares required DEFINITION bookmark(s) " + missing + " without a value");
-        }
-    }
-
-    private boolean hasDefinitionBookmarkValue(long revisionId, String bookmarkName) {
-        return bookmarkValues.findByDefinitionRevisionIdAndBookmarkName(revisionId, bookmarkName)
-                .map(ImportDefinitionBookmarkValue::getValueText)
-                .filter(value -> !value.isBlank())
-                .isPresent();
-    }
-
     private void validateConfiguration(ImportDefinitionRevision revision) {
-        try {
-            SourceStructureConfig structure = structureFactory.from(revision);
-            mappingFactory.from(revision, structure);
-        } catch (ScreeningBlockedException invalid) {
-            throw new IllegalArgumentException(invalid.getCode() + ": " + invalid.getMessage(), invalid);
-        }
+        checks.configurationProblem(revision).ifPresent(problem -> {
+            throw problem.failure();
+        });
     }
 
     private ImportDefinitionRevision revision(long revisionId) {
@@ -864,7 +1451,13 @@ public class SetupService {
                 definition.getSourceOrganisation().getCode());
     }
 
-    private static RevisionView view(ImportDefinitionRevision revision) {
+    /**
+     * Package-private sinds bouwstap S1-X-2: {@link RevisionSuccessorService} antwoordt met exact
+     * dezelfde {@link RevisionView} als {@code createRevision} en {@code activate} op dezelfde
+     * controller (revision-successor-design.md §6, E2: "201 + revisieweergave"). Eén opbouw, zodat de
+     * drie endpoints niet uiteen kunnen lopen. Naam noch signatuur veranderde.
+     */
+    static RevisionView view(ImportDefinitionRevision revision) {
         return new RevisionView(revision.getId(), revision.getImportDefinition().getId(),
                 revision.getRevisionNumber(), revision.getStatus().name(),
                 revision.getIdentityProfileKind().name(), revision.getStructureDelimiter(),
@@ -890,13 +1483,19 @@ public class SetupService {
 
     // --- Hulpmiddelen ----------------------------------------------------------------------------------
 
+    // NT-3: elke veldfout hieronder draagt een stabiele code naast de ongewijzigde tekst. Vorm
+    // <VELD>_REQUIRED / <VELD>_TOO_LONG / <VELD>_INVALID, met <VELD> de veldnaam uit het verzoek in
+    // hoofdletters met underscores (fieldCode) — dezelfde vorm als CHANGE_REASON_REQUIRED en
+    // CREDENTIAL_LABEL_REQUIRED.
+
     private static String requireText(String value, String field, int maxLength) {
         if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(field + " must not be blank");
+            throw new BadRequestException(fieldCode(field, "REQUIRED"), field + " must not be blank");
         }
         String trimmed = value.trim();
         if (trimmed.length() > maxLength) {
-            throw new IllegalArgumentException(field + " must be at most " + maxLength + " characters");
+            throw new BadRequestException(fieldCode(field, "TOO_LONG"),
+                    field + " must be at most " + maxLength + " characters");
         }
         return trimmed;
     }
@@ -910,16 +1509,24 @@ public class SetupService {
 
     private static <T> T require(T value, String field) {
         if (value == null) {
-            throw new IllegalArgumentException(field + " must not be null");
+            throw new BadRequestException(fieldCode(field, "REQUIRED"), field + " must not be null");
         }
         return value;
     }
 
     private static BigDecimal requireNotNegative(BigDecimal value, String field) {
         if (value.signum() < 0) {
-            throw new IllegalArgumentException(field + " must not be negative");
+            throw new BadRequestException(fieldCode(field, "INVALID"), field + " must not be negative");
         }
         return value;
+    }
+
+    /**
+     * {@code delimiter} + {@code REQUIRED} → {@code DELIMITER_REQUIRED};
+     * {@code sourceOrganisationCode} + {@code TOO_LONG} → {@code SOURCE_ORGANISATION_CODE_TOO_LONG}.
+     */
+    static String fieldCode(String field, String suffix) {
+        return field.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toUpperCase(Locale.ROOT) + "_" + suffix;
     }
 
     private static <T> T orDefault(T value, T fallback) {

@@ -119,20 +119,30 @@ class ImportControlSchemaTest {
     @Test
     void allowsManyNonActiveRevisionsButOnlyOneActiveRevisionPerDefinition() {
         ImportDefinition definition = definition(organisation("REV-ORG", SourceOrganisationType.SUPPLIER), "REV-DEF");
+        // NT-13: hoogstens een DRAFT per definitie; elke nieuwe revisie start als DRAFT, dus de vorige moet eerst
+        // een andere status krijgen (ACTIVE of SUPERSEDED) voor de volgende aangemaakt kan worden.
         ImportDefinitionRevision first = revision(definition, 1, IdentityProfileKind.THREE_PART, null);
-        ImportDefinitionRevision second = revision(definition, 2, IdentityProfileKind.THREE_PART, null);
-        ImportDefinitionRevision third = revision(definition, 3, IdentityProfileKind.THREE_PART, null);
-
         first.setStatus(RevisionStatus.ACTIVE);
         revisions.saveAndFlush(first);
-        second.setStatus(RevisionStatus.ACTIVE);
 
+        ImportDefinitionRevision second = revision(definition, 2, IdentityProfileKind.THREE_PART, null);
+        second.setStatus(RevisionStatus.ACTIVE);
         assertThatThrownBy(() -> revisions.saveAndFlush(second)).isInstanceOf(DataIntegrityViolationException.class);
-        // Twee niet-actieve revisies naast elkaar blijven wel toegestaan.
+
+        // Meerdere niet-actieve (SUPERSEDED) revisies naast elkaar blijven wel toegestaan.
+        second.setStatus(RevisionStatus.SUPERSEDED);
+        assertThatCode(() -> revisions.saveAndFlush(second)).doesNotThrowAnyException();
+        ImportDefinitionRevision third = revision(definition, 3, IdentityProfileKind.THREE_PART, null);
         third.setStatus(RevisionStatus.SUPERSEDED);
         assertThatCode(() -> revisions.saveAndFlush(third)).doesNotThrowAnyException();
         assertThat(revisions.findByImportDefinitionIdAndStatus(definition.getId(), RevisionStatus.ACTIVE))
                 .isPresent();
+
+        // NT-13: een tweede DRAFT op dezelfde definitie wordt door de databasesleutel geweigerd.
+        revision(definition, 4, IdentityProfileKind.THREE_PART, null);
+        assertThatThrownBy(() -> revision(definition, 5, IdentityProfileKind.THREE_PART, null))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .satisfies(e -> assertThat(e.getMessage()).containsIgnoringCase("uk_import_definition_revision_draft"));
     }
 
     @Test

@@ -1,0 +1,160 @@
+/* S1-F4 — revisiedetail van scherm 1a: leesdeel + de drie schrijfacties op een DRAFT. */
+
+.section {
+  margin: var(--spacing-3) 0 var(--spacing-4) 0;
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.title {
+  margin: 0 0 var(--spacing-3) 0;
+  font-size: 1rem;
+}
+
+.loading {
+  color: var(--color-text-secondary);
+}
+
+.empty {
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.summary {
+  margin: 0 0 var(--spacing-4) 0;
+}
+
+.headline {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+  margin: 0 0 var(--spacing-1) 0;
+}
+
+.changeReason {
+  margin: 0 0 var(--spacing-3) 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.groupTitle {
+  margin: var(--spacing-3) 0 var(--spacing-2) 0;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.figures {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.figure {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* NT-11c: de labels zijn Nederlandse woorden (geen technische veldnamen meer), dus geen monospace. */
+.figure dt {
+  color: var(--color-text-secondary);
+}
+
+.figure dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.hashNote,
+.boundary {
+  margin: 0 0 var(--spacing-2) 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.notEditable {
+  margin: 0 0 var(--spacing-4) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+  font-size: 0.875rem;
+}
+
+.childBlock {
+  margin: 0 0 var(--spacing-4) 0;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--spacing-1) 0;
+  font-size: 0.8125rem;
+}
+
+.sequence {
+  color: var(--color-text-secondary);
+}
+
+.code {
+  font-family: monospace;
+  font-weight: 600;
+}
+
+.deleteButton {
+  margin-left: auto;
+  padding: var(--spacing-1) var(--spacing-2);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+  color: var(--status-rejected-text);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.deleteButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.dialogBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  font-size: 0.875rem;
+}
+
+.dialogBody p {
+  margin: 0;
+}
+
+.muted {
+  color: var(--color-text-secondary);
+}
+
+.flagOff {
+  margin: 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: 0.875rem;
+}

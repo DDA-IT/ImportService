@@ -7,9 +7,10 @@
  * worden in bulk goedgekeurd **op naam van de bevriezer**, tellers en bundelhash worden vastgezet, en de
  * bundel aanvaardt daarna niets meer. Daarom:
  *
- * 1. **Voorvlucht vóór alles.** Bij het openen wordt de voorvlucht geladen; zolang die er niet is (of het
- *    laden mislukte), is bevriezen uit. Het `PLANNED`-aantal staat bovenaan: dat is wat de gebruiker
- *    met zijn naam ondertekent.
+ * 1. **Voorcontrole ("voorvlucht") vóór alles.** Bij het openen wordt de voorvlucht geladen; zolang die er niet is
+ *    (of het laden mislukte), is bevriezen uit. Het `PLANNED`-aantal staat bovenaan: dat is wat de gebruiker
+ *    met zijn naam ondertekent. NT-11b: op het scherm heet dit "voorcontrole", en staan codes enkel onder
+ *    "Technische details".
  * 2. **Blokkades vooraf, met reden.** Elke blokkadecode van de voorvlucht zet de knop uit, met de reden
  *    als tekst. De voorvlucht is een momentopname zonder slot: de server controleert bij het bevriezen
  *    alles opnieuw, en een 409 wordt altijd getoond, ook als de voorvlucht "bevriesbaar" zei (A44).
@@ -31,6 +32,10 @@ import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
+import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
+import { Term } from '../../terms/Term.tsx';
+import { term } from '../../terms/index.ts';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { freezeBlockers, freezeGate } from './bundlePolicy.ts';
 import styles from './ClosingDialogs.module.css';
 
@@ -57,15 +62,18 @@ function formatDateTime(iso: string | null): string {
 function resultMessage(result: BundleDetail): string {
   if (result.status !== 'FROZEN') {
     return (
-      `De server aanvaardde het bevriezen, maar de bundel staat nu op ${result.status} in plaats van FROZEN. ` +
-      'Controleer de bundel en het beslissingsregister.'
+      `De server aanvaardde het bevriezen, maar de bundel heeft nu de status "${term('bundleStatus', result.status).label}" ` +
+      `in plaats van "${term('bundleStatus', 'FROZEN').label}". Controleer de bundel en het beslissingsregister.`
     );
   }
-  const hash = result.contentHash === null ? 'geen bundelhash ontvangen' : `bundelhash ${result.contentHash.slice(0, 16)}…`;
+  const hash =
+    result.contentHash === null
+      ? 'geen vingerafdruk ontvangen'
+      : `vingerafdruk ${result.contentHash.slice(0, 16)}…`;
   return (
     `Bundel ${result.bundleReference} is bevroren door ${result.frozenBy ?? '—'} op ${formatDateTime(result.frozenAt)} ` +
-    `(${hash}). Tellers en hash staan nu vast. Hoeveel PLANNED-mutaties daarbij op uw naam goedgekeurd zijn, ` +
-    'staat in het beslissingsregister (AUTO_APPROVE_PLANNED).'
+    `(${hash}). Tellers en vingerafdruk staan nu vast. Hoeveel mutaties met status "${term('mutationStatus', 'PLANNED').label}" ` +
+    'daarbij op uw naam goedgekeurd zijn, staat in het beslissingsregister (automatische goedkeuring bij het bevriezen).'
   );
 }
 
@@ -92,20 +100,25 @@ function Preflight({ preflight, actor }: { preflight: FreezePreflight; actor: st
   return (
     <>
       <p className={styles.keyFigure} data-testid="freeze-planned-count">
-        <strong>{mutations(preflight.plannedCount)}</strong> met status PLANNED {preflight.plannedCount === 1 ? 'wordt' : 'worden'}{' '}
-        bij het bevriezen goedgekeurd op {signer}.
+        <strong>{mutations(preflight.plannedCount)}</strong> met status{' '}
+        <Term domain="mutationStatus" code="PLANNED" /> {preflight.plannedCount === 1 ? 'wordt' : 'worden'} bij het
+        bevriezen goedgekeurd op {signer}.
       </p>
-      <dl className={styles.figures} aria-label="Voorvlucht">
+      <dl className={styles.figures} aria-label="Voorcontrole">
         <div className={styles.figure}>
           <dt>Actieve batches</dt>
           <dd>{preflight.batchCount}</dd>
         </div>
         <div className={styles.figure}>
-          <dt>Wacht op beslissing (AWAITING_APPROVAL)</dt>
+          <dt>
+            <Term domain="bundleCounter" code="awaitingApprovalCount" />
+          </dt>
           <dd>{preflight.awaitingApprovalCount}</dd>
         </div>
         <div className={styles.figure}>
-          <dt>Bronstaat verschoven sinds screening</dt>
+          <dt>
+            <Term domain="bundleCounter" code="staleMutationCount" />
+          </dt>
           <dd>{preflight.staleMutationCount}</dd>
         </div>
       </dl>
@@ -115,6 +128,14 @@ function Preflight({ preflight, actor }: { preflight: FreezePreflight; actor: st
             <li key={`${index}:${reason}`}>{reason}</li>
           ))}
         </ul>
+      )}
+      {preflight.blockerCodes.length > 0 && (
+        <TechnicalDetails
+          items={preflight.blockerCodes.map((code, index) => ({
+            name: `Blokkade ${index + 1} (${term('freezeCheck', code).uitleg === '' ? 'onbekend' : term('freezeCheck', code).label})`,
+            value: code,
+          }))}
+        />
       )}
       {(preflight.inBundleConflicts.length > 0 || preflight.crossBundleConflicts.length > 0) && (
         <p>
@@ -164,11 +185,21 @@ export function FreezeDialog({ bundle, onClose, onFrozen }: FreezeDialogProps) {
       title={`Bundel ${bundle.bundleReference} bevriezen`}
       body={
         <div className={styles.body}>
-          {preflight.loading && <p className={styles.muted}>Voorvlucht wordt geladen…</p>}
+          <WhatIsThis>
+            <p>
+              Bevriezen sluit de bundel af: de mutaties met status &quot;{term('mutationStatus', 'PLANNED').label}&quot;
+              worden in één keer goedgekeurd op uw naam, de getallen en de vingerafdruk van de bundel liggen vast, en er
+              kan niets meer bij of af.
+            </p>
+            <p>
+              De voorcontrole toont vooraf wat het bevriezen zou doen en wat het nog tegenhoudt, zonder iets te wijzigen.
+            </p>
+          </WhatIsThis>
+          {preflight.loading && <p className={styles.muted}>Voorcontrole wordt geladen…</p>}
           {!preflight.loading && preflight.error !== null && <ErrorBanner error={preflight.error} />}
           {current !== null && <Preflight preflight={current} actor={actor} />}
           <p className={styles.muted}>
-            De voorvlucht is een momentopname: het bevriezen zelf controleert alles opnieuw.
+            De voorcontrole is een momentopname: het bevriezen zelf controleert alles opnieuw.
           </p>
           <button
             type="button"
@@ -179,8 +210,8 @@ export function FreezeDialog({ bundle, onClose, onFrozen }: FreezeDialogProps) {
             Opnieuw controleren
           </button>
           <p className={styles.warning}>
-            Publiceren bestaat nog niet (Fase 5). Een bevroren bundel blokkeert de betrokken aanbiedingen voor
-            elke andere bundel tot ze gepubliceerd of geannuleerd wordt.
+            Echt publiceren naar Prodis kan nog niet; een proefpublicatie wel. Een bevroren bundel blokkeert de
+            betrokken aanbiedingen voor elke andere bundel tot ze gepubliceerd of geannuleerd wordt.
           </p>
           <p>
             Bevriezen is binnen de applicatie niet ongedaan te maken; daarna kan de bundel alleen nog geannuleerd

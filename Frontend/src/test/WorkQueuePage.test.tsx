@@ -32,6 +32,14 @@ const SUMMARY_RESPONSE = {
   ],
 };
 
+const ISSUE_CASE_SUMMARY_RESPONSE = {
+  total: 4,
+  byStatus: [
+    { status: 'AWAITING_REVIEW', count: 3 },
+    { status: 'REJECTED', count: 1 },
+  ],
+};
+
 const IMPORT_LINKS_RESPONSE = {
   content: [
     { id: 1, code: 'LNK-1', name: 'Koppeling Een', supplierCode: 'SUP1', supplierName: 'Leverancier Een', libraryCode: 'LIB1', active: true },
@@ -96,6 +104,9 @@ describe('WorkQueuePage', () => {
       if (url.includes('/batches/summary')) {
         return Promise.resolve(jsonResponse(SUMMARY_RESPONSE));
       }
+      if (url.includes('/issue-cases/summary')) {
+        return Promise.resolve(jsonResponse(ISSUE_CASE_SUMMARY_RESPONSE));
+      }
       if (url.includes('/import-links')) {
         return Promise.resolve(jsonResponse(IMPORT_LINKS_RESPONSE));
       }
@@ -118,17 +129,29 @@ describe('WorkQueuePage', () => {
     const tiles = await screen.findByTestId('summary-tiles');
     expect(within(tiles).getByText('Totaal')).toBeInTheDocument();
     expect(within(tiles).getByText('7')).toBeInTheDocument();
-    expect(within(tiles).getByText('RECEIVED')).toBeInTheDocument();
-    expect(within(tiles).getByText('SCREENED')).toBeInTheDocument();
-    expect(within(tiles).getByText('VALID')).toBeInTheDocument();
-    expect(within(tiles).getByText('BLOCKING')).toBeInTheDocument();
+    // NT-11a (V7): Nederlandse woorden; de technische code staat enkel in de tooltip.
+    expect(within(tiles).getByText('Ontvangen')).toBeInTheDocument();
+    expect(within(tiles).getByText('Gecontroleerd')).toBeInTheDocument();
+    expect(within(tiles).getByText('Geldig')).toBeInTheDocument();
+    expect(within(tiles).getByText('Blokkerend')).toBeInTheDocument();
+    expect(within(tiles).getByText('Gecontroleerd')).toHaveAttribute('title', expect.stringContaining('SCREENED'));
 
-    // De null-rij ("niet vastgesteld") krijgt een eigen tegel en toont het werkelijke aantal (2), nooit 0.
-    const notEstablishedLabel = within(tiles).getByText('Niet vastgesteld');
+    // De null-rij ("nog niet bepaald") krijgt een eigen tegel en toont het werkelijke aantal (2), nooit 0.
+    const notEstablishedLabel = within(tiles).getByText('Nog niet bepaald');
     expect(notEstablishedLabel).toBeInTheDocument();
     const notEstablishedTile = notEstablishedLabel.closest('div');
     expect(notEstablishedTile).not.toBeNull();
     expect(within(notEstablishedTile as HTMLElement).getByText('2')).toBeInTheDocument();
+  });
+
+  it('S2-F1: toont het telblok "open behandelgevallen" met doorlink naar /issue-cases', async () => {
+    renderPage();
+
+    const tiles = await screen.findByTestId('issue-case-summary-tiles');
+    const link = within(tiles).getByRole('link', { name: /Open behandelgevallen/ });
+    expect(link).toHaveAttribute('href', '/issue-cases');
+    // AWAITING_REVIEW-teller uit de summary (3), niet het totaal (4).
+    expect(within(link).getByText('3')).toBeInTheDocument();
   });
 
   it('A-F1: elke rij linkt door naar het batchdetail', async () => {
@@ -185,6 +208,9 @@ describe('WorkQueuePage', () => {
       const url = typeof input === 'string' ? input : input.toString();
       if (url.includes('/batches/summary')) {
         return Promise.resolve(jsonResponse(SUMMARY_RESPONSE));
+      }
+      if (url.includes('/issue-cases/summary')) {
+        return Promise.resolve(jsonResponse(ISSUE_CASE_SUMMARY_RESPONSE));
       }
       if (url.includes('/import-links')) {
         return Promise.resolve(jsonResponse(IMPORT_LINKS_RESPONSE));

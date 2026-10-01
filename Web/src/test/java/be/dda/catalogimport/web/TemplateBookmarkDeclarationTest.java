@@ -22,13 +22,13 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * De declaratielaag van de materialisatiewizard (sjabloon-materialisatie-design.md §4 fase C, §5;
- * bouwstap 5b): {@code TemplateBookmarkService} en {@code CatalogImportTemplateController} end-to-end
- * via {@link MockMvc}, zelfde patroon en achtergrond (gedeelde H2, unieke codes per test) als
+ * bouwstap 5b): {@code TemplateBookmarkService} en (sinds NT-3) {@code CatalogImportTemplateDeclarationController}
+ * end-to-end via {@link MockMvc}, zelfde patroon en achtergrond (gedeelde H2, unieke codes per test) als
  * {@link SetupApiFlowTest}.
  * <p>
- * Het uitgeschakelde-vlag-gedrag (deze controller bestaat niet zonder
- * {@code catalogimport.setup-api.enabled=true}) wordt bewezen in {@link SetupApiDisabledTest}, samen
- * met de bestaande setup-API — dezelfde vlag raakt beide controllers.
+ * Het uitgeschakelde-vlag-gedrag (de declaratiepaden bestaan niet zonder
+ * {@code catalogimport.setup-api.enabled=true}; sjabloonbeheer bleef in NT-3 achter de vlag) wordt bewezen in
+ * {@link SetupApiDisabledTest}.
  */
 // De verbindingspool staat uitdrukkelijk klein (bouwstap 5c). De lokale PostgreSQL heeft een beperkt
 // aantal verbindingen en Spring houdt elke afwijkende testconfiguratie als een aparte applicatiecontext

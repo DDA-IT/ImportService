@@ -19,6 +19,8 @@ import * as bundlesApi from '../../api/bundles.ts';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
+import { term } from '../../terms/index.ts';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { cancelGate } from './bundlePolicy.ts';
 import styles from './ClosingDialogs.module.css';
 
@@ -41,14 +43,14 @@ function formatDateTime(iso: string | null): string {
 function resultMessage(result: BundleDetail): string {
   if (result.status !== 'CANCELLED') {
     return (
-      `De server aanvaardde het annuleren, maar de bundel staat nu op ${result.status} in plaats van CANCELLED. ` +
-      'Controleer de bundel en het beslissingsregister.'
+      `De server aanvaardde het annuleren, maar de bundel heeft nu de status "${term('bundleStatus', result.status).label}" ` +
+      `in plaats van "${term('bundleStatus', 'CANCELLED').label}". Controleer de bundel en het beslissingsregister.`
     );
   }
   return (
     `Bundel ${result.bundleReference} is geannuleerd door ${result.cancelledBy ?? '—'} op ` +
-    `${formatDateTime(result.cancelledAt)}. De niet-afgeronde mutaties zijn vervallen (EXPIRED) en de batches ` +
-    'zijn vrijgegeven. Het werkelijke aantal staat op de CANCEL-regel in het beslissingsregister.'
+    `${formatDateTime(result.cancelledAt)}. De niet-afgeronde mutaties zijn vervallen en de batches ` +
+    'zijn vrijgegeven. Het werkelijke aantal staat op de regel "Annulering" in het beslissingsregister.'
   );
 }
 
@@ -79,18 +81,26 @@ export function CancelDialog({ bundle, onClose, onCancelled }: CancelDialogProps
         <div className={styles.body}>
           {expirable !== null && (
             <p className={styles.keyFigure} data-testid="cancel-expiring-count">
-              <strong>{mutations(expirable)}</strong> {expirable === 1 ? 'vervalt' : 'vervallen'} (EXPIRED) en{' '}
+              <strong>{mutations(expirable)}</strong> {expirable === 1 ? 'vervalt' : 'vervallen'} en{' '}
               {expirable === 1 ? 'wordt' : 'worden'} nooit meer herleefd.
             </p>
           )}
+          <WhatIsThis>
+            <p>
+              Annuleren stopt de bundel. De mutaties die nog niet afgerond zijn, vervallen en komen nooit terug; de
+              batches komen weer vrij om in een andere bundel te gaan of als nulmeting aanvaard te worden.
+            </p>
+          </WhatIsThis>
           <p className={styles.muted}>
             Het getal is een momentopname (van het laden van de bundel); het annuleren telt zelf opnieuw en
             schrijft het werkelijke aantal in het beslissingsregister.
           </p>
           <p>
-            Elke niet-afgeronde mutatie (PLANNED, AWAITING_APPROVAL, READY_FOR_PUBLICATION) van de actieve batches
-            vervalt; afgekeurde, geblokkeerde en overgeslagen mutaties, identiteitsincidenten en de importmarkering
-            blijven zoals ze staan. De batches komen vrij voor accept-baseline of een andere bundel.
+            Elke niet-afgeronde mutatie (status &quot;{term('mutationStatus', 'PLANNED').label}&quot;, &quot;
+            {term('mutationStatus', 'AWAITING_APPROVAL').label}&quot; of &quot;
+            {term('mutationStatus', 'READY_FOR_PUBLICATION').label}&quot;) van de actieve batches vervalt; afgekeurde,
+            tegengehouden en overgeslagen mutaties, herkenningsproblemen en de afgeronde controle blijven zoals ze staan.
+            De batches komen vrij om als nulmeting aanvaard te worden of in een andere bundel te gaan.
           </p>
           <p className={styles.warning}>
             Dit maakt de beslissingen in deze bundel niet ongedaan in het register — ze blijven bewaard — maar de

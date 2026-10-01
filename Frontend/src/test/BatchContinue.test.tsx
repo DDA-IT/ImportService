@@ -64,7 +64,9 @@ describe('BatchActions continue (B-F3)', () => {
     const call = posts()[0]!;
     expect(call[0].toString()).toBe('/api/catalog-import/batches/101/continue');
     expect(call[1]?.body).toBeUndefined();
-    expect(screen.getByRole('status').textContent).toContain('SCREENED');
+    // NT-11a (V7): het Nederlandse woord voor de nieuwe status, niet de technische code.
+    expect(screen.getByRole('status').textContent).toContain('Gecontroleerd');
+    expect(screen.getByRole('status').textContent).not.toContain('SCREENED');
   });
 
   it.each(['RECEIVED', 'SCREENED', 'BLOCKED', 'FAILED', 'BASELINE_ACCEPTED'])(

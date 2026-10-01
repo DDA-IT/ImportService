@@ -204,7 +204,11 @@ public class MutationDao {
                 + "  and stage.classification in ('NEW', 'CHANGED', '"
                 + IDENTITY_INCIDENT_CLASSIFICATION + "') "
                 + "  and not exists (select 1 from import_mutation existing "
-                + "      where existing.idempotency_key = stage.mutation_key_prefix || '" + OFFER_KEY_SUFFIX + "')";
+                + "      where existing.idempotency_key = stage.mutation_key_prefix || '" + OFFER_KEY_SUFFIX + "') "
+                // Zonder volgorde bepaalt het queryplan (hash join, anti-join) in welke volgorde de rijen
+                // van één chunk hun id krijgen; dat verschuift met de tabelstatistieken. De mutatielijst
+                // volgt daarom uitdrukkelijk de bronregelvolgorde.
+                + "order by stage.row_number";
     }
 
     /**

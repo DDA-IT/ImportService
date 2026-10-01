@@ -146,7 +146,7 @@ describe('BundleMutationsTab', () => {
 
   it('F8.1: laadt de mutatielijst van de bundel zonder lege filterparameters', async () => {
     renderTab(bundle());
-    await screen.findByText('AWAITING_APPROVAL');
+    await screen.findByText('Wacht op goedkeuring', { selector: 'span' });
 
     const url = urls().find((candidate) => candidate.includes('/bundles/42/mutations'));
     expect(url).toBeDefined();
@@ -161,7 +161,7 @@ describe('BundleMutationsTab', () => {
 
   it('F8.2: geeft status en actionType door als query-parameters', async () => {
     renderTab(bundle());
-    await screen.findByText('AWAITING_APPROVAL');
+    await screen.findByText('Wacht op goedkeuring', { selector: 'span' });
 
     fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'PLANNED' } });
     await waitFor(() => expect(urls().some((url) => url.includes('status=PLANNED'))).toBe(true));
@@ -172,14 +172,17 @@ describe('BundleMutationsTab', () => {
 
   it('F8.3: geeft statusReason en batchId door als query-parameters (bouwstap C1)', async () => {
     renderTab(bundle());
-    await screen.findByText('AWAITING_APPROVAL');
+    await screen.findByText('Wacht op goedkeuring', { selector: 'span' });
 
     fireEvent.change(screen.getByLabelText('Statusreden'), { target: { value: 'BULK_PRICE_INCIDENT' } });
     fireEvent.change(screen.getByLabelText('Batch'), { target: { value: '77' } });
     fireEvent.click(screen.getByRole('button', { name: 'Filteren' }));
 
+    // De keuzelijst van de statusreden past meteen toe (een eerste verzoek zonder batch); "Filteren" voegt de batch toe.
     await waitFor(() => {
-      const url = urls().find((candidate) => candidate.includes('statusReason='));
+      const url = urls()
+        .filter((candidate) => candidate.includes('statusReason='))
+        .at(-1);
       expect(url).toBeDefined();
       expect(url).toContain('statusReason=BULK_PRICE_INCIDENT');
       expect(url).toContain('batchId=77');
@@ -196,7 +199,7 @@ describe('BundleMutationsTab', () => {
   it('F8.5: een IMPORT_MARKER toont "—" in plaats van een wijzigingsgroep en is niet beslisbaar', async () => {
     rows = [mutation({ id: 900, actionType: 'IMPORT_MARKER', status: 'RECORDED', identityHash: null })];
     renderTab(bundle());
-    await screen.findByText('RECORDED');
+    await screen.findByText('Vastgelegd', { selector: 'span' });
 
     expect(screen.queryByRole('button', { name: /Toon de hele wijzigingsgroep/ })).not.toBeInTheDocument();
     const approve = screen.getByRole('button', { name: /Goedkeuren mutatie 900/ });
@@ -204,23 +207,25 @@ describe('BundleMutationsTab', () => {
     expect(approve.getAttribute('title')).toContain('geen inhoudelijke mutatie');
   });
 
-  it('F8.6: een BLOCKED-mutatie is niet beslisbaar, met de code in de reden', async () => {
+  it('F8.6: een BLOCKED-mutatie is niet beslisbaar, met een Nederlandse reden (zonder code)', async () => {
     rows = [mutation({ id: 901, status: 'BLOCKED', statusReason: 'IDENTITY_INCIDENT' })];
     renderTab(bundle());
-    await screen.findByText('BLOCKED');
+    await screen.findByText('Tegengehouden', { selector: 'span' });
 
     const approve = screen.getByRole('button', { name: /Goedkeuren mutatie 901/ });
     expect(approve).toBeDisabled();
-    expect(approve.getAttribute('title')).toContain('MUTATION_BLOCKED_BY_IDENTITY_INCIDENT');
+    expect(approve.getAttribute('title')).toContain('herkenningsprobleem');
+    expect(approve.getAttribute('title')).toContain('technische code: MUTATION_BLOCKED_BY_IDENTITY_INCIDENT');
   });
 
   it('F8.7: een bevroren bundel biedt geen beslissing aan, met de reden erbij', async () => {
     renderTab(bundle({ status: 'FROZEN', plannedCount: null, awaitingApprovalCount: null }));
-    await screen.findByText('AWAITING_APPROVAL');
+    await screen.findByText('Wacht op goedkeuring', { selector: 'span' });
 
     const approve = screen.getByRole('button', { name: /Goedkeuren mutatie 501/ });
     expect(approve).toBeDisabled();
-    expect(approve.getAttribute('title')).toContain('BUNDLE_NOT_ASSEMBLING');
+    expect(approve.getAttribute('title')).toContain('de bundel is bevroren');
+    expect(approve.getAttribute('title')).toContain('technische code: BUNDLE_NOT_ASSEMBLING');
   });
 
   it('F8.8: goedkeuren stuurt decidedBy en reden mee en meldt een idempotente herhaling', async () => {

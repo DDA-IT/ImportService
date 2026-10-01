@@ -44,7 +44,7 @@ catalogimport:
   # Geen wildcard, geen default: fail-closed, ook in demo. 'system' mag hoogstens read.
   permissions:
     grants:
-      - username: vul-hier-je-keycloak-username-in
+      - username: Dda
         rights: read, manage, approve
 server:
   servlet:

@@ -1,0 +1,57 @@
+.term {
+  /* Geen eigen opmaak: de tekst erft van de omgeving. Het streepje onder wijst op "er is uitleg". */
+  text-decoration: underline dotted var(--color-text-tertiary);
+  text-underline-offset: 0.2em;
+  cursor: help;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.details {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.summary {
+  cursor: pointer;
+  color: var(--color-link);
+  font-size: 0.8125rem;
+}
+
+.detailsBody {
+  margin: var(--spacing-1) 0 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-sm);
+}
+
+.technical {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.technicalList {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--spacing-1) var(--spacing-3);
+  margin: var(--spacing-1) 0 0;
+}
+
+.technicalList dt {
+  font-weight: 600;
+}
+
+.technicalList dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}

@@ -4,6 +4,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { WhatIsThis } from '../terms/WhatIsThis.tsx';
 import styles from './Field.module.css';
 
 export type FieldProps = {
@@ -11,11 +12,13 @@ export type FieldProps = {
   htmlFor: string;
   required?: boolean;
   hint?: string;
+  /** Optionele uitleg in gewoon Nederlands, inklapbaar onder "Wat betekent dit?" (NT-5). */
+  help?: ReactNode;
   error?: string | null;
   children: ReactNode;
 };
 
-export function Field({ label, htmlFor, required = false, hint, error = null, children }: FieldProps) {
+export function Field({ label, htmlFor, required = false, hint, help, error = null, children }: FieldProps) {
   return (
     <div className={styles.field}>
       <label className={styles.label} htmlFor={htmlFor}>
@@ -29,6 +32,7 @@ export function Field({ label, htmlFor, required = false, hint, error = null, ch
       </label>
       {children}
       {error === null && hint !== undefined && <p className={styles.hint}>{hint}</p>}
+      {help !== undefined && <WhatIsThis>{help}</WhatIsThis>}
       {error !== null && (
         <p className={styles.error} role="alert">
           {error}

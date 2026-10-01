@@ -169,4 +169,22 @@ class ThresholdEvaluatorTest {
                 .contains("rejection threshold of 5%");
         assertThat(rejectedMessage.length()).isLessThan(500);
     }
+
+    // --- Voorrang (NT-9: gedeeld door screening en proefinlezing) --------------------------------
+
+    /** Kritiek wint van verworpen; geen van beide overschreden (of onbekend) is geen blokkade. */
+    @Test
+    void theCriticalThresholdLeadsWhenBothAreExceeded() {
+        Judgement criticalExceeded = ThresholdEvaluator.evaluateCritical(3L, 100L, ONE_PERCENT);
+        Judgement criticalWithin = ThresholdEvaluator.evaluateCritical(1L, 100L, ONE_PERCENT);
+        Judgement rejectedExceeded = ThresholdEvaluator.evaluateRejected(10L, 100L, new BigDecimal("5"));
+        Judgement rejectedNotConfigured = ThresholdEvaluator.evaluateRejected(10L, 100L, null);
+        Judgement undetermined = ThresholdEvaluator.evaluateCritical(null, 100L, ONE_PERCENT);
+
+        assertThat(ThresholdEvaluator.leading(criticalExceeded, rejectedExceeded)).isSameAs(criticalExceeded);
+        assertThat(ThresholdEvaluator.leading(criticalWithin, rejectedExceeded)).isSameAs(rejectedExceeded);
+        assertThat(ThresholdEvaluator.leading(criticalWithin, rejectedNotConfigured)).isNull();
+        assertThat(ThresholdEvaluator.leading(undetermined, rejectedNotConfigured)).isNull();
+        assertThat(ThresholdEvaluator.leading(null, null)).isNull();
+    }
 }

@@ -1397,3 +1397,976 @@ append-only-regel blijft onverkort gelden voor elk geval dat blijft bestaan. Vas
 Totaal 23/23 tests groen (`IssueCaseSchemaTest`, `IssueCaseSyncTest`, `ScreeningRecoveryServiceTest`).
 Volgende stap: S2-B2 (statuswijziging door een mens, `bouwer-gemiddeld`).
 **Bron:** hoofdsessie na verificatie (gerichte testronde) / docs/design/issue-case-design.md
+
+---
+
+## 2026-09-28 — S2-B2 uitgevoerd: statuswijziging door een mens
+**Vraag:** Is bouwstap S2-B2 (`docs/design/issue-case-design.md` §4/§6) afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`). `IssueCase.recordHumanDecision(...)` (Domain, bewaakt zelf de vijf
+toegestane overgangen), `IssueCaseService.changeStatus(...)` (Service, `findByIdForUpdate`-serialisatie,
+`expectedStatus`-controle, vertaalt naar 409/404), `CatalogImportIssueCaseController`
+(`POST /api/catalog-import/issue-cases/{caseId}/status`, recht `MANAGE`), rechten-regressietests
+uitgebreid (`PermissionCoverageTest`, `PermissionWriteEndpointsHttpTest`), nieuwe `IssueCaseStatusHttpTest`.
+43/43 tests groen (`IssueCaseStatusHttpTest`, `PermissionWriteEndpointsHttpTest`, `PermissionCoverageTest`,
+`IssueCaseSyncTest`, `IssueCaseSchemaTest`).
+
+**Kleine interpretatiekeuze aanvaard (geen §6-criterium):** `reopen_count` wordt nu ook opgehoogd bij een
+handmatige heropening (CORRECTED/REJECTED/AUTO_RESOLVED → AWAITING_REVIEW door een mens), niet enkel bij de
+twee systeemheropeningsregels uit §2. Het ontwerp noemde `reopen_count+1` expliciet alleen voor de
+systeemregels; de kolomdefinitie in §1 zegt generiek "hoe vaak heropend". Aanvaard: een menselijke
+heropening is evenzeer een heropening, en dit heeft geen architectuur- of statusflow-impact.
+
+**Twee kleine, code-consistente afwijkingen van de letterlijke opdrachttekst (geen afwijking van het
+ontwerp zelf):** (1) `recordHumanDecision` neemt `changedBy`/`changedBySubject` als losse Strings i.p.v.
+een `ActorIdentity`-parameter, omdat Domain geen afhankelijkheid heeft op Service — patroon van de
+bestaande `PublicationRun`-constructor; (2) een ontbrekende/onbekende `expectedStatus` geeft een generieke
+400 zonder foutcode (het ontwerp benoemt enkel foutcodes voor `newStatus`) — patroon van bestaande
+niet-benoemde 400's elders (bv. `BundleDecisionService`).
+
+Volgende stap: S2-B3 (leesendpoints, `bouwer-gemiddeld`).
+**Bron:** hoofdsessie na verificatie (gerichte testronde) / docs/design/issue-case-design.md
+
+---
+
+## 2026-09-28 — S2-B3 uitgevoerd: leesendpoints behandelgeval
+**Vraag:** Is bouwstap S2-B3 (`docs/design/issue-case-design.md` §6) afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`). `IssueCaseQueryService` + vijf leesendpoints (`GET /issue-cases`,
+`/summary`, `/{id}`, `/{id}/observations`, `/{id}/events`), alle recht `READ`. Additieve uitbreiding:
+`IssueGroupDao.GroupRow`/`BatchQueryService.IssueGroupRow` krijgen achteraan `issueCaseId`, dus
+`GET /batches/{id}/issue-groups` toont nu of een groep al aan een geval gekoppeld is. Rechten-regressie
+uitgebreid (`PermissionCoverageTest`, `PermissionReadEndpointsHttpTest`). 60/60 tests groen
+(`IssueCaseQueryHttpTest`, `PermissionCoverageTest`, `PermissionReadEndpointsHttpTest`,
+`IssueGroupingTest`, `IssueCaseSyncTest`, `IssueCaseStatusHttpTest`).
+
+**Kenmerknaam aanvaard (geen §6-criterium):** het "nieuwe waarneming ná beslissing"-kenmerk uit ontwerp §2
+heet `hasUnreviewedRecurrence` (boolean). Semantiek: `statusChangedAt == null || lastSeenAt.isAfter(statusChangedAt)`
+— een geval zonder beslissing staat dus altijd op `true` (nog nooit beoordeeld). Geen aparte
+filterparameter (het stond niet in de expliciete filterlijst); wel zichtbaar in elke lijst-/detailrij.
+
+Volgende stap: S2-F1 (scherm, alleen-lezen, `bouwer-gemiddeld`).
+**Bron:** hoofdsessie na verificatie (gerichte testronde) / docs/design/issue-case-design.md
+
+---
+
+## 2026-09-28 — S2-F1 uitgevoerd: scherm behandelgeval (alleen-lezen)
+**Vraag:** Is bouwstap S2-F1 (`docs/design/issue-case-design.md` §6) afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`). Nieuwe feature-map `Frontend/src/features/issuecases/`:
+`IssueCaseListPage` (`/issue-cases`, filters + paginering + recurrence-badge) en `IssueCaseDetailPage`
+(`/issue-cases/:caseId`, classificatie/status/waarnemingen/gebeurtenissen), volledig alleen-lezen (geen
+afhandelacties — dat is S2-F2). Telblok "Open behandelgevallen" op scherm 0 (`WorkQueuePage`), nieuwe route
++ navigatiemenu-item, additieve typen/foutcode/`StatusBadge`-uitbreiding. Frontend-testsuite 292/292 groen,
+`tsc -p tsconfig.app.json` schoon.
+
+**Twee kleine interpretatiekeuzes aanvaard (geen §6-criterium):** (1) rij-link in de eerste kolom i.p.v.
+hele-rij-klik — geen enkel bestaand scherm gebruikt een klikbare-rij-patroon, dus de bestaande conventie
+(`WorkQueuePage`/`BundleListPage`) is gevolgd; (2) het telblok toont de `AWAITING_REVIEW`-telling ("nog te
+beoordelen"), niet het totaal over alle statussen — een redelijke lezing van "open", zonder architectuur-
+impact en later zonder schemawijziging aan te passen.
+
+Volgende stap: S2-F2 (afhandelacties in de UI, `bouwer-gemiddeld`) — laatste stap van het D14-spoor.
+**Bron:** hoofdsessie na verificatie (Frontend-testsuite + typecheck) / docs/design/issue-case-design.md
+
+---
+
+## 2026-09-28 — S2-F2 uitgevoerd: afhandelacties behandelgeval (D14-spoor volledig afgerond)
+**Vraag:** Is bouwstap S2-F2 (`docs/design/issue-case-design.md` §4/§6) afgerond en geverifieerd? Dit was
+de laatste stap van het D14-spoor.
+**Beslissing:** Ja (`bouwer-gemiddeld`). `issueCasePolicy.ts` (pure statusmatrix), `IssueCaseActions.tsx`
+(Corrigeren/Afwijzen/Heropenen via `ConfirmDialog`, verplichte reden, `expectedStatus` meegestuurd, vaste
+D3-uitlegtekst), uitbreiding `IssueCaseDetailPage.tsx`/`api/issueCases.ts`/`types.ts`/`errors/codes.ts`.
+Frontend-testsuite 308/308 groen, `tsc -p tsconfig.app.json` schoon. Aansluitend een volledige
+backend-regressieronde gedraaid (1198 tests): 3 falend, waarvan 1 een echte regressie
+(`ConfigurationActorSubjectSchemaTest`, hardcoded telling van `*_by_subject`-kolommen niet bijgewerkt na
+S2-B1 — bekende, gedocumenteerde valkuil) en 2 pre-existente, aan dit spoor onaangeraakte
+schaal-/pagineringsflakiness in `CatalogImportSetupQueryHttpTest` (vast `size=200`, kan onder een volledige
+run met 101 testklassen de eigen testrij van de eerste pagina duwen — niet veroorzaakt door D14, niet
+gefixt in deze ronde). De tellingregressie is gefixt (19→21, 13→15) en geverifieerd (12/12 groen).
+
+**Hiermee is het volledige D14-spoor (behandelgeval/`issue_case`) afgerond:** S2-B1 → S2-B1b → S2-B2 →
+S2-B3 → S2-F1 → S2-F2, telkens geverifieerd met een gerichte testronde. Ontwerp: `docs/design/issue-case-design.md`.
+
+**Bron:** hoofdsessie na verificatie (Frontend-testsuite + volledige backend-regressieronde) /
+docs/design/issue-case-design.md
+
+---
+
+## 2026-09-28 — S1-X: ontwerp opvolgrevisie/clone bindend (O1-O3) en bouwvolgorde S1-X-1 … S1-F4
+**Vraag:** Concreet technisch ontwerp voor spoor S1-X (opvolgrevisie aanmaken/wijzigen/activeren), zoals
+uitgesteld op 2026-09-27 (deelvraag A2, "clone-semantiek vereist een eigen Fase 1-achtig ontwerp").
+**Beslissing:** `docs/design/revision-successor-design.md` is bindend (denker-zwaar, 2026-09-28). Kern:
+hergebruik van de bestaande clone-logica (`TemplateMaterialisationService`) via een gedeelde
+`RevisionCopier`, geen nieuwe clone-implementatie; hergebruik van de bestaande `SetupService.activateRevision`
+met twee aanvullingen (409 bij gelijktijdige activatie, laagversienummers krijgen voor het eerst betekenis);
+alle vijf configuratie-kindtabellen worden letterlijk meegekopieerd (incl. alle bookmarkscopes, niet enkel
+LINK); geen vergrendeling bij activeren (de gepinde batch-revisie garandeert reproduceerbaarheid al); twee
+nieuwe beschermingen tegen een stille identiteitswijziging (R-REV-X1/X2/X3). Bouwvolgorde S1-X-1 (refactor
+naar gedeelde `RevisionCopier`, `bouwer-zwaar`, geen gedragswijziging aan het bestaande materialisatiepad) →
+S1-X-2 (opvolger aanmaken + activatie-aanvullingen, `bouwer-zwaar`) → S1-X-3 (leesendpoint revisiedetail,
+`bouwer-gemiddeld`) → S1-X-4 (wijzigen/verwijderen van kindrijen + identiteitsbeschermingen, `bouwer-zwaar`)
+→ S1-F4 (scherm 1a schrijfdeel, `bouwer-zwaar`).
+
+**O1 (hoogstens één open DRAFT-opvolger per definitie) door de mens beantwoord: op serviceniveau**
+(409 `REVISION_DRAFT_ALREADY_EXISTS`), geen databaseconstraint — zou het bestaande create-only-pad van
+`SetupService.createRevision` kunnen breken.
+
+**O2 (welke bronstatus mag gekloond worden) door de mens beantwoord: ACTIVE én SUPERSEDED**, niet enkel
+ACTIVE zoals de letterlijke tekst van A2 zei — geeft "terugdraaien naar een eerdere configuratie" gratis,
+sluit aan bij het bestaande precedent in `TemplateMaterialisationService`. DRAFT en overige statussen
+blijven geweigerd.
+
+**O3 (identiteitsbeschermingen) door de mens beantwoord: beide invoeren.** R-REV-X2 blokkeert een
+canonicalisatieversie-verhoging zodra er al aanvaarde bronstaat bestaat (niet-migreerbare massa-CREATE);
+R-REV-X3 vereist een expliciete bevestiging (`acknowledgeIdentityChange`) bij een wijziging van het
+identiteitsprofiel of een identiteitsveld.
+
+**Ontdekkingen teruggeschreven, na akkoord van de mens (beide):** (1) `composite_config_hash` dekt geen
+mappings/recordfilters/kritiek-overrules/drempels/prijsbeleid — twee configuraties die daar enkel in
+verschillen dragen dezelfde hash; vastgelegd in `docs/design/revision-successor-design.md` §9 (nergens in
+productiecode gelezen, dus geen huidig foutgedrag, wel een valkuil voor later gebruik). (2) `changeReason`
+wordt vandaag nergens afgedwongen ondanks de javadoc "verplicht bij een opvolgrevisie" — de nieuwe
+opvolgstap (E2) is de eerste plek waar dat echt gebeurt; geen backfill, geen `not null`-constraint op
+bestaande rijen.
+
+**Bron:** mens (O1-O3, terugschrijfkeuze) / denker-zwaar (`Ontwerp S1-X opvolgrevisie/clone`, 2026-09-28) /
+docs/decisions.md 2026-09-27 ("Heropening scherm 1a/1b", deelvraag A2)
+
+---
+
+## 2026-09-28 — S1-X-1 uitgevoerd: refactor naar gedeelde RevisionCopier
+**Vraag:** Is bouwstap S1-X-1 (`docs/design/revision-successor-design.md` §0/§8) afgerond en geverifieerd
+zonder gedragswijziging aan het bestaande materialisatiepad?
+**Beslissing:** Ja (`bouwer-zwaar`). Nieuwe `RevisionCopier` (`Service/.../support/`) met de verhuisde
+clone-logica (scalaire kopie + de vijf configuratie-kindtabellen behalve bookmarkwaarden — die volgen in
+S1-X-2, zoals het ontwerp voorschrijft); `TemplateMaterialisationService` delegeert nu, ongewijzigde
+publieke methode-namen/signaturen, enkel de constructor kreeg `RevisionCopier` i.p.v. rechtstreeks
+`ImportRevisionFieldCriticalityRepository` (interne wijziging, geen externe aanroepers buiten Spring-DI
+gevonden). 62/62 tests groen (`TemplateMaterialisationHttpTest`, `TemplateMaterialisationValidationTest`,
+`TemplateGuardTest`, `TemplateBlockingPointTest`, `RevisionConfigHashesTest`, `ImportTemplateBookmarkSchemaTest`)
+— onveranderd, geen enkele test aangepast.
+
+Volgende stap: S1-X-2 (opvolger aanmaken + activatie-aanvullingen 3a/3b, `bouwer-zwaar`).
+**Bron:** hoofdsessie na verificatie (gerichte testronde) / docs/design/revision-successor-design.md
+
+---
+
+## 2026-09-28 — S1-X-2 uitgevoerd: opvolgrevisie aanmaken + activatie-aanvullingen
+**Vraag:** Is bouwstap S1-X-2 (`docs/design/revision-successor-design.md` §1-3, §6 endpoint E2) afgerond en
+geverifieerd?
+**Beslissing:** Ja (`bouwer-zwaar`). `RevisionCopier` uitgebreid met `copyBookmarkValues` (DEFINITION-scope,
+letterlijk + `source_template_revision_id`); nieuwe `RevisionSuccessorService.createSuccessor(...)` (O2:
+enkel ACTIVE/SUPERSEDED klonbaar → anders 409 `REVISION_NOT_CLONEABLE`; O1: hoogstens één open DRAFT per
+definitie → anders 409 `REVISION_DRAFT_ALREADY_EXISTS`; `changeReason` verplicht → 400
+`CHANGE_REASON_REQUIRED`; alle vijf kindtabellen incl. alle bookmarkscopes gekopieerd, één transactie);
+endpoint `POST /setup/revisions/{revisionId}/successor` (E2, `MANAGE`, achter de vlag); `SetupService.
+activateRevision` uitgebreid met 3a (409 `REVISION_ACTIVATION_CONFLICT` bij een gelijktijdige-activatie-
+botsing) en 3b (laagversienummers +1 bij een gewijzigde laaghash, enkel bij een opvolger binnen dezelfde
+definitie). Rechtenregressie uitgebreid. 75/75 tests groen (`RevisionSuccessorTest`, `SetupApiFlowTest`,
+`LinkBookmarkValueTest`, `PermissionCoverageTest`, `PermissionWriteEndpointsHttpTest`, `SetupApiDisabledTest`,
+`TemplateMaterialisationTest`, `TemplateReuseTest`, `TemplateBlockingPointTest`).
+
+**Kleine, consistente implementatiekeuzes aanvaard (geen §6-criterium):** `SetupService.view(...)` van
+`private static` naar package-private gemaakt zodat E2 dezelfde revisieweergave teruggeeft als
+`createRevision`/`activate` (geen apart responsrecord); volgorde O2/O1 vóór `CHANGE_REASON_REQUIRED` (bij
+een tweede opvolgpoging zonder reden krijgt de gebruiker 409, niet 400) — logisch (toestandscontrole vóór
+inhoudscontrole), consistent met hoe andere endpoints in dit project dat al doen.
+
+**Bewust nog niet:** foutcode-entries in `Frontend/src/errors/codes.ts` voor de vier nieuwe codes (hoort
+volgens het ontwerp bij S1-F4); E1 (leesendpoint), E3/E4 + R-REV-X2/R-REV-X3 (S1-X-4); de R-CASE-03-melding
+bij de activatieknop (S1-F4) — tot dan wordt een heropening van afgewezen behandelgevallen door het
+activeren van een opvolger nog nergens aan de gebruiker gemeld.
+
+Volgende stap: S1-X-3 (leesendpoint revisiedetail, `bouwer-gemiddeld`).
+**Bron:** hoofdsessie na verificatie (gerichte testronde) / docs/design/revision-successor-design.md
+
+---
+
+## 2026-09-28 — S1-X-3 uitgevoerd: leesendpoint revisiedetail (E1)
+**Vraag:** Is bouwstap S1-X-3 (`docs/design/revision-successor-design.md` §6, E1) afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`). `GET /api/catalog-import/definitions/{definitionId}/revisions/
+{revisionId}` (recht `READ`, buiten de setup-vlag) op de bestaande `CatalogImportSetupQueryController`;
+nieuw `SetupQueryService.getRevisionDetail(...)` met een rijk `RevisionDetail`-record (alle scalaire velden
++ alle vijf configuratie-kindtabellen, hergebruikt bestaande view-recordtypes waar mogelijk). Geen
+statusbeperking op lezen (DRAFT/ACTIVE/SUPERSEDED alle drie zichtbaar). Rechtenregressie uitgebreid.
+19/19 tests groen (`CatalogImportSetupQueryHttpTest`, `PermissionCoverageTest`,
+`PermissionReadEndpointsHttpTest`).
+
+Volgende stap: S1-X-4 (wijzigen/verwijderen van kindrijen + identiteitsbeschermingen R-REV-X2/R-REV-X3,
+`bouwer-zwaar`) — laatste backend-stap vóór S1-F4 (frontend).
+**Bron:** hoofdsessie na verificatie (gerichte testronde) / docs/design/revision-successor-design.md
+
+---
+
+## 2026-09-28 — S1-X-4 uitgevoerd: wijzigpaden (E3/E4) en identiteitsbescherming
+**Vraag:** Is bouwstap S1-X-4 (`docs/design/revision-successor-design.md` §5-6, E3/E4) afgerond en
+geverifieerd? Dit was de laatste backend-stap van het S1-X-spoor.
+**Beslissing:** Ja (`bouwer-zwaar`). `PATCH /setup/revisions/{revisionId}` (E3: scalaire velden van een
+DRAFT wijzigen, `null`=ongewijzigd, hashes herberekend, R-REV-X2/R-REV-X3 afgedwongen) en twee
+`DELETE`-endpoints voor mappings/filters (E4, met bookmarkdeclaratie-hercontrole na verwijderen). Nieuwe
+`SourceStateDao.existsForImportDefinition`. Rechtenregressie uitgebreid (eerste PATCH/DELETE van het
+project). 58/58 tests groen (`RevisionUpdateTest`, `RevisionSuccessorTest`, `SetupApiFlowTest`,
+`SetupApiDisabledTest`, `PermissionCoverageTest`, `PermissionWriteEndpointsHttpTest`).
+
+**Verruiming van R-REV-X2 bekrachtigd door de mens:** blokkeert niet enkel een verhóging maar élke
+wijziging van `recordCanonicalisationVersion` zodra er bronstaat bestaat (ook verlagen) — 2→1 is even
+onomkeerbaar als 1→2, dus geen uitzondering voor de richting. Onvoorwaardelijk: `acknowledgeIdentityChange`
+omzeilt deze blokkade niet (in tegenstelling tot R-REV-X3, die wél een bevestiging aanvaardt).
+
+**Ontdekking teruggeschreven, na akkoord van de mens:** `import_definition_revision` heeft geen
+`updated_by`/`updated_by_subject` — wie een DRAFT-opvolger wijzigt (E3) of een kindrij verwijdert (E4)
+wordt nergens vastgelegd (enkel `createdBy`/`approvedBy`). Vastgelegd in
+`docs/design/revision-successor-design.md` §7 als bekend gat met een voorstel voor een latere, additieve
+changeset — niet blokkerend voor S1-F4 (de bevoegdheidscontrole zelf, recht `MANAGE`, is al afgedwongen).
+
+**Backend van het S1-X-spoor is hiermee volledig.** Volgende en laatste stap: S1-F4 (scherm 1a schrijfdeel:
+opvolger maken → DRAFT bewerken → activeren, `bouwer-zwaar`).
+**Bron:** mens (R-REV-X2-verruiming, terugschrijfkeuze) / hoofdsessie na verificatie (gerichte testronde) /
+docs/design/revision-successor-design.md
+
+---
+
+## 2026-09-28 — S1-F4 uitgevoerd: scherm 1a schrijfdeel (S1-X-spoor volledig afgerond)
+**Vraag:** Is bouwstap S1-F4 (`docs/design/revision-successor-design.md` §6/§8) afgerond en geverifieerd?
+Dit was de laatste stap van het volledige S1-X-spoor (opvolgrevisie aanmaken/wijzigen/activeren).
+**Beslissing:** Ja (`bouwer-zwaar`). "Opvolger maken" (E2, verplichte reden, enkel op ACTIVE/SUPERSEDED),
+DRAFT-detail + bewerkformulier (E1/E3, `null`=ongewijzigd, beide identiteitsbeschermingen zichtbaar —
+R-REV-X2 onvoorwaardelijk zonder omzeiloptie, R-REV-X3 met expliciet bevestigingsvinkje), verwijderactie op
+mappings/filters (E4), activeren met de verplichte R-CASE-03-waarschuwing (E5). Twaalf nieuwe
+`errors/codes.ts`-entries. Harde ontwerpgrens gerespecteerd: geen enkele actie op bookmarkdeclaraties.
+Frontend-testsuite 336/336 groen, `tsc -p tsconfig.app.json` schoon.
+
+**Ontdekking teruggeschreven, na akkoord van de mens:** een tab of spatie als scheidingsteken/
+aanhalingsteken kan principieel niet via de setup-API ingesteld worden (bestaand backendgedrag,
+`requireText`/`optionalText` weigeren/trimmen blanco) — een TSV-bron is er dus niet mee configureerbaar.
+Vastgelegd in `docs/design/revision-successor-design.md` §7 als bekende beperking, geen fix in deze ronde.
+
+**Hiermee is het volledige S1-X-spoor (opvolgrevisie/clone) afgerond:** S1-X-1 → S1-X-2 → S1-X-3 → S1-X-4 →
+S1-F4, telkens geverifieerd met een gerichte testronde. Ontwerp: `docs/design/revision-successor-design.md`.
+Nog open uit dat ontwerp (bewust, ligt bij de mens): de additieve `updated_by`/`updated_by_subject`-changeset
+voor `import_definition_revision` (§9-ontdekking van S1-X-4).
+
+**Bron:** mens (terugschrijfkeuze) / hoofdsessie na verificatie (Frontend-testsuite + typecheck) /
+docs/design/revision-successor-design.md
+
+---
+
+## 2026-09-29 — Sleutelbeheer credentials (kandidaat c): recht voor instellen/vervangen/wissen
+**Vraag:** Welk recht geldt voor het instellen, vervangen en wissen van credentials van externe bronnen
+(SFTP/API-wachtwoorden)? Beslisdossier `denker-zwaar` (`Beslisdossier sleutelbeheer credentials`, 2026-09-29),
+vraag V2: P1 = bestaand `MANAGE`, P2 = nieuw orthogonaal recht `catalogImport.credentials` (aanbevolen), P3 = `APPROVE`.
+**Beslissing:** Door de mens: **P1 — het bestaande recht `MANAGE`** (afwijkend van de aanbeveling P2). Volgt de bindende
+actiemapping A2 (2026-09-25: credentials zijn configuratie). Er komt geen nieuw recht; `ConfiguredPermissionSource`,
+`/me.permissions` en het Prodis-seedverzoek (`docs/openstaande-externe-punten.md` §2) blijven ongewijzigd. Gevolg van de
+hiërarchie (V2 van 2026-09-26): wie `APPROVE` heeft, kan ook credentials vervangen — bewust aanvaard.
+Daarnaast is een nieuw extern punt 6 (secrets en sleutel bij DDA-infra) opgenomen in `docs/openstaande-externe-punten.md`.
+**Overige punten — door de mens aanvaard conform aanbeveling ("Prima", 2026-09-29):**
+- **V1 = geen enkele API geeft een secret ooit terug**, ook niet aan de invoerder; het recht `delivery.credentials.view` uit
+  BA §16.8 vervalt (die paragraaf beschrijft de door 2026-09-26 vervangen toestand). Antwoorden tonen hoogstens `secretSet`,
+  `secretUpdatedAt`, `secretUpdatedBy`. Ontsleutelen gebeurt enkel server-side door de ophaalcomponent en de verbindingstest.
+- **V3 = sleutel in een omgevingsvariabele met sleutelring** (optioneel via bestand, `_FILE`/`configtree:`), properties onder
+  `catalogimport.secrets.*`; een aparte sleutel per applicatie (niet `PRODIS_SECRETS_MASTER_KEY`) en per omgeving; de
+  reservekopie van de sleutel staat nooit in `CATALOG_BACKUP_DIR` of op hetzelfde medium als de pg_dump.
+- **V4 = sleutel-ID per waarde vanaf dag 1** (kolomformaat `v1:<keyId>:<base64(nonce‖ciphertext+tag)>` + kolom
+  `encryption_key_id`); één actieve sleutel versleutelt, oude sleutels enkel ontsleutelen; herversleutelen als idempotente batch
+  bij opstart (R2a) met een auditevent per rij als SYSTEM. Een oude sleutel blijft minstens zo lang bewaard als de
+  back-upretentie (~5 weken) en wordt pas verwijderd bij 0 rijen eronder.
+- **V5 = sleutelverlies is onherstelbaar:** betrokken credentials worden `UNDECRYPTABLE`, connectors weigeren expliciet
+  (`CREDENTIAL_UNDECRYPTABLE`, nooit stil overslaan), een bevoegde gebruiker voert de waarden opnieuw in; de app blijft starten.
+- **V6 = geen ontwikkelsleutel in de repo** (CatalogImport-conventie, zoals `CATALOG_OIDC_CLIENT_SECRET`); tests krijgen een
+  vaste sleutel enkel in de testsources.
+- **V7 = hybride:** geen config = functie uit (app start, opslaan geeft 409 `SECRETS_NOT_CONFIGURED`, connectors weigeren);
+  config aanwezig maar ongeldig (geen base64, niet 32 bytes, dubbele ID's, actieve ID ontbreekt, zelfde materiaal onder twee
+  ID's) = fail-fast bij opstart. Plus de controlewaarde `secret_key_check` (hoort de sleutel bij deze database).
+- **V8 = scope nu enkel K-1:** de versleutelcomponent (JDK `javax.crypto`, AES-256-GCM, 96-bit nonce, associated data
+  `catalogimport|external_credential|<credential_ref>|<secret_kind>|v1`), sleutelring-properties en opstartvalidatie, met
+  unit-tests — geen schema, geen API. K-2 (tabellen `external_credential`/`_event`) hooguit als losstaande tabel; endpoints (K-3)
+  en de SFTP-connector (K-4) pas na een eigen denker-zwaar-ontwerp voor Leveringsconfiguratie/ConnectionProfile.
+  "Geen server-side ophaling" (2026-09-26) blijft gelden tot K-4.
+Technische standaarden uit het dossier (geen nieuwe library; waarde nooit in log/exception/`toString`; audit nooit met de waarde
+of een hash ervan; `credential_ref` als vooraf gegenereerde UUID omdat `GenerationType.IDENTITY` het rij-id pas na insert kent)
+gelden als aangenomen.
+**Nog niet teruggeschreven (wacht op akkoord mens):** de twee ontdekkingen uit het dossier — sleutel versus back-upretentie
+(voorstel: `docs/design/backup-herstel-design.md`) en het Prodis-precedent `SecretCipher` (voorstel: nieuw
+`docs/design/credentials-sleutelbeheer-design.md`).
+**Bron:** mens / denker-zwaar (`Beslisdossier sleutelbeheer credentials`) / business-analyse-leveranciersbibliotheken.md §14.17, B10 /
+docs/decisions.md 2026-09-25 (A2), 2026-09-26
+
+(Na akkoord van de mens teruggeschreven: `docs/design/credentials-sleutelbeheer-design.md` (nieuw) en
+`docs/design/backup-herstel-design.md` §7 "Sleutel en back-up" (vorige §7 → §8).)
+
+---
+
+## 2026-09-29 — K-1 uitgevoerd: versleutelcomponent `SecretsService`
+**Vraag:** Is bouwstap K-1 (`docs/design/credentials-sleutelbeheer-design.md` §6) afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, tests gedraaid door de hoofdsessie). `SecretsService` (Service, `@Component`, `@Value`-binding
+zoals `LocalSourceDirectory`): AES-256-GCM via JDK, formaat `v1:<keyId>:<base64(nonce‖ciphertext+tag)>`, associated data in de
+component; `SecretsNotConfiguredException` (`SECRETS_NOT_CONFIGURED`) en `CredentialUndecryptableException` (`CREDENTIAL_UNDECRYPTABLE`),
+beide `ConflictException` → 409. Config: `catalogimport.secrets.keys` (`id1:base64,id2:base64`, env `CATALOG_SECRETS_KEYS`) en
+`catalogimport.secrets.active-key-id` (env `CATALOG_SECRETS_ACTIVE_KEY_ID`) in `application.yml`, zonder sleutel of default.
+Geen config = functie uit; ongeldige config = fail-fast bij opstart. Geen schema, geen API.
+Tests: `SecretCipherTest` 11, `SecretsStartupValidationTest` 8, `SecretsPropertiesTest` 3 — groen; controle dat bestaande
+Spring-contexten zonder secrets-config blijven starten: `PermissionHttpTest` 10, `LocalSourceDisabledTest` 5 — groen.
+**Afwijkingen / nog voor te leggen aan de mens:**
+- Property-vorm: één string-property i.p.v. de geïndexeerde lijst/`keyring_file`/`_FILE` uit het design-doc §2.3 (bestandsvariant
+  kan later via `spring.config.import=configtree:`); design-doc nog niet gelijkgetrokken.
+- `secret_key_check` niet in K-1 gebouwd (persistent → K-2), terwijl het design-doc §6 het onder K-1 noemt.
+- HTTP-status 409 voor `CREDENTIAL_UNDECRYPTABLE` is een aanname van de Bouwer (design legt geen status vast).
+**Door de mens aanvaard ("prima", 2026-09-29):** alle drie. Design-doc gelijkgetrokken (§2.3 property-vorm, §2.4 opstartvalidatie,
+§2.6 409 voor beide foutcodes, §4.2 geen testmap in Service, §6 K-1 afgerond en `secret_key_check` naar K-2).
+**Bron:** hoofdsessie na verificatie (gerichte tests) / docs/design/credentials-sleutelbeheer-design.md
+
+---
+
+## 2026-09-29 — Leveringsconfiguratie en verbindingsprofiel (SFTP): ontwerp bindend (L1-L8)
+**Vraag:** Hoe worden de gegevens om automatisch bij een leverancier op te halen (eerst SFTP) gemodelleerd, inclusief de koppeling
+naar de versleutelde credential — voorwaarde voor K-2, K-3 en K-4 (beslisdossier denker-zwaar `Ontwerp Leveringsconfiguratie/ConnectionProfile`, 2026-09-29)?
+**Beslissing:** Door de mens: alle acht keuzes conform aanbeveling ("prima"), plus de aannames A1-A19 uit het dossier.
+- **L1 = herroeping van de 27/09-ontwerpgrens** (tweede ontvangstweg: "geen Leveringsconfiguratie-entiteit, geen acquisitieservice")
+  voor dit spoor. **"Geen scheduler" blijft** voorlopig staan; de scheduler krijgt na K-4 een eigen ontwerpstap. "Geen server-side
+  ophaling" (2026-09-26) vervalt pas met K-4b.
+- **L2 = de Leveringsconfiguratie hangt aan de taak** (`catalog_import_task.delivery_configuration_version_id`), niet aan `import_link`
+  of de revisie. Planning blijft `trigger_expression` op de taak. De revisie houdt van laag 1 enkel `access_delivery_set_kind`; een
+  DC-wijziging hoogt `access_version` niet op. De ophaalrun ís een `task_run` (geen aparte `fetch_run`).
+- **L3 = onveranderlijke versierijen** (kop + versie) voor verbindingsprofiel en Leveringsconfiguratie; een taak neemt een nieuwe versie
+  expliciet over. Een versie in gebruik wijzigt nooit (BA r.2397).
+- **L4 = uitgaande verbindingen beveiligd:** (a) een credential is DB-afgedwongen aan één host gebonden (`bound_host` + samengestelde FK
+  vanuit de profielversie; host wijzigen = wachtwoord opnieuw invoeren); (b) fail-closed property `catalogimport.fetch.allowed-hosts`
+  (exacte hostnamen, beheerd door infra): niet gezet = fetch/scan/test geven 404 `FETCH_NOT_CONFIGURED`; host buiten de lijst =
+  `FETCH_HOST_NOT_ALLOWED`; DNS één keer resolven en op dat IP verbinden.
+- **L5 = verplichte vastgepinde hostsleutel** (algoritme + SHA-256-vingerafdruk per profielversie). Een scan-endpoint toont de
+  vingerafdruk, de mens vergelijkt met de waarde die de leverancier via een ander kanaal geeft en bevestigt. Daarna strikt: mismatch
+  = `SFTP_HOST_KEY_MISMATCH`, nooit auto-accept; sleutelwissel bij de leverancier = nieuwe profielversie.
+- **L6 = bestandskeuze:** de eerste run na het koppelen neemt enkel het recentste matchende bestand (oudere = `OLDER_THAN_WATERMARK`);
+  daarna chronologisch, oudste nieuwe eerst (bij gelijke mtime op naam), **één bestand per run**, `pending_file_count` zichtbaar; nooit
+  een bestand ouder dan het laatst opgehaalde; overgeslagen bestanden blijven altijd zichtbaar (`fetch_file_observation`).
+- **L7 = (a) niet achter `catalogimport.setup-api.enabled`:** credential-, profiel-, DC- en koppel-endpoints vragen MANAGE, in tweede
+  lijn beschermd door de allowlist van L4. **(b) Detail-GET's met host, login, map en testlistings vragen MANAGE;** READ ziet enkel
+  code, naam, status, `secretSet` en de runs — bewuste afwijking van A2 ("read = alle GET's"), op grond van BA r.2210 en precedent D8.
+- **L8 = Apache MINA SSHD** (`sshd-core` + `sshd-sftp`) als nieuwe runtime-afhankelijkheid in Service (enkel client); de embedded
+  SFTP-server enkel in test-scope. Versie expliciet pinnen.
+**Belangrijkste aannames (bindend tenzij herroepen):** A3 na ophalen enkel `LEAVE`; A4 idempotentiesleutel = remote object per taak
+(`sftp:<sha256(host:port:pad)[0..32]>:<mtime>:<grootte>` in `uk_delivery_idempotency`, zonder DC-versie-ID); A5 v1 enkel wachtwoord;
+A6 `UNDECRYPTABLE` afgeleid, niet opgeslagen (credential-status enkel `ACTIVE`/`REVOKED`); A7 `secret_key_check` fail-fast bij opstart
+voor de actieve sleutel, sleutel-ID's met omgevingsprefix; A9 "Nu ophalen" synchroon zonder automatische retry; A10 upload en servermap
+geweigerd op een taak met DC (409 `TASK_HAS_DELIVERY_CONFIGURATION`); A11 hoogstens één DC-taak per koppeling; A12 defaults min. ouderdom
+300 s, cap 1 GB, time-outs 15/15/60 s, listing-cap 10 000; A13 `delivery.source_kind = SFTP` (check verbreden); A15 één bestand per
+levering; A16 nog geen verplichte servertest voor activatie; A17 remote map absoluut, geen `..`, geen recursie; A18 listing nooit stil
+afgekapt; A19 `credential_ref` server-side UUID. Wijzigingen aan het voorlopige K-2-model (credentials-design §5): `ciphertext` en
+`encryption_key_id` nullable met checks, projectconventies (identity by default, timestamptz, `*_by varchar(100)` + `*_by_subject`),
+nieuw `label` en `bound_host`, `secret_key_check` met eigen AAD `catalogimport|secret_key_check|<keyId>|v1`.
+**Bouwvolgorde (sequentieel):** DC-0 (design-doc) → K-2a (013 credential/event/key-check) → K-2b (herversleutelen R2a) → K-3
+(credential-endpoints) → LC-1 (014 schema) → LC-2 (profielen/DC/taakkoppeling) → K-4a (MINA-adapter, allowlist, scan/test) → K-4b
+(015 + ophaalrun, intake-refactor naar Service) → K-4c (herstel vastgelopen fetch-run) → F-1 (`/connections`) → F-2 (scherm 2:
+koppelen, "Nu ophalen", runlijst) → later S-0/S-1 scheduler.
+**Bron:** mens / denker-zwaar (`Ontwerp Leveringsconfiguratie/ConnectionProfile`) / business-analyse-leveranciersbibliotheken.md §14,
+§16.6 / docs/decisions.md 2026-09-25 (A2), 2026-09-26, 2026-09-27, 2026-09-29
+
+(DC-0 uitgevoerd: `docs/design/leveringsconfiguratie-design.md` nieuw, credentials-design §5/§6 definitief, `docs/openstaande-externe-punten.md`
+punt 7. Aannames A1, A2, A5, A8, A14 door de hoofdsessie tegen het dossier gecorrigeerd.)
+
+---
+
+## 2026-09-29 — K-2a uitgevoerd: credential-schema (013), entiteiten en sleutelcontrole bij opstart
+**Vraag:** Is bouwstap K-2a (`docs/design/leveringsconfiguratie-design.md` §10) afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-zwaar`, tests gedraaid door de hoofdsessie). Changeset `013-external-credential.sql` (additief):
+`external_credential`, `external_credential_event` (append-only), `secret_key_check`. Domain-entiteiten + enums, Dao
+(`ExternalCredentialRepository`, `ExternalCredentialEventRepository`, JDBC `SecretKeyCheckDao` met insert-if-absent),
+`SecretsService` uitgebreid met de key-check-AAD (K-1-gedrag ongewijzigd), `SecretKeyCheckVerifier` (`SmartInitializingSingleton`,
+vóór de HTTP-poort). `ConfigurationActorSubjectSchemaTest` opgehoogd naar 25 subjectkolommen op 17 tabellen. Geen endpoints.
+Tests (`run-full-tests.ps1`, eigen schema): `ExternalCredentialSchemaTest` 20, `SecretKeyCheckStartupTest` 9,
+`CredentialLeakDetectionTest` 3, `ConfigurationActorSubjectSchemaTest` 12, `PermissionHttpTest` 10; K-1-regressie `SecretCipherTest` 11,
+`SecretsPropertiesTest` 3, `SecretsStartupValidationTest` 8 — alle groen (76/76).
+**Invullingen van de Bouwer (nog voor te leggen aan de mens):** (1) elke sleutel in de ring wordt gecontroleerd, niet enkel de
+actieve (strenger dan A7); (2) extra event-checks: CREATED ⇒ geen `previous_key_id`, REENCRYPTED ⇒ beide ID's, REVOKED ⇒ geen
+`new_key_id`; (3) `created_by` not null; (4) `secret_key_check` zonder JPA-entiteit (merge zou een bestaande controlewaarde kunnen
+overschrijven); (5) opstartcontrole via `SmartInitializingSingleton`.
+**Door de mens beslist (2026-09-29):** (a) **pgjdbc `logServerErrorDetail=false`** op de datasource in alle profielen (ook de
+testrun), zodat "Failing row contains"-details (met ciphertext) nooit in exceptiemeldingen of logs belanden — bewust aanvaard dat
+ook bij andere databasefouten dat detail wegvalt; (b) **`bound_host`-normalisatie ook als additieve DB-check** (kleine letters, geen
+punt achteraan, niet leeg) naast de normalisatie in de K-3-service. De invullingen (1)-(5) van de Bouwer blijven zoals gebouwd.
+**Uitgevoerd (2026-09-29, `bouwer-gemiddeld`, tests door de hoofdsessie):** (a) `spring.datasource.hikari.data-source-properties.logServerErrorDetail: false`
+in `application.yml` (local/demo en het testscript overschrijven `hikari.*` niet); (b) additieve changeset `013-4-bound-host-normalized`
+(`ck_external_credential_bound_host_normalized`) + weigering in de `ExternalCredential`-constructor. Tests: `ExternalCredentialSchemaTest` 21,
+`CredentialLeakDetectionTest` 4, `SecretKeyCheckStartupTest` 9, `PermissionHttpTest` 10 — groen. Tegenproef: met de property tijdelijk op
+`true` faalt `CredentialLeakDetectionTest.aCheckViolationDoesNotEchoTheFailingRowWithItsCiphertext` (de test bewijst dus echt iets);
+property daarna teruggezet op `false`.
+
+---
+
+## 2026-09-29 — K-2b uitgevoerd: herversleutelen bij opstart (R2a)
+**Vraag:** Is bouwstap K-2b (`docs/design/leveringsconfiguratie-design.md` §10) afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, tests door de hoofdsessie). `SecretsRotationService` (Service, `SmartInitializingSingleton`) roept eerst
+expliciet `SecretKeyCheckVerifier.verify()` aan (callbackvolgorde is registratievolgorde, niet afhankelijkheidsvolgorde) en herversleutelt daarna
+ACTIVE-credentials onder een niet-actieve sleutel uit de ring. Per rij een eigen transactie met guard (`update … where id and ciphertext and
+encryption_key_id and status='ACTIVE'`), `REENCRYPTED`-event (SYSTEM, changed_by null, previous/new_key_id) enkel bij exact 1 geraakte rij.
+`secret_updated_*` blijft ongewijzigd. Rijen onder een keyId buiten de ring en REVOKED-rijen worden niet aangeraakt; een niet-ontsleutelbare rij
+geeft één WARN (`CREDENTIAL_UNDECRYPTABLE`, rij-id, keyId) en wordt overgeslagen. Repository: `findRotationCandidates`, `replaceCiphertextIfUnchanged`,
+`countRowsPerEncryptionKeyId` (operatorhulp, geen endpoint). Operatorprocedure sleutelrotatie in credentials-design §6. Geen schema, geen endpoints.
+Tests: `SecretsRotationTest` 11 (na een testfix: de referentie-`secretUpdatedAt` werd uit het in-memory object gelezen — 100-ns-precisie — i.p.v.
+uit de database — microseconden; productiecode ongewijzigd), `ExternalCredentialSchemaTest` 21, `CredentialLeakDetectionTest` 4,
+`SecretKeyCheckStartupTest` 9, `PermissionHttpTest` 10 — groen.
+**Invulling van de Bouwer, door de mens aanvaard ("ja", 2026-09-29):** een onverwachte `RuntimeException` op één rij wordt gelogd (enkel
+exceptietype) en breekt het opstarten niet af; de rij komt bij de volgende start opnieuw aan bod.
+**Bron:** hoofdsessie na verificatie (gerichte tests) / docs/design/credentials-sleutelbeheer-design.md
+
+---
+
+## 2026-09-29 — K-3: een ingetrokken credential mag heractiveerd worden
+**Vraag:** Mag een ingetrokken (`REVOKED`) credential later opnieuw een waarde krijgen (open gelaten in K-2a: "of een ingetrokken credential nog
+een nieuwe waarde mag krijgen, beslist K-3")? Opties: (a) nee, `REVOKED` is eindstatus (aanbevolen); (b) ja, heractiveren.
+**Beslissing:** Door de mens: **(b) heractiveren** (afwijkend van de aanbeveling). `PUT /credentials/{ref}/secret` op een `REVOKED`-credential
+versleutelt de nieuwe waarde met de actieve sleutel, zet de status terug op `ACTIVE` en schrijft een `REPLACED`-event (met verplichte reden;
+`previous_key_id` null omdat de oude ciphertext gewist is). Zelfde recht als vervangen (MANAGE). De historiek van de intrekking blijft in de
+events; de `revoked_*`-velden op de rij worden bij heractiveren leeggemaakt (de rij toont de huidige toestand). Bestaande profielversies die
+naar deze credential verwijzen, werken daarna weer. `credential_ref`, `secret_kind` en `bound_host` veranderen niet (AAD en host-binding blijven).
+**Bron:** mens / docs/decisions.md 2026-09-29 (K-2a) / docs/design/credentials-sleutelbeheer-design.md
+
+---
+
+## 2026-09-29 — K-3 uitgevoerd: credential-endpoints
+**Vraag:** Is bouwstap K-3 (`docs/design/leveringsconfiguratie-design.md` §10) afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-zwaar`, tests door de hoofdsessie). `CredentialService` (patroon `IssueCaseService`: `TransactionTemplate` per schrijfactie,
+rijlock `findByCredentialRefForUpdate`), `CatalogImportCredentialController` onder `/api/catalog-import/credentials` (POST aanmaken, PUT `/{ref}/secret`
+vervangen/heractiveren, POST `/{ref}/revoke`, GET lijst/detail/events), `service.support.HostNames` (hostnormalisatie; LC-2 moet die ook gebruiken).
+Alle zes endpoints MANAGE (ook de GET's, omdat elk antwoord `boundHost` bevat — L7b), niet achter de setup-vlag, 403 vóór 400/404/409. Antwoorden
+nooit secret, ciphertext, key-ID of subject. Foutcodes o.a. `CREDENTIAL_HOST_INVALID`, `CREDENTIAL_SECRET_KIND_NOT_SUPPORTED` (SSH_PRIVATE_KEY, A5),
+`CREDENTIAL_NOT_FOUND`, `CREDENTIAL_ALREADY_REVOKED` (409, geen event), `SECRETS_NOT_CONFIGURED`. `fase5-perm-design.md` §1 één rij toegevoegd.
+Tests: `CredentialHttpTest` 10, `PermissionCoverageTest` 2, `PermissionReadEndpointsHttpTest` 9, `PermissionWriteEndpointsHttpTest` 7; regressie
+`ExternalCredentialSchemaTest` 21, `CredentialLeakDetectionTest` 4, `SecretsRotationTest` 11, `PermissionHttpTest` 10 — groen (74/74).
+(`PermissionHttpTest` duurde 4194 s: in de log een sprong van ~67 min met Hikari "Thread starvation or clock leap detected" — vermoedelijk
+slaap/pauze van de machine, niet gerelateerd aan K-3; de test zelf slaagde.)
+**Afwijkingen van de Bouwer, door de mens aanvaard ("Ja ik ga akkoord", 2026-09-29):** (1) intrekken werkt ook zonder sleutelring (A8; V7 blokkeert enkel opslaan);
+(2) gebruik (aantal profielversies) nog niet in het antwoord — volgt in LC-2; (3) de schrijfendpoints lezen de JSON-body zelf i.p.v. `@RequestBody`,
+zodat een Jackson-parsefout de secret niet in Spring-logs kan herhalen; (4) strengere hostvalidatie (enkel ASCII letters/cijfers en `. - _ : [ ]`,
+≤ 255); (5) secret ≤ 1024 tekens en niet enkel witruimte; (6) tijdstempels op microseconden afgekapt.
+**Bron:** hoofdsessie na verificatie (gerichte tests) / docs/design/credentials-sleutelbeheer-design.md / docs/design/leveringsconfiguratie-design.md
+
+---
+
+## 2026-09-29 — LC-1 uitgevoerd: schema 014 (verbindingsprofiel, Leveringsconfiguratie), Domain en Dao
+**Vraag:** Is bouwstap LC-1 (`docs/design/leveringsconfiguratie-design.md` §10) afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, tests door de hoofdsessie). Changeset `014-delivery-configuration.sql` (014-1..014-7, met rollback):
+`connection_profile`, `connection_profile_version` (samengestelde FK naar `uk_external_credential_host_binding`, `credential_host = host`,
+auth/secret_kind-koppeling, poort 1-65535 default 22, hostnormalisatie zoals 013-4), `delivery_configuration`, `delivery_configuration_version`
+(`post_fetch_action` enkel `LEAVE`), `delivery_configuration_file_condition`, `acquisition_config_event` (patroon 012), en de nullable kolom
+`catalog_import_task.delivery_configuration_version_id` (FK + index; niets hernoemd). Domain-entiteiten + enums; versies onveranderlijk via JPA
+(`updatable = false`, geen setters; het project kent geen triggers en Domain heeft geen Hibernate-dependency). Dao-repositories minimaal (+ `countByCredentialId`
+voor het gebruik in het credentialantwoord, LC-2). `ConfigurationActorSubjectSchemaTest` → 30 subjectkolommen op 22 tabellen.
+Tests: `DeliveryConfigurationSchemaTest` 29, `ConfigurationActorSubjectSchemaTest` 12, `ExternalCredentialSchemaTest` 21, `CredentialHttpTest` 10,
+`PermissionHttpTest` 10 — groen (82/82). Rollbacks van 014 niet uitgevoerd.
+**Invullingen van de Bouwer, door de mens aanvaard ("top", 2026-09-29):** `config_hash` not null, `change_reason` nullable, `created_by` not null met
+subject ⇒ naam, `based_on_version_id` als self-FK, extra checks (`version_number >= 1`; username, remote_directory, compare_value, hostsleutelvelden niet leeg;
+group/sequence ≥ 0 — 0- of 1-gebaseerd beslist LC-2), `acquisition_config_event` zonder "minstens één verwijzing"-check, indexen op alle FK-kolommen.
+**Bron:** hoofdsessie na verificatie (gerichte tests) / docs/design/leveringsconfiguratie-design.md
+
+---
+
+## 2026-09-29 — LC-2 uitgevoerd: verbindingsprofielen, Leveringsconfiguraties en taakkoppeling (backend)
+**Vraag:** Is bouwstap LC-2 (`docs/design/leveringsconfiguratie-design.md` §10) afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-zwaar`, tests door de hoofdsessie). Nieuw: `ConnectionProfileService`, `DeliveryConfigurationService`,
+`TaskDeliveryConfigurationService`, `AcquisitionConfigInput`, drie controllers (`/connection-profiles`, `/delivery-configurations`,
+`/tasks/{id}/delivery-configuration` PUT/DELETE met reden in JSON-body). Alle endpoints MANAGE (ook lijst/detail, zoals K-3), niet achter de
+setup-vlag. A10 gebouwd: één check in `DeliveryIntakeService.resolve` → 409 `TASK_HAS_DELIVERY_CONFIGURATION` voor upload én servermap (ook retry).
+A11 en "lopende run" (PENDING/RUNNING) geserialiseerd via rijslot op alle taken van de koppeling. `CredentialView` + `/credentials` additief
+`profileVersionCount`. Keuzes: vingerafdruk OpenSSH `SHA256:<43 tekens base64, canoniek>`; algoritmen `ssh-ed25519`, `ecdsa-sha2-nistp256/384/521`,
+`rsa-sha2-256/512` (`ssh-rsa`/`ssh-dss` geweigerd); `config_hash` via bestaande `RevisionConfigHashes.hash` (lagen `connection_profile_version/v1`,
+`delivery_configuration_version/v1`); condities 1-gebaseerd, geen wildcards; map absoluut zonder `.`/`..`/`\`; max. grootte ≤ 1024³ (400 daarboven,
+nooit stil aangepast). Geen schemawijziging, geen nieuwe dependency.
+Tests: `ConnectionProfileHttpTest` 8, `DeliveryConfigurationHttpTest` 9, `TaskBindingHttpTest` 8, `CredentialHttpTest` 11, `DeliveryConfigurationSchemaTest` 29,
+`PermissionCoverageTest` 2, `PermissionReadEndpointsHttpTest` 10, `PermissionWriteEndpointsHttpTest` 8, `DeliveryUploadTest` 15, `LocalSourceDeliveryTest` 15,
+`LocalSourceDisabledTest` 5, `PermissionHttpTest` 10 — groen (130/130).
+**Nog voor te leggen aan de mens:** (1) het aanmaken van een profiel-/DC-versie schrijft geen `acquisition_config_event` (de check kent geen soort
+"aangemaakt"; audit staat in de versierij zelf) — een event vraagt een additieve verbreding van de check; (2) smal racevenster A10: een upload die
+zijn voorcontrole haalt vlak vóór een koppeling commit, kan nog een run starten — oplossing voorgesteld in K-4b (intake naar Service met slot);
+(3) K-4a moet het gescande RSA-sleuteltype (`ssh-rsa`) afbeelden op `rsa-sha2-256/512`.
+**Important technical constraint discovered (Bouwer):** een PESSIMISTIC_WRITE-query ververst een entiteit die al in de persistence context staat niet;
+daarom eerst enkel het koppelings-id (scalar query) en dan de taken met slot. Voorstel: terugschrijven naar design §11 na akkoord.
+**Door de mens niet expliciet beantwoord ("volgende", 2026-09-29):** de drie punten blijven zoals gebouwd — (1) geen aanmaak-event, (2) racevenster
+A10 mee te nemen in K-4b, (3) constraint niet teruggeschreven.
+**Bron:** hoofdsessie na verificatie (gerichte tests) / docs/design/leveringsconfiguratie-design.md
+
+---
+
+## 2026-09-29 — K-4a uitgevoerd: MINA SSHD, allowlist, hostsleutelscan en verbindingstests (zonder download)
+**Vraag:** Is bouwstap K-4a (`docs/design/leveringsconfiguratie-design.md` §10) afgerond en geverifieerd?
+**Beslissing:** Grotendeels (`bouwer-zwaar`, tests door de hoofdsessie). Apache MINA SSHD **2.15.0** (`sshd-common/-core/-sftp` in root-`dependencyManagement`,
+`sshd-core`+`sshd-sftp` in Service; Boot-BOM beheert het niet); geen BouncyCastle. `FetchHostPolicy` (`catalogimport.fetch.allowed-hosts` komma-lijst via
+`HostNames`; afwezig = 404 `FETCH_NOT_CONFIGURED`; ongeldige ingang/wildcard = fail-fast; één DNS-resolutie, verbinden op IP-literal via `FetchTarget`;
+`catalogimport.fetch.allow-loopback` default false voor 127/8 en ::1 (enkel tests/dev, WARN bij opstart); link-local incl. 169.254.169.254, multicast,
+0.0.0.0/::, 0/8, broadcast altijd geweigerd; private adressen enkel via de allowlist). `SftpConnector` (eigen `SshClient` per operatie,
+`HostConfigEntryResolver.EMPTY` — geen `~/.ssh/config`, enkel wachtwoord via `PasswordIdentityProvider` pas na hostsleutelcontrole, time-outs PT15S/PT15S/PT60S,
+listing-cap 10 000, geen download). `ConnectionTestService` + `CatalogImportConnectionTestController`: `POST /connection-profiles/host-key-scan`,
+`POST /connection-profile-versions/{id}/test`, `POST /delivery-configuration-versions/{id}/test` (MANAGE, niet achter de setup-vlag; events
+`HOST_KEY_SCANNED`/`CONNECTION_TESTED`). Scan van een host buiten de allowlist → 409 `FETCH_HOST_NOT_ALLOWED` (event wél geschreven); bij tests een
+200-uitkomst (§5). Min. ouderdom en max. grootte tellen niet mee in de DC-test (K-4b).
+**RSA-afbeelding (LC-2 open punt 3; door de mens bevestigd 2026-09-29):** een RSA-hostsleutel wordt gerapporteerd
+als `rsa-sha2-512` (anders `rsa-sha2-256`), nooit `ssh-rsa`; bij een vastgepinde RSA-sleutel biedt de client enkel rsa-sha2-512/256 aan; vergeleken
+wordt de vingerafdruk van de sleutel.
+Tests: `SftpConnectorTest` 13/14 (zie hieronder), `PermissionCoverageTest` 2, `FetchAllowlistTest` 9, `ConnectionTestHttpTest` 15,
+`PermissionReadEndpointsHttpTest` 10, `PermissionWriteEndpointsHttpTest` 8, `ConnectionProfileHttpTest` 8, `DeliveryConfigurationHttpTest` 9,
+`PermissionHttpTest` 10 — groen, op één na (99/100).
+**Open, bij de mens:** `SftpConnectorTest.ed25519WorksWithTheJdkAloneWithoutBouncyCastle` faalt: MINA SSHD 2.15.0 ondersteunt `ssh-ed25519`
+niet met de JDK alleen. De overige SFTP-tests draaien op ECDSA P-256. **Door de mens beslist (2026-09-29): BouncyCastle toevoegen**
+(`bcprov`, versie pinnen in root-`dependencyManagement`, runtime-dependency van Service) zodat MINA ed25519 ondersteunt; net.i2p eddsa (niet onderhouden)
+en "niet ondersteunen" verworpen. **Uitgevoerd:** `org.bouncycastle:bcprov-jdk18on` **1.80** (property + root-`dependencyManagement`, scope runtime in
+Service); test hernoemd naar `ed25519HostKeysAreSupported`. Hertest: `SftpConnectorTest` 14/14, `FetchAllowlistTest` 9, `ConnectionTestHttpTest` 15,
+`PermissionHttpTest` 10 — groen. K-4a daarmee volledig groen. BC-versie vóór productie nog op open CVE's te controleren.
+Ook niet getest: `REMOTE_PERMISSION_DENIED` (geen betrouwbare opzet op Windows).
+**Important technical constraints discovered (Bouwer):** `SshClient.setUpDefaultClient()` leest standaard `~/.ssh/config` (kan host/poort/ProxyJump
+buiten de allowlist omleiden) → `HostConfigEntryResolver.EMPTY` verplicht; `addPasswordIdentity` zou op DEBUG een digest van het wachtwoord loggen
+(te verifiëren) → `PasswordIdentityProvider`. Voorstel: terugschrijven naar design §11 na akkoord. **Door de mens aanvaard ("Ja", 2026-09-29) en
+in K-4b teruggeschreven naar design §11.**
+**Bron:** hoofdsessie na verificatie (gerichte tests) / docs/design/leveringsconfiguratie-design.md
+
+---
+
+## 2026-09-30 — K-4b uitgevoerd: ophaalrun ("Nu ophalen"), intake-refactor en racevenster A10
+**Vraag:** Is bouwstap K-4b (`docs/design/leveringsconfiguratie-design.md` §10) afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-zwaar`; twee fouten na de bouw hersteld door `bouwer-licht`: een multi-catch zonder gemeenschappelijke `getCode()` in
+`FetchRunService`, en een commentaarregel in 015 die met `-- changeset` begon en door Liquibase als header gelezen werd; tests door de hoofdsessie).
+Changeset `015-fetch-run.sql`: `task_run` + `trigger_source`, `delivery_configuration_version_id`, `outcome_code`, `outcome_message`, `pending_file_count`
+(nullable, geen backfill); nieuwe tabel `fetch_file_observation`; `ck_delivery_source_kind` verbreed met `SFTP` (enige niet-additieve stap; rollback enkel
+zolang er geen SFTP-levering is). Intake-refactor: `DeliveryIntakeService` herschreven (zelfde volgorde/meldingen; `registerInRun` voor een bestaande run),
+orkestratie intake → screening naar `DeliveryReceptionService.screenIfCreated`; endpoints, statuscodes en antwoorden van upload/servermap ongewijzigd.
+**Racevenster A10 opgelost:** upload-/servermapregistratie, taakkoppeling en start van een ophaalrun nemen hetzelfde rijslot op de taak.
+`FetchRunService` + `CatalogImportTaskRunController`: `POST /tasks/{id}/fetch-runs` (MANAGE, 201), `GET /tasks/{id}/runs` (READ, laatste 20),
+`GET /task-runs/{id}` (READ, met waarnemingen). Watermark = laatste waarneming met geregistreerde levering van de taak (over DC-versies heen),
+vergeleken op (mtime in seconden, naam). Archief wordt bij falen opgeruimd (enkel een procescrash laat een wees-object — K-4c).
+Docs: design §0/§3.3/§4.6/§6/§10/§11 (incl. de K-4a-constraints), README en handleiding (handmatig ophalen via API; nog geen scheduler, geen Frontend).
+Tests (5 groepen): `SftpConnectorTest` 14, `SftpDownloadTest` 7, `FetchIdempotencyTest` 7, `FetchRunTest` 15, `PermissionCoverageTest` 2,
+`BatchBaselineHttpTest` 14, `DeliveryUploadTest` 15, `LocalSourceDeliveryTest` 15, `LocalSourceDisabledTest` 5, `ScreeningRecoveryServiceTest` 3,
+`ConnectionTestHttpTest` 15, `PermissionHttpTest` 10, `TaskBindingHttpTest` 8, `ConfigurationActorSubjectSchemaTest` 12, `DeliveryConfigurationSchemaTest` 29,
+`PermissionReadEndpointsHttpTest` 11, `PermissionWriteEndpointsHttpTest` 8, `FetchAllowlistTest` 9 — groen (199/199). **"Geen server-side ophaling"
+(2026-09-26) vervalt hiermee; "geen scheduler" blijft.**
+**Invullingen van de Bouwer, door de mens aanvaard ("Ja akkoord", 2026-09-30):** (1) revisie-, prijsveld- en bookmarkcontroles van de upload ook als voorcontrole van
+een ophaalrun (409, geen run); (2) nieuwe code `FETCH_INTERNAL_ERROR` (run FAILED, 500); (3) geen `TASK_NOT_MANUAL`-controle bij ophalen en de
+`active`-vlag van DC/profiel wordt niet gecontroleerd; (4) `FETCH_NOT_CONFIGURED` vóór de taak-404; (5) bestand zonder mtime of met mtime in de
+toekomst → `TOO_YOUNG`; (6) `outcome_code` blijft `FETCHED` als de screening daarna technisch faalt (run FAILED, batch `SCREENING_FAILED`);
+(7) runlijst zonder waarnemingen, met extra `batchStatus` en `triggeredBy`; (8) na herkoppelen naar een andere map worden bestanden van vóór de
+watermark nooit meer opgehaald (wel zichtbaar).
+**Bron:** hoofdsessie na verificatie (gerichte tests) / docs/design/leveringsconfiguratie-design.md
+## 2026-09-30 — Frontend-restyle naar de Prodis-look & feel
+**Vraag:** De CatalogImport-frontend ziet er compleet anders uit dan Prodis; hoe trekken we die gelijk?
+**Beslissing:** Referentie is `C:\Users\Willem\IdeaProjects\Prodis\Web\src\main\webapp\app` (React + MUI 7, "Minimal"-thema). CatalogImport blijft
+**standalone** (niet inbedden; geen impact op login/routing). **Geen MUI** overnemen: de stijl wordt in eigen CSS nagebootst via `src/styles/tokens.css`
++ `reset.css` en de bestaande CSS-modules. Keuzes van de mens: (1) **zijbalk links zoals Prodis** (wit, ca. 300px, header erboven) i.p.v. een topbalk;
+titel "CatalogImport" als tekst, **geen logo**; (2) fonts **Public Sans Variable** (tekst) en **Barlow** (h1-h3) als npm-dependency
+(`@fontsource-variable/public-sans`, `@fontsource/barlow`, lokaal gebundeld); (3) **primaire knop donkergrijs `#1C252E`** (Prodis-default), cyaan
+`#00B8D9` enkel als accent, links/actief menu in `#006C9C`. Tokens (uit Prodis `theme\core`): tekst `#1C252E`/`#637381`/`#919EAB`; achtergrond `#FFFFFF`,
+neutral `#F4F6F8`, grijs 300 `#DFE3E8`; rand `rgba(145,158,171,.2)` (outlined knop `.32`); error `#FF5630`, success `#22C55E`, warning `#FFAB00`,
+info `#00A76F`; radius 6/8/16px; tabelkop `#F4F6F8`/`#637381`/600 met dashed rijscheiding; labels soft (kleur op 16%, tekst in darker-tint);
+dialog/card radius 16px. Uitvoering in sequentiële slices: 1 tokens+reset+fonts, 2 shell (`App.tsx`, `NavLink`), 3 ActorBar, 4 gedeelde componenten,
+5 pagina-CSS (enkel harde waarden → tokens), 6 build/lint/gerichte vitest. Functionaliteit en API-contracten ongewijzigd.
+**Bron:** denker-gemiddeld (analyse Prodis-thema) + mens (navigatie, fonts, knopkleur, standalone, geen logo)
+
+---
+
+## 2026-09-30 — K-4c uitgevoerd: herstel van een vastgelopen ophaalrun
+**Vraag:** Is bouwstap K-4c (`docs/design/leveringsconfiguratie-design.md` §10) afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, tests door de hoofdsessie). `FetchRunRecoveryService` (precedent `PublicationRunService.abortRun` en
+`ScreeningRecoveryService`): `POST /task-runs/{runId}/abort {reason}` (MANAGE, 200 met `TaskRunView`; FAILED, `FETCH_MANUALLY_ABORTED`, actor + reden in
+`outcome_message`, concurrency-token vrij; 400 `FETCH_ABORT_REASON_REQUIRED`, 404 `TASK_RUN_NOT_FOUND`, 409 `FETCH_RUN_NOT_STUCK` voor een niet-RUNNING run,
+een niet-ophaalrun of een run met levering; niet achter de allowlist). Opstartherstel achter `catalogimport.fetch.recovery-on-startup` (default true):
+MANUAL_/SCHEDULED_FETCH-runs in RUNNING zonder levering en ouder dan `catalogimport.fetch.stuck-after` (default PT60M, fail-fast bij ongeldig/≤0) → FAILED
+`FETCH_TIMED_OUT`. Race: afbreken, herstel, `registerInRun` en `FetchRunService.close` nemen allemaal het rijslot op de taak en herlezen de status
+(`close` kreeg dat slot erbij). Geen schemawijziging. Tests: `FetchRunRecoveryTest` 10, `FetchRunTest` 15, `FetchIdempotencyTest` 7, `ScreeningRecoveryServiceTest` 3,
+`PublicationRunHttpTest` 14, `PermissionCoverageTest` 2, `PermissionWriteEndpointsHttpTest` 8, `PermissionHttpTest` 10 — groen (69/69).
+**Invullingen van de Bouwer (nog voor te leggen aan de mens):** (1) afbreken zonder tijdsvoorwaarde (zoals het publicatieprecedent): ook een verse
+RUNNING ophaalrun zonder levering; de drempel geldt enkel voor het automatische herstel; (2) geen automatisch herstel bij de eerstvolgende aanvraag
+(enkel bij opstart); (3) wees-archiefobject na een procescrash wordt niet opgeruimd (uuid-pad zonder run-id — bekende beperking).
+**Bron:** hoofdsessie na verificatie (gerichte tests) / docs/design/leveringsconfiguratie-design.md
+
+---
+
+## 2026-09-30 — Gebruiker richt zelf een nieuwe leverancier + taak in (MANAGE)
+**Vraag:** Een eindgebruiker kan vandaag geen nieuwe leverancier van nul inrichten: bronorganisatie, sjabloon/bladwijzers en taak zijn
+enkel via de API aan te maken, en de schrijf-endpoints bestaan enkel met `catalogimport.setup-api.enabled=true` (alleen het demo-profiel).
+Moet dat in de applicatie zelf kunnen?
+**Beslissing:** Door de mens: **ja — een gebruiker MOET een leverancier en een taak zelf kunnen aanmaken in de UI, met het recht `MANAGE`.**
+Het verhaal voor de gebruiker bestaat uit **twee grote blokken: (1) aanmaken van een nieuwe taak** (inclusief wat daarvoor nodig is:
+leverancier, CSV-beschrijving, koppeling) en **(2) controleren ervan**. De concrete invulling (schermen, wat "controleren" precies inhoudt,
+wat er met de setup-vlag gebeurt, bouwvolgorde) volgt uit een denker-zwaar-ontwerp en wordt aan de mens voorgelegd vóór er gebouwd wordt.
+**Aanvulling door de mens (zelfde dag):** ook de controle moet **heel duidelijk** zijn voor de gebruiker. Engelse termen in de UI
+(statussen zoals `SCREENED`/`AWAITING_APPROVAL`, enumwaarden, technische veldnamen tussen haakjes, foutcodes) worden **vertaald naar
+begrijpelijk Nederlands**, en ook een Nederlandse term krijgt **een korte uitleg van wat het betekent en wat het doet** (hulptekst bij het
+veld, de status of de knop). Geldt zeker voor de twee nieuwe blokken; de rest van de UI volgt dezelfde regel (reikwijdte en volgorde in het
+ontwerp).
+**Bron:** mens
+
+---
+
+## 2026-09-30 — Nieuwe leverancier + taak (NT-spoor): V1-V7 beslist
+**Vraag:** Beslisdossier denker-zwaar `Nieuwe leverancier en taak inrichten in de UI (MANAGE) + controleren + terminologie` (2026-09-30),
+vragen V1-V7.
+**Beslissing (door de mens, via meerkeuze):**
+- **V1 controleren = C + A + D:** (C) gereedheidscontrole/checklist zonder bestand, (A) proefinlezing zonder opslag op de (concept)versie,
+  én (D) de eerste echte levering blijft als laatste controle gelden (bestaand gedrag, geen bouwwerk). Testlevering met bewaard bewijs (B)
+  wordt **niet** gebouwd.
+- **V2 setup-vlag = a:** de schrijfpaden voor inrichten (bronorganisatie, definitie, revisie, PATCH revisie, mappings/filters/kritiekheid,
+  activeren, opvolger, koppeling, taak, sjablonen lezen + materialiseren, bookmarkwaarden koppeling) komen achter `catalogimport.setup-api.enabled`
+  vandaan, **zelfde paden en bodies**, recht MANAGE (lezen READ). Achter de vlag blijven enkel sjabloonbeheer (bookmarks/usages declareren) en
+  `GET /setup/overview`. Gedeeltelijke herroeping van 26/09 (V4-herroeping) en van 27/09 ("scherm 1b blijft volledig achter de vlag").
+  Deelvraag (sjabloon aanmaken via dit pad met Beheren): conform aanbeveling ja, zonder extra controle.
+- **V3 taak = a:** aparte laatste stap in het stappenplan met het bestaande `POST /setup/tasks`; materialiseren blijft géén taak maken.
+- **V4 eigenaar gematerialiseerde definitie = a:** blijft de bronorganisatie van het sjabloon (keuze 4 van 23/09, A31 ongewijzigd); een
+  rechtstreeks leverende leverancier gebruikt "zelf beschrijven".
+- **V5 audit = b (nee, afwijkend van de aanbeveling):** geen `created_by`-kolommen op bronorganisatie/koppeling/taak en geen `updated_by` op
+  revisie; enkel serverlog. Story NT-2 vervalt; geen schemawijziging in dit spoor.
+- **V6 activeren = a:** geen verplichte proefinlezing; wel een duidelijke waarschuwing bij activeren zonder (geslaagde) proefinlezing.
+  De afwijking van BA1 §14.19 (zes verplichte resultaten vóór activering, ontdekking O5) is daarmee bewust aanvaard.
+- **V7 codes = a:** Nederlandse tekst vooraan; technische code klein en inklapbaar onder "Technische details (voor support)" en als tooltip op
+  statuslabels. Regel "de code staat altijd in beeld" (`frontend-scherm3-bundel-design.md:277-279`) wordt "de code is altijd opvraagbaar".
+  **`docs/handleiding/begrippen.md` wordt de enige redactionele bron** van woorden + uitleg; de frontend-woordenlijst volgt, een test bewaakt gelijkloop.
+**Aannames uit het dossier (bindend tenzij herroepen):** A1 wizard maakt enkel OWN_DEFINITION; A2 geen extra mappings in de eerste versie
+(geen leesendpoint veldcatalogus, O3); A3 herkenningsversie standaard 2; A4 proefinlezing begrensd door max. uploadgrootte + property
+voorbeeldregels (default 20), één INFO-logregel zonder inhoud; A5 doelbibliotheek wordt niet tegen Prodis gecontroleerd (zo gemeld in de checklist).
+**Bouwvolgorde (sequentieel):** NT-1 (UploadPage/codes.ts-teksten, licht) → NT-3 (vlag, 409 i.p.v. 500 bij gelijktijdig aanmaken, stabiele `code`
+op 400, zwaar) → NT-4 (`TaskRow` + `activeRevisionId`/`importDefinitionId`, licht) → NT-5 (terminologiebasis `Frontend/src/terms/`, `<Term>`,
+StatusBadge met domein, gemiddeld) → NT-6 (wizard "zelf beschrijven", zwaar) → NT-7 (sjabloonpad + taken in boom, gemiddeld) → NT-8
+(gereedheidsendpoint `GET /import-links/{id}/readiness`, READ, zwaar) → NT-9a (contract proefinlezing, denker-gemiddeld) → NT-9
+(`POST /revisions/{id}/trial-reads`, MANAGE, zwaar) → NT-10 (scherm "Controleren", zwaar) → NT-11a/b/c (terminologie bestaande schermen) →
+NT-12 (documentatie).
+**Bron:** mens / denker-zwaar (beslisdossier 2026-09-30)
+
+---
+
+## 2026-09-30 — NT-1 uitgevoerd: misleidende teksten over taken rechtgezet
+**Vraag:** Is NT-1 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-licht`, na één reviewronde; tests door de hoofdsessie). `UploadPage.tsx`: zonder manuele taak "Er is nog geen taak.
+Maak er een via Inrichting → Nieuwe leverancier en taak (recht Beheren nodig)." (link naar `/setup`), kopcommentaar verwijst naar het NT-spoor;
+`errors/codes.ts` `NO_ACTIVE_REVISION.whatNow`: "Activeer de conceptversie onder Inrichting (open de versie → "Revisie activeren")."; `SetupOverviewPage.tsx`
+`TASKS_UNAVAILABLE_TEXT`: "Taken van deze koppeling staan nog niet in dit overzicht; u kiest ze bij Levering uploaden." Tests bijgewerkt.
+`tsc -p tsconfig.app.json --noEmit` schoon; vitest 28 bestanden, 336/336 groen.
+**Bron:** hoofdsessie na verificatie
+
+---
+
+## 2026-09-30 — NT-3 uitgevoerd: inrichtpaden zonder setup-vlag, 409 bij race, `code` op 400
+**Vraag:** Is NT-3 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-zwaar`, tests door de hoofdsessie). `CatalogImportSetupController`, `CatalogImportTemplateController` en
+`CatalogImportLinkController` zonder `@ConditionalOnProperty`; nieuwe `CatalogImportSetupOverviewController` (`GET /setup/overview`, READ) en
+`CatalogImportTemplateDeclarationController` (bookmark-/usage-declaratie, MANAGE) blijven achter de vlag. Paden, bodies en `@RequiresPermission`
+ongewijzigd. `SetupService`: `DataIntegrityViolationException` op `uk_source_organisation_code`, `uk_import_definition_code`, `uk_import_link_code`
+(voorrang), `uk_import_link_scope`, `uk_catalog_import_task_name` → dezelfde `*_IN_USE`-409; andere violations ongewijzigd. 400's uit SetupService
+dragen `code` (`CONFIG_*`; veldfouten `<VELD>_REQUIRED|_TOO_LONG|_INVALID`, bv. `DELIMITER_REQUIRED`, `DISCOUNT_CODE_FIELD_INVALID`,
+`FIELD_KEY_INVALID`, `CRITICALITY_INVALID`); `error`-tekst byte-identiek. Docs: controller-javadoc, `SetupService`, `application.yml`-commentaar,
+`fase5-perm-design.md` §1/§5. Frontend ongewijzigd (vlagmeldingen reageren enkel op 404 zonder code).
+Tests (`run-full-tests.ps1`, 14 klassen): 140/140 groen, 0 falend — o.a. nieuw `SetupCreateConflictAndCodeHttpTest` (echte gelijktijdigheid +
+deterministisch via vastgehouden sleutel en `pg_blocking_pids`, alle vijf constraints), nieuw `SetupApiFlagOnlyPermissionHttpTest`, herschreven
+`SetupApiDisabledTest`, `PermissionCoverageTest` (map ongewijzigd), `PermissionWrite/ReadEndpointsHttpTest` met vlag uit.
+**Important technical constraint discovered (Bouwer):** zonder vlag geeft `POST /templates/{d}/revisions/{r}/bookmarks` **405** i.p.v. 404
+(GET op hetzelfde pad bestaat nu altijd). Onbereikbaar, niets geschreven. **Ligt bij de mens** (aanbeveling: aanvaarden).
+**Nog open (buiten scope NT-3):** mogelijke 500 bij gelijktijdige `createRevision` op dezelfde definitie en bij gelijktijdige mapping/filter/kritiekheid
+op dezelfde DRAFT; 400 zonder code bij onleesbare body/ongeldige enum (Jackson), te lange changeReason bij opvolger, en veldfouten in
+TemplateMaterialisation-/TemplateBookmark-/LinkBookmarkValueService. Verouderde vlagcommentaren in frontend-`api/*` en README/handleiding → NT-12.
+**Bron:** hoofdsessie na verificatie (gerichte tests) / beslisdossier NT 2026-09-30
+
+---
+
+## 2026-09-30 — NT-4 uitgevoerd: takenlijst met `importDefinitionId` en `activeRevisionId`
+**Vraag:** Is NT-4 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-licht`, één reviewronde voor een onvolledige testfixture; tests door de hoofdsessie). `TaskQueryService.TaskRow` additief
+`long importDefinitionId` + `Long activeRevisionId` (null zonder ACTIVE-revisie); batchquery `ImportDefinitionRevisionRepository.findActiveRevisionsByDefinitionIds`
+(geen N+1). Frontend `TaskRow` in `api/types.ts` uitgebreid; geen UI-wijziging. Tests: `CatalogImportTaskHttpTest`, `PermissionReadEndpointsHttpTest`,
+`PermissionCoverageTest`, `DeliveryUploadTest` — 33/33 groen; `tsc` schoon.
+**Bron:** hoofdsessie na verificatie (gerichte tests)
+
+---
+
+## 2026-09-30 — NT-5 uitgevoerd: terminologiebasis (woordenlijst, `<Term>`, StatusBadge met domein)
+**Vraag:** Is NT-5 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, tests door de hoofdsessie). `Frontend/src/terms/` (`dictionary.ts`, `term(domein, code)` met veilige terugval,
+`Term`, `WhatIsThis`, `TechnicalDetails`); `StatusBadge` met verplichte `domain` (Nederlands label, tooltip = uitleg + code; V7) op 19 plaatsen in 13
+bestanden; `Field` optionele `help`. 16 domeinen (o.a. batchStatus, validationResult, mutationStatus/-Action, bundleStatus, revisionStatus, targetMode,
+organisationType, taskTrigger, identityProfile, fieldReferenceKind, severity, criticality, creationPolicy, en extra issueCaseStatus en publicationRunStatus).
+`docs/handleiding/begrippen.md` sectie "Woordenlijst voor de schermen" = redactionele bron (tabellen met marker `<!-- terms:<domein> -->`); sync-test
+`terms.test.ts` bewaakt gelijkloop en weert ruwe codes in labels/uitleg. `SOURCE_ORGANISATION_TYPE_LABELS` vervangen door `<Term>`.
+`tsc` schoon; vitest 30 bestanden, 396/396 groen.
+**Invullingen van de Bouwer (ter nalezing door de mens):** woorden en uitleg voor waarden buiten het dossiervoorstel (o.a. 'Controlebibliotheek',
+'Echte publicatie', severity, criticality, publicationRunStatus, `AUTOMATIC`/`THRESHOLD_EXCEEDED`); bij beslissingen kiest het domein zich op `decisionScope`;
+`issueCasePolicy.ts ACTION_LABELS` ongewijzigd (acties, geen status). Overige ruwe teksten (werkvoorraadtegels, uploadresultaat, meldingen) → NT-11.
+**Bron:** hoofdsessie na verificatie
+
+---
+
+## 2026-09-30 — NT-6 uitgevoerd: wizard "Nieuwe leverancier en taak" (zelf beschrijven)
+**Vraag:** Is NT-6 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-zwaar`, tests door de hoofdsessie). Frontend-only. Route `/setup/new` (`features/setup/wizard/*`, `api/setupCreate.ts`):
+leverancier → startpunt (sjabloon = link naar Sjablonen) → beschrijving (OWN_DEFINITION + versie 1 DRAFT) → koppeling → taak (MANUAL) → samenvatting
+met knop "Controleer en activeer de conceptversie" (opent revisiedetail in Inrichting). Elke stap persistent; hervatten via `?organisationId/definitionId/linkId`;
+409 `*_IN_USE` met expliciet "Doorgaan met de bestaande" (enkel zelfde ouder); herlezen vóór herhaling na netwerkfout; 400-`code` bij het juiste veld.
+Inrichting: knop (MANAGE, anders uitgeschakeld met reden) + "Verder inrichten". UploadPage: taak zonder actieve versie zichtbaar maar uitgeschakeld
+"(nog niet klaar: versie niet geactiveerd)". Nieuwe woordenlijstdomeinen `revisionField`, `setupField` (ook in begrippen.md); ~40 nieuwe `codes.ts`-entries.
+Wizard activeert nooit; drempels niet meegestuurd (serverdefaults), herkenningsversie 2 (A3). `tsc` schoon; vitest 31 bestanden, 424/424 groen.
+**Invullingen van de Bouwer (ter nalezing):** scheidingsteken keuze ; , | of ander teken zonder default; aanhalingsteken " voorgeselecteerd; tekenset UTF-8
+voorgeselecteerd; herkenning zonder default (expliciet kiezen); overname van bestaande definitie enkel OWN_DEFINITION; drempeldefaults in stap 3 hardgecodeerd
+(informatief; stap 6 toont serverwaarden).
+**Important technical constraints discovered (Bouwer):** (1) tab als scheidingsteken onmogelijk via setup-API (`requireText` trimt) — bekend sinds S1-F4;
+(2) `createRevision` heeft geen guard/DB-sleutel tegen een tweede DRAFT op dezelfde definitie (enkel `successor` bewaakt "hoogstens één") — twee tabbladen
+kunnen twee DRAFTs maken; **ligt bij de mens**; (3) geen get-by-id/-code voor organisatie/definitie/koppeling: de wizard bladert door lijsten.
+**Bron:** hoofdsessie na verificatie
+
+---
+
+## 2026-09-30 — NT-7 uitgevoerd: sjabloonpad in de wizard, "Taak toevoegen", taken in de inrichtingsboom
+**Vraag:** Is NT-7 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, één reviewronde voor twee testfouten — componenten ongewijzigd; tests door de hoofdsessie). Frontend-only.
+`TemplateStep` (sjablonen gefilterd op de bronorganisatie van stap 1, V4=a; enkel niet-DRAFT-versies; bij aankoopvereniging eerst leverancier kiezen/aanmaken)
+→ bestaand `MaterialiseForm` (`defaultSupplierCode`) → hervatten op de taakstap (V3=a, geen taak bij materialiseren); ontbrekende verplichte
+koppelingsbladwijzers zichtbaar. Sjablonenpagina: `AddTaskAfterMaterialise` ("Taak toevoegen", MANAGE). Inrichtingsboom: `LinkTasks` per koppeling (naam,
+trigger via `<Term>`, "nog niet klaar: versie niet geactiveerd"), "Taak toevoegen"; één takenverzoek per koppeling. `codes.ts`: "Er is niets aangemaakt"
+i.p.v. "niets gematerialiseerd"; MaterialiseForm-modi Nederlands. `tsc` schoon; vitest 32 bestanden, 433/433 groen.
+**Invullingen van de Bouwer (ter nalezing):** leverancierskeuze bij aankoopvereniging altijd verplicht (ook als een bladwijzer ze invult); lokale vertaling van
+waarschuwing `LINK_SEARCH_SUPPLIER_NOT_DERIVED`; MaterialiseForm blijft deels technisch (→ NT-11).
+**Bron:** hoofdsessie na verificatie
+
+---
+
+## 2026-09-30 — NT-8 uitgevoerd: gereedheidscontrole `GET /import-links/{id}/readiness`
+**Vraag:** Is NT-8 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-zwaar`, tests door de hoofdsessie). Nieuw `ChainConfigurationChecks` = enige implementatie van de "mag dit starten?"-controles
+(intake: `TASK_NOT_MANUAL`, `TASK_HAS_DELIVERY_CONFIGURATION`, `NO_ACTIVE_REVISION`, `CONFIG_PRICE_FIELD_MISSING`, `CONFIG_REQUIRED_BOOKMARK_MISSING`;
+activatie: configuratie + DEFINITION-bookmarks); `DeliveryIntakeService`, ophaalrun en `SetupService.activateRevision`/`validateConfiguration` delegeren
+met `throwFirst` — code, status, tekst en volgorde ongewijzigd. `ImportLinkReadinessService` (read-only) + endpoint (READ, niet achter de vlag, 404
+`LINK_NOT_FOUND`). Antwoord `{linkId, ready, checks:[{code, status OK|PROBLEM|INFO, subject{type,id}, detail}]}`; nieuwe codes READY_*, `LINK_HAS_NO_TASK`,
+INFO_LINK_INACTIVE, INFO_NO_DRAFT_REVISION, INFO_LIBRARY_NOT_VERIFIED (A5), terugval CONFIG_INVALID. Frontend: types + `getImportLinkReadiness` (geen UI).
+Tests (12 klassen, o.a. nieuw `ImportLinkReadinessHttpTest` met pariteit upload/activatie): 126/126 groen; `tsc` schoon.
+**Beperking (voorstel hoofdsessie: aanvaarden, nog te bevestigen door de mens):** binnen de configuratiefabrieken (`SourceStructureConfigFactory`,
+`ImportMappingConfigFactory`, ook door de screening gebruikt) komt per concept hoogstens één `CONFIG_*`-code terug (de eerste); de overige controles verschijnen
+wel allemaal tegelijk. "Alles verzamelen" binnen de fabrieken raakt de screening en is een aparte, additieve keuze.
+**Invullingen van de Bouwer (ter nalezing):** `ready` = geen PROBLEM (ook één ophaaltaak maakt "niet klaar"); inactieve koppeling enkel INFO (pariteit);
+geen valuta-, `TASK_RUN_IN_PROGRESS`- of `task.active`-controle; LINK-bookmarks al gemeld bij een concept terwijl invullen pas na activeren kan (UI NT-10 moet
+dat uitleggen); `TemplateMaterialisationService` behoudt een eigen kopie van de fabrieksvalidatie.
+**Bron:** hoofdsessie na verificatie (gerichte tests)
+
+---
+
+## 2026-09-30 — NT-9a: contract proefinlezing vastgelegd
+**Vraag:** Hoe ziet de proefinlezing (V1-A) er precies uit?
+**Beslissing:** Contract `docs/design/proefinlezing-design.md` (denker-gemiddeld; geen §6-vragen). Kern: `POST /revisions/{id}/trial-reads`
+(multipart `file`, optioneel `linkId` enkel voor de vaste valuta), MANAGE, niet achter de vlag; DRAFT/ACTIVE/SUPERSEDED; altijd 200 bij voltooide proef
+met `verdict` WOULD_BLOCK|NO_BLOCKER_FOUND (eerste blokkade in screeningvolgorde); tellers 1-op-1 met de screening (`null` = niet vastgesteld);
+header met alle ontbrekende verplichte kolommen; eerste 20 voorbeeldrijen zoals geïnterpreteerd (prijs ruw + geparsed, nooit gecorrigeerd);
+issuegroepen met dezelfde codes/classificatie; drempels (kritiek als ondergrens); `notEvaluated` (o.a. creatiedrempel) als INFO; niets bewaard,
+geen inhoud in logs, pure functie. Refactor: gedeelde `RecordScreeningCore`, additieve sinkhook, zonder screeninggedrag te wijzigen.
+Aannames A-1..A-8 (zie design §8), incl. U+FFFD-teller `linesWithReplacementCharacter` als tekenset-hint.
+**Bron:** denker-gemiddeld (contractdossier NT-9a) / docs/design/proefinlezing-design.md
+
+---
+
+## 2026-09-30 — NT-9 uitgevoerd: proefinlezing `POST /revisions/{id}/trial-reads`
+**Vraag:** Is NT-9 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-zwaar`, build en tests door de hoofdsessie). Refactor zonder gedragswijziging: `CsvRecordStreamer.Sink` additieve
+default-hooks `header(...)` en `physicalLine(...)`; nieuw `support.RecordScreeningCore` (beslisboom + tellerregels, `StagingSink` = adapter);
+`DeliveryScreeningService.loadConfiguration`; `IssueAggregationService.isBulk/share/effectiveBulkSharePercent` publiek static; `ThresholdEvaluator.leading`.
+Nieuw `TrialReadService` + `CatalogImportTrialReadController` (MANAGE, niet achter de vlag), properties `catalogimport.trial-read.*`, één INFO-logregel
+zonder inhoud. Frontend: types + `api/trialReads.ts` (geen UI). Tests (30 klassen incl. nieuw `TrialReadHttpTest` met pariteit tegen echte upload,
+`RecordScreeningCoreTest`, en de volledige screeningregressie): 329/329 groen; `tsc` schoon.
+**Afwijkingen van het contract (voorstel hoofdsessie: aanvaarden; nog te bevestigen door de mens):** D-1 extra sinkhook `physicalLine` voor een exacte
+U+FFFD-teller; D-2 `duplicateIdentityCount` = gemeten 0 waar de screening op het drempel-/`SOURCE_NO_DATA_RECORDS`-blokkeerpad null laat
+(pariteitstest aanvaardt null of 0); D-3 bij een leesblokkade blijven `issueOccurrencesBySeverity` en `issueGroups` gevuld (zoals de screening
+`warning_count`/groepen vastlegt), enkel de recordtellers zijn null.
+**Invullingen van de Bouwer (ter nalezing):** `SOURCE_FILE_EMPTY` = stage READING; `configProblems` ook voor CONFIG_* uit de leesfase; voorbeeldcap per
+issuegroep (code+veld); bij bereikte identiteitsgrens teller altijd null; eigen Engelse blokkeerteksten op drempels; percentages `stripTrailingZeros`.
+**Mogelijke ontdekking (nog niet teruggeschreven):** de screening laat `duplicate_identity_count` null op het blokkeerpad van drempels en "geen datarecords".
+**Bron:** hoofdsessie na verificatie (build + gerichte tests) / docs/design/proefinlezing-design.md
+
+---
+
+## 2026-09-30 — NT-10 uitgevoerd: scherm "Controleren" (blok 2)
+**Vraag:** Is NT-10 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-zwaar`, tests door de hoofdsessie). Frontend-only. Route `/setup/links/:linkId/check` (`features/setup/check/*`): checklist uit
+readiness (per regel status, Nederlandse zin, "Wat moet ik doen?" met link; NT-8-beperkingen uitgelegd; techniek enkel in `TechnicalDetails`), proefinlezing
+(MANAGE; banner "Er wordt niets opgeslagen of gepubliceerd"; oordeel, tellers met "—" voor null, kolommen, "Zo lezen we uw bestand", foutgroepen, grenzen,
+"Niet gecontroleerd in een proef", tekenset-hint; enkel paginatoestand), activeren (bestaande actie; V6-waarschuwing zolang de laatste proef met deze versie
+op deze pagina niet geslaagd is; checklist herladen), en "Wat nu?". Links vanuit wizard-samenvatting, inrichtingsboom en UploadPage. 13 nieuwe
+woordenlijstdomeinen (o.a. `issueCode` met 88 codes) identiek in begrippen.md; `codes.ts` + `FILE_REQUIRED`, `LINK_NOT_OF_REVISION_DEFINITION`.
+`tsc` schoon; vitest 33 bestanden, 487/487 groen.
+**Nog technisch/ruw (→ NT-11):** verplichte R-CASE-03-tekst in de activeringsdialoog ("(status REJECTED)", "importdefinitie"); `ErrorBanner` technische regel;
+`LinkBookmarkValuesSection` ("Bookmarkwaarden"). **Ter nalezing door de mens:** de ~88 `issueCode`-teksten en overige nieuwe woorden in begrippen.md.
+**Hiermee zijn beide blokken van het gebruikersverhaal functioneel af** (aanmaken: NT-3/4/6/7; controleren: NT-8/9/10). Rest: NT-11a/b/c, NT-12.
+**Bron:** hoofdsessie na verificatie
+
+---
+
+## 2026-09-30 — NT-11a uitgevoerd: terminologie werkvoorraad, batch, upload, foutmeldingen
+**Vraag:** Is NT-11a afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, één reviewronde: de guard-detector plakte tekstknopen aaneen en miste losse enumwoorden — detector hersteld,
+zelftest ongewijzigd; tests door de hoofdsessie). Werkvoorraad, batchdetail (incl. foutgroepen, problemen, levering), `BatchActions`, gedeelde
+`MutationList`, uploadresultaat via `Term`/`StatusBadge`/`IssueCodeTerm`/`CounterLabel`; `ErrorBanner` technische regel in `TechnicalDetails` (V7);
+`codes.ts` zonder ruwe codes in uitleg, Nederlandse familie-terugvaltitels. 7 nieuwe domeinen (`batchCounter`, `mutationStatusReason`, `changePart`,
+`discountCodeState`, `referenceType`, `issueIncidentKind`, `issueHandlingStatus`) + 2 `issueCode`s, ook in begrippen.md. Guard `noRawCodes.test.tsx`.
+**UI-contractwijziging:** het intypwoord voor "Aanvaarden als nulmeting" is `NULMETING` (was `BASELINE`); handleiding (`csv-importeren.md`, `handleiding/README.md`)
+bijgewerkt. Enkel frontend (geen backendcontrole op het woord).
+`tsc` schoon; vitest 34 bestanden, 517/517 groen. Playwright-specs `e2e/tests/workqueue.spec.ts`/`bundles.spec.ts` aangepast maar niet gedraaid (mens).
+**Ter beslissing door de mens:** woorden Batch/Mutatie/Bundel behouden of hernoemen; "bookmark" vs "invulpunt"; statusreden-filter als keuzelijst (NT-11b).
+**Bron:** hoofdsessie na verificatie
+
+---
+
+## 2026-09-30 — NT-11b uitgevoerd: terminologie bundelschermen
+**Vraag:** Is NT-11b afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, één reviewronde: twee testqueries botsten met de nieuwe keuzelijst, en codes bij uitgeschakelde knoppen waren niet meer
+opvraagbaar — nu optioneel `Gate.code` in de tooltip "(technische code: X)", zichtbare tekst zonder code; tests door de hoofdsessie). Alle bundelschermen
+Nederlands via de woordenlijst; `WhatIsThis` op lijst, tabbladen en dialogen; statusreden-filter in `MutationList` = keuzelijst uit `mutationStatusReason`;
+6 nieuwe domeinen (`decisionKind`, `decisionScope`, `selectionFilterField`, `freezeCheck`, `contractStatus`, `bundleCounter`) ook in begrippen.md;
+`noRawCodes`-guard uitgebreid. Zichtbare labelwijzigingen (enkel frontend): "Proefpublicatie starten" (was "Simulatierun starten"), "voorcontrole",
+"Vingerafdruk van de bundel", teller "Goedgekeurd" (was "Gereed"). `tsc` schoon; vitest 34 bestanden, 544/544 groen. `e2e/tests/bundles.spec.ts` aangepast, niet gedraaid.
+**Correctie op NT-5:** in het beslissingsregister kiest het statusdomein zich op het soort beslissing (FREEZE/CANCEL → bundleStatus, rest → mutationStatus),
+niet op `decisionScope` (`AUTO_APPROVE_PLANNED` heeft scope BUNDLE maar mutatiestatussen).
+**Bron:** hoofdsessie na verificatie
+
+---
+
+## 2026-10-01 — NT-11c uitgevoerd: terminologie behandelgevallen, inrichting, sjablonen
+**Vraag:** Is NT-11c afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, één reviewronde voor een ontbrekende testimport; tests door de hoofdsessie). Behandelgevallen (lijst, detail, acties;
+`issueCasePolicy` Nederlandse redenen + `Gate.code`), inrichting (`RevisionDetailSection` herschreven, `RevisionEditForm` zonder `(technicalName)`,
+`fieldReferenceKind` als keuzelijst, R-CASE-03-waarschuwing in gewone taal met dezelfde betekenis, `FlagOffNotice`), sjablonen (lijst, detail, `MaterialiseForm`,
+`LinkBookmarkValuesSection`). 19 nieuwe domeinen + 13 `revisionField`-sleutels, ook in begrippen.md; `termLabel`, `terms/gateTitle.ts`; guard uitgebreid.
+Filter "Soort vaststelling" = keuzelijst uit `issueCode`; kolom "Signatuur" naar technische details. `tsc` schoon; vitest 34 bestanden, 607/607 groen.
+**Ter beslissing door de mens:** "bookmark" vs "invulpunt" (beide zichtbaar, niet centraal schakelbaar — inventaris in het Bouwer-rapport); "Revisie/Definitie/
+Bronorganisatie" in boom en materialiseren vs woordenlijst "Versie/Beschrijving van het bestand/Leverancier of aankoopvereniging". Wizard/check niet door de guard gedekt.
+**Bron:** hoofdsessie na verificatie
+
+---
+
+## 2026-10-01 — Woordkeuzes en openstaande punten NT-spoor (mens, meerkeuze)
+**Vraag:** Open punten uit NT-3, NT-6, NT-8, NT-9, NT-11a-c.
+**Beslissing (mens):**
+- **"Invulpunt"** vervangt overal "bookmark" in gebruikerstekst (UI, `codes.ts`, woordenlijst, begrippen.md, handleiding). Technische codes/API blijven ongewijzigd.
+- **Gelijktrekken met de woordenlijst:** "Revisie" → "Versie", "Definitie" → "Beschrijving van het bestand", "Bronorganisatie" → "Leverancier of
+  aankoopvereniging" in alle gebruikerstekst (boom, materialiseren, wizard, check, foutmeldingen).
+- **Batch, Mutatie, Bundel blijven** (met "Wat betekent dit?").
+- **405 i.p.v. 404** voor `POST /templates/{d}/revisions/{r}/bookmarks` zonder vlag: aanvaard.
+- **Hoogstens één concept per definitie, door de server afgedwongen** (niet enkel in `successor`): te bouwen.
+- **Afwijkingen proefinlezing D-1, D-2, D-3:** aanvaard.
+- **NIET aanvaard: "één configuratiefout per keer".** De mens wil dat checklist en proefinlezing **alle** fouten in de bestandsbeschrijving tegelijk tonen.
+  Dit raakt de configuratiefabrieken die ook de screening gebruiken → eerst een denker-zwaar-ontwerp (gedrag van screening/activatie moet gelijk blijven:
+  zelfde eerste code, status, tekst).
+**Volgorde:** NT-11d (woordkeuzes doorvoeren) → NT-13 (max. één concept, server) → NT-14a (ontwerp alle configfouten, denker-zwaar) → NT-14 → NT-12 (documentatie).
+**Bron:** mens
+
+---
+
+## 2026-10-01 — NT-11d uitgevoerd: woordkeuzes doorgevoerd
+**Vraag:** Is NT-11d afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, tests door de hoofdsessie). Alle gebruikerstekst in Frontend en begrippen.md: "bookmark" → "invulpunt" (koppen/labels
+uit `terms/wording.ts`), "Revisie" → "Versie" ("Versie n"), "Definitie/importdefinitie" → "Beschrijving van het bestand"/"beschrijving", "Bronorganisatie" →
+"Leverancier of aankoopvereniging"; "Eigen definitie" → "Eigen beschrijving". Codes, API, routes, testids ongewijzigd. Guard bewaakt de oude woorden ook
+(`noRawCodes`, nieuw `oldWording.ts` in wizard- en check-tests). `tsc` schoon; vitest 34 bestanden, 607/607 groen.
+**Nog te doen in NT-12:** handleiding (`README.md`, `standaardflows.md`, `csv-importeren.md`) bevat nog de oude woorden.
+**Bron:** hoofdsessie na verificatie
+
+---
+
+## 2026-10-01 — NT-13 uitgevoerd: hoogstens één concept per beschrijving (server + DB)
+**Vraag:** Is NT-13 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, één reviewronde voor een onvolledige test-INSERT; build en tests door de hoofdsessie). Changeset
+`016-revision-draft-marker.sql`: kolom `import_definition_revision.draft_marker` + `uk_import_definition_revision_draft (import_definition_id, draft_marker)`
+volgens het bestaande `active_marker`-patroon (dialectonafhankelijk), backfill van bestaande DRAFTs, precondition HALT bij al bestaande dubbele DRAFTs
+(niets stil samengevoegd/verwijderd), rollback. Entiteit houdt de marker bij. `SetupService.createRevision` en `RevisionSuccessorService`: zelfde 409
+`REVISION_DRAFT_ALREADY_EXISTS` vooraf én bij een race (ook een botsing op `uk_import_definition_revision_number` wordt zo vertaald; voorheen 500).
+Wizard toont bij die 409 de bestaande versie als kandidaat. Tests: nieuw `SetupRevisionSingleDraftHttpTest` + regressie, 11 klassen, 129/129 groen;
+frontend `tsc` schoon, vitest 607/607.
+**Invullingen van de Bouwer:** marker-kolom i.p.v. partiële index; 409 vóór validatie in `createRevision`; raceboodschap zonder nummer; geen check marker↔status
+(zoals `active_marker`). Precondition-syntax nog niet tegen een DB mét dubbele DRAFTs beproefd.
+**Bron:** hoofdsessie na verificatie (build + gerichte tests)
+
+---
+
+## 2026-10-01 — NT-14a: ontwerp "alle configuratiefouten tegelijk"
+**Vraag:** Hoe tonen checklist en proefinlezing alle fouten in de beschrijving tegelijk zonder het gedrag van screening/activatie/setup te wijzigen?
+**Beslissing:** Ontwerp `docs/design/configfouten-alle-tegelijk-design.md` (denker-zwaar; geen §6-vragen). Collector met takken in de bestaande fabrieken
+(FIRST = gooit hetzelfde object opnieuw, pariteit bij constructie; ALL = verzamelt), golden table vóór de refactor als pariteitsbewijs. "Alle fouten" =
+alle **onafhankelijk** te beoordelen fouten; afhankelijke controles worden expliciet als overgeslagen gemeld (Important business rule discovered).
+Aannames A1-A6 (design §7). Correctie op NT-8: `TemplateMaterialisationService` heeft géén eigen kopie van de regels, enkel een eigen try/catch rond
+dezelfde fabrieken. Bouwvolgorde NT-14-0 → 14-1 → 14-2 → 14-3 → 14-4 → NT-12.
+**Bron:** denker-zwaar (dossier NT-14a) / mens (2026-10-01)
+
+---
+
+## 2026-10-01 — NT-14-0 uitgevoerd: golden table `ConfigFactoryParityTest`
+**Vraag:** Is de pariteitsbasis vóór de refactor vastgelegd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, tests door de hoofdsessie). Enkel test: `Web/src/test/java/.../service/support/ConfigFactoryParityTest.java`
+(dynamische tests, ~138 werpende + 19 niet-werpende rijen, letterlijke code/fieldName/sourceValue/expectedValue/message; meta-test dat elke gedeclareerde
+CONFIG-code in een rij voorkomt en omgekeerd; unieke rij-id's). Groen op de huidige code: 158/158. Onbereikbaar en bewust niet in de tabel: record-constructor
+`SourceStructureConfig`, `ImportValueRules.DecimalFormat`, `MappingSettings.character` (ongebruikt), runtime-transformcodes (geen CONFIG_).
+**Integriteit:** SHA-256 van het bestand bij vastleggen = `4B001553B8D30E33230E8CEF80269AEE2778E8907C55C785F80D33FD73F6FE50`; de hoofdsessie controleert na
+NT-14-1 dat het ongewijzigd is.
+**Bron:** hoofdsessie na verificatie
+
+---
+
+## 2026-10-01 — NT-14-1 uitgevoerd: collector met takken in beide configuratiefabrieken
+**Vraag:** Is NT-14-1 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-zwaar`, één reviewronde; build en tests door de hoofdsessie). Nieuw in `service.support`: `ConfigProblemCollector` (FIRST gooit
+hetzelfde object opnieuw; ALL verzamelt), `ConfigFinding`, `ConfigCheckReport`, `StructureFacts` (incl. `identityFieldsValid`,
+`canonicalisationVersionSupported`). `SourceStructureConfigFactory.collect/collectInto` en `ImportMappingConfigFactory.collect/collectInto`; alle `from(...)`
+ongewijzigd naar buiten. Golden table ongewijzigd (SHA-256 `4B0015…FE50` gecontroleerd) en groen. Nieuw `ConfigFactoryCollectAllTest` (invariant over 52
+mutatoren, ALL-specifieke gevallen, 6 succespad-pariteitstests op de opgebouwde config). 25 klassen, 603/603 groen.
+**Invullingen van de Bouwer (aanvaard door de hoofdsessie, ter info aan de mens):** M3j hangt af van M3e (anders crasht ALL op een ongeldige schaal — Important
+technical constraint: `ImportValueRules.DecimalFormat` gooit IAE buiten 0..12); S15 per kolom; M5/M6 in ALL enkel over mappings zonder bevinding (telling in
+M6c-melding kan te laag zijn, nooit een valse fout); `revisionField` null voor rij- en koppelingsbevindingen.
+**Bijvangst — regressietest `DeliveryScreeningFlowTest` (volgorde R1/R4):** oorzaak volgens de Bouwer: `MutationDao.insertContentMutations` doet `INSERT … SELECT`
+zonder `ORDER BY`; de id-volgorde hangt van het PostgreSQL-plan af (data-afhankelijk). Fix: `order by stage.row_number` (id-volgorde = bronregelvolgorde;
+geen kolom-, contract- of idempotentiewijziging). **Niet hard bewezen** dat NT-14-1 niet de oorzaak was (geen git in de shell om de oude fabrieken terug te zetten);
+bewijs: succespad-pariteitstests + de test slaagde eerder in een grotere run met meer data. Andere `INSERT … SELECT` zonder ORDER BY (`SourceStateDao`,
+`PriceObservationDao`) niet aangeraakt.
+**Bron:** hoofdsessie na verificatie (build + gerichte tests)
+
+---
+
+## 2026-10-01 — NT-14-2 uitgevoerd: checklist toont alle configuratiefouten van een concept
+**Vraag:** Is NT-14-2 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, tests door de hoofdsessie). `ChainConfigurationChecks.configurationReport(revision, linkCurrency)` en
+`activationProblemsAll(draft, linkCurrency)` (records `ReportedProblem`, `ActivationReport`; zelfde detailformaat als `configurationProblem`); FIRST-methodes
+ongewijzigd. `ImportLinkReadinessService` concepttak: één PROBLEM per bevinding, additief `fieldName`/`revisionField` op `ReadinessCheck`, INFO
+`INFO_CONFIG_CHECKS_SKIPPED` bij overgeslagen controles (telt niet voor `ready`); actieve-versietak ongewijzigd. Frontend: types. Tests: 11 klassen, 342/342
+groen (o.a. eerste configregel = 400 van activate; golden table + collect-all groen); `tsc` schoon.
+**Invulling (voorstel hoofdsessie: aanvaarden, ter bevestiging aan de mens):** de checklist geeft de standaardvaluta van de koppeling mee (zoals de screening);
+activatie niet. Enkel bij een ongeldige koppelingsvaluta verschijnt `CONFIG_LINK_CURRENCY_INVALID` in de checklist en niet bij activeren.
+**Bron:** hoofdsessie na verificatie
+
+---
+
+## 2026-10-01 — NT-14-3 uitgevoerd: proefinlezing toont alle configuratiefouten
+**Vraag:** Is NT-14-3 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, één reviewronde: testfixtures met een leeg prijsveld werden terecht al bij de upload-intake geweigerd (409) — vervangen door
+screening-blokkerende fouten; productiecode ongewijzigd; tests door de hoofdsessie). `TrialReadService`: bij een configfout vóór het lezen een tweede aanroep
+`configurationReport` (ALL) in dezelfde leestransactie; `configProblems` = volledige lijst (additief `revisionField`), additief `configChecksSkippedBecause`;
+verdict blijft de eerste (= echte screening), guard + WARN bij afwijking. Leesfase-CONFIG_* blijft één item. `proefinlezing-design.md` §2 en A-7 bijgewerkt;
+frontendtypes uitgebreid. Tests: 7 klassen, 306/306 groen (pariteit `[0]` = verdict = `blocked_code` van een echte upload); `tsc` schoon.
+**Bron:** hoofdsessie na verificatie
+
+---
+
+## 2026-10-01 — NT-14-4 uitgevoerd: scherm toont alle configuratiefouten
+**Vraag:** Is NT-14-4 afgerond en geverifieerd?
+**Beslissing:** Ja (`bouwer-gemiddeld`, tests door de hoofdsessie). Checklist en proefinlezing tonen elke configbevinding met het betrokken veld ("Veld:",
+"Doelveld:", "Kolom:"); de oude "één fout per keer"-zin is weg; bij overgeslagen controles de zin "Sommige controles konden nog niet uitgevoerd worden …"
+met de Nederlandse labels van de grondoorzaken (codes enkel in technische details). Nieuw woord `readinessCheck.INFO_CONFIG_CHECKS_SKIPPED` ook in
+begrippen.md. `tsc` schoon; vitest 34 bestanden, 610/610 groen.
+**Opvolging door de hoofdsessie:** de checklist haalt de overgeslagen codes nu met een regex uit de Engelse `detail`-tekst — broos. Kleine opvolgstory NT-14-5:
+gestructureerd additief veld `skippedBecause` op `ReadinessCheck` en de frontend gebruikt dat.
+**Bron:** hoofdsessie na verificatie
+
+---
+
+## 2026-10-01 — NT-14-5, NT-12 en eindcontrole NT-spoor
+**Vraag:** Zijn de laatste stappen van het NT-spoor afgerond en is het geheel geverifieerd?
+**Beslissing:** Ja.
+- **NT-14-5** (`bouwer-licht`, één reviewronde voor een foute testquery): `ReadinessCheck` additief `List<String> skippedBecause` (gevuld enkel bij
+  `INFO_CONFIG_CHECKS_SKIPPED`; `detail` ongewijzigd); frontend gebruikt het veld, terugval op tekstparsing enkel bij een oudere server.
+- **NT-12** (`bouwer-gemiddeld`): handleiding (`README.md`, `standaardflows.md`, `csv-importeren.md`), root-`README.md` en `Frontend/README.md` bijgewerkt
+  (wizard, Controleren, nieuwe woorden, NULMETING, "Proefpublicatie starten", setup-vlag, nieuwe endpoints, 409's); `openstaande-externe-punten.md` klopt nog.
+  Menuvolgorde in de handleiding blijft "nog te verifiëren"; codecommentaar in `bundlePolicy.ts`/`BundlePublicationTab.tsx` noemt nog "Simulatierun".
+- **Volledige backendronde** (`run-full-tests.ps1`, 130 klassen, 1757 tests): 4 tests faalden — 2 door NT-13 (tests maakten nog meerdere DRAFTs per definitie:
+  `ImportControlSchemaTest`, `SetupTemplateLinkActorHttpTest`, aangepast aan de nieuwe regel + extra assertie dat een tweede DRAFT geweigerd wordt) en 2 door
+  paginering in het gedeelde schema (`CatalogImportSetupQueryHttpTest`, codes met prefix `000` + `size=200`). Geen productiefout. Na correctie: die klassen
+  + `SetupRevisionSingleDraftHttpTest` 45/45 groen. (Geen tweede volledige ronde gedraaid.)
+- **Frontend**: `tsc` schoon; vitest 34 bestanden, 610/610 groen.
+**Nog open bij de mens:** bevestiging dat de checklist de koppelingsvaluta meeneemt en activatie niet (NT-14-2); nalezen van de door subagents geschreven
+woorden in `begrippen.md`; Playwright-specs (`e2e/tests/*.spec.ts`) draaien; eventueel het demofilmpje bijwerken (BASELINE → NULMETING, nieuwe woorden).
+**Bron:** hoofdsessie na verificatie
+**Aanvulling (mens, 2026-10-01, "Ja doen"):** de checklist neemt de standaardvaluta van de koppeling mee en activatie niet — **aanvaard** (NT-14-2-invulling).
+Het demofilmpje wordt bijgewerkt naar de nieuwe woorden.

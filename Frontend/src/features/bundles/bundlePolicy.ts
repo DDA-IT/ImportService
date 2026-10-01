@@ -15,14 +15,27 @@ import type {
   PublicationBundleStatus,
   PublicationRunView,
 } from '../../api/types.ts';
+import { term } from '../../terms/index.ts';
 import { isEmptyDecisionFilter } from './groupDecisionFilter.ts';
 
-export type Gate = { allowed: true } | { allowed: false; reason: string };
+/** `code` is de stabiele technische code van de weigering (V7: altijd opvraagbaar); ze staat nooit in `reason`. */
+export type Gate = { allowed: true } | { allowed: false; reason: string; code?: string };
 
 const ALLOWED: Gate = { allowed: true };
 
-function denied(reason: string): Gate {
-  return { allowed: false, reason };
+function denied(reason: string, code?: string): Gate {
+  return code === undefined ? { allowed: false, reason } : { allowed: false, reason, code };
+}
+
+/**
+ * De tooltip (`title`) van een uitgeschakelde knop: de Nederlandse reden, met de technische code klein erbij
+ * wanneer die er is. Zonder weigering (`allowed`) geen tooltip.
+ */
+export function gateTitle(gate: { allowed: true } | { allowed: false; reason: string; code?: string }): string | undefined {
+  if (gate.allowed) {
+    return undefined;
+  }
+  return gate.code === undefined ? gate.reason : `${gate.reason} (technische code: ${gate.code})`;
 }
 
 const FASE5_STATUSES: readonly PublicationBundleStatus[] = [
@@ -38,7 +51,7 @@ export function isReadOnlyBundleStatus(status: PublicationBundleStatus): boolean
 }
 
 function readOnlyReason(status: PublicationBundleStatus): string {
-  return `Deze bundel staat in een status die deze versie van het scherm niet bedient (${status}).`;
+  return `Deze bundel staat in een status die deze versie van het scherm niet bedient (${term('bundleStatus', status).label}).`;
 }
 
 /**
@@ -75,7 +88,7 @@ export function bundleActionGate(status: PublicationBundleStatus, action: Bundle
     if (status === 'ASSEMBLING' || status === 'FROZEN') {
       return ALLOWED;
     }
-    return denied('Kan niet: deze bundel is al geannuleerd (BUNDLE_NOT_CANCELLABLE).');
+    return denied('Kan niet: deze bundel is al geannuleerd.', 'BUNDLE_NOT_CANCELLABLE');
   }
 
   // Alle overige acties (batches toevoegen/verwijderen, mutatie (her)beslissen, groepsactie, bevriezen)
@@ -84,10 +97,10 @@ export function bundleActionGate(status: PublicationBundleStatus, action: Bundle
     return ALLOWED;
   }
   if (status === 'FROZEN') {
-    return denied('Kan niet: de bundel is bevroren (BUNDLE_NOT_ASSEMBLING).');
+    return denied('Kan niet: de bundel is bevroren.', 'BUNDLE_NOT_ASSEMBLING');
   }
   // CANCELLED
-  return denied('Kan niet: de bundel is geannuleerd (BUNDLE_NOT_ASSEMBLING).');
+  return denied('Kan niet: de bundel is geannuleerd.', 'BUNDLE_NOT_ASSEMBLING');
 }
 
 /** Reikwijdte van een mutatiebeslissing: een herziening (de mutatie draagt al een beslissing) mag
@@ -120,15 +133,15 @@ export function mutationDecisionGate(
 
   if (status === 'BLOCKED') {
     return denied(
-      'Geblokkeerd door een kritiek identiteitsincident; deze fase kent hier geen beslispad ' +
-        '(MUTATION_BLOCKED_BY_IDENTITY_INCIDENT).',
+      'Tegengehouden door een kritiek herkenningsprobleem; in deze versie van het scherm is hier geen beslissing over mogelijk.',
+      'MUTATION_BLOCKED_BY_IDENTITY_INCIDENT',
     );
   }
 
   if (actionType === 'IDENTITY_REFERENCE_INCIDENT') {
     return denied(
-      'Een identiteitsbeslissing schrijft in de referentiestaat; dat komt in een latere fase ' +
-        '(IDENTITY_DECISION_NOT_IN_SCOPE).',
+      'Een beslissing over een herkenningsprobleem past de bekende artikelgegevens aan; dat komt in een latere versie.',
+      'IDENTITY_DECISION_NOT_IN_SCOPE',
     );
   }
 
@@ -149,7 +162,7 @@ export function mutationDecisionGate(
   }
 
   // Overige statussen: EXPIRED, SKIPPED, RECORDED, IN_PROGRESS, PUBLISHED, TECHNICALLY_FAILED.
-  return denied('Deze mutatie staat in een status waarin goedkeuren of afkeuren niet mogelijk is (MUTATION_NOT_DECIDABLE).');
+  return denied('Deze mutatie staat in een status waarin goedkeuren of afkeuren niet mogelijk is.', 'MUTATION_NOT_DECIDABLE');
 }
 
 /** De twee statussen die een groepsactie raakt — spiegel van `BundleDecisionService.toSelection`. */
@@ -180,22 +193,23 @@ export function groupDecisionGate(
 
   if (isEmptyDecisionFilter(filter)) {
     return denied(
-      'Zet eerst minstens één filter in de lijst; een groepsactie over de hele bundel bestaat niet ' +
-        '(DECISION_FILTER_REQUIRED).',
+      'Zet eerst minstens één filter in de lijst; een groepsactie over de hele bundel bestaat niet.',
+      'DECISION_FILTER_REQUIRED',
     );
   }
 
   if (filter.status !== undefined && !GROUP_DECIDABLE_STATUSES.includes(filter.status)) {
     return denied(
-      `De lijst is gefilterd op status ${filter.status}; een groepsactie raakt alleen PLANNED of ` +
-        'AWAITING_APPROVAL. Pas de statusfilter aan.',
+      `De lijst is gefilterd op status "${term('mutationStatus', filter.status).label}"; een groepsactie raakt alleen ` +
+        `mutaties met status "${term('mutationStatus', 'PLANNED').label}" of "${term('mutationStatus', 'AWAITING_APPROVAL').label}". ` +
+        'Pas de statusfilter aan.',
     );
   }
 
   if (filter.actionType !== undefined && !GROUP_DECIDABLE_ACTION_TYPES.includes(filter.actionType)) {
     return denied(
-      `De lijst is gefilterd op soort ${filter.actionType}; een groepsactie raakt alleen CREATE of ` +
-        'UPDATE. Pas de soortfilter aan.',
+      `De lijst is gefilterd op soort "${term('mutationAction', filter.actionType).label}"; een groepsactie raakt alleen ` +
+        `"${term('mutationAction', 'CREATE').label}" of "${term('mutationAction', 'UPDATE').label}". Pas de soortfilter aan.`,
     );
   }
 
@@ -223,33 +237,31 @@ function mutationsCount(count: number): string {
 export function freezeBlockerReason(code: string, preflight: FreezePreflight): string {
   switch (code) {
     case 'BUNDLE_NOT_ASSEMBLING':
-      return 'De bundel is niet meer in opbouw; alleen een bundel met status ASSEMBLING kan bevroren worden (BUNDLE_NOT_ASSEMBLING).';
+      return 'De bundel is niet meer in opbouw; alleen een bundel die nog in opbouw is, kan bevroren worden.';
     case 'BUNDLE_EMPTY':
-      return 'De bundel heeft geen actieve batch; een lege bundel kan niet bevroren worden (BUNDLE_EMPTY).';
+      return 'De bundel heeft geen actieve batch; een lege bundel kan niet bevroren worden.';
     case 'BUNDLE_HAS_UNDECIDED_MUTATIONS':
       return (
         `Er ${preflight.awaitingApprovalCount === 1 ? 'wacht' : 'wachten'} nog ` +
-        `${mutationsCount(preflight.awaitingApprovalCount)} op een expliciete beslissing ` +
-        '(AWAITING_APPROVAL). Bevriezen mag die vraag niet stilzwijgend beantwoorden: beoordeel ze eerst ' +
-        '(BUNDLE_HAS_UNDECIDED_MUTATIONS).'
+        `${mutationsCount(preflight.awaitingApprovalCount)} op een uitdrukkelijke beslissing ` +
+        `(status "${term('mutationStatus', 'AWAITING_APPROVAL').label}"). Bevriezen mag die vraag niet stilzwijgend ` +
+        'beantwoorden: beoordeel ze eerst.'
       );
     case 'SOURCE_STATE_CHANGED_SINCE_SCREENING':
       return (
-        `De bronstaat is verschoven sinds de screening (${mutationsCount(preflight.staleMutationCount)}); ` +
-        'screen de levering opnieuw (SOURCE_STATE_CHANGED_SINCE_SCREENING).'
+        `De bekende artikelgegevens zijn veranderd sinds de controle van de levering (${mutationsCount(preflight.staleMutationCount)}); ` +
+        'controleer de levering opnieuw.'
       );
     case 'BUNDLE_OFFER_CONFLICT':
-      return (
-        'Dezelfde aanbieding staat publiceerbaar in meer dan één batch van deze bundel; keur er één af ' +
-        '(BUNDLE_OFFER_CONFLICT).'
-      );
+      return 'Dezelfde aanbieding staat publiceerbaar in meer dan één batch van deze bundel; keur er één af.';
     case 'OFFER_ALREADY_IN_ANOTHER_BUNDLE':
       return (
         'Een aanbieding staat ook publiceerbaar in een andere, niet-geannuleerde bundel; keur één kant af, ' +
-        'of publiceer/annuleer eerst de andere bundel (OFFER_ALREADY_IN_ANOTHER_BUNDLE).'
+        'of publiceer of annuleer eerst de andere bundel.'
       );
     default:
-      return `De server meldt een blokkade die dit scherm niet kent (${code}).`;
+      // De onbekende code zelf staat onder "Technische details" in de voorcontrole, niet in deze tekst.
+      return 'De server meldt een blokkade die dit scherm niet kent.';
   }
 }
 
@@ -264,9 +276,7 @@ export function publicationRunGate(
   runs: readonly PublicationRunView[] | null,
 ): Gate {
   if (bundleStatus !== 'FROZEN') {
-    return denied(
-      'Kan niet: alleen een bevroren bundel kan een publicatierun starten (BUNDLE_NOT_FROZEN).',
-    );
+    return denied('Kan niet: alleen een bevroren bundel kan een proefpublicatie starten.', 'BUNDLE_NOT_FROZEN');
   }
   if (runs === null) {
     return denied('De lijst van publicatieruns is nog niet geladen (of het laden mislukte).');
@@ -274,8 +284,8 @@ export function publicationRunGate(
   const active = runs.find((run) => run.status === 'REQUESTED' || run.status === 'PREPARING');
   if (active !== undefined) {
     return denied(
-      `Er loopt al een publicatierun (#${active.id}, status ${active.status}) voor deze bundel ` +
-        '(PUBLICATION_RUN_IN_PROGRESS).',
+      `Er loopt al een publicatierun (#${active.id}, status "${term('publicationRunStatus', active.status).label}") voor deze bundel.`,
+      'PUBLICATION_RUN_IN_PROGRESS',
     );
   }
   return ALLOWED;
@@ -290,8 +300,9 @@ export function publicationRunGate(
 export function abortRunGate(run: PublicationRunView): Gate {
   if (run.status !== 'PREPARING') {
     return denied(
-      `Kan niet afbreken: deze run staat niet (meer) op PREPARING (status ${run.status}) ` +
-        '(PUBLICATION_RUN_NOT_STUCK).',
+      `Kan niet afbreken: alleen een run met status "${term('publicationRunStatus', 'PREPARING').label}" kan afgebroken ` +
+        `worden; deze run heeft status "${term('publicationRunStatus', run.status).label}".`,
+      'PUBLICATION_RUN_NOT_STUCK',
     );
   }
   return ALLOWED;
@@ -302,7 +313,7 @@ export function freezeBlockers(preflight: FreezePreflight): string[] {
   const reasons = preflight.blockerCodes.map((code) => freezeBlockerReason(code, preflight));
   if (reasons.length === 0 && !preflight.freezable) {
     // Tegenstrijdig antwoord (niet bevriesbaar, maar zonder code): nooit als "toegestaan" lezen.
-    reasons.push('De voorvlucht meldt dat bevriezen niet kan, zonder een reden te geven.');
+    reasons.push('De voorcontrole meldt dat bevriezen niet kan, zonder een reden te geven.');
   }
   return reasons;
 }
@@ -322,7 +333,7 @@ export function freezeGate(bundleStatus: PublicationBundleStatus, preflight: Fre
     return bundleGate;
   }
   if (preflight === null) {
-    return denied('De voorvlucht is nog niet geladen (of het laden mislukte); zonder voorvlucht kan niet bevroren worden.');
+    return denied('De voorcontrole is nog niet geladen (of het laden mislukte); zonder voorcontrole kan niet bevroren worden.');
   }
   const blockers = freezeBlockers(preflight);
   if (blockers.length > 0) {

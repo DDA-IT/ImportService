@@ -1,0 +1,132 @@
+/* S1-F4 — het bewerkformulier van een DRAFT-revisie (endpoint E3). */
+
+.form {
+  max-width: 40rem;
+  padding: var(--spacing-4);
+  margin: 0 0 var(--spacing-6) 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.title {
+  margin: 0 0 var(--spacing-2) 0;
+  font-size: 1.05rem;
+}
+
+.intro {
+  margin: 0 0 var(--spacing-4) 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.fieldset {
+  margin: 0 0 var(--spacing-4) 0;
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.legend {
+  padding: 0 var(--spacing-1);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.input,
+.select {
+  width: 100%;
+  padding: var(--spacing-2);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.checkboxRow {
+  display: block;
+  margin: 0 0 var(--spacing-3) 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.identityNote {
+  margin: 0 0 var(--spacing-3) 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.warning {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--status-awaiting-bg);
+  color: var(--status-awaiting-text);
+  font-size: 0.8125rem;
+}
+
+/* Onvoorwaardelijk geweigerd (R-REV-X2): rood, en bewust zonder bevestigingsoptie ernaast. */
+.blocked {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--status-rejected-bg);
+  color: var(--status-rejected-text);
+  font-size: 0.8125rem;
+}
+
+.acknowledge {
+  margin: 0 0 var(--spacing-4) 0;
+}
+
+.actorRow {
+  margin: 0 0 var(--spacing-3) 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.validationError {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--status-rejected-bg);
+  color: var(--status-rejected-text);
+  font-size: 0.875rem;
+}
+
+.saved {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+  font-size: 0.875rem;
+}
+
+.flagOff {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: 0.875rem;
+}
+
+.submit {
+  padding: var(--spacing-2) var(--spacing-4);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: white;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

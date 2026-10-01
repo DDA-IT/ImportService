@@ -24,6 +24,8 @@ import { PERMISSION_APPROVE, type MutationRow } from '../../api/types.ts';
 import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { MutationList } from '../../components/MutationList/MutationList.tsx';
 import type { MutationRowAction, MutationSource } from '../../components/MutationList/types.ts';
+import { Term } from '../../terms/Term.tsx';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { mutationDecisionGate } from './bundlePolicy.ts';
 import { GroupDecisionDialog } from './GroupDecisionDialog.tsx';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
@@ -42,7 +44,8 @@ function DecisionBody({ row, revision }: { row: MutationRow; revision: boolean }
   return (
     <div className={styles.dialogBody}>
       <p>
-        Mutatie {row.id} ({row.actionType}, status {row.status}) van batch {row.batchId}.
+        Mutatie {row.id} (<Term domain="mutationAction" code={row.actionType} />, status{' '}
+        <Term domain="mutationStatus" code={row.status} />) van batch {row.batchId}.
       </p>
       <p>
         Basisprijs: {formatAmount(row.beforeBasePrice, row.basePriceCurrency)} →{' '}
@@ -134,6 +137,17 @@ export function BundleMutationsTab() {
 
   return (
     <div className={styles.tab}>
+      <WhatIsThis>
+        <p>
+          Een mutatie is één voorgestelde wijziging aan een artikel, bijvoorbeeld een nieuwe prijs of een nieuw artikel.
+          Hier beslist u per mutatie of ze goedgekeurd of afgekeurd wordt; een afkeuring vraagt altijd een reden. Met de
+          filters kunt u de lijst beperken en daarna in één keer over de hele lijst beslissen (groepsactie).
+        </p>
+        <p>
+          Elke beslissing wordt bijgeschreven in het beslissingsregister en kan zolang de bundel in opbouw is, nog
+          herzien worden; beide beslissingen blijven dan in het register staan.
+        </p>
+      </WhatIsThis>
       {notice !== null && (
         <p className={styles.notice} role="status">
           {notice}

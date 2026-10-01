@@ -18,6 +18,9 @@ import { useQuery } from '../../hooks/useQuery.ts';
 import { usePermissionGate } from '../../actor/permissions.ts';
 import { Pager } from '../../components/Pager.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
+import { INVULPUNTEN } from '../../terms/wording.ts';
+import { FlagOffNotice } from '../setup/FlagOffNotice.tsx';
 import { isSetupApiDisabledError, SETUP_API_DISABLED_MESSAGE } from './setupApiFlag.ts';
 import styles from './TemplateListPage.module.css';
 
@@ -41,15 +44,18 @@ export function TemplateListPage() {
     <div className={styles.page}>
       <h1 className={styles.title}>Sjablonen</h1>
       <p className={styles.intro}>
-        Alleen-lezen overzicht van herbruikbare sjablonen. Kies een sjabloon om de bookmarks van een
-        revisie te bekijken en de materialisatiehistoriek te zien.
+        Alleen-lezen overzicht van herbruikbare sjablonen. Kies een sjabloon om de {INVULPUNTEN} van een
+        versie te bekijken en te zien welke beschrijvingen van bestanden er al uit gemaakt zijn.
       </p>
+      <WhatIsThis>
+        Een sjabloon is een model waaruit u voor een leverancier een beschrijving van het bestand, een
+        conceptversie en een koppeling maakt. Dat heet hier &laquo;materialiseren&raquo;. Het sjabloon zelf krijgt
+        nooit een koppeling of levering.
+      </WhatIsThis>
 
       {templates.error !== null &&
         (isSetupApiDisabledError(templates.error) ? (
-          <p role="alert" className={styles.flagOff}>
-            {SETUP_API_DISABLED_MESSAGE}
-          </p>
+          <FlagOffNotice message={SETUP_API_DISABLED_MESSAGE} className={styles.flagOff} />
         ) : (
           <ErrorBanner error={templates.error} />
         ))}

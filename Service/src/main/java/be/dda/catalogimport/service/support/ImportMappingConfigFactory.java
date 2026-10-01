@@ -19,6 +19,7 @@ import be.dda.catalogimport.domain.ImportRevisionFieldCriticality;
 import be.dda.catalogimport.domain.PriceControlModel;
 import be.dda.catalogimport.domain.RevisionCriticalityField;
 import be.dda.catalogimport.domain.RevisionOwnedField;
+import be.dda.catalogimport.service.support.ConfigProblemCollector.Outcome;
 import be.dda.catalogimport.service.support.ImportMappingConfig.FieldMapping;
 import be.dda.catalogimport.service.support.ImportMappingConfig.RecordFilter;
 import be.dda.catalogimport.service.support.ImportMappingConfig.ValueFormat;
@@ -142,6 +143,11 @@ public class ImportMappingConfigFactory {
      */
     public static final String SETTING_MAX_PERCENTAGE = "maxPercentage";
 
+    // Revisiekolommen van de bevindingen op revisieniveau (NT-14a par. 3; woordenlijstdomein
+    // "revisionField"). Bevindingen op een mapping-, filter- of kritiekrij hebben geen revisiekolom.
+    private static final String REVISION_FIELD_PRICE_CONTROL_MODEL = "priceControlModel";
+    private static final String REVISION_FIELD_CANONICALISATION_VERSION = "canonicalisationVersion";
+
     private final ImportFieldMappingRepository mappings;
     private final ImportRecordFilterRepository filters;
     private final ImportRevisionFieldCriticalityRepository fieldCriticalities;
@@ -208,15 +214,100 @@ public class ImportMappingConfigFactory {
                                     List<ImportFieldMapping> mappingRows,
                                     List<ImportRecordFilter> filterRows,
                                     List<ImportRevisionFieldCriticality> criticalityRows) {
+        return read(revision, StructureFacts.of(structure), structure, mappingRows, filterRows, criticalityRows,
+                ConfigProblemCollector.first());
+    }
+
+    /**
+     * Alle onafhankelijk te beoordelen fouten in de mapping, de filters en de kritiek-overrules tegelijk
+     * (NT-14a), gelezen uit de database zoals {@link #from(ImportDefinitionRevision, SourceStructureConfig)}.
+     * Gooit zelf nooit een {@link ScreeningBlockedException}.
+     *
+     * @param structure de feiten van de bronstructuur, ook wanneer die zelf fouten bevat
+     */
+    public ConfigCheckReport collect(ImportDefinitionRevision revision, StructureFacts structure) {
+        ConfigProblemCollector problems = ConfigProblemCollector.all();
+        collectInto(revision, structure, problems);
+        return problems.toReport();
+    }
+
+    /**
+     * Dezelfde volledige controle op een reeds geladen configuratie; dezelfde regels en volgorde als
+     * {@link #from(ImportDefinitionRevision, SourceStructureConfig, List, List, List)}: de eerste
+     * bevinding is exact wat {@code from} met een gelijkwaardige structuur zou gooien.
+     */
+    public ConfigCheckReport collect(ImportDefinitionRevision revision, StructureFacts structure,
+                                     List<ImportFieldMapping> mappingRows,
+                                     List<ImportRecordFilter> filterRows,
+                                     List<ImportRevisionFieldCriticality> criticalityRows) {
+        ConfigProblemCollector problems = ConfigProblemCollector.all();
+        collectInto(revision, structure, mappingRows, filterRows, criticalityRows, problems);
+        return problems.toReport();
+    }
+
+    /**
+     * De volledige controle in een gedeelde collector, achter die van de bronstructuur
+     * ({@link SourceStructureConfigFactory#collectInto}); leest uit de database.
+     */
+    public void collectInto(ImportDefinitionRevision revision, StructureFacts structure,
+                            ConfigProblemCollector problems) {
+        Long revisionId = revision.getId();
+        collectInto(revision, structure, mappings.findByRevisionIdWithTargetField(revisionId),
+                filters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId),
+                fieldCriticalities.findByDefinitionRevisionId(revisionId), problems);
+    }
+
+    /** De volledige controle op een reeds geladen configuratie, in een gedeelde collector. */
+    public void collectInto(ImportDefinitionRevision revision, StructureFacts structure,
+                            List<ImportFieldMapping> mappingRows,
+                            List<ImportRecordFilter> filterRows,
+                            List<ImportRevisionFieldCriticality> criticalityRows,
+                            ConfigProblemCollector problems) {
+        read(revision, structure, null, mappingRows, filterRows, criticalityRows, problems);
+    }
+
+    /**
+     * De regels zelf, in vaste volgorde (M1-M6). Elke werpplaats is ongewijzigd; ze staat in een tak van
+     * de collector. De configuratie wordt enkel opgebouwd in de stand FIRST met een gevalideerde
+     * structuur; anders is het resultaat {@code null}.
+     *
+     * @param facts     wat de controles van de bronstructuur moeten weten
+     * @param structure de gevalideerde structuur, of {@code null} bij een volledige controle
+     */
+    private static ImportMappingConfig read(ImportDefinitionRevision revision, StructureFacts facts,
+                                            SourceStructureConfig structure,
+                                            List<ImportFieldMapping> mappingRows,
+                                            List<ImportRecordFilter> filterRows,
+                                            List<ImportRevisionFieldCriticality> criticalityRows,
+                                            ConfigProblemCollector problems) {
         List<ImportFieldMapping> active = mappingRows.stream()
                 .filter(ImportFieldMapping::isActive)
                 .toList();
-        verifyPriceControlModel(revision);
-        Map<RevisionCriticalityField, Criticality> overrules = readCriticalityOverrules(criticalityRows);
-        List<FieldMapping> fields = readFields(revision, structure, active);
-        List<RecordFilter> recordFilters = readFilters(structure, filterRows);
-        verifyIdentityClasses(revision, fields);
-        verifyCanonicalisationVersion(revision, fields);
+        // M1
+        problems.check(REVISION_FIELD_PRICE_CONTROL_MODEL, () -> verifyPriceControlModel(revision));
+        // M2 (per rij)
+        Map<RevisionCriticalityField, Criticality> overrules = readCriticalityOverrules(criticalityRows,
+                problems);
+        // M3 (per rij)
+        List<FieldMapping> fields = readFields(revision, facts, active, problems);
+        // M4 (per rij)
+        List<RecordFilter> recordFilters = readFilters(facts, filterRows, problems);
+        // M5: steunt op de identiteitskolommen van de revisie (S9)
+        if (facts.identityFieldsValid()) {
+            problems.check(null, () -> verifyIdentityClasses(revision, fields));
+        } else {
+            problems.skip(SourceStructureConfigFactory.CODE_IDENTITY_FIELD_MISSING);
+        }
+        // M6: hoogstens één bevinding; steunt op een ondersteunde herkenningsversie (S14)
+        if (facts.canonicalisationVersionSupported()) {
+            problems.check(REVISION_FIELD_CANONICALISATION_VERSION,
+                    () -> verifyCanonicalisationVersion(revision, fields));
+        } else {
+            problems.skip(SourceStructureConfigFactory.CODE_CANONICALISATION_VERSION_UNSUPPORTED);
+        }
+        if (problems.collectsAll() || structure == null) {
+            return null;
+        }
         Map<String, Criticality> criticalities = ImportMappingConfig.criticalityMap(
                 revisionOwnCriticality(structure, overrules), fields);
         return new ImportMappingConfig(revision.getRecordCanonicalisationVersion(), fields, recordFilters,
@@ -235,33 +326,36 @@ public class ImportMappingConfigFactory {
      * de review moet voorkomen.
      */
     private static Map<RevisionCriticalityField, Criticality> readCriticalityOverrules(
-            List<ImportRevisionFieldCriticality> rows) {
+            List<ImportRevisionFieldCriticality> rows, ConfigProblemCollector problems) {
         Map<RevisionCriticalityField, Criticality> overrules = new LinkedHashMap<>();
         for (ImportRevisionFieldCriticality row : rows) {
-            String key = row.getFieldKey();
-            RevisionCriticalityField field = RevisionCriticalityField.byKey(key).orElse(null);
-            if (field == null) {
-                throw blocked(CODE_FIELD_CRITICALITY_INVALID, key, String.valueOf(row.getCriticality()),
-                        "Criticality is configured for '" + key + "', which is not a field of the revision "
-                                + "itself; the known fields are " + Arrays.toString(
-                                RevisionCriticalityField.values()));
-            }
-            if (row.getCriticality() == null) {
-                throw blocked(CODE_FIELD_CRITICALITY_INVALID, key, null,
-                        "Criticality of '" + key + "' has no value; use " + Criticality.CRITICAL + " or "
-                                + Criticality.NON_CRITICAL);
-            }
-            if (field.isIdentity() && row.getCriticality() == Criticality.NON_CRITICAL) {
-                throw blocked(CODE_FIELD_CRITICALITY_INVALID, key, String.valueOf(row.getCriticality()),
-                        "Field '" + key + "' is part of the offer identity and can never be "
-                                + Criticality.NON_CRITICAL + "; without an identity there is no offer to "
-                                + "review");
-            }
-            if (overrules.put(field, row.getCriticality()) != null) {
-                throw blocked(CODE_FIELD_CRITICALITY_INVALID, key, String.valueOf(row.getCriticality()),
-                        "Criticality of '" + key + "' is configured more than once for this revision; a "
-                                + "field has exactly one criticality");
-            }
+            // M2: één tak per rij; binnen de rij stopt de eerste fout de rij.
+            problems.check(null, () -> {
+                String key = row.getFieldKey();
+                RevisionCriticalityField field = RevisionCriticalityField.byKey(key).orElse(null);
+                if (field == null) {
+                    throw blocked(CODE_FIELD_CRITICALITY_INVALID, key, String.valueOf(row.getCriticality()),
+                            "Criticality is configured for '" + key + "', which is not a field of the revision "
+                                    + "itself; the known fields are " + Arrays.toString(
+                                    RevisionCriticalityField.values()));
+                }
+                if (row.getCriticality() == null) {
+                    throw blocked(CODE_FIELD_CRITICALITY_INVALID, key, null,
+                            "Criticality of '" + key + "' has no value; use " + Criticality.CRITICAL + " or "
+                                    + Criticality.NON_CRITICAL);
+                }
+                if (field.isIdentity() && row.getCriticality() == Criticality.NON_CRITICAL) {
+                    throw blocked(CODE_FIELD_CRITICALITY_INVALID, key, String.valueOf(row.getCriticality()),
+                            "Field '" + key + "' is part of the offer identity and can never be "
+                                    + Criticality.NON_CRITICAL + "; without an identity there is no offer to "
+                                    + "review");
+                }
+                if (overrules.put(field, row.getCriticality()) != null) {
+                    throw blocked(CODE_FIELD_CRITICALITY_INVALID, key, String.valueOf(row.getCriticality()),
+                            "Criticality of '" + key + "' is configured more than once for this revision; a "
+                                    + "field has exactly one criticality");
+                }
+            });
         }
         return overrules;
     }
@@ -316,55 +410,119 @@ public class ImportMappingConfigFactory {
 
     // --- Mappings ------------------------------------------------------------------------------
 
+    /**
+     * M3, per mappingrij. Elke controle is een eigen tak; afhankelijkheden binnen de rij (NT-14a par. 2):
+     * een onbekend doelveld (M3b) stopt de rij; een onleesbare {@code transform_config} (M3i) stopt
+     * M3j-M3m; de notatie (M3j) steunt op een verenigbaar type en een geldige schaal (M3e); de
+     * transformatie (M3k) wordt bij een ongeldige notatie beoordeeld met {@link ValueFormat#DEFAULT};
+     * de controle op ongebruikte instellingen (M3m) vraagt dat M3j-M3l alle drie slaagden. Enkel een rij
+     * zonder bevinding komt in de lijst van velden.
+     */
     private static List<FieldMapping> readFields(ImportDefinitionRevision revision,
-                                                 SourceStructureConfig structure,
-                                                 List<ImportFieldMapping> rows) {
+                                                 StructureFacts structure,
+                                                 List<ImportFieldMapping> rows,
+                                                 ConfigProblemCollector problems) {
         List<FieldMapping> fields = new ArrayList<>(rows.size());
         Set<String> targets = new LinkedHashSet<>();
         Set<Integer> sequences = new HashSet<>();
         Set<String> priceComponents = new HashSet<>();
         for (ImportFieldMapping row : rows) {
+            int findingsBefore = problems.findingCount();
             ImportFieldCatalogEntry target = row.getTargetField();
             String code = target == null ? null : target.getCode();
-            verifyDoesNotDuplicateRevision(revision, code);
-            if (target == null || !target.isActive()) {
-                throw blocked(CODE_MAPPING_TARGET_UNKNOWN, code, null,
-                        "Mapping " + row.getSequenceNumber() + " targets field '" + code
-                                + "', which does not exist or is no longer active in the field catalogue");
+            // M3a
+            problems.check(null, () -> verifyDoesNotDuplicateRevision(revision, code));
+            // M3b: zonder bestaand doelveld valt over deze rij niets meer te beoordelen.
+            Outcome<Void> known = problems.check(null, () -> {
+                if (target == null || !target.isActive()) {
+                    throw blocked(CODE_MAPPING_TARGET_UNKNOWN, code, null,
+                            "Mapping " + row.getSequenceNumber() + " targets field '" + code
+                                    + "', which does not exist or is no longer active in the field catalogue");
+                }
+            });
+            if (known.failed()) {
+                continue;
             }
-            if (!targets.add(code)) {
-                throw blocked(CODE_MAPPING_DUPLICATE_TARGET, code, null,
-                        "Target field '" + code + "' is mapped more than once in this revision; a target "
-                                + "field has exactly one source");
-            }
-            if (!sequences.add(row.getSequenceNumber())) {
-                throw blocked(CODE_MAPPING_DUPLICATE_TARGET, code,
-                        String.valueOf(row.getSequenceNumber()),
-                        "Sequence number " + row.getSequenceNumber() + " occurs more than once in the "
-                                + "mapping of this revision");
-            }
-            verifyTypes(row, target, code);
-            verifyOwner(row, target, code);
-            verifyIdentityClass(row, target, code);
-            verifyMappingCriticality(row, code);
+            // M3c
+            problems.check(null, () -> {
+                if (!targets.add(code)) {
+                    throw blocked(CODE_MAPPING_DUPLICATE_TARGET, code, null,
+                            "Target field '" + code + "' is mapped more than once in this revision; a target "
+                                    + "field has exactly one source");
+                }
+            });
+            // M3d
+            problems.check(null, () -> {
+                if (!sequences.add(row.getSequenceNumber())) {
+                    throw blocked(CODE_MAPPING_DUPLICATE_TARGET, code,
+                            String.valueOf(row.getSequenceNumber()),
+                            "Sequence number " + row.getSequenceNumber() + " occurs more than once in the "
+                                    + "mapping of this revision");
+                }
+            });
+            // M3e-M3h
+            Outcome<Void> types = problems.check(null, () -> verifyTypes(row, target, code));
+            problems.check(null, () -> verifyOwner(row, target, code));
+            problems.check(null, () -> verifyIdentityClass(row, target, code));
+            problems.check(null, () -> verifyMappingCriticality(row, code));
             // Stap B': de transformatie en de notatie worden hier exact één keer geparsed, vóór er één
             // byte gelezen is. Een ongeldige configuratie blokkeert dus de levering in plaats van een
             // miljoen identieke rijfouten op te leveren (R-REC-07, R-REC-05, R-REC-04).
-            MappingSettings settings = MappingSettings.parse(code, row.getTransformConfig());
-            ValueFormat valueFormat = readValueFormat(row, code, settings);
-            FieldTransform transform = readTransform(row, code, settings, valueFormat);
-            BigDecimal maxPercentage = readMaxPercentage(row, code, settings);
-            settings.verifyFullyUsed();
-            verifySource(structure, row, code, transform);
-            if (row.getPriceComponentCode() != null && !priceComponents.add(row.getPriceComponentCode())) {
-                throw blocked(CODE_PRICE_COMPONENT_DUPLICATE, code, row.getPriceComponentCode(),
-                        "Price component '" + row.getPriceComponentCode() + "' is mapped more than once in "
-                                + "this revision; two sources for one price component are never reconciled "
-                                + "silently");
+            // M3i
+            Outcome<MappingSettings> parsed = problems.branch(null,
+                    () -> MappingSettings.parse(code, row.getTransformConfig()));
+            Outcome<ValueFormat> valueFormat;
+            Outcome<FieldTransform> transform;
+            Outcome<BigDecimal> maxPercentage;
+            if (parsed.failed()) {
+                valueFormat = problems.skip(parsed.failedCode());
+                transform = Outcome.unavailable(parsed.failedCode());
+                maxPercentage = Outcome.unavailable(parsed.failedCode());
+            } else {
+                MappingSettings settings = parsed.value();
+                // M3j
+                valueFormat = types.failed() ? problems.skip(types.failedCode())
+                        : problems.branch(null, () -> readValueFormat(row, code, settings));
+                ValueFormat transformFormat = valueFormat.failed() ? ValueFormat.DEFAULT : valueFormat.value();
+                // M3k
+                transform = problems.branch(null, () -> readTransform(row, code, settings, transformFormat));
+                // M3l
+                maxPercentage = problems.branch(null, () -> readMaxPercentage(row, code, settings));
+                // M3m
+                String unassessable = firstFailure(valueFormat, transform, maxPercentage);
+                if (unassessable == null) {
+                    problems.check(null, settings::verifyFullyUsed);
+                } else {
+                    problems.skip(unassessable);
+                }
             }
-            fields.add(toFieldMapping(row, target, transform, valueFormat, maxPercentage));
+            // M3n
+            problems.check(null, () -> verifySource(structure, row, code, transform, problems));
+            // M3o
+            problems.check(null, () -> {
+                if (row.getPriceComponentCode() != null && !priceComponents.add(row.getPriceComponentCode())) {
+                    throw blocked(CODE_PRICE_COMPONENT_DUPLICATE, code, row.getPriceComponentCode(),
+                            "Price component '" + row.getPriceComponentCode() + "' is mapped more than once in "
+                                    + "this revision; two sources for one price component are never reconciled "
+                                    + "silently");
+                }
+            });
+            if (problems.findingCount() == findingsBefore) {
+                fields.add(toFieldMapping(row, target, transform.value(), valueFormat.value(),
+                        maxPercentage.value()));
+            }
         }
         return fields;
+    }
+
+    /** De grondoorzaak van de eerste uitkomst zonder waarde, of {@code null} wanneer alle slaagden. */
+    private static String firstFailure(Outcome<?>... outcomes) {
+        for (Outcome<?> outcome : outcomes) {
+            if (outcome.failed()) {
+                return outcome.failedCode();
+            }
+        }
+        return null;
     }
 
     /**
@@ -551,8 +709,13 @@ public class ImportMappingConfigFactory {
         };
     }
 
-    private static void verifySource(SourceStructureConfig structure, ImportFieldMapping row, String code,
-                                     FieldTransform transform) {
+    /**
+     * M3n. Een afgeleid veld steunt op een bruikbare transformatie (M3k); de kolomindex steunt op de
+     * referentiesoort (S6) en de bovengrens op het kolomaantal (S8). Wat niet beoordeeld kan worden,
+     * wordt als overgeslagen gemeld; de rest van de controle loopt door.
+     */
+    private static void verifySource(StructureFacts structure, ImportFieldMapping row, String code,
+                                     Outcome<FieldTransform> transformOutcome, ConfigProblemCollector problems) {
         FieldValueKind kind = row.getValueKind();
         if (kind == FieldValueKind.FIXED_VALUE) {
             if (row.getFixedValue() == null) {
@@ -571,6 +734,11 @@ public class ImportMappingConfigFactory {
         if (kind == FieldValueKind.DERIVED) {
             // Een afgeleid veld heeft geen bronkolom: enkel een transformatie die haar waarde zélf
             // opbouwt kan het vullen (R-REC-07). Elke andere transformatie zou een leeg veld opleveren.
+            if (transformOutcome.failed()) {
+                problems.skip(transformOutcome.failedCode());
+                return;
+            }
+            FieldTransform transform = transformOutcome.value();
             if (!(transform instanceof FieldTransform.Fixed) && !(transform instanceof FieldTransform.Concat)) {
                 throw blocked(CODE_TRANSFORM_INVALID, code, String.valueOf(row.getTransformKind()),
                         "Mapping for '" + code + "' is derived but its transformation " + row.getTransformKind()
@@ -584,9 +752,14 @@ public class ImportMappingConfigFactory {
             throw blocked(CODE_MAPPING_SOURCE_UNRESOLVED, code, reference,
                     "Mapping for '" + code + "' has no source column");
         }
-        if (structure.fieldReferenceKind() == FieldReferenceKind.COLUMN_INDEX) {
+        if (structure.referenceKind() == null) {
+            problems.skip(SourceStructureConfigFactory.CODE_FIELD_REFERENCE_KIND_INVALID);
+        } else if (structure.referenceKind() == FieldReferenceKind.COLUMN_INDEX) {
+            if (!structure.columnCountValid()) {
+                problems.skip(SourceStructureConfigFactory.CODE_COLUMN_COUNT_INVALID);
+            }
             requireColumnIndex(CODE_MAPPING_SOURCE_UNRESOLVED, code, reference,
-                    structure.expectedColumnCount());
+                    structure.upperBound());
         }
         // Bij HEADER_NAME wordt de kolom pas bij de headercontrole beoordeeld (R-STR-04): het
         // bronbestand is hier nog niet geopend.
@@ -758,49 +931,81 @@ public class ImportMappingConfigFactory {
 
     // --- Recordfilters --------------------------------------------------------------------------
 
-    private static List<RecordFilter> readFilters(SourceStructureConfig structure,
-                                                  List<ImportRecordFilter> rows) {
+    /**
+     * M4, per filterrij. Elke controle is een eigen tak; de kolomindex (M4d) steunt op een bronkolom
+     * (M4c), op de referentiesoort (S6) en voor de bovengrens op het kolomaantal (S8). Enkel een rij
+     * zonder bevinding komt in de lijst van filters.
+     */
+    private static List<RecordFilter> readFilters(StructureFacts structure,
+                                                  List<ImportRecordFilter> rows,
+                                                  ConfigProblemCollector problems) {
         List<RecordFilter> filters = new ArrayList<>(rows.size());
         Set<Integer> sequences = new HashSet<>();
         for (ImportRecordFilter row : rows) {
+            int findingsBefore = problems.findingCount();
             int sequence = row.getSequenceNumber();
-            if (!sequences.add(sequence)) {
-                throw blocked(CODE_FILTER_INVALID, null, String.valueOf(sequence),
-                        "Record filter sequence number " + sequence + " occurs more than once in this "
-                                + "revision; the evaluation order would be undefined");
-            }
-            if (row.getFilterStage() != FilterStage.SOURCE_FIELD) {
-                throw blocked(CODE_FILTER_INVALID, row.getSourceReference(),
-                        String.valueOf(row.getFilterStage()),
-                        "Record filter " + sequence + " filters on stage " + row.getFilterStage()
-                                + ", which this build does not support yet; ignoring it would import records "
-                                + "that are deliberately out of scope");
-            }
+            // M4a
+            problems.check(null, () -> {
+                if (!sequences.add(sequence)) {
+                    throw blocked(CODE_FILTER_INVALID, null, String.valueOf(sequence),
+                            "Record filter sequence number " + sequence + " occurs more than once in this "
+                                    + "revision; the evaluation order would be undefined");
+                }
+            });
+            // M4b
+            problems.check(null, () -> {
+                if (row.getFilterStage() != FilterStage.SOURCE_FIELD) {
+                    throw blocked(CODE_FILTER_INVALID, row.getSourceReference(),
+                            String.valueOf(row.getFilterStage()),
+                            "Record filter " + sequence + " filters on stage " + row.getFilterStage()
+                                    + ", which this build does not support yet; ignoring it would import records "
+                                    + "that are deliberately out of scope");
+                }
+            });
+            // M4c
             String reference = trimToNull(row.getSourceReference());
-            if (reference == null) {
-                throw blocked(CODE_FILTER_INVALID, null, null,
-                        "Record filter " + sequence + " has no source column");
+            Outcome<Void> source = problems.check(null, () -> {
+                if (reference == null) {
+                    throw blocked(CODE_FILTER_INVALID, null, null,
+                            "Record filter " + sequence + " has no source column");
+                }
+            });
+            // M4d
+            if (source.failed()) {
+                problems.skip(source.failedCode());
+            } else if (structure.referenceKind() == null) {
+                problems.skip(SourceStructureConfigFactory.CODE_FIELD_REFERENCE_KIND_INVALID);
+            } else if (structure.referenceKind() == FieldReferenceKind.COLUMN_INDEX) {
+                if (!structure.columnCountValid()) {
+                    problems.skip(SourceStructureConfigFactory.CODE_COLUMN_COUNT_INVALID);
+                }
+                problems.check(null, () -> requireColumnIndex(CODE_FILTER_INVALID, reference, reference,
+                        structure.upperBound()));
             }
-            if (structure.fieldReferenceKind() == FieldReferenceKind.COLUMN_INDEX) {
-                requireColumnIndex(CODE_FILTER_INVALID, reference, reference,
-                        structure.expectedColumnCount());
-            }
-            if (row.getOperator() == null || row.getOutcome() == null || row.getNullBehaviour() == null
-                    || row.getMissingColumnBehaviour() == null) {
-                throw blocked(CODE_FILTER_INVALID, reference, null,
-                        "Record filter " + sequence + " is incomplete; operator, outcome, null behaviour and "
-                                + "missing column behaviour are all required");
-            }
+            // M4e
+            problems.check(null, () -> {
+                if (row.getOperator() == null || row.getOutcome() == null || row.getNullBehaviour() == null
+                        || row.getMissingColumnBehaviour() == null) {
+                    throw blocked(CODE_FILTER_INVALID, reference, null,
+                            "Record filter " + sequence + " is incomplete; operator, outcome, null behaviour and "
+                                    + "missing column behaviour are all required");
+                }
+            });
+            // M4f
             String compareValue = row.getCompareValue();
-            if (compareValue == null || (compareValue.isBlank() && requiresNonEmptyCompareValue(
-                    row.getOperator()))) {
-                throw blocked(CODE_FILTER_INVALID, reference, compareValue,
-                        "Record filter " + sequence + " compares with " + row.getOperator()
-                                + " but has no value to compare with; that rule would match every record");
+            problems.check(null, () -> {
+                if (compareValue == null || (compareValue.isBlank() && requiresNonEmptyCompareValue(
+                        row.getOperator()))) {
+                    throw blocked(CODE_FILTER_INVALID, reference, compareValue,
+                            "Record filter " + sequence + " compares with " + row.getOperator()
+                                    + " but has no value to compare with; that rule would match every record");
+                }
+            });
+            if (problems.findingCount() == findingsBefore) {
+                filters.add(new RecordFilter(sequence, reference, row.getOperator(), compareValue,
+                        row.getOutcome(), row.isCaseSensitive(), row.isTrimBeforeCompare(),
+                        row.getNullBehaviour(), row.getMissingColumnBehaviour()));
             }
-            filters.add(new RecordFilter(sequence, reference, row.getOperator(), compareValue,
-                    row.getOutcome(), row.isCaseSensitive(), row.isTrimBeforeCompare(),
-                    row.getNullBehaviour(), row.getMissingColumnBehaviour()));
         }
         return filters;
     }

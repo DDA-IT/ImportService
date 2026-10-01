@@ -147,7 +147,7 @@ public class IssueAggregationService {
     public Aggregation aggregate(long batchId, Long deliveryFileId,
                                  Function<IssueIncidentKind, Long> scopeSource,
                                  BigDecimal bulkSharePercent, int maxSampleRowsPerCode) {
-        BigDecimal sharePercent = bulkSharePercent == null ? BigDecimal.ONE : bulkSharePercent;
+        BigDecimal sharePercent = effectiveBulkSharePercent(bulkSharePercent);
         return transaction.execute(status -> {
             groups.linkIssueRows(batchId);
             groups.refreshSampleCounts(batchId);
@@ -187,11 +187,19 @@ public class IssueAggregationService {
     }
 
     /**
+     * Het bulkpercentage dat werkelijk geldt: dat van de revisie, of de default 1% wanneer het ontbreekt.
+     * Publiek sinds NT-9: de proefinlezing past exact dezelfde regel toe.
+     */
+    public static BigDecimal effectiveBulkSharePercent(BigDecimal configured) {
+        return configured == null ? BigDecimal.ONE : configured;
+    }
+
+    /**
      * Het aandeel van deze groep in de gecontroleerde scope, schaal {@value #PERCENTAGE_SCALE}
      * (par. 3.4). {@code null} wanneer de scope onbekend of 0 is: dan bestaat het aandeel niet en
-     * wordt er niets verzonnen — geen 0%, geen 100%.
+     * wordt er niets verzonnen — geen 0%, geen 100%. Publiek sinds NT-9 (gedeeld met de proefinlezing).
      */
-    private static BigDecimal share(long occurrences, Long scope) {
+    public static BigDecimal share(long occurrences, Long scope) {
         if (scope == null || scope <= 0) {
             return null;
         }
@@ -207,8 +215,11 @@ public class IssueAggregationService {
      * Zonder bruikbare scope is er geen bulkincident: een percentage zonder noemer bestaat niet, en
      * "dan maar blokkeren" of "dan maar niets" op basis van een geraden noemer is allebei fout. De
      * groep blijft wel bestaan met haar werkelijke aantal, zodat de vaststelling niet verdwijnt.
+     * <p>
+     * Publiek sinds NT-9 (contract {@code docs/design/proefinlezing-design.md} par. 7): de proefinlezing
+     * past exact deze regel toe; er bestaat dus maar één implementatie van de bulkregel.
      */
-    private static boolean isBulk(long occurrences, Long scope, BigDecimal sharePercent) {
+    public static boolean isBulk(long occurrences, Long scope, BigDecimal sharePercent) {
         if (scope == null || scope <= 0 || sharePercent == null) {
             return false;
         }

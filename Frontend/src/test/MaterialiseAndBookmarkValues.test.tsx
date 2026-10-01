@@ -19,6 +19,7 @@ import type { BookmarkView, MaterialisedDefinitionView } from '../api/types';
 import { MaterialiseForm } from '../features/templates/MaterialiseForm';
 import { LinkBookmarkValuesSection } from '../features/templates/LinkBookmarkValuesSection';
 import { TemplateDetailPage } from '../features/templates/TemplateDetailPage';
+import { AddTaskAfterMaterialise } from '../features/templates/AddTaskAfterMaterialise';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -72,7 +73,7 @@ const LINK_BOOKMARK: BookmarkView = {
   id: 1001,
   revisionId: 100,
   name: 'BIB_ZOEKLEVERANCIER',
-  label: 'Bibliotheekzoekleverancier',
+  label: 'Zoekcode bibliotheek',
   description: null,
   dataType: 'TEXT',
   valueScope: 'LINK',
@@ -143,7 +144,7 @@ const LINK_BOOKMARK_VALUES = {
   values: [
     {
       bookmarkName: 'BIB_ZOEKLEVERANCIER',
-      label: 'Bibliotheekzoekleverancier',
+      label: 'Zoekcode bibliotheek',
       dataType: 'TEXT',
       valueText: 'VROOAM',
       previousValueText: null,
@@ -207,7 +208,7 @@ function renderLinkValues(identity = TEST_IDENTITY) {
 }
 
 function chooseMode(mode: string) {
-  fireEvent.change(screen.getByLabelText(/^Modus/), { target: { value: mode } });
+  fireEvent.change(screen.getByLabelText(/^Nieuw of hergebruik/), { target: { value: mode } });
 }
 
 function fillLinkFields() {
@@ -236,12 +237,12 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
     renderMaterialiseForm();
 
     // Geen voorselectie: de sentinel is de beginwaarde.
-    expect((screen.getByLabelText(/^Modus/) as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText(/^Nieuw of hergebruik/) as HTMLSelectElement).value).toBe('');
 
     submitMaterialise();
 
     expect(
-      await screen.findByText('Kies of dit een nieuwe definitie wordt of een bestaande hergebruikt.'),
+      await screen.findByText('Kies of dit een nieuwe beschrijving van het bestand wordt of een bestaande hergebruikt.'),
     ).toBeInTheDocument();
     expect(postCount(fetchMock)).toBe(0);
   });
@@ -251,19 +252,19 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
     renderMaterialiseForm();
 
     // Vóór de keuze staat er geen enkel veld van een van beide modi.
-    expect(screen.queryByLabelText(/^Definitiecode/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Code van de beschrijving/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^Koppelingscode/)).not.toBeInTheDocument();
 
     chooseMode('NEW_DEFINITION');
 
-    expect(screen.getByLabelText(/^Definitiecode/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Definitienaam/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Code van de beschrijving/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Naam van de beschrijving/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Koppelingscode/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Leverancierscode/)).toBeInTheDocument();
     // Beide scopes zijn in beeld, en er is geen keuzelijst voor hergebruik.
     expect(screen.getByTestId('bookmark-field-BESTANDS_PREFIX')).toBeInTheDocument();
     expect(screen.getByTestId('bookmark-field-BIB_ZOEKLEVERANCIER')).toBeInTheDocument();
-    expect(screen.queryByLabelText(/^Bestaande definitie/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Bestaande beschrijving/)).not.toBeInTheDocument();
   });
 
   it('S1-F3.3: REUSE_DEFINITION verbergt de definitievelden en DEFINITION-scope, en toont de definitie-keuze', () => {
@@ -272,20 +273,23 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
 
     chooseMode('REUSE_DEFINITION');
 
-    expect(screen.queryByLabelText(/^Definitiecode/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/^Definitienaam/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Code van de beschrijving/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Naam van de beschrijving/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^Wijzigingsreden/)).not.toBeInTheDocument();
     // DEFINITION-scope verdwijnt (spiegel van DEFINITION_SCOPE_VALUE_NOT_ALLOWED_ON_REUSE); LINK blijft.
     expect(screen.queryByTestId('bookmark-field-BESTANDS_PREFIX')).not.toBeInTheDocument();
     expect(screen.getByTestId('bookmark-field-BIB_ZOEKLEVERANCIER')).toBeInTheDocument();
 
-    const select = screen.getByLabelText(/^Bestaande definitie/);
+    const select = screen.getByLabelText(/^Bestaande beschrijving/);
     expect(select).toBeInTheDocument();
     const shareableOption = screen.getByRole('option', { name: /DEF-20/ });
     expect(shareableOption).not.toBeDisabled();
     const blockedOption = screen.getByRole('option', { name: /DEF-21/ });
     expect(blockedOption).toBeDisabled();
-    expect(blockedOption).toHaveTextContent("niet deelbaar door bookmark 'DETAILLEVERANCIER'");
+    // NT-11c: de technische naam staat niet in de tekst (de bookmark is hier niet gedeclareerd), wel in de tooltip.
+    expect(blockedOption).toHaveTextContent('niet deelbaar door een invulpunt van dit sjabloon');
+    expect(blockedOption.textContent).not.toContain('DETAILLEVERANCIER');
+    expect(blockedOption).toHaveAttribute('title', 'Technische naam van het invulpunt: DETAILLEVERANCIER');
   });
 
   it('S1-F3.4: materialiseren (NEW_DEFINITION) slaagt, verstuurt de juiste body en toont het resultaat', async () => {
@@ -293,19 +297,23 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
     const { onMaterialised } = renderMaterialiseForm();
 
     chooseMode('NEW_DEFINITION');
-    fireEvent.change(screen.getByLabelText(/^Definitiecode/), { target: { value: 'DEF-30' } });
-    fireEvent.change(screen.getByLabelText(/^Definitienaam/), { target: { value: 'Leverancier Z' } });
+    fireEvent.change(screen.getByLabelText(/^Code van de beschrijving/), { target: { value: 'DEF-30' } });
+    fireEvent.change(screen.getByLabelText(/^Naam van de beschrijving/), { target: { value: 'Leverancier Z' } });
     fillLinkFields();
-    fireEvent.change(screen.getByLabelText(/^BESTANDS_PREFIX/), { target: { value: 'VRO_' } });
+    fireEvent.change(screen.getByLabelText(/^Bestandsprefix/), { target: { value: 'VRO_' } });
     submitMaterialise();
 
     expect(await screen.findByTestId('materialise-result')).toHaveTextContent(
-      'Nieuwe definitie DEF-30 gematerialiseerd',
+      'Nieuwe beschrijving DEF-30 gematerialiseerd',
     );
     expect(screen.getByTestId('materialise-result')).toHaveTextContent('LNK-77');
     // Het antwoord toont altijd welke sjabloonversie gebruikt is.
-    expect(screen.getByTestId('materialise-result')).toHaveTextContent('#1 (ACTIVE)');
-    expect(screen.getByTestId('materialise-warnings')).toHaveTextContent('LINK_SEARCH_SUPPLIER_NOT_DERIVED');
+    expect(screen.getByTestId('materialise-result')).toHaveTextContent('Gebruikte sjabloonversie: 1 (Actief)');
+    // NT-11c: de melding staat in gewoon Nederlands; de code staat in de tooltip.
+    expect(screen.getByTestId('materialise-warnings')).toHaveTextContent(
+      'Leverancierscode in de bibliotheek is niet ingevuld',
+    );
+    expect(screen.getByTestId('materialise-warnings').textContent).not.toContain('LINK_SEARCH_SUPPLIER_NOT_DERIVED');
 
     const body = bodyOf(fetchMock, '/templates/1/materialisations');
     expect(body.mode).toBe('NEW_DEFINITION');
@@ -323,10 +331,10 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
 
     // Dubbele input: materialiseren is bewust niet idempotent, dus gaat het formulier leeg terug naar de
     // beginstand (ook `mode`). Een tweede klik verstuurt daarom niets in plaats van een 409 uit te lokken.
-    expect((screen.getByLabelText(/^Modus/) as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText(/^Nieuw of hergebruik/) as HTMLSelectElement).value).toBe('');
     submitMaterialise();
     expect(
-      await screen.findByText('Kies of dit een nieuwe definitie wordt of een bestaande hergebruikt.'),
+      await screen.findByText('Kies of dit een nieuwe beschrijving van het bestand wordt of een bestaande hergebruikt.'),
     ).toBeInTheDocument();
     expect(postCount(fetchMock)).toBe(1);
   });
@@ -336,9 +344,9 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
     renderMaterialiseForm();
 
     chooseMode('REUSE_DEFINITION');
-    fireEvent.change(screen.getByLabelText(/^Bestaande definitie/), { target: { value: '20' } });
+    fireEvent.change(screen.getByLabelText(/^Bestaande beschrijving/), { target: { value: '20' } });
     fillLinkFields();
-    fireEvent.change(screen.getByLabelText(/^BIB_ZOEKLEVERANCIER/), { target: { value: 'VROOAM' } });
+    fireEvent.change(screen.getByLabelText(/^Zoekcode bibliotheek/), { target: { value: 'VROOAM' } });
     submitMaterialise();
 
     expect(await screen.findByTestId('materialise-result')).toHaveTextContent('hergebruikt');
@@ -365,7 +373,7 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
     chooseMode('NEW_DEFINITION');
 
     expect(screen.queryByLabelText(/^Leverancierscode/)).not.toBeInTheDocument();
-    expect(screen.getByText(/LINK_SUPPLIER_ORGANISATION/)).toBeInTheDocument();
+    expect(screen.getByText(/bestemming: Leverancier van de koppeling/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Bibliotheekcode/)).toBeInTheDocument();
   });
 
@@ -396,9 +404,11 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
     });
     renderLinkValues();
 
-    expect(await screen.findByText('BIB_ZOEKLEVERANCIER')).toBeInTheDocument();
+    // NT-11c: het label staat in beeld, de technische naam in de tooltip.
+    const label = await screen.findByText('Zoekcode bibliotheek');
+    expect(label).toHaveAttribute('title', 'Technische naam: BIB_ZOEKLEVERANCIER');
     fireEvent.click(screen.getByTestId('edit-BIB_ZOEKLEVERANCIER'));
-    fireEvent.change(screen.getByLabelText(/^Nieuwe waarde voor BIB_ZOEKLEVERANCIER/), {
+    fireEvent.change(screen.getByLabelText(/^Nieuwe waarde voor Zoekcode bibliotheek/), {
       target: { value: 'NIEUW' },
     });
     fireEvent.click(screen.getByTestId('save-BIB_ZOEKLEVERANCIER'));
@@ -423,9 +433,9 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
     });
     renderLinkValues();
 
-    await screen.findByText('BIB_ZOEKLEVERANCIER');
+    await screen.findByText('Zoekcode bibliotheek');
     fireEvent.click(screen.getByTestId('edit-BIB_ZOEKLEVERANCIER'));
-    const input = screen.getByLabelText(/^Nieuwe waarde voor BIB_ZOEKLEVERANCIER/);
+    const input = screen.getByLabelText(/^Nieuwe waarde voor Zoekcode bibliotheek/);
     fireEvent.click(screen.getByLabelText(/Expliciet leegmaken/));
     expect(input).toBeDisabled();
     fireEvent.click(screen.getByTestId('save-BIB_ZOEKLEVERANCIER'));
@@ -452,7 +462,7 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
     });
     renderLinkValues();
 
-    await screen.findByText('BIB_ZOEKLEVERANCIER');
+    await screen.findByText('Zoekcode bibliotheek');
     fireEvent.click(screen.getByTestId('edit-BIB_ZOEKLEVERANCIER'));
     fireEvent.click(screen.getByTestId('save-BIB_ZOEKLEVERANCIER'));
 
@@ -462,19 +472,21 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
     });
     expect(within(editor).getByText(/wacht tot de batch afgerond is/i)).toBeInTheDocument();
     // Het formulier blijft open: de gebruiker ziet welke waarde niet bewaard is.
-    expect(screen.getByLabelText(/^Nieuwe waarde voor BIB_ZOEKLEVERANCIER/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Nieuwe waarde voor Zoekcode bibliotheek/)).toBeInTheDocument();
   });
 
   it('S1-F3.11: een wees (declared = false) is niet bewerkbaar, met reden', async () => {
     mockFetch(() => jsonResponse(LINK_BOOKMARK_VALUES));
     renderLinkValues();
 
-    await screen.findByText('OUDE_BOOKMARK');
+    // Een bookmark zonder declaratie toont een neutrale naam; de technische naam staat in de tooltip.
+    const orphanName = await screen.findByText('Invulpunt zonder declaratie');
+    expect(orphanName).toHaveAttribute('title', 'Technische naam: OUDE_BOOKMARK');
     const orphanButton = screen.getByTestId('edit-OUDE_BOOKMARK');
     expect(orphanButton).toBeDisabled();
     expect(orphanButton).toHaveAttribute(
       'title',
-      'wees: niet (meer) gedeclareerd op de actieve revisie, dus niet bewerkbaar',
+      'niet meer in gebruik: dit invulpunt staat niet (meer) gedeclareerd op de actieve versie, dus niet aan te passen',
     );
   });
 
@@ -482,7 +494,7 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
     mockFetch(() => jsonResponse(LINK_BOOKMARK_VALUES));
     renderLinkValues(testIdentityWith(PERMISSION_READ));
 
-    await screen.findByText('BIB_ZOEKLEVERANCIER');
+    await screen.findByText('Zoekcode bibliotheek');
     const button = screen.getByTestId('edit-BIB_ZOEKLEVERANCIER');
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('title', "U heeft het recht 'Beheren' (catalogImport.manage) niet.");
@@ -532,7 +544,7 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
       </ActorProvider>,
     );
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Revisie #1' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Versie 1' }));
 
     expect(await screen.findByTestId('materialise-form')).toBeInTheDocument();
     // De keuzelijst voor hergebruik komt uit de al geladen materialisatiehistoriek (één verzoek);
@@ -540,5 +552,101 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
     await screen.findByText('DEF-21');
     chooseMode('REUSE_DEFINITION');
     expect(screen.getByRole('option', { name: /DEF-21/ })).toBeDisabled();
+  });
+
+  // --- NT-7: "Taak toevoegen" na een geslaagde materialisatie op de pagina Sjablonen ----------------------
+
+  function mockTemplateDetailServer() {
+    return mockFetch((url, init) => {
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (url.includes('/templates/1/revisions/100/bookmarks')) {
+        return jsonResponse({ definitionId: 1, revisionId: 100, bookmarks: [DEFINITION_BOOKMARK, LINK_BOOKMARK], problems: [] });
+      }
+      if (url.includes('/templates/1/materialisations')) {
+        if (method === 'POST') {
+          return jsonResponse(MATERIALISATION_RESULT, 201);
+        }
+        return jsonResponse({ content: [], page: 0, size: 50, totalElements: 0, totalPages: 0 });
+      }
+      if (url.includes('/definitions/1/revisions')) {
+        return jsonResponse({
+          content: [{ id: 100, definitionId: 1, revisionNumber: 1, status: 'ACTIVE' }],
+          page: 0,
+          size: 50,
+          totalElements: 1,
+          totalPages: 1,
+        });
+      }
+      if (/\/templates\?/.test(url) || url.endsWith('/templates')) {
+        return jsonResponse({
+          content: [{ id: 1, code: 'TPL-1', name: 'Sjabloon', sourceOrganisationId: 5, sourceOrganisationCode: 'ORG-5' }],
+          page: 0,
+          size: 200,
+          totalElements: 1,
+          totalPages: 1,
+        });
+      }
+      if (url.includes('/import-links')) {
+        return jsonResponse({ content: [], page: 0, size: 200, totalElements: 0, totalPages: 0 });
+      }
+      if (url.includes('/links/77/bookmark-values')) {
+        return jsonResponse(LINK_BOOKMARK_VALUES);
+      }
+      throw new Error(`Onverwachte URL in test: ${url}`);
+    });
+  }
+
+  async function materialiseOnTemplatePage(identity = TEST_IDENTITY) {
+    render(
+      <ActorProvider identity={identity}>
+        <MemoryRouter initialEntries={['/templates/1']}>
+          <Routes>
+            <Route path="/templates/:definitionId" element={<TemplateDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ActorProvider>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Versie 1' }));
+    await screen.findByTestId('materialise-form');
+    chooseMode('NEW_DEFINITION');
+    fireEvent.change(screen.getByLabelText(/^Code van de beschrijving/), { target: { value: 'DEF-30' } });
+    fireEvent.change(screen.getByLabelText(/^Naam van de beschrijving/), { target: { value: 'Leverancier Z' } });
+    fillLinkFields();
+    submitMaterialise();
+  }
+
+  it('NT-7.5: na het materialiseren is er geen taak en biedt de pagina "Taak toevoegen" naar de taakstap', async () => {
+    mockTemplateDetailServer();
+    await materialiseOnTemplatePage();
+
+    await screen.findByTestId('add-task-button');
+    expect(screen.getByTestId('add-task-after-materialise')).toHaveTextContent('heeft nog geen taak');
+    // De organisatie komt uit de sjabloonlijst (sjabloon 1 hoort bij organisatie 5); de definitie en koppeling
+    // uit het antwoord van de materialisatie.
+    await waitFor(() => {
+      expect(screen.getByTestId('add-task-button')).toHaveAttribute(
+        'href',
+        '/setup/new?organisationId=5&definitionId=30&linkId=77',
+      );
+    });
+    // Geen stale verwijzing vasthouden: zolang de sjabloonlijst laadt is het een uitgeschakelde knop, daarna
+    // een link (ander element); de waitFor hierboven haalt het element telkens opnieuw op.
+    expect(screen.getByRole('link', { name: 'Taak toevoegen' })).toBeInTheDocument();
+  });
+
+  it('NT-7.6: zonder Beheren is "Taak toevoegen" uitgeschakeld mét reden', async () => {
+    mockTemplateDetailServer();
+    // Zonder Beheren kan er niet gematerialiseerd worden; het blok wordt daarom rechtstreeks gerenderd.
+    render(
+      <ActorProvider identity={testIdentityWith(PERMISSION_READ)}>
+        <MemoryRouter>
+          <AddTaskAfterMaterialise templateId={1} definitionId={30} linkId={77} linkCode="LNK-77" />
+        </MemoryRouter>
+      </ActorProvider>,
+    );
+
+    const button = await screen.findByTestId('add-task-button');
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', "U heeft het recht 'Beheren' (catalogImport.manage) niet.");
   });
 });

@@ -601,6 +601,49 @@ export type ImportLinkRow = {
   importDefinitionId: number;
 };
 
+// be.dda.catalogimport.service.ImportLinkReadinessService (NT-8, gereedheidscontrole zonder bestand)
+export const READINESS_CHECK_STATUSES = ['OK', 'PROBLEM', 'INFO'] as const;
+export type ReadinessCheckStatus = (typeof READINESS_CHECK_STATUSES)[number];
+
+export const READINESS_SUBJECT_TYPES = ['LINK', 'DEFINITION', 'REVISION', 'TASK'] as const;
+export type ReadinessSubjectType = (typeof READINESS_SUBJECT_TYPES)[number];
+
+/** Waar een controle over gaat (koppeling, definitie, revisie of taak) met het id ervan. */
+export type ReadinessSubject = {
+  type: ReadinessSubjectType;
+  id: number;
+};
+
+/**
+ * Eén regel van de checklist. Bij `PROBLEM` is `code` exact de foutcode die de upload (409) of het activeren van het
+ * concept (400/409) zou geven (bv. `NO_ACTIVE_REVISION`, `CONFIG_PRICE_FIELD_MISSING`,
+ * `CONFIG_REQUIRED_BOOKMARK_MISSING`, `TASK_HAS_DELIVERY_CONFIGURATION`, `TASK_NOT_MANUAL`, een `CONFIG_*`-code van
+ * de configuratievalidatie) of `LINK_HAS_NO_TASK`. OK-regels: `READY_LINK_ACTIVE`, `READY_ACTIVE_REVISION`,
+ * `READY_PRICE_FIELD`, `READY_LINK_BOOKMARKS`, `READY_DRAFT_ACTIVATABLE`, `READY_TASK_ACCEPTS_UPLOAD`. INFO-regels:
+ * `INFO_LINK_INACTIVE`, `INFO_NO_DRAFT_REVISION`, `INFO_LIBRARY_NOT_VERIFIED`, `INFO_CONFIG_CHECKS_SKIPPED` (NT-14-2; de
+ * codes van de grondoorzaken staan enkel in `detail`, als "Checks depending on [A, B] were not evaluated"). `detail` is technische (Engelse)
+ * toelichting — voor "Technische details (voor support)", nooit de hoofdtekst (V7); `null` bij een OK-regel.
+ */
+export type ReadinessCheck = {
+  code: string;
+  status: ReadinessCheckStatus;
+  subject: ReadinessSubject;
+  detail: string | null;
+  /** Additief (NT-14-2): `fieldName` van de configuratiefout; afwezig/`null` elders. */
+  fieldName?: string | null;
+  /** Additief (NT-14-2): sleutel uit het woordenlijstdomein `revisionField`; afwezig/`null` elders. */
+  revisionField?: string | null;
+  /** Additief (NT-14-5): codes van overgeslagen afhankelijke controles voor `INFO_CONFIG_CHECKS_SKIPPED`; afwezig/`null`/leeg elders. */
+  skippedBecause?: string[] | null;
+};
+
+/** Antwoord van `GET /import-links/{id}/readiness`: `ready` = geen enkele regel met status `PROBLEM`. */
+export type LinkReadiness = {
+  linkId: number;
+  ready: boolean;
+  checks: ReadinessCheck[];
+};
+
 // be.dda.catalogimport.domain.SourceOrganisationType (S1-B1)
 export const SOURCE_ORGANISATION_TYPES = ['SUPPLIER', 'PURCHASING_ASSOCIATION'] as const;
 export type SourceOrganisationType = (typeof SOURCE_ORGANISATION_TYPES)[number];
@@ -652,12 +695,353 @@ export type RevisionRow = {
   status: RevisionStatus;
 };
 
+// --- S1-F4: het schrijfdeel van scherm 1a (opvolgrevisie maken → DRAFT bewerken → activeren) --------
+// `docs/design/revision-successor-design.md` §5, §6 (endpoints E1 t/m E5). E1 is vlagloos en vraagt
+// `READ`; E2/E3/E4/E5 staan achter `catalogimport.setup-api.enabled` en vragen `MANAGE`.
+
+/**
+ * be.dda.catalogimport.domain.IdentityProfileKind — `THREE_PART` laat de kortingscode ongemapt
+ * (`identityDiscountCodeField` is dan `null`), `FOUR_PART_WITH_DISCOUNT_CODE` neemt hem mee in de
+ * aanbiedingsidentiteit. Het paar profiel + kortingscodeveld moet consistent zijn
+ * (`ck_import_definition_revision_identity`); een verkeerde combinatie is 400.
+ */
+export const IDENTITY_PROFILE_KINDS = ['THREE_PART', 'FOUR_PART_WITH_DISCOUNT_CODE'] as const;
+export type IdentityProfileKind = (typeof IDENTITY_PROFILE_KINDS)[number];
+
+/**
+ * be.dda.catalogimport.service.SetupService.RevisionView — het antwoord van `createRevision`,
+ * `successor` (E2), de `PATCH` (E3) en `activate` (E5). Bewust een kleine projectie: het scherm
+ * herlaadt na elke geslaagde actie het volledige {@link RevisionDetail} (E1).
+ */
+export type RevisionView = {
+  id: number;
+  definitionId: number;
+  revisionNumber: number;
+  status: RevisionStatus;
+  identityProfileKind: string;
+  delimiter: string;
+  hasHeader: boolean;
+  fieldReferenceKind: string;
+  canonicalisationVersion: number;
+  supplierField: string;
+  supplierGroupField: string;
+  supplierReferenceField: string;
+  discountCodeField: string | null;
+  basePriceField: string;
+  descriptionField: string | null;
+  currencyField: string | null;
+  creationThresholdSharePercent: number | null;
+  maxCriticalSharePercent: number | null;
+  maxRejectedSharePercent: number | null;
+  bulkIncidentSharePercent: number | null;
+};
+
+// be.dda.catalogimport.service.SetupService.MappingView — één veldmapping van een revisie.
+export type MappingView = {
+  id: number;
+  revisionId: number;
+  sequenceNumber: number;
+  targetFieldCode: string;
+  sourceReference: string;
+  valueKind: string;
+  criticality: string;
+};
+
+// be.dda.catalogimport.service.SetupService.FilterView — één recordfilter van een revisie.
+export type FilterView = {
+  id: number;
+  revisionId: number;
+  sequenceNumber: number;
+  sourceReference: string;
+  operator: string;
+  compareValue: string | null;
+  outcome: string;
+};
+
+// be.dda.catalogimport.service.SetupService.FieldCriticalityView — één kritiek-overrule. Heeft geen
+// eigen id: de sleutel is (revisionId, fieldKey). Er is bewust geen verwijderendpoint voor (§6: E4
+// dekt enkel mappings en filters).
+export type FieldCriticalityView = {
+  revisionId: number;
+  fieldKey: string;
+  criticality: string;
+};
+
+/**
+ * be.dda.catalogimport.service.SetupQueryService.BookmarkValueRow — een ingevulde bookmarkwaarde met
+ * scope `DEFINITION` op déze revisie. Alleen-lezen op dit scherm: `sourceTemplateRevisionId` is `null`
+ * bij handmatig invullen (nooit gematerialiseerd).
+ */
+export type BookmarkValueRow = {
+  bookmarkName: string;
+  dataType: string;
+  valueText: string | null;
+  sourceTemplateRevisionId: number | null;
+  filledAt: string;
+  filledBy: string | null;
+  filledBySubject: string | null;
+};
+
+/**
+ * be.dda.catalogimport.service.SetupQueryService.RevisionDetail — endpoint E1
+ * (`GET /definitions/{definitionId}/revisions/{revisionId}`, `READ`, buiten de vlag): alle scalaire
+ * velden van één revisie plus de vijf configuratie-kindtabellen. Werkt op elke revisiestatus; de
+ * schrijfpaden E3/E4 werken enkel op een `DRAFT`.
+ *
+ * De vier `*ConfigHash`-velden dekken **niet** de mappings, filters, kritiek-overrules, drempels en het
+ * prijsbeleid (ontdekking in ontwerp §9): twee revisies die enkel daarin verschillen, dragen dezelfde
+ * `compositeConfigHash`. De UI toont deze hashes daarom als herkomstinformatie en gebruikt ze nooit als
+ * "zijn deze configuraties gelijk?".
+ */
+export type RevisionDetail = {
+  id: number;
+  definitionId: number;
+  revisionNumber: number;
+  status: RevisionStatus;
+  basedOnRevisionId: number | null;
+  changeReason: string | null;
+  identityProfileKind: string;
+  identitySupplierField: string;
+  identitySupplierGroupField: string;
+  identitySupplierReferenceField: string;
+  identityDiscountCodeField: string | null;
+  structureFormat: string;
+  structureCharset: string;
+  structureDelimiter: string;
+  structureQuoteChar: string | null;
+  structureHasHeader: boolean;
+  structureHeaderLineNumber: number;
+  structureFieldReferenceKind: string;
+  structureExpectedColumnCount: number | null;
+  accessDeliverySetKind: string;
+  recordBasePriceField: string;
+  recordDescriptionField: string | null;
+  recordCanonicalisationVersion: number;
+  recordCurrencyField: string | null;
+  basePriceZeroAllowed: boolean;
+  basePriceNegativeAllowed: boolean;
+  priceDeviationPercent: number | null;
+  priceDeviationSeverity: string;
+  priceDerivationTolerance: number | null;
+  priceAvgShortWindow: number;
+  priceAvgLongWindow: number;
+  priceControlModel: string;
+  creationThresholdAbsolute: number;
+  creationThresholdSharePercent: number | null;
+  maxCriticalRecords: number;
+  maxRejectedRecords: number | null;
+  maxCriticalSharePercent: number | null;
+  maxRejectedSharePercent: number | null;
+  bulkIncidentSharePercent: number | null;
+  accessVersion: number;
+  accessConfigHash: string | null;
+  structureVersion: number;
+  structureConfigHash: string | null;
+  recordRulesVersion: number;
+  recordRulesConfigHash: string | null;
+  compositeConfigHash: string | null;
+  createdAt: string;
+  createdBy: string | null;
+  createdBySubject: string | null;
+  updatedAt: string | null;
+  approvedAt: string | null;
+  approvedBy: string | null;
+  approvedBySubject: string | null;
+  mappings: MappingView[];
+  filters: FilterView[];
+  fieldCriticalities: FieldCriticalityView[];
+  bookmarks: BookmarkView[];
+  bookmarkValues: BookmarkValueRow[];
+};
+
+/**
+ * be.dda.catalogimport.web.CatalogImportSetupController.CreateSuccessorRequest — body van E2
+ * (`POST /setup/revisions/{revisionId}/successor`). `changeReason` is **verplicht**: zonder reden 400
+ * `CHANGE_REASON_REQUIRED` (ontwerp §1, ontdekking §9). `createdBy` is sinds 5A-6 enkel een controle
+ * tegen de aangemelde gebruiker.
+ */
+export type CreateSuccessorRequest = {
+  changeReason: string;
+  createdBy: string | null;
+};
+
+/**
+ * be.dda.catalogimport.service.SetupService.UpdateRevisionCommand — body van E3
+ * (`PATCH /setup/revisions/{revisionId}`), met **exact dezelfde veldnamen** als
+ * `CreateRevisionCommand`.
+ *
+ * **`null` betekent altijd "ongewijzigd"**, nooit "leegmaken". Voor de optionele tekstvelden
+ * (`quoteChar`, `discountCodeField`, `descriptionField`, `currencyField`) betekent een uitdrukkelijk
+ * lege tekst (`''`) wél "wissen"; voor de verplichte velden is `''` een 400. `expectedColumnCount` en
+ * `maxRejectedSharePercent` zijn langs dit pad niet terug op `null` te zetten — een bewuste beperking
+ * van "`null` = ongewijzigd", geen stille wijziging.
+ *
+ * `acknowledgeIdentityChange` (R-REV-X3) is verplicht `true` zodra `identityProfileKind` of een van de
+ * vier identiteitsvelden werkelijk wijzigt, anders 409 `IDENTITY_CHANGE_NOT_ACKNOWLEDGED`. Er is
+ * bewust geen bevestigingsveld voor `canonicalisationVersion` (R-REV-X2): die blokkade is
+ * onvoorwaardelijk.
+ */
+export type UpdateRevisionRequest = {
+  delimiter: string | null;
+  quoteChar: string | null;
+  charset: string | null;
+  hasHeader: boolean | null;
+  headerLineNumber: number | null;
+  fieldReferenceKind: string | null;
+  expectedColumnCount: number | null;
+  identityProfileKind: IdentityProfileKind | null;
+  supplierField: string | null;
+  supplierGroupField: string | null;
+  supplierReferenceField: string | null;
+  discountCodeField: string | null;
+  basePriceField: string | null;
+  descriptionField: string | null;
+  currencyField: string | null;
+  canonicalisationVersion: number | null;
+  creationThresholdSharePercent: number | null;
+  maxCriticalSharePercent: number | null;
+  maxRejectedSharePercent: number | null;
+  bulkIncidentSharePercent: number | null;
+  priceDeviationPercent: number | null;
+  priceDeviationSeverity: RowIssueSeverity | null;
+  basePriceZeroAllowed: boolean | null;
+  basePriceNegativeAllowed: boolean | null;
+  priceDerivationTolerance: number | null;
+  changeReason: string | null;
+  acknowledgeIdentityChange: boolean | null;
+  createdBy: string | null;
+};
+
+/**
+ * be.dda.catalogimport.web.CatalogImportSetupController.ActivateRevisionRequest — body van E5
+ * (`POST /setup/revisions/{revisionId}/activate`). `approvedBy` is sinds 5A-6 enkel een controle tegen
+ * de aangemelde gebruiker; bewaard wordt de naam uit het token plus het OIDC-subject.
+ */
+export type ActivateRevisionRequest = {
+  approvedBy: string | null;
+};
+
+// --- NT-6: de aanmaakpaden van `CatalogImportSetupController` (stappenplan "Nieuwe leverancier en taak") --
+// `docs/decisions.md` 2026-09-30 "Nieuwe leverancier + taak (NT-spoor)": sinds NT-3 altijd bereikbaar, recht
+// `MANAGE`, zelfde paden en bodies als voorheen achter de vlag. Veldnamen exact zoals de Java-records.
+
+/** be.dda.catalogimport.service.SetupService.CreateSourceOrganisationCommand */
+export type CreateSourceOrganisationRequest = {
+  code: string;
+  name: string;
+  type: SourceOrganisationType;
+};
+
+/** be.dda.catalogimport.service.SetupService.SourceOrganisationView (201 van `POST /setup/source-organisations`) */
+export type SourceOrganisationView = {
+  id: number;
+  code: string;
+  name: string;
+  type: SourceOrganisationType;
+  active: boolean;
+};
+
+/**
+ * be.dda.catalogimport.service.SetupService.CreateDefinitionCommand. Let op: de eigenaar gaat mee als
+ * **code** (`sourceOrganisationCode`), niet als id.
+ */
+export type CreateDefinitionRequest = {
+  sourceOrganisationCode: string;
+  code: string;
+  name: string;
+  usageType: DefinitionUsageType;
+};
+
+/** be.dda.catalogimport.service.SetupService.DefinitionView (201 van `POST /setup/definitions`) */
+export type DefinitionView = {
+  id: number;
+  code: string;
+  name: string;
+  usageType: DefinitionUsageType;
+  sourceOrganisationId: number;
+  sourceOrganisationCode: string;
+};
+
+/**
+ * be.dda.catalogimport.service.SetupService.CreateRevisionCommand — de velden die het stappenplan invult.
+ * Elk veld van het Java-record dat hier ontbreekt (drempels, prijsbeleid) komt als `null` aan en laat de
+ * standaardwaarde van de revisie staan; het stappenplan wijzigt nooit stil een drempel. `quoteChar: ''`
+ * betekent uitdrukkelijk "geen aanhalingsteken". `createdBy` is enkel een controle tegen de aangemelde
+ * gebruiker (5A-6).
+ */
+export type CreateRevisionRequest = {
+  delimiter: string;
+  quoteChar: string;
+  charset: string;
+  hasHeader: boolean;
+  headerLineNumber: number | null;
+  fieldReferenceKind: string;
+  expectedColumnCount: number | null;
+  identityProfileKind: IdentityProfileKind;
+  supplierField: string;
+  supplierGroupField: string;
+  supplierReferenceField: string;
+  discountCodeField: string | null;
+  basePriceField: string;
+  descriptionField: string | null;
+  currencyField: string | null;
+  canonicalisationVersion: number;
+  changeReason: string | null;
+  createdBy: string | null;
+};
+
+/**
+ * be.dda.catalogimport.service.SetupService.CreateLinkCommand. `supplierCode` is de **code** van de
+ * leverancier (een bronorganisatie); `defaultCurrency` leeg/`null` betekent euro en wordt nooit door de UI
+ * in hoofdletters gezet (de server weigert een andere vorm met `LINK_CURRENCY_INVALID`).
+ */
+export type CreateLinkRequest = {
+  definitionId: number;
+  code: string;
+  name: string;
+  supplierCode: string;
+  libraryCode: string;
+  librarySearchSupplierCode: string | null;
+  defaultCurrency: string | null;
+};
+
+/** be.dda.catalogimport.service.SetupService.LinkView (201 van `POST /setup/links`) */
+export type LinkView = {
+  id: number;
+  code: string;
+  name: string;
+  definitionId: number;
+  supplierCode: string;
+  libraryCode: string;
+  active: boolean;
+  defaultCurrency: string | null;
+};
+
+/** be.dda.catalogimport.service.SetupService.CreateTaskCommand — de taak is altijd `MANUAL`. */
+export type CreateTaskRequest = {
+  linkId: number;
+  name: string;
+  preventConcurrentRuns: boolean;
+};
+
+/** be.dda.catalogimport.service.SetupService.TaskView (201 van `POST /setup/tasks`) */
+export type TaskView = {
+  id: number;
+  linkId: number;
+  name: string;
+  triggerType: TaskTriggerType;
+  active: boolean;
+  preventConcurrentRuns: boolean;
+};
+
 /**
  * be.dda.catalogimport.service.TaskQueryService.TaskRow — alleen-lezen takenlijst (`GET /tasks`,
  * bouwstap B-B1): laat de UI kiezen op welke taak een levering geüpload wordt. `triggerType` staat
  * erbij omdat een niet-`MANUAL`-taak door de intake geweigerd wordt (`TASK_NOT_MANUAL`); zo'n taak
  * wordt uitgeschakeld mét reden getoond. `lastRunStartedAt`/`lastRunFinishedAt` zijn `null` zonder
- * run. Wordt door B-F1 (uploadscherm) gebruikt.
+ * run. `importDefinitionId`/`activeRevisionId` worden sinds NT-4 meegegeven; sinds NT-6 toont het
+ * uploadscherm (B-F1) een taak met `activeRevisionId === null` uitgeschakeld als "nog niet klaar: versie
+ * niet geactiveerd".
  */
 export type TaskRow = {
   id: number;
@@ -671,6 +1055,8 @@ export type TaskRow = {
   libraryCode: string;
   lastRunStartedAt: string | null;
   lastRunFinishedAt: string | null;
+  importDefinitionId: number;
+  activeRevisionId: number | null;
 };
 
 // be.dda.catalogimport.domain.PublicationRunStatus (5-PUB-a zet enkel REQUESTED/PREPARING/SIMULATED/
@@ -939,6 +1325,118 @@ export type MaterialisationView = {
   warnings: MaterialisationWarning[];
 };
 
+// be.dda.catalogimport.domain.IssueCaseStatus (S2-0, docs/design/issue-case-design.md §4). Vier
+// waarden, geen enkele terminaal; `AUTO_RESOLVED` is gedeclareerd maar wordt in deze ronde door geen
+// enkel codepad gezet (aanname A1) — de UI moet hem wel kunnen tonen.
+export const ISSUE_CASE_STATUSES = ['AWAITING_REVIEW', 'CORRECTED', 'REJECTED', 'AUTO_RESOLVED'] as const;
+export type IssueCaseStatus = (typeof ISSUE_CASE_STATUSES)[number];
+
+// be.dda.catalogimport.domain.RowIssueSeverity — van zwaar naar licht, nooit als ordinal bewaard.
+export const ROW_ISSUE_SEVERITIES = ['CRITICAL', 'BLOCKING', 'ERROR', 'WARNING', 'INFO'] as const;
+export type RowIssueSeverity = (typeof ROW_ISSUE_SEVERITIES)[number];
+
+/**
+ * be.dda.catalogimport.service.IssueCaseQueryService.IssueCaseRow (S2-B3, `GET /issue-cases`,
+ * `GET /issue-cases/{id}`). `hasUnreviewedRecurrence` is het verplichte zichtbaarheidskenmerk van de
+ * onderdrukkingsregel (ontwerp §2): `true` zolang er nog nooit een beslissing genomen is, of zodra er
+ * een waarneming ná de laatste beslissing bijgekomen is (`lastSeenAt > statusChangedAt`).
+ */
+export type IssueCaseRow = {
+  id: number;
+  importLinkId: number;
+  issueCode: string;
+  signature: string;
+  severity: string;
+  issueDomain: string;
+  controlLevel: string;
+  impactScope: string;
+  incidentKind: string;
+  priceComponentCode: string | null;
+  referenceType: string | null;
+  status: IssueCaseStatus;
+  observationCount: number;
+  totalOccurrenceCount: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  firstSeenBatchId: number;
+  lastSeenBatchId: number;
+  lastSeenRevisionId: number;
+  reopenCount: number;
+  statusReason: string | null;
+  statusChangedAt: string | null;
+  statusChangedBy: string | null;
+  statusChangedBySubject: string | null;
+  decisionRevisionId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  hasUnreviewedRecurrence: boolean;
+};
+
+/**
+ * be.dda.catalogimport.service.IssueCaseQueryService.ObservationRow (`GET /issue-cases/{id}/observations`)
+ * — één gekoppelde `import_issue_group`-waarneming: voor welke levering dit probleem vastgesteld is.
+ */
+export type IssueCaseObservationRow = {
+  issueGroupId: number;
+  batchId: number;
+  deliveryId: number;
+  attemptNo: number;
+  definitionRevisionId: number;
+  occurrenceCount: number;
+  firstDetectedAt: string;
+  lastDetectedAt: string;
+};
+
+/**
+ * be.dda.catalogimport.service.IssueCaseQueryService.EventRow (`GET /issue-cases/{id}/events`) — één
+ * regel van de append-only geschiedenis, oplopend op `id` (CREATED eerst, dan elke STATUS_CHANGE
+ * chronologisch).
+ */
+export type IssueCaseEventRow = {
+  id: number;
+  eventKind: string;
+  previousStatus: IssueCaseStatus | null;
+  newStatus: IssueCaseStatus;
+  reason: string;
+  source: string;
+  changedBy: string | null;
+  changedBySubject: string | null;
+  changedAt: string;
+  observationBatchId: number | null;
+};
+
+// be.dda.catalogimport.service.IssueCaseQueryService.StatusCount
+export type IssueCaseStatusCount = { status: IssueCaseStatus; count: number };
+
+// be.dda.catalogimport.service.IssueCaseQueryService.IssueCaseSummary (`GET /issue-cases/summary`)
+export type IssueCaseSummary = { total: number; byStatus: IssueCaseStatusCount[] };
+
+// be.dda.catalogimport.web.CatalogImportIssueCaseController.IssueCaseStatusChangeRequest (S2-B2, S2-F2,
+// `POST /issue-cases/{caseId}/status`, recht MANAGE). `newStatus`/`expectedStatus` zijn tekst (zie
+// controller-javadoc): een onbekende waarde levert 400 ISSUE_CASE_STATUS_UNKNOWN op.
+export type IssueCaseStatusChangeRequest = {
+  newStatus: IssueCaseStatus;
+  expectedStatus: IssueCaseStatus;
+  reason: string;
+  changedBy: string;
+};
+
+/**
+ * be.dda.catalogimport.service.IssueCaseService.IssueCaseDecision — het geval zoals het ná de
+ * statuswijziging bij staat. Bewust een projectie (geen volledige `IssueCaseRow`): de pagina herlaadt
+ * de volledige `getCase`/`getEvents` na een geslaagde actie.
+ */
+export type IssueCaseDecision = {
+  id: number;
+  status: IssueCaseStatus;
+  statusReason: string | null;
+  statusChangedAt: string | null;
+  statusChangedBy: string | null;
+  statusChangedBySubject: string | null;
+  decisionRevisionId: number | null;
+  reopenCount: number;
+};
+
 /**
  * be.dda.catalogimport.service.LinkBookmarkValueService.LinkBookmarkValueRow (S1-F3) — één ingevulde
  * LINK-bookmarkwaarde van een koppeling. `declared = false` is een wees: de naam staat niet (meer)
@@ -998,3 +1496,225 @@ export const BOOKMARK_PLACE_LINK_SEARCH_SUPPLIER = 'LINK_SEARCH_SUPPLIER';
 /** `valueScope`-waarden van be.dda.catalogimport.domain.BookmarkValueScope. */
 export const BOOKMARK_SCOPE_DEFINITION = 'DEFINITION';
 export const BOOKMARK_SCOPE_LINK = 'LINK';
+
+// --- NT-9: proefinlezing `POST /revisions/{revisionId}/trial-reads` -------------------------------------------------
+// be.dda.catalogimport.service.TrialReadService (contract `docs/design/proefinlezing-design.md` §2). Er wordt niets
+// bewaard. Een blokkade is een resultaat (HTTP 200, `verdict.result = 'WOULD_BLOCK'`), geen fout. Tellers zijn `null`
+// wanneer ze niet vastgesteld zijn — nooit als 0 lezen. Bedragen en percentages zijn tekst, nooit afgerond.
+
+export const TRIAL_VERDICT_RESULTS = ['WOULD_BLOCK', 'NO_BLOCKER_FOUND'] as const;
+export type TrialVerdictResult = (typeof TRIAL_VERDICT_RESULTS)[number];
+
+export const TRIAL_STAGES = ['CONFIGURATION', 'READING', 'FILE_LEVEL', 'IDENTITY', 'THRESHOLD'] as const;
+export type TrialStage = (typeof TRIAL_STAGES)[number];
+
+export const TRIAL_SAMPLE_STATUSES = ['VALID', 'REJECTED', 'FILTERED_OUT', 'UNREADABLE'] as const;
+export type TrialSampleStatus = (typeof TRIAL_SAMPLE_STATUSES)[number];
+
+export const TRIAL_COLUMN_ROLES = ['IDENTITY', 'PRICE', 'CURRENCY', 'DESCRIPTION', 'DISCOUNT', 'MAPPING', 'FILTER'] as const;
+export type TrialColumnRole = (typeof TRIAL_COLUMN_ROLES)[number];
+
+// be.dda.catalogimport.service.support.ThresholdEvaluator.Outcome
+export const THRESHOLD_OUTCOMES = ['NOT_APPLICABLE', 'UNDETERMINED', 'WITHIN', 'EXCEEDED'] as const;
+export type ThresholdOutcome = (typeof THRESHOLD_OUTCOMES)[number];
+
+// be.dda.catalogimport.domain.CurrencyOrigin
+export const CURRENCY_ORIGINS = ['SOURCE', 'LINK_DEFAULT', 'SYSTEM_DEFAULT'] as const;
+export type CurrencyOrigin = (typeof CURRENCY_ORIGINS)[number];
+
+/** `sha256` is hex (kleine letters) over de volledige bestandsinhoud. */
+export type TrialFileInfo = { byteSize: number; sha256: string; fileName: string | null };
+
+/** De valuta voor een regel zonder muntveld: die van de koppeling (`linkId`) of EUR (systeemstandaard). */
+export type TrialCurrencyDefault = { value: string; origin: CurrencyOrigin };
+
+/**
+ * De eerste blokkade in de screeningvolgorde (configuratie → lezen → geen datarecords → dubbele identiteit →
+ * drempels). `blockedReason` is technische (Engelse) tekst voor "Technische details (voor support)"; de Nederlandse
+ * tekst komt uit de woordenlijst (V7). Alles behalve `result` is `null` bij `NO_BLOCKER_FOUND`.
+ */
+export type TrialVerdict = {
+  result: TrialVerdictResult;
+  blockedCode: string | null;
+  blockedReason: string | null;
+  fieldName: string | null;
+  sourceValue: string | null;
+  expectedValue: string | null;
+  stage: TrialStage | null;
+};
+
+/**
+ * Tellers 1-op-1 met de screening. Bij een configuratiefout zijn alle tellers `null` (ook
+ * `issueOccurrencesBySeverity`); bij een leesblokkade de recordtellers (uitzondering: geen datarecords ⇒ `raw = 0`).
+ * `duplicateIdentityCount` is ook `null` wanneer de grens van gevolgde identiteiten bereikt is (zie `notEvaluated`).
+ * `issueOccurrencesBySeverity` heeft altijd de sleutels CRITICAL, ERROR, WARNING en INFO.
+ */
+export type TrialCounters = {
+  rawRecordCount: number | null;
+  validRecordCount: number | null;
+  rejectedRecordCount: number | null;
+  filteredOutCount: number | null;
+  errorBeforeFilterCount: number | null;
+  criticalLineCount: number | null;
+  duplicateIdentityCount: number | null;
+  scopeRecordCount: number | null;
+  physicalLineCount: number | null;
+  prefixLineCount: number | null;
+  skippedBlankLineCount: number | null;
+  columnCount: number | null;
+  linesWithReplacementCharacter: number | null;
+  issueOccurrencesBySeverity: Record<'CRITICAL' | 'ERROR' | 'WARNING' | 'INFO', number> | null;
+};
+
+export type TrialExpectedColumn = {
+  reference: string;
+  role: TrialColumnRole;
+  required: boolean;
+  /** 1-gebaseerd, of `null` wanneer niet gevonden of niet vast te stellen. */
+  foundAtPosition: number | null;
+};
+
+/**
+ * Wat de revisie verwacht naast wat het bestand bevat. `missingRequired` toont álle ontbrekende verplichte kolommen
+ * (het verdict noemt enkel de eerste). `foundColumns` is `null` bij kolomindex-verwijzing of zonder header.
+ */
+export type TrialHeader = {
+  referenceKind: 'HEADER_NAME' | 'COLUMN_INDEX';
+  hasHeader: boolean;
+  headerLineNumber: number | null;
+  expectedColumnCount: number | null;
+  foundColumnCount: number | null;
+  foundColumns: string[] | null;
+  expectedColumns: TrialExpectedColumn[];
+  missingRequired: string[];
+  missingOptionalFilterColumns: string[];
+  extraColumns: { name: string | null; position: number }[];
+  shifted: { reference: string; expectedPosition: number; foundPosition: number }[];
+};
+
+/** Enkel voor een `VALID`-voorbeeldrij: de waarden zoals de screening ze zou stagen. Nooit gecorrigeerd. */
+export type TrialInterpreted = {
+  supplier: string;
+  supplierGroup: string;
+  supplierReference: string;
+  discountCode: string | null;
+  discountState: 'NOT_USED' | 'EMPTY' | 'VALUE';
+  /** Hex. */
+  identityHash: string;
+  /** De prijs zoals ze in het bestand staat, bv. `12,50`. */
+  basePriceRaw: string | null;
+  /** De prijs zoals ze gelezen is (`toPlainString`), bv. `12.500000`. */
+  basePrice: string;
+  currency: string;
+  currencyOrigin: CurrencyOrigin;
+  description: string | null;
+  mappedFields: Record<string, string | null>;
+  priceComponents: {
+    componentCode: string;
+    sourceAmount: string | null;
+    percentage: string | null;
+    currency: string | null;
+    status: string | null;
+  }[];
+  references: { referenceType: string; valueRaw: string | null; valueNormalised: string | null }[];
+};
+
+export type TrialSampleIssue = {
+  code: string;
+  severity: RowIssueSeverity;
+  fieldName: string | null;
+  sourceValue: string | null;
+  message: string;
+};
+
+/**
+ * Eén van de eerste datarecords, ongeacht hun lot. `rawValues` (per cel gekapt op 200 tekens) is `null` en
+ * `sourceValue` gevuld bij `UNREADABLE`; `filter` is `null` bij `UNREADABLE`.
+ */
+export type TrialSampleRow = {
+  lineNumber: number;
+  status: TrialSampleStatus;
+  rawValues: string[] | null;
+  sourceValue: string | null;
+  interpreted: TrialInterpreted | null;
+  filter: { kind: 'IN_SCOPE' | 'FILTERED_OUT' | 'REJECTED'; decidingSequenceNumber: number | null } | null;
+  issues: TrialSampleIssue[];
+};
+
+/**
+ * Per (code, logisch veld), met de classificatie van de screening. `occurrenceCount` is altijd het werkelijke
+ * aantal; `grouped = false` onder 10 voorvallen (dan geen aandeel en geen bulkoordeel).
+ */
+export type TrialIssueGroup = {
+  code: string;
+  fieldName: string | null;
+  severity: RowIssueSeverity;
+  domain: string;
+  controlLevel: string;
+  deliveryEffect: 'NONE' | 'REVIEW' | 'BLOCK';
+  occurrenceCount: number;
+  grouped: boolean;
+  bulkIncident: boolean;
+  sharePercent: string | null;
+  examples: { lineNumber: number | null; fieldName: string | null; sourceValue: string | null; message: string }[];
+  examplesTruncated: boolean;
+};
+
+/**
+ * De twee leveringsdrempels. Kritiek telt enkel kritieke lijnen (identiteitsincidenten zijn zonder bronstaat niet te
+ * beoordelen): `EXCEEDED` blokkeert zeker, `WITHIN` garandeert niets (`countIsLowerBound`). `thresholdPercent = null`
+ * bij verworpen = niet geconfigureerd.
+ */
+export type TrialThresholds = {
+  scopeRecordCount: number | null;
+  bulkIncidentSharePercent: string;
+  critical: {
+    count: number | null;
+    identityIncidentsEvaluated: boolean;
+    thresholdPercent: string | null;
+    sharePercent: string | null;
+    outcome: ThresholdOutcome;
+    countIsLowerBound: boolean;
+  };
+  rejected: {
+    count: number | null;
+    thresholdPercent: string | null;
+    sharePercent: string | null;
+    outcome: ThresholdOutcome;
+  };
+};
+
+/**
+ * Eén van alle onafhankelijke configuratiefouten (NT-14-3, niet langer "één fout per keer"); `revisionField` = sleutel uit
+ * het woordenlijstdomein `revisionField`, `fieldName` = doelveld/filterkolom.
+ */
+export type TrialConfigProblem = { code: string; message: string; fieldName: string | null; revisionField?: string | null };
+
+/**
+ * Een controle die de proef niet kan uitvoeren (altijd `status: 'INFO'`), bv. `CREATION_POLICY`/`NO_SOURCE_STATE`,
+ * `PRICE_DEVIATION`/`NO_PRICE_HISTORY` of `DUPLICATE_IDENTITY_IN_DELIVERY`/`TRACKING_LIMIT_REACHED`.
+ */
+export type TrialNotEvaluated = { check: string; status: 'INFO'; reason: string };
+
+/** Antwoord van `POST /revisions/{revisionId}/trial-reads` (altijd 200 bij een voltooide proef). */
+export type TrialReadResult = {
+  revisionId: number;
+  revisionNumber: number;
+  revisionStatus: RevisionStatus;
+  linkId: number | null;
+  file: TrialFileInfo;
+  currencyDefault: TrialCurrencyDefault;
+  verdict: TrialVerdict;
+  counters: TrialCounters;
+  /** `null` bij een configuratiefout. */
+  header: TrialHeader | null;
+  sampleRows: TrialSampleRow[];
+  sampleRowsTruncated: boolean;
+  issueGroups: TrialIssueGroup[];
+  /** `null` bij een configuratiefout. */
+  thresholds: TrialThresholds | null;
+  configProblems: TrialConfigProblem[];
+  /** Codes van grondoorzaken waardoor afhankelijke configuratiecontroles niet beoordeeld werden (NT-14-3). */
+  configChecksSkippedBecause?: string[];
+  notEvaluated: TrialNotEvaluated[];
+};

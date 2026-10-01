@@ -87,6 +87,12 @@ function renderList(props: Parameters<typeof MutationList>[0]) {
   );
 }
 
+/**
+ * Het woord van een status staat zowel in de badge (een `span`) als in de keuzelijst van het statusfilter
+ * (een `option`); de tests bedoelen de badge.
+ */
+const BADGE = { selector: 'span' } as const;
+
 function lastCall(calls: MutationQuery[]): MutationQuery {
   const call = calls[calls.length - 1];
   if (call === undefined) {
@@ -106,8 +112,11 @@ describe('MutationList', () => {
     const { source } = fakeSource(page([mutation()]));
     renderList({ source });
 
-    expect(await screen.findByText('AWAITING_APPROVAL')).toBeInTheDocument();
-    expect(screen.getByText('BULK_PRICE_INCIDENT')).toBeInTheDocument();
+    expect(await screen.findByText('Wacht op goedkeuring', BADGE)).toBeInTheDocument();
+    // NT-11a (V7): de reden staat in het Nederlands; de technische code enkel in de tooltip.
+    const reason = screen.getByText('Veel gelijke prijsafwijkingen', { selector: 'span' });
+    expect(reason).toHaveAttribute('title', expect.stringContaining('BULK_PRICE_INCIDENT'));
+    expect(screen.queryByText('BULK_PRICE_INCIDENT')).not.toBeInTheDocument();
     expect(screen.getByText('Leverancier: SUP1')).toBeInTheDocument();
     // De vier beslissingsvelden staan er altijd, ook als er niets beslist is (§11.2).
     expect(screen.getByText('Beslissing')).toBeInTheDocument();
@@ -140,7 +149,7 @@ describe('MutationList', () => {
     );
     renderList({ source });
 
-    await screen.findByText('AWAITING_APPROVAL');
+    await screen.findByText('Wacht op goedkeuring', BADGE);
     const row = screen.getAllByRole('row')[1];
     expect(row).toBeDefined();
     const cells = within(row as HTMLElement);
@@ -168,7 +177,7 @@ describe('MutationList', () => {
   it('T5.5: zet de keuzelijstfilters meteen in de MutationQuery', async () => {
     const { source, calls } = fakeSource(page([mutation()]));
     renderList({ source });
-    await screen.findByText('AWAITING_APPROVAL');
+    await screen.findByText('Wacht op goedkeuring', BADGE);
 
     fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'PLANNED' } });
     await waitFor(() => expect(lastCall(calls).status).toBe('PLANNED'));
@@ -177,16 +186,25 @@ describe('MutationList', () => {
     await waitFor(() => expect(lastCall(calls).actionType).toBe('CREATE'));
   });
 
-  it('T5.6: past de tekstfilters (statusReason, batchId, identityHash) toe op "Filteren"', async () => {
+  it('T5.6: de statusreden is een keuzelijst die meteen toepast; de tekstfilters (batchId, identityHash) wachten op "Filteren"', async () => {
     const { source, calls } = fakeSource(page([mutation()]));
     renderList({ source });
-    await screen.findByText('AWAITING_APPROVAL');
+    await screen.findByText('Wacht op goedkeuring', BADGE);
     const before = calls.length;
 
-    fireEvent.change(screen.getByLabelText('Statusreden'), { target: { value: 'BULK_PRICE_INCIDENT' } });
+    // Enkel de Nederlandse woorden staan in de lijst; de waarde die meegaat, is de technische code.
+    const reason = screen.getByLabelText('Statusreden') as HTMLSelectElement;
+    const optionLabels = Array.from(reason.options).map((option) => option.textContent);
+    expect(optionLabels).toContain('Veel gelijke prijsafwijkingen');
+    expect(optionLabels.some((label) => /[A-Z]+_[A-Z_]+/.test(label ?? ''))).toBe(false);
+    fireEvent.change(reason, { target: { value: 'BULK_PRICE_INCIDENT' } });
+    await waitFor(() => expect(lastCall(calls)).toMatchObject({ statusReason: 'BULK_PRICE_INCIDENT' }));
+
+    const afterReason = calls.length;
+    expect(afterReason).toBeGreaterThan(before);
     fireEvent.change(screen.getByLabelText('Batch'), { target: { value: '77' } });
     // Typen alleen stuurt niets: anders vuurt elke toetsaanslag een verzoek af.
-    expect(calls.length).toBe(before);
+    expect(calls.length).toBe(afterReason);
 
     fireEvent.click(screen.getByRole('button', { name: 'Filteren' }));
     await waitFor(() => expect(lastCall(calls)).toMatchObject({ statusReason: 'BULK_PRICE_INCIDENT', batchId: 77 }));
@@ -195,7 +213,7 @@ describe('MutationList', () => {
   it('T5.7: laat een ongeldig batchnummer niet stil als 0 doorgaan', async () => {
     const { source, calls } = fakeSource(page([mutation()]));
     renderList({ source });
-    await screen.findByText('AWAITING_APPROVAL');
+    await screen.findByText('Wacht op goedkeuring', BADGE);
 
     fireEvent.change(screen.getByLabelText('Batch'), { target: { value: 'abc' } });
     fireEvent.click(screen.getByRole('button', { name: 'Filteren' }));
@@ -214,7 +232,7 @@ describe('MutationList', () => {
     await waitFor(() => expect(lastCall(calls).identityHash).toBe(HASH_A));
     // Geen client-side groepering (§11.5): de melding zegt expliciet dat de server de groep bepaalt.
     expect(screen.getByText(/De server bepaalt de groep/)).toBeInTheDocument();
-    expect((screen.getByLabelText('Wijzigingsgroep (identityHash)') as HTMLInputElement).value).toBe(HASH_A);
+    expect((screen.getByLabelText('Wijzigingsgroep') as HTMLInputElement).value).toBe(HASH_A);
   });
 
   it('T5.9: een batchbron toont geen batchId-filter en stuurt er nooit een mee', async () => {
@@ -224,7 +242,7 @@ describe('MutationList', () => {
       'batch:17',
     );
     renderList({ source, initialQuery: { batchId: 999 } });
-    await screen.findByText('AWAITING_APPROVAL');
+    await screen.findByText('Wacht op goedkeuring', BADGE);
 
     expect(screen.queryByLabelText('Batch')).not.toBeInTheDocument();
     // Ook een meegegeven initiële waarde gaat niet mee als de bron dit filter niet ondersteunt.
@@ -235,7 +253,7 @@ describe('MutationList', () => {
   it('T5.10: zonder rowActions is het een zuivere leeslijst (scherm 2)', async () => {
     const { source } = fakeSource(page([mutation()]), ['actionType'], 'batch:17');
     renderList({ source });
-    await screen.findByText('AWAITING_APPROVAL');
+    await screen.findByText('Wacht op goedkeuring', BADGE);
 
     expect(screen.queryByText('Acties')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Status')).not.toBeInTheDocument();

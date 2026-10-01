@@ -27,6 +27,7 @@ import {
   type PublicationBundleStatus,
   type PublicationRunView,
 } from '../api/types.ts';
+import { term } from '../terms/index.ts';
 
 const FASE5_STATUSES: readonly PublicationBundleStatus[] = [
   'PUBLISHING',
@@ -72,13 +73,14 @@ describe('bundleActionGate — §9.1 statusmatrix', () => {
     }
   });
 
-  it('T2.5: elke Fase 5-status is alleen-lezen, elke actie krijgt de statusnaam letterlijk in de reden', () => {
+  it('T2.5: elke Fase 5-status is alleen-lezen, elke actie krijgt het Nederlandse statuswoord (nooit de code) in de reden', () => {
     for (const status of FASE5_STATUSES) {
       for (const action of nonReadActions) {
         const gate = bundleActionGate(status, action);
         expect(gate.allowed).toBe(false);
         if (!gate.allowed) {
-          expect(gate.reason).toContain(status);
+          expect(gate.reason).toContain(term('bundleStatus', status).label);
+          expect(gate.reason).not.toContain(status);
         }
       }
     }
@@ -118,7 +120,7 @@ describe('mutationDecisionGate — §9.2 beslisbaarheid per mutatie', () => {
         const gate = mutationDecisionGate('ASSEMBLING', actionType, 'BLOCKED', scope);
         expect(gate.allowed).toBe(false);
         if (!gate.allowed) {
-          expect(gate.reason).toContain('identiteitsincident');
+          expect(gate.reason).toContain('herkenningsprobleem');
         }
       }
     }
@@ -130,7 +132,7 @@ describe('mutationDecisionGate — §9.2 beslisbaarheid per mutatie', () => {
         const gate = mutationDecisionGate('ASSEMBLING', 'IDENTITY_REFERENCE_INCIDENT', status, scope);
         expect(gate.allowed).toBe(false);
         if (!gate.allowed) {
-          expect(gate.reason).toContain('referentiestaat');
+          expect(gate.reason).toContain('herkenningsprobleem');
         }
       }
     }
@@ -240,7 +242,7 @@ function reasonOf(gate: ReturnType<typeof freezeGate>): string {
 }
 
 describe('freezeBlockerReason / freezeBlockers — §10.5 blokkades vooraf', () => {
-  it('F10.P1: elke bekende blokkadecode krijgt een leesbare reden met de code letterlijk erin', () => {
+  it('F10.P1: elke bekende blokkadecode krijgt een leesbare Nederlandse reden, zonder de code in de tekst (V7)', () => {
     const codes = [
       'BUNDLE_NOT_ASSEMBLING',
       'BUNDLE_EMPTY',
@@ -250,7 +252,12 @@ describe('freezeBlockerReason / freezeBlockers — §10.5 blokkades vooraf', () 
       'OFFER_ALREADY_IN_ANOTHER_BUNDLE',
     ];
     for (const code of codes) {
-      expect(freezeBlockerReason(code, preflight())).toContain(code);
+      const reason = freezeBlockerReason(code, preflight());
+      expect(reason.length).toBeGreaterThan(0);
+      expect(reason).not.toContain(code);
+      expect(reason).not.toMatch(/[A-Z]+_[A-Z_]+/);
+      // Elke code heeft ook een woord in het woordenboek (voor de technische details).
+      expect(term('freezeCheck', code).uitleg).not.toBe('');
     }
   });
 
@@ -263,8 +270,12 @@ describe('freezeBlockerReason / freezeBlockers — §10.5 blokkades vooraf', () 
     );
   });
 
-  it('F10.P3: een onbekende code (latere backenduitbreiding) wordt nooit weggelaten, maar letterlijk getoond', () => {
-    expect(freezeBlockerReason('BUNDLE_SOMETHING_NEW', preflight())).toContain('BUNDLE_SOMETHING_NEW');
+  it('F10.P3: een onbekende code (latere backenduitbreiding) wordt nooit weggelaten: ze geeft een neutrale reden', () => {
+    const reason = freezeBlockerReason('BUNDLE_SOMETHING_NEW', preflight());
+    expect(reason).toContain('niet kent');
+    // De code zelf staat onder "Technische details" in de voorcontrole, niet in de reden.
+    expect(reason).not.toContain('BUNDLE_SOMETHING_NEW');
+    expect(freezeGate('ASSEMBLING', preflight({ freezable: false, blockerCodes: ['BUNDLE_SOMETHING_NEW'] })).allowed).toBe(false);
   });
 
   it('F10.P4: behoudt de volgorde van de server en geeft één reden per code', () => {
@@ -277,10 +288,9 @@ describe('freezeBlockerReason / freezeBlockers — §10.5 blokkades vooraf', () 
       }),
     );
     expect(reasons).toHaveLength(3);
-    expect(reasons[0]).toContain('BUNDLE_HAS_UNDECIDED_MUTATIONS');
-    expect(reasons[1]).toContain('SOURCE_STATE_CHANGED_SINCE_SCREENING');
+    expect(reasons[0]).toContain('2 mutaties');
     expect(reasons[1]).toContain('4 mutaties');
-    expect(reasons[2]).toContain('BUNDLE_OFFER_CONFLICT');
+    expect(reasons[2]).toContain('meer dan één batch');
   });
 
   it('F10.P5: een tegenstrijdig antwoord (niet bevriesbaar, zonder code) is nooit "geen blokkade"', () => {
@@ -293,7 +303,7 @@ describe('freezeGate — §10.5 spiegel van de voorvlucht', () => {
   it('F10.P6: zonder (geslaagde) voorvlucht is bevriezen uit, met reden', () => {
     const gate = freezeGate('ASSEMBLING', null);
     expect(gate.allowed).toBe(false);
-    expect(reasonOf(gate)).toContain('voorvlucht');
+    expect(reasonOf(gate)).toContain('voorcontrole');
   });
 
   it('F10.P7: een bevriesbare voorvlucht bij ASSEMBLING laat bevriezen toe, ook met 0 PLANNED', () => {
@@ -301,13 +311,14 @@ describe('freezeGate — §10.5 spiegel van de voorvlucht', () => {
     expect(freezeGate('ASSEMBLING', preflight({ plannedCount: 0 }))).toEqual({ allowed: true });
   });
 
-  it('F10.P8: een openstaande AWAITING_APPROVAL blokkeert vooraf, met de reden en de code', () => {
+  it('F10.P8: een openstaande vraag (wacht op goedkeuring) blokkeert vooraf, met de reden en het aantal', () => {
     const gate = freezeGate(
       'ASSEMBLING',
       preflight({ freezable: false, blockerCodes: ['BUNDLE_HAS_UNDECIDED_MUTATIONS'], awaitingApprovalCount: 3 }),
     );
     expect(gate.allowed).toBe(false);
-    expect(reasonOf(gate)).toContain('BUNDLE_HAS_UNDECIDED_MUTATIONS');
+    expect(reasonOf(gate)).toContain('uitdrukkelijke beslissing');
+    expect(reasonOf(gate)).not.toContain('BUNDLE_HAS_UNDECIDED_MUTATIONS');
     expect(reasonOf(gate)).toContain('3 mutaties');
   });
 
@@ -343,11 +354,11 @@ describe('cancelGate — §10.6', () => {
   it('F10.P13: CANCELLED en de Fase 5-statussen weigeren annuleren, met de reden van de statusmatrix', () => {
     const cancelled = cancelGate('CANCELLED', 3);
     expect(cancelled.allowed).toBe(false);
-    expect(cancelled.allowed ? '' : cancelled.reason).toContain('BUNDLE_NOT_CANCELLABLE');
+    expect(cancelled.allowed ? '' : cancelled.reason).toContain('al geannuleerd');
     for (const status of FASE5_STATUSES) {
       const gate = cancelGate(status, 3);
       expect(gate.allowed).toBe(false);
-      expect(gate.allowed ? '' : gate.reason).toContain(status);
+      expect(gate.allowed ? '' : gate.reason).toContain(term('bundleStatus', status).label);
     }
   });
 });
@@ -386,11 +397,11 @@ function run(overrides: Partial<PublicationRunView> = {}): PublicationRunView {
 }
 
 describe('publicationRunGate — 5-PUB-a "Simulatierun starten"', () => {
-  it('P1: niet-FROZEN => denied (BUNDLE_NOT_FROZEN), ongeacht de runs', () => {
+  it('P1: niet-FROZEN => denied (alleen een bevroren bundel), ongeacht de runs', () => {
     for (const status of PUBLICATION_BUNDLE_STATUSES.filter((s) => s !== 'FROZEN')) {
       const gate = publicationRunGate(status, []);
       expect(gate.allowed).toBe(false);
-      expect(gate.allowed ? '' : gate.reason).toContain('BUNDLE_NOT_FROZEN');
+      expect(gate.allowed ? '' : gate.reason).toContain('alleen een bevroren bundel');
     }
   });
 
@@ -403,18 +414,19 @@ describe('publicationRunGate — 5-PUB-a "Simulatierun starten"', () => {
     expect(publicationRunGate('FROZEN', [])).toEqual({ allowed: true });
   });
 
-  it('P4: FROZEN met een PREPARING-run => denied (PUBLICATION_RUN_IN_PROGRESS), met run-id en status', () => {
+  it('P4: FROZEN met een PREPARING-run => denied (er loopt al een run), met run-id en het statuswoord', () => {
     const gate = publicationRunGate('FROZEN', [run({ id: 7, status: 'PREPARING' })]);
     expect(gate.allowed).toBe(false);
-    expect(gate.allowed ? '' : gate.reason).toContain('PUBLICATION_RUN_IN_PROGRESS');
+    expect(gate.allowed ? '' : gate.reason).toContain('Er loopt al een publicatierun');
     expect(gate.allowed ? '' : gate.reason).toContain('#7');
-    expect(gate.allowed ? '' : gate.reason).toContain('PREPARING');
+    expect(gate.allowed ? '' : gate.reason).toContain(term('publicationRunStatus', 'PREPARING').label);
+    expect(gate.allowed ? '' : gate.reason).not.toContain('PREPARING');
   });
 
-  it('P5: FROZEN met een REQUESTED-run => denied (PUBLICATION_RUN_IN_PROGRESS)', () => {
+  it('P5: FROZEN met een REQUESTED-run => denied (er loopt al een run)', () => {
     const gate = publicationRunGate('FROZEN', [run({ id: 3, status: 'REQUESTED' })]);
     expect(gate.allowed).toBe(false);
-    expect(gate.allowed ? '' : gate.reason).toContain('PUBLICATION_RUN_IN_PROGRESS');
+    expect(gate.allowed ? '' : gate.reason).toContain('Er loopt al een publicatierun');
   });
 
   it('P6: FROZEN met alleen terminale runs (SIMULATED/FAILED) => allowed', () => {
@@ -435,14 +447,15 @@ describe('abortRunGate — "Afbreken", geen tijdsvoorwaarde', () => {
     expect(abortRunGate(run({ status: 'PREPARING' }))).toEqual({ allowed: true });
   });
 
-  it('A2: elke andere status => denied (PUBLICATION_RUN_NOT_STUCK), met de status letterlijk', () => {
+  it('A2: elke andere status => denied, met het Nederlandse statuswoord (nooit de code)', () => {
     const otherStatuses = PUBLICATION_RUN_STATUSES.filter((status) => status !== 'PREPARING');
     for (const status of otherStatuses) {
       const gate = abortRunGate(run({ status }));
       expect(gate.allowed).toBe(false);
       if (!gate.allowed) {
-        expect(gate.reason).toContain('PUBLICATION_RUN_NOT_STUCK');
-        expect(gate.reason).toContain(status);
+        expect(gate.reason).toContain('Kan niet afbreken');
+        expect(gate.reason).toContain(term('publicationRunStatus', status).label);
+        expect(gate.reason).not.toMatch(/[A-Z]+_[A-Z_]+/);
       }
     }
   });

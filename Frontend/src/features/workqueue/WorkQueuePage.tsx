@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as batchesApi from '../../api/batches.ts';
 import * as importLinksApi from '../../api/importLinks.ts';
+import * as issueCasesApi from '../../api/issueCases.ts';
 import { IMPORT_BATCH_STATUSES, VALIDATION_RESULTS } from '../../api/types.ts';
 import type { BatchRow, ImportBatchStatus, ValidationResult } from '../../api/types.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
@@ -20,6 +21,10 @@ import { DataTable, type DataTableColumn } from '../../components/DataTable.tsx'
 import { Pager } from '../../components/Pager.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import { IssueCodeTerm } from '../../terms/IssueCodeTerm.tsx';
+import { Term } from '../../terms/Term.tsx';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
+import { term } from '../../terms/index.ts';
 import styles from './WorkQueuePage.module.css';
 
 const NO_STATUS_FILTER = '';
@@ -69,17 +74,16 @@ function dateInputToInstantEndExclusive(value: string): string | undefined {
 
 const COLUMNS: readonly DataTableColumn<BatchRow>[] = [
   { key: 'batchId', header: 'Batch', render: (row) => <Link to={`/batches/${row.batchId}`}>#{row.batchId}</Link> },
-  { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> },
+  { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} domain="batchStatus" /> },
   {
     key: 'validationResult',
     header: 'Eindoordeel',
+    // `null` = nog niet vastgesteld: het woordenboek kent daar een eigen woord en uitleg voor (nooit "geldig" lezen).
     render: (row) =>
       row.validationResult === null ? (
-        <span className={styles.notEstablished} title="Het eindoordeel staat nog niet vast">
-          Niet vastgesteld
-        </span>
+        <Term domain="validationResult" code={null} />
       ) : (
-        <StatusBadge status={row.validationResult} />
+        <StatusBadge status={row.validationResult} domain="validationResult" />
       ),
   },
   {
@@ -92,7 +96,7 @@ const COLUMNS: readonly DataTableColumn<BatchRow>[] = [
   { key: 'createdAt', header: 'Aangemaakt op', render: (row) => formatDateTime(row.createdAt) },
   {
     key: 'criticalIssueCount',
-    header: 'Kritieke issues',
+    header: 'Kritieke problemen',
     render: (row) => <Count value={row.criticalIssueCount} />,
     align: 'right',
   },
@@ -104,8 +108,9 @@ const COLUMNS: readonly DataTableColumn<BatchRow>[] = [
   },
   {
     key: 'blockedCode',
-    header: 'Blokkeerreden',
-    render: (row) => row.blockedCode ?? '—',
+    header: 'Reden van tegenhouden',
+    // Nederlands woord met uitleg; de technische code staat in de tooltip (V7).
+    render: (row) => <IssueCodeTerm code={row.blockedCode} />,
   },
 ];
 
@@ -125,6 +130,16 @@ export function WorkQueuePage() {
 
   const linksKey = 'import-links:all';
   const links = useQuery(linksKey, (signal) => importLinksApi.listImportLinks({ size: 200 }, signal));
+
+  // S2-F1: telblok "open behandelgevallen" (GET /issue-cases/summary), met doorlink naar /issue-cases.
+  // Een status zonder gevallen levert géén rij op in `byStatus` (IssueCaseQueryService.getSummary) — dat
+  // is dus een echte 0, niet "niet vastgesteld" zoals bij de batch-tellers hierboven.
+  const issueCaseSummaryKey = `issue-cases-summary:${importLinkFilterValue ?? ''}`;
+  const issueCaseSummary = useQuery(issueCaseSummaryKey, (signal) =>
+    issueCasesApi.issueCaseSummary({ importLinkId: importLinkFilterValue }, signal),
+  );
+  const openIssueCaseCount =
+    issueCaseSummary.data?.byStatus.find((entry) => entry.status === 'AWAITING_REVIEW')?.count ?? 0;
 
   const listKey = `batches:${status}:${validationResult}:${importLinkFilterValue ?? ''}:${createdFrom}:${createdTo}:${page}:${size}`;
   const list = useQuery(listKey, (signal) =>
@@ -163,6 +178,13 @@ export function WorkQueuePage() {
   return (
     <div className={styles.page}>
       <h1 className={styles.title}>Werkvoorraad</h1>
+      <WhatIsThis>
+        <p>
+          Een batch is de controle van één aangeleverde levering. De tegels tellen de batches per status en per
+          eindoordeel; de tabel toont ze één voor één. Open een batch om de tellers, de vastgestelde problemen en de
+          voorgestelde wijzigingen te bekijken.
+        </p>
+      </WhatIsThis>
 
       {summary.error !== null && <ErrorBanner error={summary.error} />}
       {summary.data !== null && (
@@ -173,16 +195,30 @@ export function WorkQueuePage() {
           </div>
           {summary.data.byStatus.map((entry) => (
             <div className={styles.tile} key={`status-${entry.status}`}>
-              <span className={styles.tileLabel}>{entry.status}</span>
+              <span className={styles.tileLabel}>
+                <Term domain="batchStatus" code={entry.status} />
+              </span>
               <span className={styles.tileValue}>{entry.count}</span>
             </div>
           ))}
           {summary.data.byValidationResult.map((entry) => (
             <div className={styles.tile} key={`validation-${entry.validationResult ?? 'NONE'}`}>
-              <span className={styles.tileLabel}>{entry.validationResult ?? 'Niet vastgesteld'}</span>
+              <span className={styles.tileLabel}>
+                <Term domain="validationResult" code={entry.validationResult} />
+              </span>
               <span className={styles.tileValue}>{entry.count}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {issueCaseSummary.error !== null && <ErrorBanner error={issueCaseSummary.error} />}
+      {issueCaseSummary.data !== null && (
+        <div className={styles.tiles} data-testid="issue-case-summary-tiles">
+          <Link to="/issue-cases" className={styles.tile}>
+            <span className={styles.tileLabel}>Open behandelgevallen</span>
+            <span className={styles.tileValue}>{openIssueCaseCount}</span>
+          </Link>
         </div>
       )}
 
@@ -196,7 +232,7 @@ export function WorkQueuePage() {
           <option value={NO_STATUS_FILTER}>Alle</option>
           {IMPORT_BATCH_STATUSES.map((option) => (
             <option key={option} value={option}>
-              {option}
+              {term('batchStatus', option).label}
             </option>
           ))}
         </select>
@@ -210,7 +246,7 @@ export function WorkQueuePage() {
           <option value={NO_VALIDATION_FILTER}>Alle</option>
           {VALIDATION_RESULTS.map((option) => (
             <option key={option} value={option}>
-              {option}
+              {term('validationResult', option).label}
             </option>
           ))}
         </select>

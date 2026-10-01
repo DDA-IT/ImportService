@@ -23,7 +23,7 @@ public record DeliveryView(
         long taskId,
         Long taskRunId,
         String idempotencyKey,
-        // Ontvangstweg: UPLOAD of LOCAL_DIRECTORY (additief, beslissingslog 2026-09-27 Q2).
+        // Ontvangstweg: UPLOAD of LOCAL_DIRECTORY (additief, beslissingslog 2026-09-27 Q2); sinds K-4b ook SFTP.
         String sourceKind,
         Instant receivedAt,
         Integer expectedFileCount,

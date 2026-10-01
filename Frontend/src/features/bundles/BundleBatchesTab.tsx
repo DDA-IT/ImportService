@@ -21,7 +21,8 @@ import { Pager } from '../../components/Pager.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
-import { bundleActionGate } from './bundlePolicy.ts';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
+import { bundleActionGate, gateTitle } from './bundlePolicy.ts';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
 import styles from './BundleBatchesTab.module.css';
 
@@ -137,7 +138,7 @@ export function BundleBatchesTab() {
   const memberColumns: readonly DataTableColumn<BundleBatchRow>[] = [
     { key: 'batchId', header: 'Batch', render: (row) => row.batchId },
     { key: 'importLinkId', header: 'Koppeling', render: (row) => getImportLinkLabel(row.importLinkId, links.data?.content) },
-    { key: 'batchStatus', header: 'Batchstatus', render: (row) => <StatusBadge status={row.batchStatus} /> },
+    { key: 'batchStatus', header: 'Batchstatus', render: (row) => <StatusBadge status={row.batchStatus} domain="batchStatus" /> },
     {
       key: 'batchContentMutationCount',
       header: 'Mutaties',
@@ -170,7 +171,7 @@ export function BundleBatchesTab() {
             type="button"
             className={styles.rowButton}
             disabled={!removeGate.allowed}
-            title={removeGate.allowed ? undefined : removeGate.reason}
+            title={gateTitle(removeGate)}
             onClick={() => setRemoveTarget(row)}
           >
             Verwijderen
@@ -197,11 +198,11 @@ export function BundleBatchesTab() {
     },
     { key: 'batchId', header: 'Batch', render: (row) => row.batchId },
     { key: 'importLinkId', header: 'Koppeling', render: (row) => getImportLinkLabel(row.importLinkId, links.data?.content) },
-    { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> },
+    { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} domain="batchStatus" /> },
     {
       key: 'validationResult',
       header: 'Eindoordeel',
-      render: (row) => (row.validationResult === null ? 'Niet vastgesteld' : <StatusBadge status={row.validationResult} />),
+      render: (row) => (row.validationResult === null ? 'Niet vastgesteld' : <StatusBadge status={row.validationResult} domain="validationResult" />),
     },
     {
       key: 'contentMutationCount',
@@ -214,6 +215,15 @@ export function BundleBatchesTab() {
 
   return (
     <div className={styles.tab}>
+      <WhatIsThis>
+        <p>
+          Leden zijn de gecontroleerde leveringen (batches) die in deze bundel zitten. Onder &quot;Kandidaten
+          toevoegen&quot; staan de leveringen die klaar zijn om in een bundel te gaan. Zolang de bundel in opbouw is,
+          kunt u er leveringen aan toevoegen of uit halen; een verwijderd lid blijft met de reden zichtbaar, zodat te
+          volgen is wat er gebeurd is.
+        </p>
+      </WhatIsThis>
+
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Leden</h2>
         {members.error !== null && <ErrorBanner error={members.error} />}
@@ -277,7 +287,7 @@ export function BundleBatchesTab() {
             type="button"
             className={styles.addButton}
             disabled={!addGate.allowed || selected.size === 0 || addAction.pending}
-            title={addGate.allowed ? undefined : addGate.reason}
+            title={gateTitle(addGate)}
             onClick={handleAdd}
           >
             {addAction.pending ? 'Bezig…' : `${selected.size} geselecteerde batch(es) toevoegen`}
@@ -288,7 +298,7 @@ export function BundleBatchesTab() {
       <ConfirmDialog
         open={removeTarget !== null}
         title={`Batch ${removeTarget?.batchId ?? ''} verwijderen`}
-        body="Deze batch draagt mogelijk al beslissingen; verwijderen met beslissingen wordt door de server geweigerd."
+        body="Deze batch draagt mogelijk al beslissingen; verwijderen van een batch met beslissingen wordt geweigerd."
         reasonRequirement="required"
         variant="danger"
         pending={removeAction.pending}

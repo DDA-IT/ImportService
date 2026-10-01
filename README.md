@@ -25,15 +25,32 @@ lokale **frontend** (`Frontend/`, alleen een ontwikkelhulpmiddel): werkvoorraad 
 opname in een bundel en "Batch hervatten") en het bundelscherm (`/bundles`, ook groepsbeslissing, freeze en
 cancel). Zie de [handleiding](docs/handleiding/README.md).
 
+**Nieuwe leverancier en taak (NT-spoor, recht `MANAGE`):** een gebruiker richt zelf een leverancier in via
+Inrichting → "Nieuwe leverancier en taak" (`/setup/new`: leverancier → startpunt zelf beschrijven of vanuit een
+sjabloon → beschrijving van het bestand → koppeling → manuele taak → samenvatting; "Verder inrichten" hervat; hoogstens
+één conceptversie per beschrijving, anders 409 `REVISION_DRAFT_ALREADY_EXISTS`). Daarna **Controleren** per koppeling
+(`/setup/links/{linkId}/check`): een checklist met álle problemen tegelijk (`GET /import-links/{id}/readiness`, `READ`;
+overgeslagen controles als `INFO_CONFIG_CHECKS_SKIPPED`), een **proefinlezing** die niets opslaat
+(`POST /revisions/{id}/trial-reads`, `MANAGE`, zie `docs/design/proefinlezing-design.md`), activeren met een
+waarschuwing zonder geslaagde proef, en "Wat nu?": de eerste echte levering wacht op goedkeuring. De schermteksten
+volgen de woordenlijst in `docs/handleiding/begrippen.md` (invulpunt, versie, beschrijving van het bestand,
+leverancier of aankoopvereniging; Batch, Mutatie en Bundel blijven).
+
 Nieuw: `GET /api/catalog-import/bundles/{id}/psimport-preview` (JSON, of `?format=csv`) toont voor een
 **FROZEN** bundel een read-only projectie van wat later naar PSIMPORT zou gaan. Het antwoord draagt
 `previewOnly` en `UNVERIFIED_FIELD_INVENTORY`: het is een **niet-contractuele preview**, geen echt
 PSIMPORT-formaat, en schrijft niets weg (zie `docs/design/fase4-publication-bundle-design.md` §16 en
 `docs/decisions.md`, 2026-09-25).
 
-**Nog niet aanwezig:** scheduler en connectors (SFTP/API/XLSX/XML), de Prodis-koppeling voor rechten
-(5B-7, zie "Rechten (5-PERM)"), een echt PSIMPORT-formaat, en de schermen 1a/1b (inrichting/sjabloonwizard;
-die blijven de setup-API). Van publicatie naar ProDisWebbase/Pervasive (Fase 5, 5-PUB) is deel **a**
+**SFTP-ophaling (K-4b, enkel backend):** een taak met een Leveringsconfiguratie kan handmatig "Nu ophalen"
+via `POST /api/catalog-import/tasks/{id}/fetch-runs` (recht MANAGE; synchroon, één bestand per run, allowlist
+`catalogimport.fetch.allowed-hosts` verplicht); runs via `GET /tasks/{id}/runs` en `GET /task-runs/{id}` (READ).
+Zie `docs/design/leveringsconfiguratie-design.md` §4 en §6.
+
+**Nog niet aanwezig:** een scheduler (geen automatische of periodieke ophaling), frontendschermen voor
+verbindingen en "Nu ophalen" (F-1/F-2), connectors voor API/XLSX/XML, de Prodis-koppeling voor rechten
+(5B-7, zie "Rechten (5-PERM)"), een echt PSIMPORT-formaat, en een scherm om invulpunten in een sjabloon te
+declareren (enkel de API, achter de setup-vlag). Van publicatie naar ProDisWebbase/Pervasive (Fase 5, 5-PUB) is deel **a**
 (bundelsnapshot, PSIMPORT-preview, SIMULATION-publicatierun via `publication_run`) al gebouwd; deel **b/c**
 (écht schrijven naar TRIAL_LIBRARY/PRODUCTION) is nog niet gebouwd — geblokkeerd op het externe
 verwerkingscontract 252 IMPORT/1179 (zie `docs/openstaande-externe-punten.md`).
@@ -57,7 +74,7 @@ endpointmapping). Elke handlermethode in `be.dda.catalogimport.web` draagt `@Req
 | Recht | Code | Typische acties |
 |---|---|---|
 | `READ` | `catalogImport.read` | alle `GET`-endpoints (batches, bundels, taken, preview, setup-overzicht, ...) |
-| `MANAGE` | `catalogImport.manage` | upload, batch hervatten (`continue`), bundel aanmaken, batches toevoegen/verwijderen, setup/templates/bookmarkwaarden |
+| `MANAGE` | `catalogImport.manage` | upload, batch hervatten (`continue`), bundel aanmaken, batches toevoegen/verwijderen, setup/templates/bookmarkwaarden, proefinlezing (`POST /revisions/{id}/trial-reads`) |
 | `APPROVE` | `catalogImport.approve` | `accept-baseline`, mutaties goed-/afkeuren, groepsbeslissingen, bevriezen, annuleren, publicatierun aanvragen (`POST /bundles/{id}/publication-runs`) |
 
 `GET /api/catalog-import/me` is uitgezonderd (geen recht nodig): een gebruiker zonder rechten krijgt 200 met een
@@ -93,9 +110,12 @@ onbekende rechtwaarde laat de applicatie niet starten.
 `PERMISSION_SOURCE_UNAVAILABLE` -> 403 `PERMISSION_DENIED` -> 400 `ACTOR_FIELD_MISMATCH` -> 404/409. Een geweigerde
 poging wordt gelogd (WARN, zonder body of querystring), niet bewaard.
 
-**Setup-API-vlag blijft.** `catalogimport.setup-api.enabled` is een tweede, onafhankelijke beveiliging naast
-`.manage`/`.read`: vlag uit = de setup-, template- en linkendpoints bestaan niet (404, ongeacht rechten); vlag aan =
-het recht is vereist (403 `PERMISSION_DENIED` zonder).
+**Setup-API-vlag (sinds het NT-spoor beperkt).** De inrichtpaden (`/setup/...` behalve `/setup/overview`,
+sjablonen lezen en afleiden, koppelingen) zijn **niet meer** achter `catalogimport.setup-api.enabled`: ze vragen enkel
+`MANAGE` (lezen: `READ`). Achter de vlag blijven `GET /setup/overview` en het declareren van invulpunten/gebruik in een
+sjabloon; vlag uit = `POST /templates/{d}/revisions/{r}/bookmarks` geeft 405 (het GET-pad op dezelfde URL bestaat altijd),
+de overige declaratiepaden en `/setup/overview` 404, ongeacht rechten. Nieuwe lees-endpoint:
+`GET /api/catalog-import/import-links/{id}/readiness` (`READ`).
 
 **Nog niet gebouwd (5B-7):** de Prodis-koppeling (het sessietoken doorgeven aan `GET /api/account` en de codes
 `catalogImport.read/.manage/.approve` lezen). Ze is extern geblokkeerd op de audience `account` en de seed van die
@@ -163,8 +183,8 @@ Java 21 en Maven 3.9+. PostgreSQL is de standaarddatabase (`CATALOG_DB_URL`, `CA
 
 ## Lokaal starten met het demoprofiel
 
-Het profiel `demo` gebruikt dezelfde PostgreSQL-database als `local`, **zet de setup-API aan**
-en maakt bij het opstarten één volledige voorbeeldketen aan (bronorganisatie `DEMO`, definitie
+Het profiel `demo` gebruikt dezelfde PostgreSQL-database als `local`, **zet de setup-vlag aan** (nodig voor
+sjabloonbeheer en `GET /setup/overview`; de overige inrichting werkt ook zonder) en maakt bij het opstarten één volledige voorbeeldketen aan (bronorganisatie `DEMO`, definitie
 `DEMO-CSV`, actieve revisie, koppeling `DEMO-LINK`, taak *Demo manuele levering*). In de logregels staat
 de `taskId` en hoe je de eerste voorbeeldlevering uploadt (via het uploadscherm in een aangemelde sessie; een
 `curl` zonder sessie geeft sinds 5-AUTH 401).
@@ -346,17 +366,20 @@ De standaarddrempels zijn percentages van de omvang: creatie 1% en records ter b
 voorbeeldbestand van tien regels is 1% van 10 gelijk aan 0,1, zodat élke creatie en élke fout meteen
 boven de drempel zou liggen. De demorevisie zet daarom `creationThresholdSharePercent` op 10 en
 `maxCriticalSharePercent` op 25. Voor een echte, kleine leverancier is dat dezelfde ingreep: zet het
-percentage per revisie hoger — een zichtbare, geauditeerde keuze.
+percentage per versie hoger (de wizard vraagt de drempels niet; ze volgen de standaard en worden met een nieuwe versie aangepast) — een zichtbare, geauditeerde keuze.
 
 ## Een eigen keten aanmaken (setup-API)
 
-> **Waarschuwing.** De setup-API is een ontwikkelhulp en staat **standaard uit**
-> (`catalogimport.setup-api.enabled`, default `false`; alleen het `demo`-profiel zet ze aan). Ook deze
-> endpoints vereisen een login en het recht `catalogImport.manage` (schrijven) of `.read` (lezen), zie
-> "Rechten (5-PERM)". Wie `manage` heeft kan een importdefinitie en haar drempels bepalen en dus de controle
-> op een catalogus uitschakelen. Zet de vlag nooit aan in een omgeving met echte gegevens.
+> **Waarschuwing.** De inrichtpaden zijn sinds het NT-spoor **niet meer** achter de setup-vlag: ze vereisen een
+> login en het recht `catalogImport.manage` (schrijven) of `.read` (lezen), zie "Rechten (5-PERM)". Wie `manage`
+> heeft kan een importdefinitie en haar drempels bepalen en dus de controle op een catalogus uitschakelen: ken
+> dat recht bewust toe. Achter `catalogimport.setup-api.enabled` (default `false`; het `demo`-profiel zet ze aan)
+> blijven enkel `GET /setup/overview` en het declareren van invulpunten/gebruik in een sjabloon. Zet die vlag
+> niet aan in een omgeving met echte gegevens.
 
-Staat de vlag uit, dan bestaat de controller niet en antwoordt elk `/setup`-pad met 404 (na login).
+Gebruikers doen dit normaal in de UI (Inrichting → "Nieuwe leverancier en taak", daarna "Controleren"; zie
+hierboven). Onderstaande verzoekvormen zijn de API erachter. Staat de vlag uit, dan antwoordt
+`GET /setup/overview` met 404 (na login) en `POST /templates/{d}/revisions/{r}/bookmarks` met 405.
 
 Verzoekvormen (basis `/api/catalog-import/setup`; JSON-body; uit te voeren in een aangemelde browsersessie met
 `X-XSRF-TOKEN`, zie hierboven):
@@ -376,12 +399,53 @@ POST /api/catalog-import/setup/links
      {"definitionId":2,"code":"ACME-LINK","name":"ACME koppeling","supplierCode":"ACME","libraryCode":"PSARF012","defaultCurrency":"EUR"}  (defaultCurrency optioneel, ISO-4217, drie letters; standaard EUR als afwezig)
 POST /api/catalog-import/setup/tasks
      {"linkId":2,"name":"ACME manuele levering"}
-GET  /api/catalog-import/setup/overview
+GET  /api/catalog-import/setup/overview                     (achter de setup-vlag)
+GET  /api/catalog-import/import-links/2/readiness           (READ: checklist met alle problemen tegelijk)
+POST /api/catalog-import/revisions/2/trial-reads            (MANAGE: proefinlezing, multipart `file`; slaat niets op)
 ```
+
+Een bestaande configuratie wijzigen gebeurt nooit op een bevroren revisie, maar met een **opvolgrevisie**:
+een nieuwe `DRAFT` die de `ACTIVE` (of een oudere `SUPERSEDED`) revisie letterlijk kopieert, inclusief
+mappings, filters, kritiek-overrules en bookmarks. Daarna bewerkt u die DRAFT en activeert u ze; de vorige
+revisie wordt dan `SUPERSEDED` en blijft leesbaar voor de leveringen die eronder gescreend zijn.
+
+```
+POST /api/catalog-import/setup/revisions/2/successor
+     {"changeReason":"Drempels aanscherpen"}   (changeReason is VERPLICHT; createdBy optioneel)
+```
+
+Er kan hoogstens één DRAFT per definitie openstaan, ook bij een nieuwe revisie of gelijktijdige aanvragen (409
+`REVISION_DRAFT_ALREADY_EXISTS`; door de server en een unieke databaseconstraint afgedwongen), en
+alleen een `ACTIVE` of `SUPERSEDED` revisie kan gekopieerd worden (409 `REVISION_NOT_CLONEABLE`).
+
+Die DRAFT bewerkt u met twee paden (alleen op een `DRAFT`; op een bevroren revisie 409
+`REVISION_NOT_EDITABLE`):
+
+```
+PATCH  /api/catalog-import/setup/revisions/3
+       {"maxCriticalSharePercent":5}        (elk veld dat u niet noemt, blijft ongewijzigd)
+DELETE /api/catalog-import/setup/revisions/3/mappings/7
+DELETE /api/catalog-import/setup/revisions/3/filters/4
+```
+
+`PATCH` kent dezelfde veldnamen als het aanmaken van een revisie; `null` of afwezig betekent
+**ongewijzigd**, en een uitdrukkelijk lege tekst (`""`) maakt alleen een optioneel veld leeg
+(kortingscode-, omschrijvings-, munt- en quote-veld). Twee wijzigingen zijn extra beschermd, omdat ze de
+aanbiedingsidentiteit veranderen en elke bestaande aanbieding als *nieuw* zouden laten terugkomen:
+
+- `identityProfileKind` of een van de vier `identity*Field`-velden wijzigen vraagt een uitdrukkelijke
+  bevestiging `"acknowledgeIdentityChange": true`, anders 409 `IDENTITY_CHANGE_NOT_ACKNOWLEDGED`.
+- `canonicalisationVersion` wijzigen kan **niet meer** zodra er voor een koppeling van deze definitie
+  aanvaarde bronstaat bestaat: 409 `REVISION_CANONICALISATION_CHANGE_BLOCKED`. Deze blokkade is
+  onvoorwaardelijk — er is geen bevestiging die haar opheft, want er bestaat geen migratie voor.
+
+Verwijderen geeft 204, of 404 `MAPPING_NOT_FOUND`/`FILTER_NOT_FOUND` wanneer de rij niet bestaat of bij een
+andere revisie hoort. Steunde er een bookmarkdeclaratie op de verwijderde rij, dan volgt 409 met de
+bijhorende `CONFIG_BOOKMARK_*`-code en wordt er niets verwijderd.
 
 Gebruik de `id` uit elk antwoord in de volgende stap (hierboven is `2` het id van de tweede definitie,
 revisie en koppeling — naast de demoketen). `overview` toont de hele boom met de `taskId` die u bij de
-upload nodig hebt. Er is geen scherm voor de inrichting; scripten kan voorlopig niet (V1 = A1).
+upload nodig hebt (ook `GET /tasks` geeft hem). Scripten kan voorlopig niet (V1 = A1).
 
 Goed om te weten:
 
@@ -391,10 +455,17 @@ Goed om te weten:
 - `activate` en elke mapping/filter/overrule lopen door **dezelfde** configuratievalidatie als de
   screening. Een fout geeft 400 met de bestaande code in het bericht, bijvoorbeeld
   `CONFIG_FIELD_MAPPING_DUPLICATES_REVISION` wanneer u een veld mapt dat de revisie zelf al bepaalt.
+- `PATCH` en `DELETE` op een DRAFT doen die volledige validatie **niet**: een werkversie mag tussentijds
+  onvolledig zijn (anders kon u een mapping nooit vervangen). `activate` valideert alsnog alles, dus een
+  DRAFT die u half afwerkt, wordt nooit stil actief.
 - Canonicalisatieversie 2 is verplicht zodra er een munt gelezen wordt of een referentie (EAN/PIM/CAB)
   gemapt is; onder versie 1 zou zo'n wijziging buiten de vingerafdruk vallen.
-- Een onbekend id geeft 404, een dubbele code 409, een ongeldige waarde 400 — telkens met een stabiele
-  `code` in het antwoord (behalve bij 400, waar de tekst in `error` staat).
+- Een onbekend id geeft 404, een dubbele code 409 (ook bij twee gelijktijdige aanvragen: 409, geen 500), een
+  ongeldige waarde 400 — telkens met een stabiele `code` in het antwoord; bij 400 uit de setup-API is dat
+  `CONFIG_*` of `<VELD>_REQUIRED|_TOO_LONG|_INVALID`. Een 400 zonder `code` komt van een onleesbare body of een
+  ongeldige enumwaarde.
+- De checklist en de proefinlezing tonen **alle** configuratiefouten van een concept tegelijk; de screening en
+  `activate` blijven bij de eerste fout (zelfde code, status en tekst als voorheen).
 
 ## Database en archief
 

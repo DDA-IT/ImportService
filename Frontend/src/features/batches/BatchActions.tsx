@@ -12,7 +12,7 @@
  * en na succes herlaadt de ouder de batch.
  */
 
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import * as batchesApi from '../../api/batches.ts';
 import * as bundlesApi from '../../api/bundles.ts';
 import { PERMISSION_APPROVE, PERMISSION_MANAGE, type BatchDetail, type BaselineAcceptance } from '../../api/types.ts';
@@ -21,10 +21,14 @@ import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
+import { Term } from '../../terms/Term.tsx';
 import styles from './BatchActions.module.css';
 
-/** De tekst die overgetypt moet worden voor accept-baseline (de documenten leggen er geen vast). */
-export const ACCEPT_BASELINE_CONFIRMATION = 'BASELINE';
+/**
+ * De tekst die overgetypt moet worden om een batch als nulmeting te aanvaarden (de documenten leggen er geen vast).
+ * NT-11a: Nederlands (was het Engelse woord `BASELINE`).
+ */
+export const ACCEPT_BASELINE_CONFIRMATION = 'NULMETING';
 
 type Props = { batch: BatchDetail; onChanged: () => void };
 
@@ -116,13 +120,13 @@ function AddToBundleDialog({
       body={
         <div>
           <p>
-            Opname in een bundel sluit <code>accept-baseline</code> voor deze batch uit, tot de bundel geannuleerd
+            Opname in een bundel sluit het aanvaarden als nulmeting voor deze batch uit, tot de bundel geannuleerd
             wordt.
           </p>
           {bundles.loading && <p>Bundels worden geladen…</p>}
           {!bundles.loading && bundles.error !== null && <ErrorBanner error={bundles.error} />}
           {!bundles.loading && bundles.error === null && options.length === 0 && (
-            <p>Er is geen bundel in opbouw (ASSEMBLING). Maak eerst een bundel aan.</p>
+            <p>Er is geen bundel in opbouw. Maak eerst een bundel aan.</p>
           )}
           {options.length > 0 && (
             <label>
@@ -160,7 +164,7 @@ function AddToBundleDialog({
  * een naam die nergens heen gaat) maar een inline bevestiging met die vermelding; pending state (plus ref)
  * voorkomt een dubbele klik; een fout blijft staan en er is geen automatische retry.
  */
-function ContinueSection({ batchId, onDone }: { batchId: number; onDone: (message: string) => void }) {
+function ContinueSection({ batchId, onDone }: { batchId: number; onDone: (message: ReactNode) => void }) {
   const manageGate = usePermissionGate(PERMISSION_MANAGE);
   const [confirming, setConfirming] = useState(false);
   const inFlight = useRef(false);
@@ -177,7 +181,11 @@ function ContinueSection({ batchId, onDone }: { batchId: number; onDone: (messag
         return;
       }
       setConfirming(false);
-      onDone(`Batch ${batchId} is hervat; eindstatus ${result.status}.`);
+      onDone(
+        <>
+          Batch {batchId} is hervat; nieuwe status: <Term domain="batchStatus" code={result.status} />.
+        </>,
+      );
     } finally {
       inFlight.current = false;
     }
@@ -187,8 +195,8 @@ function ContinueSection({ batchId, onDone }: { batchId: number; onDone: (messag
     <>
       <h2 className={styles.title}>Deze batch is onderbroken</h2>
       <p>
-        De batch staat op <code>MUTATING</code>: de screening stopte halverwege de mutatiegeneratie. Hervatten
-        gaat verder waar het stopte.
+        De batch heeft de status <Term domain="batchStatus" code="MUTATING" />: de controle stopte halverwege het
+        bepalen van de wijzigingen. Hervatten gaat verder waar ze stopte.
       </p>
       {!confirming ? (
         <>
@@ -207,8 +215,8 @@ function ContinueSection({ batchId, onDone }: { batchId: number; onDone: (messag
       ) : (
         <div role="group" aria-label="Hervatten bevestigen">
           <p>
-            <strong>Let op:</strong> deze actie wordt niet op naam vastgelegd; het endpoint kent geen actorveld.
-            Noteer zelf wie de batch hervatte als dat nodig is.
+            <strong>Let op:</strong> deze actie wordt niet op naam vastgelegd. Noteer zelf wie de batch hervatte
+            als dat nodig is.
           </p>
           {runner.error !== null && <ErrorBanner error={runner.error} />}
           <div className={styles.buttons}>
@@ -227,11 +235,11 @@ function ContinueSection({ batchId, onDone }: { batchId: number; onDone: (messag
 
 export function BatchActions({ batch, onChanged }: Props) {
   const [dialog, setDialog] = useState<'baseline' | 'bundle' | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ReactNode>(null);
   const approveGate = usePermissionGate(PERMISSION_APPROVE);
   const manageGate = usePermissionGate(PERMISSION_MANAGE);
 
-  const done = (message: string) => {
+  const done = (message: ReactNode) => {
     setDialog(null);
     setNotice(message);
     onChanged();
@@ -245,8 +253,8 @@ export function BatchActions({ batch, onChanged }: Props) {
           <h2 className={styles.title}>Hoe verder met deze batch?</h2>
           <p>
             Kies één van twee routes; ze sluiten elkaar per batch uit. Aanvaarden als nulmeting legt de
-            bronstaat vast zonder publicatie. Opname in een bundel bereidt publicatie voor. Is de batch al lid
-            van een bundel, dan geeft de server 409 <code>BATCH_IN_PUBLICATION_BUNDLE</code>.
+            huidige stand van de artikelen vast als vertrekpunt, zonder publicatie. Opname in een bundel bereidt
+            publicatie voor. Is de batch al lid van een bundel, dan kan ze niet meer als nulmeting aanvaard worden.
           </p>
           <div className={styles.buttons}>
             <button

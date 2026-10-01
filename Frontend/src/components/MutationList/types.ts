@@ -79,7 +79,7 @@ export type MutationSource = {
  * `components/` mag niet uit `features/` importeren (§2 regel 1), maar een poort uit `bundlePolicy`
  * past hier zonder omzetting in.
  */
-export type Gate = { allowed: true } | { allowed: false; reason: string };
+export type Gate = { allowed: true } | { allowed: false; reason: string; code?: string };
 
 /** Eén actie per rij. Het component weet niet wat de actie doet, alleen hoe ze bevestigd wordt. */
 export type MutationRowAction = {

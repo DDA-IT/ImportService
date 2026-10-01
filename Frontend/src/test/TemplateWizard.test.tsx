@@ -179,20 +179,26 @@ describe('TemplateListPage / TemplateDetailPage (S1-F2)', () => {
 
     renderDetailPage();
 
-    expect(await screen.findByText('Revisie #1')).toBeInTheDocument();
-    const draftButton = screen.getByRole('button', { name: 'Revisie #2' });
+    expect(await screen.findByText('Versie 1')).toBeInTheDocument();
+    const draftButton = screen.getByRole('button', { name: 'Versie 2' });
     expect(draftButton).toBeDisabled();
-    expect(draftButton).toHaveAttribute('title', 'een DRAFT-sjabloonrevisie is nog niet materialiseerbaar');
-    expect(screen.getByText('een DRAFT-sjabloonrevisie is nog niet materialiseerbaar')).toBeInTheDocument();
+    // NT-11c: de reden is gewoon Nederlands (geen "DRAFT").
+    expect(draftButton).toHaveAttribute('title', 'een concept van een sjabloon is nog niet bruikbaar om uit te materialiseren');
+    expect(
+      screen.getByText('een concept van een sjabloon is nog niet bruikbaar om uit te materialiseren'),
+    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revisie #1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Versie 1' }));
 
-    expect(await screen.findByText('BESTANDS_PREFIX')).toBeInTheDocument();
-    expect(screen.getByText('Bestandsprefix')).toBeInTheDocument();
+    // Het label staat in beeld, de technische naam in de tooltip.
+    const label = (await screen.findAllByText('Bestandsprefix', { selector: 'span' }))[0]!;
+    expect(label).toHaveAttribute('title', 'Technische naam: BESTANDS_PREFIX');
     const problems = await screen.findByTestId('bookmark-problems');
     expect(problems).toHaveAttribute('role', 'alert');
-    expect(problems).toHaveTextContent('Geen configuratieplaats gekoppeld aan deze bookmark.');
-    expect(problems).toHaveTextContent('CONFIG_BOOKMARK_WITHOUT_PLACE');
+    // De servermelding is Engels; de zichtbare tekst komt uit het woordenboek, de code staat in de tooltip.
+    expect(problems).toHaveTextContent('Invulpunt zonder bestemming');
+    expect(problems.textContent).not.toContain('CONFIG_BOOKMARK_WITHOUT_PLACE');
+    expect(problems.querySelector('li')?.getAttribute('title')).toContain('CONFIG_BOOKMARK_WITHOUT_PLACE');
   });
 
   it('S1-F2.4: materialisatiehistoriek laadt', async () => {
@@ -232,8 +238,8 @@ describe('TemplateListPage / TemplateDetailPage (S1-F2)', () => {
 
     renderDetailPage();
 
-    await screen.findByText('Revisie #1');
-    fireEvent.click(screen.getByRole('button', { name: 'Revisie #1' }));
+    await screen.findByText('Versie 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Versie 1' }));
 
     // De materialisatiehistoriek laadt al vanaf het openen van de pagina en kan haar melding dus
     // eerder tonen dan de bookmarksectie (die pas na de klik mount) — wacht tot beide er staan in

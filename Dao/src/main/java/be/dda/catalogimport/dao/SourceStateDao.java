@@ -386,6 +386,29 @@ public class SourceStateDao {
     }
 
     /**
+     * Bestaat er voor <b>enige</b> koppeling van deze importdefinitie al aanvaarde bronstaat?
+     * <p>
+     * Dit is het blokkeerpunt van R-REV-X2 ({@code docs/design/revision-successor-design.md} §5, bouwstap
+     * S1-X-4): {@code record_canonicalisation_version} zit vooraan in {@code identity_hash}, dus zodra er
+     * ook maar één aanvaarde bronstaatrij bestaat, zou een andere canonicalisatieversie élke bestaande
+     * aanbieding als {@code NEW} laten terugkomen (massa-CREATE). Die wijziging is niet migreerbaar en
+     * wordt daarom geweigerd, niet stil doorgevoerd.
+     * <p>
+     * <b>Een koppeling, niet een revisie.</b> De bronstaat hangt aan de {@code import_link} en kent geen
+     * revisienummer; de vraag is dus of er ooit iets aanvaard is binnen de <i>definitie</i> waaraan de
+     * revisie hangt. Ook een op non-actief gezette rij telt mee: haar identiteit blijft in de tabel staan
+     * en zou na een versiewijziging nooit meer gevonden worden.
+     * <p>
+     * {@code limit 1} in plaats van {@code count(*)}: bij een grote koppeling hoeft er niets geteld te
+     * worden om te weten dát er iets staat.
+     */
+    public boolean existsForImportDefinition(long importDefinitionId) {
+        return !jdbc.queryForList("select 1 from catalog_source_state state "
+                + "join import_link link on link.id = state.import_link_id "
+                + "where link.import_definition_id = ? limit 1", Integer.class, importDefinitionId).isEmpty();
+    }
+
+    /**
      * De bestaande omvang van deze koppeling: het aantal <b>actieve</b> aanvaarde aanbiedingen. Dat is
      * de noemer van de creatiedrempel (ontwerp fase 3 par. 15.2): het aandeel nieuwe aanbiedingen wordt
      * gemeten tegen wat er al is, niet tegen de omvang van de levering. Een op non-actief gezette rij

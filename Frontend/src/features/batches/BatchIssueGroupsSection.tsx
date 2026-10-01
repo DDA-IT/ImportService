@@ -11,6 +11,9 @@ import { DataTable, type DataTableColumn } from '../../components/DataTable.tsx'
 import { Pager } from '../../components/Pager.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useQuery } from '../../hooks/useQuery.ts';
+import { IssueCodeTerm } from '../../terms/IssueCodeTerm.tsx';
+import { Term } from '../../terms/Term.tsx';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { Count } from './format.tsx';
 import styles from './BatchDetailPage.module.css';
 
@@ -30,9 +33,13 @@ export function BatchIssueGroupsSection({
   );
 
   const columns: readonly DataTableColumn<IssueGroupRow>[] = [
-    { key: 'issueCode', header: 'Foutcode', render: (row) => row.issueCode },
-    { key: 'severity', header: 'Ernst', render: (row) => row.severity },
-    { key: 'incidentKind', header: 'Soort', render: (row) => row.incidentKind },
+    { key: 'issueCode', header: 'Probleem', render: (row) => <IssueCodeTerm code={row.issueCode} /> },
+    { key: 'severity', header: 'Ernst', render: (row) => <Term domain="severity" code={row.severity} /> },
+    {
+      key: 'incidentKind',
+      header: 'Soort samenvatting',
+      render: (row) => <Term domain="issueIncidentKind" code={row.incidentKind} />,
+    },
     {
       key: 'occurrenceCount',
       header: 'Werkelijk aantal',
@@ -58,10 +65,14 @@ export function BatchIssueGroupsSection({
     },
     {
       key: 'bulkIncident',
-      header: 'Bulkincident',
+      header: 'Gebundelde melding',
       render: (row) => (row.bulkIncident ? <strong>Ja</strong> : 'Nee'),
     },
-    { key: 'handlingStatus', header: 'Afhandeling', render: (row) => row.handlingStatus },
+    {
+      key: 'handlingStatus',
+      header: 'Afhandeling',
+      render: (row) => <Term domain="issueHandlingStatus" code={row.handlingStatus} />,
+    },
     {
       key: 'samples',
       header: 'Voorbeelden',
@@ -80,6 +91,13 @@ export function BatchIssueGroupsSection({
   return (
     <section data-testid="batch-issue-groups">
       <h2 className={styles.sectionTitle}>Foutgroepen</h2>
+      <WhatIsThis>
+        <p>
+          Een foutgroep vat gelijksoortige problemen samen, met het werkelijke aantal. Bij een grote groep wordt niet
+          elk voorval bewaard als voorbeeld; het werkelijke aantal klopt altijd. Een gebundelde melding betekent dat
+          zoveel problemen van dezelfde soort voorkomen dat ze samen als één gebeurtenis beoordeeld worden.
+        </p>
+      </WhatIsThis>
       {error !== null && <ErrorBanner error={error} />}
       {loading && data === null && error === null && <p className={styles.loading}>Bezig met laden…</p>}
       {data !== null && error === null && (

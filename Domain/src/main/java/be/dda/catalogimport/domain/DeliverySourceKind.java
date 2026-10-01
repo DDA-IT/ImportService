@@ -18,5 +18,12 @@ public enum DeliverySourceKind {
      * Ingelezen uit de beheerde servermap ({@code catalogimport.local-source.directory}), waar een mens het
      * bestand buiten CatalogImport om geplaatst heeft. Het bronbestand blijft daarbij ongemoeid.
      */
-    LOCAL_DIRECTORY
+    LOCAL_DIRECTORY,
+
+    /**
+     * Door CatalogImport zelf opgehaald bij de leverancier via SFTP, volgens de Leveringsconfiguratie van de taak
+     * (bouwstap K-4b, beslissingslog 2026-09-29 A13). Ook hier blijft het bronbestand bij de leverancier ongemoeid
+     * (A3, {@code LEAVE}).
+     */
+    SFTP
 }

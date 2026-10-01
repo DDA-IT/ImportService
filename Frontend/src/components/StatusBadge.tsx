@@ -4,6 +4,9 @@
  * zie ook de `as const`-aanpak in `api/types.ts` §3.3: onbekend wordt getoond, niet weggelaten.
  */
 
+import { useId } from 'react';
+import { term, termTooltip, type TermDomain } from '../terms/index.ts';
+import termStyles from '../terms/Term.module.css';
 import styles from './StatusBadge.module.css';
 
 type StatusFamily = 'planned' | 'awaiting' | 'ready' | 'rejected' | 'blocked' | 'expired' | 'neutral';
@@ -43,11 +46,49 @@ const STATUS_FAMILY: Record<string, StatusFamily> = {
   VALID_WITH_WARNINGS: 'awaiting',
   REVIEW_REQUIRED: 'blocked',
   BLOCKING: 'rejected',
+  // IssueCaseStatus (S2-0)
+  AWAITING_REVIEW: 'awaiting',
+  CORRECTED: 'ready',
+  // REJECTED already mapped above (shared with MutationStatus)
+  AUTO_RESOLVED: 'ready',
+  // NT-10: checklist (readinessStatus; INFO blijft neutraal), proefinlezing (trialVerdict, trialSampleStatus,
+  // thresholdOutcome). VALID en REJECTED staan hierboven al.
+  OK: 'ready',
+  PROBLEM: 'rejected',
+  WOULD_BLOCK: 'rejected',
+  NO_BLOCKER_FOUND: 'ready',
+  UNREADABLE: 'rejected',
+  FILTERED_OUT: 'expired',
+  EXCEEDED: 'rejected',
+  WITHIN: 'ready',
 };
 
-export type StatusBadgeProps = { status: string };
+/**
+ * `domain` is verplicht: dezelfde code betekent per domein iets anders (`BLOCKED`/`REJECTED` bij een
+ * batch, een wijziging of een behandelgeval). De badge toont het Nederlandse woord; de uitleg en de
+ * technische code staan in de tooltip (NT-5, V7). Een onbekende code wordt als code getoond.
+ */
+export type StatusBadgeProps = { status: string; domain: TermDomain };
 
-export function StatusBadge({ status }: StatusBadgeProps) {
+export function StatusBadge({ status, domain }: StatusBadgeProps) {
+  const descriptionId = useId();
   const family = STATUS_FAMILY[status] ?? 'neutral';
-  return <span className={`${styles.badge} ${styles[family]}`}>{status}</span>;
+  const resolved = term(domain, status);
+  const hasUitleg = resolved.uitleg !== '';
+  return (
+    <>
+      <span
+        className={`${styles.badge} ${styles[family]}`}
+        title={termTooltip(resolved)}
+        aria-describedby={hasUitleg ? descriptionId : undefined}
+      >
+        {resolved.label}
+      </span>
+      {hasUitleg && (
+        <span id={descriptionId} className={termStyles.visuallyHidden}>
+          {resolved.uitleg}
+        </span>
+      )}
+    </>
+  );
 }

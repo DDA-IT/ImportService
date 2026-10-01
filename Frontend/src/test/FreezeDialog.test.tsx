@@ -189,13 +189,14 @@ describe('FreezeDialog (F10, §10.5)', () => {
     const dialog = await openFreezeDialog();
     const planned = await waitForPreflight(dialog);
     expect(planned.textContent).toContain('1234 mutaties');
-    expect(planned.textContent).toContain('PLANNED');
+    expect(planned.textContent).toContain('Gepland');
+    expect(planned.textContent).not.toContain('PLANNED');
     expect(planned.textContent).toContain('uw naam');
 
     expect(within(dialog).getByTestId('freeze-planned-count').textContent).toContain('uw naam (An Beslisser)');
 
     // De blijvende waarschuwing uit §10.5 staat in beeld.
-    expect(within(dialog).getByText(/Publiceren bestaat nog niet \(Fase 5\)/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Echt publiceren naar Prodis kan nog niet/)).toBeInTheDocument();
     expect(preflightLoads()).toHaveLength(1);
     expect(posts()).toHaveLength(0);
   });
@@ -208,14 +209,17 @@ describe('FreezeDialog (F10, §10.5)', () => {
     renderOverview(bundle({ awaitingApprovalCount: 3 }));
 
     // Al op het overzicht aangekondigd (C2-teller), zonder dat de knop de voorvlucht verbergt.
-    expect(await screen.findByText(/de voorvlucht zal bevriezen blokkeren/)).toBeInTheDocument();
+    expect(await screen.findByText(/de voorcontrole zal bevriezen blokkeren/)).toBeInTheDocument();
 
     const dialog = await openFreezeDialog();
     await waitForPreflight(dialog);
     const blockers = within(dialog).getByRole('list', { name: 'Blokkades' });
-    expect(blockers.textContent).toContain('BUNDLE_HAS_UNDECIDED_MUTATIONS');
+    expect(blockers.textContent).not.toContain('BUNDLE_HAS_UNDECIDED_MUTATIONS');
     expect(blockers.textContent).toContain('3 mutaties');
-    expect(blockers.textContent).toContain('AWAITING_APPROVAL');
+    expect(blockers.textContent).toContain('Wacht op goedkeuring');
+    expect(blockers.textContent).not.toContain('AWAITING_APPROVAL');
+    // De technische code blijft opvraagbaar onder "Technische details (voor support)" (V7).
+    expect(within(dialog).getByText('BUNDLE_HAS_UNDECIDED_MUTATIONS')).toBeInTheDocument();
 
     // Ook met alles correct ingevuld blijft bevestigen onmogelijk, met de reden bij de knop.
     fillConfirmation(dialog);
@@ -375,7 +379,8 @@ describe('FreezeDialog (F10, §10.5)', () => {
 
     const notice = screen.getByRole('status').textContent ?? '';
     expect(notice).toContain(`Bundel ${REFERENCE} is bevroren door An Beslisser`);
-    expect(notice).toContain(`bundelhash ${HASH.slice(0, 16)}`);
+    expect(notice).toContain(`vingerafdruk ${HASH.slice(0, 16)}`);
+    expect(notice).not.toContain('AUTO_APPROVE_PLANNED');
     expect(reloadBundle).toHaveBeenCalledTimes(1);
   });
 
@@ -392,7 +397,7 @@ describe('FreezeDialog (F10, §10.5)', () => {
     expect(within(dialog).queryByTestId('freeze-planned-count')).not.toBeInTheDocument();
     fillConfirmation(dialog);
     expect(confirmButton(dialog)).toBeDisabled();
-    expect(within(dialog).getByTestId('confirm-blocked-reason').textContent).toContain('voorvlucht');
+    expect(within(dialog).getByTestId('confirm-blocked-reason').textContent).toContain('voorcontrole');
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Opnieuw controleren' }));
     await waitForPreflight(dialog);
@@ -403,10 +408,11 @@ describe('FreezeDialog (F10, §10.5)', () => {
   it('F10.F12: het overzicht toont de C2-tellers van BundleDetail, zonder extra lijstaanroepen', async () => {
     renderOverview(bundle({ plannedCount: 5, awaitingApprovalCount: 0 }));
 
-    const planned = await screen.findByText('Wordt bij bevriezen goedgekeurd (PLANNED)');
-    expect(planned.nextElementSibling?.textContent).toBe('5');
-    const awaiting = screen.getByText('Wacht op beslissing (AWAITING_APPROVAL)');
-    expect(awaiting.nextElementSibling?.textContent).toBe('0');
+    // Het woord staat in een <dt> (met tooltip en verborgen uitleg); de waarde staat in de <dd> erna.
+    const planned = await screen.findByText('Wordt bij bevriezen goedgekeurd');
+    expect(planned.closest('dt')?.nextElementSibling?.textContent).toBe('5');
+    const awaiting = screen.getByText('Wacht op beslissing');
+    expect(awaiting.closest('dt')?.nextElementSibling?.textContent).toBe('0');
     expect(fetchCalls()).toHaveLength(0);
   });
 
@@ -415,8 +421,11 @@ describe('FreezeDialog (F10, §10.5)', () => {
 
     const button = await screen.findByRole('button', { name: 'Bevriezen' });
     expect(button).toBeDisabled();
-    expect(button.getAttribute('title')).toContain('BUNDLE_NOT_ASSEMBLING');
-    expect(screen.getByText('Kan niet: de bundel is bevroren (BUNDLE_NOT_ASSEMBLING).')).toBeInTheDocument();
+    expect(button.getAttribute('title')).toContain('de bundel is bevroren');
+    // De code blijft opvraagbaar in de tooltip, maar staat niet in de zichtbare tekst.
+    expect(button.getAttribute('title')).toContain('technische code: BUNDLE_NOT_ASSEMBLING');
+    expect(screen.queryByText(/BUNDLE_NOT_ASSEMBLING/)).not.toBeInTheDocument();
+    expect(screen.getByText('Kan niet: de bundel is bevroren.')).toBeInTheDocument();
 
     fireEvent.click(button);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

@@ -7,13 +7,16 @@
 
 html {
   font-size: 16px;
-  line-height: 1.5;
-  color: var(--color-text, #1a1a1a);
-  background-color: var(--color-background, #ffffff);
+  color: var(--color-text, #1c252e);
+  background-color: #ffffff;
 }
 
 body {
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 14px;
+  line-height: 1.57;
+  color: var(--color-text, #1c252e);
+  background-color: #ffffff;
 }
 
 #root {
@@ -29,17 +32,21 @@ main {
 
 /* Typography */
 h1, h2, h3, h4, h5, h6 {
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.2;
   margin-bottom: var(--spacing-2, 0.5rem);
+}
+
+h1, h2, h3 {
+  font-family: var(--font-heading, 'Barlow', system-ui, sans-serif);
 }
 
 h1 { font-size: 2rem; }
 h2 { font-size: 1.5rem; }
 h3 { font-size: 1.25rem; }
-h4 { font-size: 1.125rem; }
-h5 { font-size: 1rem; }
-h6 { font-size: 0.875rem; }
+h4 { font-size: 20px; font-weight: 700; }
+h5 { font-size: 18px; font-weight: 700; }
+h6 { font-size: 17px; font-weight: 600; }
 
 p {
   margin-bottom: var(--spacing-2, 0.5rem);
@@ -47,7 +54,7 @@ p {
 
 /* Links */
 a {
-  color: var(--color-primary, #0066cc);
+  color: var(--color-link, #006c9c);
   text-decoration: none;
 }
 
@@ -73,11 +80,18 @@ table {
 
 th, td {
   text-align: left;
-  padding: var(--spacing-2, 0.5rem);
-  border-bottom: 1px solid var(--color-border, #e0e0e0);
+  padding: 16px;
+  border-bottom: 1px dashed var(--color-border, rgba(145, 158, 171, 0.2));
+}
+
+tbody tr:last-child td,
+tbody tr:last-child th {
+  border-bottom: none;
 }
 
 th {
+  font-size: 14px;
   font-weight: 600;
-  background-color: var(--color-surface, #f5f5f5);
+  color: var(--color-text-secondary, #637381);
+  background-color: var(--color-surface, #f4f6f8);
 }

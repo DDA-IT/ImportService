@@ -33,7 +33,10 @@ import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import type { MutationFilter } from '../../components/MutationList/types.ts';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
-import { groupDecisionGate } from './bundlePolicy.ts';
+import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
+import { Term } from '../../terms/Term.tsx';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
+import { gateTitle, groupDecisionGate } from './bundlePolicy.ts';
 import { toDecisionFilter } from './groupDecisionFilter.ts';
 import styles from './GroupDecisionDialog.module.css';
 
@@ -69,16 +72,25 @@ function FilterSummary({ filter }: { filter: DecisionFilter }) {
     entries.push(['Batch', filter.batchId]);
   }
   if (filter.status !== undefined) {
-    entries.push(['Status', filter.status]);
+    entries.push(['Status', <Term key="status" domain="mutationStatus" code={filter.status} />]);
   }
   if (filter.actionType !== undefined) {
-    entries.push(['Soort', filter.actionType]);
+    entries.push(['Soort', <Term key="type" domain="mutationAction" code={filter.actionType} />]);
   }
   if (filter.statusReason !== undefined) {
-    entries.push(['Statusreden', filter.statusReason]);
+    entries.push([
+      'Statusreden',
+      <Term key="reason" domain="mutationStatusReason" code={filter.statusReason} unknownLabel="Andere reden" />,
+    ]);
   }
   if (filter.identityHash !== undefined) {
-    entries.push(['Wijzigingsgroep', <code key="hash">{filter.identityHash}</code>]);
+    entries.push([
+      'Wijzigingsgroep',
+      <span key="hash">
+        Alle wijzigingen van één artikel
+        <TechnicalDetails items={[{ name: 'Sleutel van de wijzigingsgroep', value: <code>{filter.identityHash}</code> }]} />
+      </span>,
+    ]);
   }
   if (entries.length === 0) {
     return <p className={styles.filterEmpty}>Geen filter ingesteld.</p>;
@@ -100,13 +112,14 @@ function resultMessage(result: GroupDecisionView, pending: Pending): string {
     // §10.4 punt 5, letterlijk.
     return 'Er voldeed niets (meer) aan de selectie; er is bewust geen beslissingsregel geschreven.';
   }
+  // De filter zoals de server ze bewaarde (`result.selectionFilter`) staat in het tabblad Beslissingen, in gewoon Nederlands.
   const base =
     `Groepsbeslissing #${result.decisionId} vastgelegd: ${result.affectedCount} ` +
-    `${mutationsWord(result.affectedCount)} ${LABELS[pending.kind].past} (filter: ${result.selectionFilter}).`;
+    `${mutationsWord(result.affectedCount)} ${LABELS[pending.kind].past}.`;
   if (result.affectedCount < pending.listedCount) {
     return (
       `${base} De lijst toonde ${pending.listedCount}; de overige vielen buiten wat een groepsactie raakt ` +
-      '(geblokkeerd, identiteitsincident, importmarkering of al beslist).'
+      '(tegengehouden, herkenningsprobleem, afgeronde controle of al beslist).'
     );
   }
   return base;
@@ -163,6 +176,13 @@ export function GroupDecisionDialog({ bundleId, bundleStatus, filter, listedCoun
           Beslist over <strong>alle</strong> mutaties die aan de filter hieronder voldoen — niet alleen over
           de zichtbare pagina. De filter is die van de lijst; pas hem daar aan.
         </p>
+        <WhatIsThis>
+          <p>
+            Een groepsactie keurt in één keer alle mutaties goed of af die aan de filter van de lijst voldoen, in plaats
+            van één voor één. Zet daarom eerst een filter in de lijst en controleer het aantal dat bij de knop staat.
+            Zolang de bundel in opbouw is, kunt u een mutatie nadien nog afzonderlijk herzien.
+          </p>
+        </WhatIsThis>
       </div>
 
       <FilterSummary filter={decisionFilter} />
@@ -172,7 +192,7 @@ export function GroupDecisionDialog({ bundleId, bundleStatus, filter, listedCoun
           type="button"
           className={styles.primaryButton}
           disabled={!gate.allowed}
-          title={gate.allowed ? undefined : gate.reason}
+          title={gateTitle(gate)}
           onClick={() => open('APPROVE')}
         >
           Groep goedkeuren ({countLabel})
@@ -181,7 +201,7 @@ export function GroupDecisionDialog({ bundleId, bundleStatus, filter, listedCoun
           type="button"
           className={styles.dangerButton}
           disabled={!gate.allowed}
-          title={gate.allowed ? undefined : gate.reason}
+          title={gateTitle(gate)}
           onClick={() => open('REJECT')}
         >
           Groep afkeuren ({countLabel})
@@ -206,7 +226,7 @@ export function GroupDecisionDialog({ bundleId, bundleStatus, filter, listedCoun
               </p>
               <FilterSummary filter={pending.filter} />
               <p>
-                Deze actie raakt nooit een geblokkeerde mutatie, een identiteitsincident, de importmarkering of
+                Deze actie raakt nooit een tegengehouden mutatie, een herkenningsprobleem, de afgeronde controle of
                 een mutatie die al een beslissing draagt.
               </p>
               <p className={styles.warning}>

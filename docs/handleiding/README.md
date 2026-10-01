@@ -1,6 +1,6 @@
 # CatalogImport — handleiding
 
-Stand: 2026-09-25. Wat nog niet gebouwd is, staat in [Nog niet gebouwd](#5-nog-niet-gebouwd).
+Stand: 2026-10-01. Wat nog niet gebouwd is, staat in [Nog niet gebouwd](#5-nog-niet-gebouwd).
 
 Bijbehorende documenten:
 
@@ -11,8 +11,8 @@ Bijbehorende documenten:
 Statuslabels in deze handleiding:
 
 - **Beschikbaar** — werkt vandaag in het scherm (bestaat in `Frontend/src/`).
-- **Alleen via API** — de backend kan het, er is (nog) geen scherm voor (nu enkel nog de inrichting en de
-  sjabloonwizard, en de PSIMPORT-preview).
+- **Alleen via API** — de backend kan het, er is (nog) geen scherm voor (nu enkel nog de PSIMPORT-preview,
+  het declareren van invulpunten in een sjabloon en "Nu ophalen" bij de leverancier).
 - **Niet gebouwd** — bestaat nog niet.
 
 Niet alles is door mij in een draaiende applicatie uitgeprobeerd: er draaide bij het schrijven geen backend.
@@ -37,7 +37,7 @@ ik niet kon bevestigen, is gemarkeerd met **nog te verifiëren**.
 
 CatalogImport controleert catalogusbestanden van leveranciers voordat iets ermee gebeurt. Een **levering**
 (vandaag: een handmatig geüpload CSV-bestand) wordt ongewijzigd bewaard, gescreend tegen een vaste
-**importdefinitie**, en levert een **mutatieplan** op: een lijst van wat er zou veranderen (nieuwe
+**beschrijving van het bestand** (technisch: importdefinitie), en levert een **mutatieplan** op: een lijst van wat er zou veranderen (nieuwe
 artikelen, gewijzigde prijzen). Wat afwijkt komt naar boven als probleem, beoordeling of blokkade. Er
 verandert nooit iets stilzwijgend.
 
@@ -52,7 +52,11 @@ verandert nooit iets stilzwijgend.
   **Keycloak-login** (via de backend als BFF, met sessiecookie en CSRF-header): wie niet aangemeld is, krijgt
   401 `AUTHENTICATION_REQUIRED`. Aangemeld zijn volstaat niet: elke actie vraagt een recht (zie 7a). De naam
   van "wie doet dit" (de *actor*) komt uit het token (`preferred_username`), niet uit een ingetypte naam.
-- Er zijn geen automatische leveringen (scheduler, SFTP, API). Alleen manuele upload van een CSV-bestand.
+- Er zijn geen automatische of periodieke leveringen (geen scheduler, geen API-bron). Een levering komt binnen
+  via manuele upload, via de beheerde servermap, of - voor een taak met een Leveringsconfiguratie - via
+  handmatig "Nu ophalen" bij de leverancier over SFTP. Dat laatste bestaat voorlopig enkel als API
+  (`POST /api/catalog-import/tasks/{id}/fetch-runs`, recht MANAGE; één bestand per keer); er is nog geen
+  scherm voor (zie `docs/design/leveringsconfiguratie-design.md`).
 - De frontend is een ontwikkelhulpmiddel: hij draait alleen lokaal tegen een lokale backend en wordt niet
   uitgeleverd (`docs/decisions.md`, 2026-09-23, Q2).
 - Het is dus vooral een **controle en simulatie**: u ziet wat er zou gebeuren en legt beslissingen vast.
@@ -84,6 +88,8 @@ flowchart TD
 
 In woorden:
 
+0. Eerst richt u de leverancier in en maakt u een taak (zie 4.6 "Nieuwe leverancier en taak aanmaken") en
+   controleert u de koppeling (zie 4.7 "Controleren"). Dat is eenmalig per leverancier.
 1. U uploadt een CSV bij een **taak** van een **koppeling**. De screening loopt meteen mee in dat verzoek.
 2. Het resultaat is een **batch** met een `status`, een eindoordeel (`validationResult`), tellers en een
    lijst **mutaties**.
@@ -99,27 +105,30 @@ In woorden:
 Een alfabetische lijst met de exacte waarden staat in [`begrippen.md`](begrippen.md). Hier de begrippen in
 hun onderlinge samenhang.
 
-- **Bronorganisatie** — wie het bestand aanlevert: een leverancier (`SUPPLIER`) of een aankoopvereniging
-  (`PURCHASING_ASSOCIATION`), bijvoorbeeld een vereniging die voor meerdere leveranciers levert.
-- **Leverancier** — bij een koppeling de leverancier waarvoor de artikelen bedoeld zijn (`supplierCode`).
-  Ze maakt deel uit van de identiteit van een aanbieding.
-- **Importdefinitie en revisie** — de beschrijving van hoe een bestand gelezen wordt: scheidingsteken,
-  kolommen, welke kolom de prijs is, drempels. Een definitie heeft **revisies**; een revisie start als
-  `DRAFT`, wordt met *activeren* bevroren (`ACTIVE`) en wordt later `SUPERSEDED` als er een nieuwe komt.
-  Een levering wordt altijd gescreend tegen de actieve revisie op dat moment, en die revisie wordt bij de
-  batch vastgelegd.
-- **Sjabloon en bookmarks** — een herbruikbare blauwdruk van een definitie met benoemde invulvelden
-  (bookmarks) waaruit per leverancier een eigen definitie wordt afgeleid ("materialisatie"). **Alleen via
-  API** en alleen als de setup-API aanstaat.
-- **Koppeling (ImportLink)** — verbindt een definitie met een leverancier en een bibliotheek
-  (`libraryCode`). Alles wat u ziet in de werkvoorraad hangt aan een koppeling.
+- **Leverancier of aankoopvereniging** — wie het bestand aanlevert: een leverancier (`SUPPLIER`) of een
+  aankoopvereniging (`PURCHASING_ASSOCIATION`), bijvoorbeeld een vereniging die voor meerdere leveranciers
+  levert. (Technisch: bronorganisatie, `SourceOrganisation`.)
+- **Leverancier (van de artikelen)** — bij een koppeling de leverancier waarvoor de artikelen bedoeld zijn
+  (`supplierCode`). Ze maakt deel uit van de identiteit van een aanbieding.
+- **Beschrijving van het bestand en versie** — de beschrijving van hoe een bestand gelezen wordt:
+  scheidingsteken, kolommen, welke kolom de prijs is, drempels. (Technisch: importdefinitie en revisie.) Een
+  beschrijving heeft **versies**; een versie start als concept (`DRAFT`), wordt met *activeren* bevroren
+  (`ACTIVE`) en wordt later vervangen (`SUPERSEDED`) als er een nieuwe komt. Er is **hoogstens één concept**
+  per beschrijving tegelijk. Een levering wordt altijd gescreend tegen de actieve versie op dat moment, en
+  die versie wordt bij de batch vastgelegd.
+- **Sjabloon en invulpunten** — een herbruikbare blauwdruk van een beschrijving met benoemde invulpunten
+  (technisch: bookmarks) waaruit per leverancier een eigen beschrijving wordt afgeleid ("materialisatie").
+  Sjablonen bekijken en er een beschrijving uit afleiden kan in het scherm **Sjablonen** (en als startpunt
+  in de wizard, zie 4.6). Het declareren van invulpunten in een sjabloon zelf kan alleen via de API.
+- **Koppeling (ImportLink)** — verbindt een beschrijving van het bestand met een leverancier en een
+  bibliotheek (`libraryCode`). Alles wat u ziet in de werkvoorraad hangt aan een koppeling.
 - **Taak** — de "ingang" voor leveringen op een koppeling. Een `MANUAL`-taak accepteert manuele uploads. Het
   `taskId` heeft u nodig bij een upload.
 - **Levering (Delivery)** — één aangeleverd bestand met een `deliveryReference` die u zelf kiest.
-- **Batch** — één screening van een levering tegen één revisie. Het is de eenheid van de werkvoorraad.
+- **Batch** — één screening van een levering tegen één versie van de beschrijving van het bestand. Het is de eenheid van de werkvoorraad.
 - **Aanbiedingsidentiteit** — wat bepaalt dat twee regels dezelfde aanbieding zijn: leverancier +
   leveranciersgroep + leveranciersreferentie, optioneel uitgebreid met kortingscode. Bibliotheek en
-  bronorganisatie horen er niet bij. Een lege identiteitscomponent verwerpt de regel.
+  leverancier of aankoopvereniging (de aanleverende partij) horen er niet bij. Een lege identiteitscomponent verwerpt de regel.
 - **Mutatie** — één voorgestelde wijziging: `CREATE` (nieuw), `UPDATE` (gewijzigd), een
   identiteitsincident of de `IMPORT_MARKER` (bewijs dat de levering verwerkt is).
 - **Issue en foutgroep** — een issue is één vaststelling (bijvoorbeeld een onleesbare prijs op regel 6).
@@ -136,8 +145,10 @@ hun onderlinge samenhang.
 
 ## 4. De schermen die er nu zijn
 
-De frontend heeft een menu met drie ingangen: **Werkvoorraad**, **Levering uploaden** en
-**Publicatiebundels**. Bij het openen (`http://localhost:5173`) wordt u bij Keycloak aangemeld. Bovenaan staat
+De frontend heeft een menu met onder andere **Werkvoorraad**, **Levering uploaden**, **Publicatiebundels**,
+**Inrichting** (leveranciers, beschrijvingen, koppelingen en taken; hier start ook "Nieuwe leverancier en
+taak") en **Sjablonen** (de exacte menuvolgorde en -labels zijn niet nagelopen: **nog te verifiëren**). Bij
+het openen (`http://localhost:5173`) wordt u bij Keycloak aangemeld. Bovenaan staat
 de **actorbalk**: "Aangemeld als *naam*" met een knop **Afmelden**. Die naam (uit het token) wordt gebruikt als
 "wie" bij elke schrijfactie; u kunt hem niet aanpassen. Verloopt de sessie (401), dan meldt de frontend u opnieuw
 aan.
@@ -173,11 +184,10 @@ Alleen-lezen overzicht van een batch, plus de acties die vanaf een `SCREENED`- o
 - **Acties** (`BatchActions.tsx`), alleen zichtbaar in de bijpassende status:
   - Bij `SCREENED`: **Aanvaarden als nulmeting** (`accept-baseline`) en **Opnemen in bundel**. Beide via een
     bevestigingsdialoog met een verplichte reden en het overtypen van een vaste bevestigingstekst
-    (`BASELINE` resp. de bundelreferentie). Een batch die al in een bundel zit of al aanvaard is, geeft de
+    (`NULMETING` resp. de bundelreferentie). Een batch die al in een bundel zit of al aanvaard is, geeft de
     bekende 409-foutcodes.
   - Bij `MUTATING`: **Batch hervatten** (`continue`), met een expliciete vermelding dat deze actie niet op
     naam wordt vastgelegd (het endpoint heeft geen actorveld).
-- Er is geen doorklik naar een setup-/beheerscherm: die bestaat nog niet (zie sectie 5).
 - Een teller die niet vastgesteld is, staat als "—", nooit als 0. Het scherm is bereikbaar vanuit de werkvoorraad
   en vanuit scherm 0 (klik op een rij) en vanuit het uploadscherm na een geslaagde upload.
 - Foutcodes bij de acties: 409 `BATCH_IN_PUBLICATION_BUNDLE` (de batch zit al in een actieve bundel; annuleer
@@ -200,14 +210,15 @@ geen voorselectie; bij `PRODUCTION` verschijnt een waarschuwing), doelmoment en 
 Dezelfde referentie met dezelfde scope geeft de bestaande bundel terug; dezelfde referentie met een andere
 scope wordt geweigerd (`BUNDLE_REFERENCE_REUSED_WITH_DIFFERENT_SCOPE`).
 
-**Bundeldetail** (`/bundles/{id}`) heeft vier tabbladen:
+**Bundeldetail** (`/bundles/{id}`) heeft vijf tabbladen:
 
 | Tabblad | Status | Wat u doet |
 | --- | --- | --- |
-| **Overzicht** | Beschikbaar | Tellers (batches, mutaties, gereed, afgekeurd, geblokkeerd, identiteitsincidenten, vervallen, bulkincidenten, kritieke issues, waarschuwingen; zolang de bundel `ASSEMBLING` is ook "wacht op beslissing (PLANNED)" en "wacht op goedkeuring (AWAITING_APPROVAL)"), audit (wie/wanneer/waarom), bundelhash na bevriezen. De knoppen **Bevriezen** en **Annuleren** werken: elk opent een dialoog met een voorvlucht/telling, blokkades met reden, en een verplichte typ-bevestiging van de bundelreferentie (`FreezeDialog.tsx`, `CancelDialog.tsx`). Een niet-toegestane actie staat uitgeschakeld mét reden, niet verborgen. |
+| **Overzicht** | Beschikbaar | Tellers (batches, mutaties, goedgekeurd, afgekeurd, geblokkeerd, identiteitsincidenten, vervallen, bulkincidenten, kritieke issues, waarschuwingen; zolang de bundel `ASSEMBLING` is ook "wacht op beslissing (PLANNED)" en "wacht op goedkeuring (AWAITING_APPROVAL)"), audit (wie/wanneer/waarom), bundelhash na bevriezen. De knoppen **Bevriezen** en **Annuleren** werken: elk opent een dialoog met een voorvlucht/telling, blokkades met reden, en een verplichte typ-bevestiging van de bundelreferentie (`FreezeDialog.tsx`, `CancelDialog.tsx`). Een niet-toegestane actie staat uitgeschakeld mét reden, niet verborgen. |
 | **Leden** | Beschikbaar | Leden van de bundel zien (ook verwijderde, met reden), een lid **verwijderen** (reden verplicht) en **kandidaten toevoegen** (batches selecteren en toevoegen). Alles-of-niets: als één batch niet kan, wordt er geen enkele toegevoegd. |
 | **Mutaties** | Beschikbaar | Mutatielijst met filters, per rij **goedkeuren** of **afkeuren**, plus de groepsbeslissing (zie 4.4). |
 | **Beslissingen** | Beschikbaar | Alleen-lezen, gepagineerd register van beslissingen: tijdstip, soort, bereik (mutatie/groep/bundel), beslisser, aantal, statusovergang, filter en reden (`BundleDecisionsTab.tsx`). |
+| **Publicatie** | Beschikbaar (alleen proefpublicatie) | Voor een bevroren bundel kunt u een **"Proefpublicatie starten"** (recht Goedkeuren). Er wordt niets naar Prodis geschreven; echt publiceren kan nog niet. |
 
 Een toegestane actie die verboden is in de huidige toestand staat uitgeschakeld mét reden, niet verborgen.
 Elke fout uit de backend toont de stabiele foutcode (zie sectie 8).
@@ -255,16 +266,85 @@ ProDisWebbase) en **niet-contractueel**: het antwoord draagt `previewOnly` en de
 `UNVERIFIED_FIELD_INVENTORY`; velden als `ARIMP_Verwerken` krijgen nooit een waarde. Er is geen scherm voor. Zie
 `docs/design/fase4-publication-bundle-design.md` §16 en `docs/decisions.md` (2026-09-25).
 
+### 4.6 Nieuwe leverancier en taak aanmaken — **Beschikbaar** (recht Beheren)
+
+Hiermee richt u zelf een nieuwe leverancier in, tot en met een taak waarmee u kunt uploaden. Open
+**Inrichting** en kies **"Nieuwe leverancier en taak"** (route `/setup/new`). Zonder het recht *Beheren* staat
+de knop uitgeschakeld, met de reden erbij. Elke stap wordt meteen bewaard; er gaat dus niets verloren als u
+het scherm sluit.
+
+Het stappenplan:
+
+1. **Leverancier** — de leverancier of aankoopvereniging die het bestand aanlevert: code, naam en soort.
+2. **Startpunt** — kies **zelf beschrijven** (u geeft zelf op hoe het bestand eruitziet) of **vanuit een
+   sjabloon** van deze leverancier of aankoopvereniging (u vult de invulpunten van het sjabloon in; bij een
+   aankoopvereniging kiest of maakt u eerst de leverancier waarvoor de artikelen zijn).
+3. **Beschrijving van het bestand** — scheidingsteken, aanhalingsteken, tekenset, kop, welke kolommen de
+   identiteit en de prijs vormen en hoe u een aanbieding herkent. U maakt hiermee een **concept** (versie 1).
+   De drempels worden niet gevraagd: daarvoor gelden de standaardwaarden (u past ze later aan met een nieuwe
+   versie).
+4. **Koppeling** — verbindt de beschrijving met de leverancier en de bibliotheek, met een vaste valuta voor
+   bestanden zonder valutakolom.
+5. **Taak** — een manuele taak, de ingang waarop u later uploadt. (Een sjabloon afleiden maakt zelf nooit
+   een taak; die stap blijft apart.)
+6. **Klaar** — een samenvatting met de knop **"Controleer en activeer de conceptversie"**. De wizard
+   activeert zelf nooit: dat doet u bewust op het scherm Controleren (4.7).
+
+Goed om te weten:
+
+- **Verder inrichten.** Bij een niet afgemaakte leverancier staat in **Inrichting** de knop "Verder
+  inrichten"; die brengt u terug naar de eerstvolgende stap die nog moet gebeuren.
+- **Bestaat de code al?** Dan meldt het scherm dat (409) en biedt het aan om **door te gaan met de bestaande**,
+  maar alleen als die bij dezelfde ouder hoort. Gaat het netwerk weg tijdens een stap, dan leest het scherm
+  eerst opnieuw wat er al staat voordat het iets herhaalt.
+- **Hoogstens één concept per beschrijving.** Is er al een concept, dan weigert de server een tweede
+  (409 `REVISION_DRAFT_ALREADY_EXISTS`) en toont de wizard het bestaande concept. Dit geldt ook als u in twee
+  tabbladen tegelijk werkt.
+- Een tab als scheidingsteken kan niet via deze weg worden ingesteld (**technische beperking**).
+- In **Inrichting** staan de taken onder hun koppeling, met een knop "Taak toevoegen". Een taak waarvan de
+  beschrijving nog geen actieve versie heeft, staat er als "nog niet klaar: versie niet geactiveerd" en is
+  op het uploadscherm zichtbaar maar uitgeschakeld.
+
+### 4.7 Controleren — **Beschikbaar**
+
+Elke koppeling heeft een scherm **Controleren** (route `/setup/links/{linkId}/check`), bereikbaar via de
+samenvatting van de wizard, via de inrichtingsboom en via een melding op het uploadscherm. Het scherm heeft
+vier delen. Lezen mag met het recht *Lezen*; de proefinlezing en het activeren vragen *Beheren*.
+
+1. **Checklist.** Alle punten die een levering nu nog zouden tegenhouden, tegelijk, elk met een zin in gewoon
+   Nederlands, het betrokken veld ("Veld:", "Doelveld:", "Kolom:") en "Wat moet ik doen?". U krijgt dus alle
+   fouten in de beschrijving van het bestand in één keer te zien, niet één per keer. Sommige controles hangen
+   van andere af en kunnen pas lopen als die eerste in orde zijn: dan staat er een melding "Sommige controles
+   konden nog niet uitgevoerd worden …" met de oorzaak. **Zo'n melding betekent niet dat alles in orde is**:
+   los de genoemde fouten op en herlaad de checklist. De checklist werkt zonder bestand. Wat ze niet
+   controleert: of de doelbibliotheek bestaat in Prodis (dat wordt expliciet zo gemeld) en de invulpunten die
+   per koppeling pas ingevuld kunnen worden nadat de versie actief is.
+2. **Proefinlezing.** U kiest een bestand en laat het volgens deze versie lezen **zonder iets op te slaan of
+   te publiceren** (dat staat in een banner). Het resultaat toont: het oordeel ("Deze levering zou aanvaard
+   worden" of "zou tegengehouden worden omdat …", telkens de eerste blokkade), de tellers (een "—" is niet
+   vastgesteld, nooit 0), de kolommen die ontbreken, "Zo lezen we uw bestand" (de eerste voorbeeldregels
+   zoals het systeem ze leest, prijs ruw en gelezen), de gevonden problemen per soort, de gebruikte
+   drempels, een hint als de tekenset niet lijkt te kloppen, en alle fouten in de beschrijving van het
+   bestand. Wat een proef **niet** kan controleren, staat onder "Niet gecontroleerd in een proef" (onder meer
+   het creatiebeleid en de vergelijking met de bronstaat). Het lezen is begrensd door de maximale
+   uploadgrootte; de server logt één regel zonder inhoud.
+3. **Activeren.** Activeert de conceptversie (bestaande actie). Is er op dit scherm nog geen **geslaagde**
+   proefinlezing met deze versie geweest, dan krijgt u vooraf een duidelijke **waarschuwing**. Een proef is
+   dus niet verplicht (beslissing 2026-09-30), maar wel sterk aangeraden. Na het activeren wordt de
+   checklist herladen.
+4. **Wat nu?** Een korte uitleg van het vervolg: de **eerste echte levering** wacht na de screening nog op
+   uw goedkeuring (de eerste levering van een koppeling is altijd een `INITIAL_LOAD`, zie 6.5). Dat is de
+   laatste controle: pas na het aanvaarden als nulmeting of het opnemen in een bundel is er iets beslist.
+
 ## 5. Nog niet gebouwd
 
 Deze onderdelen bestaan (nog) niet als scherm of functie. Alle schermen uit sectie 4 (werkvoorraad, upload,
-batchdetail, bundeloverzicht/leden/mutaties/beslissingen) zijn gebouwd, gerouteerd
-(`Frontend/src/routes.tsx`) en werkend.
+batchdetail, bundeloverzicht/leden/mutaties/beslissingen, nieuwe leverancier en taak, controleren) zijn
+gebouwd, gerouteerd (`Frontend/src/routes.tsx`) en werkend.
 
 | Onderdeel | Status | Tussentijdse route (API) |
 | --- | --- | --- |
-| **Scherm 1a: inrichting** (bronorganisatie, definitie, koppeling, taak) | **Niet gebouwd**; alleen via de setup-API, achter de setup-vlag. Een productiewaardig beheerscherm komt pas na Fase 5 | Setup-API (flow 1) |
-| **Scherm 1b: sjabloon/materialisatiewizard** | **Niet gebouwd**; alleen via de API, achter de setup-vlag | `/api/catalog-import/templates/...` (flow 1B) |
+| **Sjablonen beheren: invulpunten en gebruiksverklaringen declareren** | Geen scherm; alleen via de API, achter de setup-vlag (zie 7a en 9.3) | `/api/catalog-import/templates/...` (flow 1B) |
 | **Publiceren naar Prodis** (Fase 5, 5-PUB) | Niet gebouwd | — |
 | **Echt PSIMPORT-formaat** | Niet gebouwd; enkel de niet-contractuele preview (4.5) | — |
 | **Rechten per actie** (5-PERM) | Gebouwd met een lokale rechtenbron (YAML); de Prodis-koppeling (5B-7) is **niet gebouwd** | zie sectie 7a |
@@ -356,7 +436,7 @@ aangemaakt mogen worden:
 | `THRESHOLD_EXCEEDED` | te veel nieuwe artikelen ten opzichte van de bestaande omvang | `AWAITING_APPROVAL`, reden `BULK_CREATION_INCIDENT` |
 | `null` | nog niet beoordeeld | — |
 
-Alle drempels zijn **percentages** per revisie, geen vaste aantallen (beslissing 2026-09-20). Vergelijking:
+Alle drempels zijn **percentages** per versie, geen vaste aantallen (beslissing 2026-09-20). Vergelijking:
 `aantal × 100 > percentage × omvang`; precies op de grens is niet overschreden.
 
 | Drempel | Standaard | Effect als overschreden |
@@ -369,7 +449,7 @@ Alle drempels zijn **percentages** per revisie, geen vaste aantallen (beslissing
 
 Bij een klein bestand is 1% van 10 regels gelijk aan 0,1, waardoor elke creatie of fout boven de drempel
 valt. De demo zet daarom `creationThresholdSharePercent` op 10 en `maxCriticalSharePercent` op 25. Voor een
-kleine leverancier zet u het percentage per revisie hoger; dat is een zichtbare, geauditeerde keuze.
+kleine leverancier zet u het percentage per versie hoger (nieuwe versie); dat is een zichtbare, geauditeerde keuze.
 De standaardwaarde 1 komt uit het beslissingslog (**nog te verifiëren** in de databasekolomdefaults).
 De 15% prijsafwijking is de waarde uit de demo (`README.md` van de repository); de standaard van andere
 revisies is **nog te verifiëren**.
@@ -449,8 +529,8 @@ toont enkel het resultaat.
 
 | Recht | Code | Actie |
 | --- | --- | --- |
-| Lezen | `catalogImport.read` | alle schermen en lijsten bekijken, preview, setup-overzicht |
-| Beheren | `catalogImport.manage` | CSV uploaden, batch hervatten, bundel aanmaken, batches toevoegen/verwijderen uit een bundel |
+| Lezen | `catalogImport.read` | alle schermen en lijsten bekijken, preview, setup-overzicht, de checklist van Controleren |
+| Beheren | `catalogImport.manage` | CSV uploaden, batch hervatten, bundel aanmaken, batches toevoegen/verwijderen uit een bundel, een nieuwe leverancier en taak inrichten (wizard, Inrichting, Sjablonen), proefinlezing, een versie activeren |
 | Goedkeuren | `catalogImport.approve` | nulmeting aanvaarden (accept-baseline), mutaties goed-/afkeuren, groepsbeslissing, bundel bevriezen of annuleren |
 
 - **Knoppen zonder recht zijn uitgeschakeld, niet verborgen**, met een reden zoals "U heeft het recht
@@ -463,8 +543,11 @@ toont enkel het resultaat.
   "geen rechten"; probeer het later opnieuw.
 - De recht-check komt **vóór** de andere controles: zonder recht krijgt u 403 `PERMISSION_DENIED`, ook als de
   bundel niet bestaat of een actorveld niet klopt.
-- De setup-API (`catalogimport.setup-api.enabled`) blijft een aparte beveiliging: staat de vlag uit, dan is er
-  een 404, ook mét recht.
+- De setup-vlag (`catalogimport.setup-api.enabled`) bepaalt sinds het NT-spoor **niet meer** of u kunt
+  inrichten: de inrichtingspaden (leverancier, beschrijving, versie, koppeling, taak, sjablonen lezen en
+  gebruiken) werken met alleen het recht *Beheren* (lezen: *Lezen*). Achter de vlag blijven enkel het
+  declareren van invulpunten/gebruik in een sjabloon en `GET /setup/overview`; staat de vlag uit, dan geeft
+  het eerste een 405 of 404 (zie 8.4), ook mét recht.
 - `system` mag nooit beheren of goedkeuren.
 - Voorlopig komen de rechten uit een lokale YAML-lijst (9.3). De koppeling met Prodis is nog niet gebouwd.
 
@@ -520,13 +603,13 @@ Onderstaande tabel is een selectie. De volledige lijst voor het bundelscherm sta
 | --- | --- | --- | --- |
 | `TASK_NOT_FOUND` | 404 | taak bestaat niet | `taskId` controleren (`GET /tasks`) |
 | `TASK_NOT_MANUAL` | 409 | taak is niet `MANUAL` | een manuele taak gebruiken |
-| `NO_ACTIVE_REVISION` | 409 | de definitie heeft geen actieve revisie | revisie activeren |
-| `CONFIG_PRICE_FIELD_MISSING` | 409 | de revisie heeft geen prijsveld | revisie corrigeren (opvolger maken) |
-| `CONFIG_REQUIRED_BOOKMARK_MISSING` | 409 | verplichte bookmark niet ingevuld; niets wordt gearchiveerd | bookmark invullen |
+| `NO_ACTIVE_REVISION` | 409 | de beschrijving heeft geen actieve versie | versie activeren (Inrichting → Controleren) |
+| `CONFIG_PRICE_FIELD_MISSING` | 409 | de versie heeft geen prijsveld | versie corrigeren (opvolgerversie maken) |
+| `CONFIG_REQUIRED_BOOKMARK_MISSING` | 409 | verplicht invulpunt niet ingevuld; niets wordt gearchiveerd | invulpunt invullen |
 | `TASK_RUN_IN_PROGRESS` | 409 | voor deze taak loopt al een uitvoering | wachten of het lopende probleem oplossen |
 | `DELIVERY_REFERENCE_REUSED_WITH_DIFFERENT_CONTENT` | 409 | referentie al gebruikt met ander bestand | nieuwe referentie kiezen |
 | `DELIVERY_NOT_FOUND` | 404 | levering bestaat niet | id controleren |
-| `DELIVERY_ALREADY_SCREENED_WITH_THIS_REVISION` | 409 | levering is al gescreend met deze revisie | — |
+| `DELIVERY_ALREADY_SCREENED_WITH_THIS_REVISION` | 409 | levering is al gescreend met deze versie | — |
 | `RECORD_COUNT_MISMATCH` / `BYTE_SIZE_MISMATCH` | (issue/blokkade) | het verwachte aantal regels of bytes klopt niet met het bestand | bestand controleren |
 | `BATCH_NOT_ACCEPTABLE` | 409 | `accept-baseline` kan alleen vanuit `SCREENED` | batchstatus controleren |
 | `BATCH_IN_PUBLICATION_BUNDLE` | 409 | batch zit in een actieve bundel | bundel annuleren of doorwerken via de bundel |
@@ -549,7 +632,7 @@ Dit zijn geen HTTP-fouten maar vaststellingen in `/issues` of een `blockedCode`:
 | `INITIAL_LOAD_REQUIRES_APPROVAL` | eerste levering van de koppeling; creaties wachten |
 | `BULK_CREATION_INCIDENT` / `BULK_PRICE_INCIDENT` / `BULK_IDENTITY_INCIDENT` | bulkincident boven de percentagedrempel |
 | `HEADER_*`, `SOURCE_*`, `ROW_*` | structuurfouten in bestand of koptekst (bv. `HEADER_FIELD_MISSING`, `SOURCE_FILE_EMPTY`) |
-| `CONFIG_*` | de importdefinitie is onvolledig of ongeldig |
+| `CONFIG_*` | de beschrijving van het bestand is onvolledig of ongeldig (de checklist op het scherm Controleren toont ze allemaal tegelijk) |
 | `SCREENING_INTERRUPTED` / `SCREENING_FAILED` | technische onderbreking of fout tijdens de screening |
 
 Het exacte onderscheid tussen welke van deze codes als `blockedCode` en welke als gewone issue
@@ -557,13 +640,31 @@ verschijnen, heb ik niet volledig uitgezocht (**nog te verifiëren**). Bevestigd
 repository-`README.md`: `PRICE_UNREADABLE`, `IDENTITY_COMPONENT_EMPTY` (beide afgewezen regels),
 `DUPLICATE_IDENTITY_IN_DELIVERY` en `CRITICAL_RECORD_THRESHOLD_EXCEEDED` (beide blokkerend).
 
-### 8.4 Setup-API
+### 8.4 Setup-API (technische namen)
 
-Een onbekend id geeft 404, een dubbele code 409 (bv. `DEFINITION_CODE_IN_USE`, `LINK_CODE_IN_USE`,
-`SOURCE_ORGANISATION_CODE_IN_USE`, `TASK_NAME_IN_USE`), een ongeldige waarde 400. Een mapping die het
-revisieveld dubbel bepaalt: `CONFIG_FIELD_MAPPING_DUPLICATES_REVISION`. Een revisie die niet meer `DRAFT`
-is, kan niet meer aangepast worden (`REVISION_NOT_EDITABLE`). Staat de setup-vlag uit, dan is elk `/setup`-,
-`/templates`- en `/links`-pad 404 zonder code.
+Dit zijn de API-namen achter de schermen Inrichting, Nieuwe leverancier en taak, en Controleren. Een onbekend
+id geeft 404, een dubbele code 409 (bv. `DEFINITION_CODE_IN_USE`, `LINK_CODE_IN_USE`,
+`SOURCE_ORGANISATION_CODE_IN_USE`, `TASK_NAME_IN_USE`; ook als twee gebruikers tegelijk dezelfde code kiezen,
+dan 409 en geen 500), een ongeldige waarde 400. Een 400 uit de setup-API draagt een stabiele `code`
+(`CONFIG_*`, of bij een veldfout `<VELD>_REQUIRED`, `_TOO_LONG` of `_INVALID`, bv. `DELIMITER_REQUIRED`); een
+400 zonder `code` komt van een onleesbare body of een ongeldige enumwaarde. Een mapping die het
+versieveld dubbel bepaalt: `CONFIG_FIELD_MAPPING_DUPLICATES_REVISION`. Een versie die niet meer `DRAFT`
+is, kan niet meer aangepast worden (`REVISION_NOT_EDITABLE`). Per beschrijving kan **hoogstens één concept**
+bestaan: een tweede geeft 409 `REVISION_DRAFT_ALREADY_EXISTS` (zowel bij een nieuwe versie als bij een
+opvolger, ook bij gelijktijdige aanvragen).
+
+De setup-vlag (`catalogimport.setup-api.enabled`) is **niet meer** nodig voor de inrichtpaden (`/setup/...`
+behalve `GET /setup/overview`, `/templates` lezen en afleiden, `/links`); die vragen enkel het recht Beheren
+(lezen: Lezen). Achter de vlag blijven `GET /setup/overview` en het declareren van invulpunten/gebruik in een
+sjabloon. Staat de vlag uit, dan geeft `POST /templates/{d}/revisions/{r}/bookmarks` **405** (niet 404: het
+GET-pad op dezelfde URL bestaat altijd) en de overige declaratiepaden en `GET /setup/overview` 404 zonder code.
+
+Nieuwe endpoints voor Controleren:
+
+| Endpoint | Recht | Wat |
+| --- | --- | --- |
+| `GET /api/catalog-import/import-links/{id}/readiness` | Lezen | de checklist van een koppeling: `ready` en een lijst `checks` (`code`, status `OK`, `PROBLEM` of `INFO`, onderwerp, detail; bij configuratiefouten ook het betrokken veld). Onbekende koppeling: 404 `LINK_NOT_FOUND`. Alle configuratiefouten van een concept staan er tegelijk in; overgeslagen controles staan als `INFO_CONFIG_CHECKS_SKIPPED` (telt niet mee voor `ready`). |
+| `POST /api/catalog-import/revisions/{id}/trial-reads` | Beheren | proefinlezing: multipart `file`, optioneel `linkId` (enkel voor de vaste valuta). Slaat niets op. Antwoord 200 met o.a. `verdict` (`WOULD_BLOCK` of `NO_BLOCKER_FOUND`), tellers (`null` = niet vastgesteld), voorbeeldregels, probleemgroepen, `configProblems` (alle configuratiefouten) en wat niet beoordeeld is. Ontwerp: `docs/design/proefinlezing-design.md`. |
 
 ## 9. Voor ontwikkelaars en ops
 
@@ -598,8 +699,8 @@ mvn -pl Web spring-boot:run "-Dspring-boot.run.profiles=local,demo"
 | Profiel | Wat het doet |
 | --- | --- |
 | `local` | Postgres-verbinding (`localhost:5432/catalog_import`), archiefmap `C:/tmp/catalogimport-archive`, poort 8081 |
-| `demo` | zelfde PostgreSQL-database als `local`, **zet de setup-API aan**, maakt bij het opstarten een voorbeeldketen (bronorganisatie `DEMO`, definitie `DEMO-CSV`, actieve revisie, koppeling `DEMO-LINK`, taak *Demo manuele levering*) en logt de `taskId`. Archiefmap: `${java.io.tmpdir}/catalogimport-demo-archive` |
-| (geen) | productieachtig: geen setup-API; `catalogimport.archive.root` is verplicht en heeft bewust geen default |
+| `demo` | zelfde PostgreSQL-database als `local`, **zet de setup-vlag aan** (nodig voor sjabloonbeheer en `GET /setup/overview`), maakt bij het opstarten een voorbeeldketen (leverancier `DEMO`, beschrijving `DEMO-CSV`, actieve versie, koppeling `DEMO-LINK`, taak *Demo manuele levering*) en logt de `taskId`. Archiefmap: `${java.io.tmpdir}/catalogimport-demo-archive` |
+| (geen) | productieachtig: de setup-vlag staat uit (inrichten kan wel, met het recht Beheren); `catalogimport.archive.root` is verplicht en heeft bewust geen default |
 
 Beide profielen gebruiken PostgreSQL en poort 8081 (`application-local.yml`, `application-demo.yml`); H2
 volstaat niet. De frontend proxyt `/api`, `/oauth2` en `/login` naar `http://localhost:8081`.
@@ -620,9 +721,10 @@ Keycloak-`preferred_username` in, met `rights: read, manage, approve`. De placeh
 en toont de UI "U heeft geen rechten voor CatalogImport". Een YAML-lijst wordt tussen profielen vervangen, niet
 samengevoegd. Herstart de backend na een wijziging.
 
-**Waarschuwing.** De setup-API (`catalogimport.setup-api.enabled`, de vlag blijft als tweede beveiliging naast
-het recht) vereist een login en het recht `manage`/`read`: wie `manage` heeft kan een importdefinitie en haar
-drempels bepalen en dus de controle uitschakelen. Zet ze nooit aan met echte gegevens.
+**Waarschuwing.** Wie het recht `manage` heeft kan een beschrijving van het bestand en haar drempels bepalen
+en dus de controle uitschakelen. Ken `manage` daarom bewust toe. De setup-vlag (`catalogimport.setup-api.enabled`)
+beschermt sinds het NT-spoor enkel nog sjabloonbeheer (invulpunten/gebruik declareren) en
+`GET /setup/overview`; zet ze niet aan met echte gegevens.
 
 ### 9.4 Frontend starten
 
@@ -710,7 +812,8 @@ De stappen staan in [flow 8](standaardflows.md#flow-8--back-up-en-hersteltest-dr
 `docs/decisions.md` legt architectuur- en businessbeslissingen vast. Eerdere beslissingen zijn **bindend**
 tot de mens ze expliciet herroept. Lees het bij twijfel over "waarom werkt het zo". Enkele beslissingen die
 u als gebruiker raakt: één persoon volstaat voor `accept-baseline` (geen vier-ogen); de frontend is een
-ontwikkelhulpmiddel; setup-API blijft een ontwikkelhulp tot Fase 5.
+ontwikkelhulpmiddel; een gebruiker met het recht Beheren richt zelf een leverancier en taak in (2026-09-30), en
+alleen sjabloonbeheer en het setup-overzicht blijven achter de setup-vlag.
 
 ### 9.10 Overige documentatie
 
@@ -721,7 +824,9 @@ ontwikkelhulpmiddel; setup-API blijft een ontwikkelhulp tot Fase 5.
 | `docs/design/fase3-rules-design.md` | regels, drempels, foutgroepen, eindoordeel |
 | `docs/design/fase4-publication-bundle-design.md` | bundels, beslissingen, bevriezen, annuleren |
 | `docs/design/frontend-scherm3-bundel-design.md` | schermontwerp bundel |
-| `docs/design/sjabloon-materialisatie-design.md` | sjablonen en bookmarks |
+| `docs/design/sjabloon-materialisatie-design.md` | sjablonen en invulpunten (technisch: bookmarks) |
+| `docs/design/proefinlezing-design.md` | de proefinlezing |
+| `docs/design/configfouten-alle-tegelijk-design.md` | alle configuratiefouten tegelijk tonen |
 | `docs/design/backup-herstel-design.md` | back-up en hersteltest |
 | `businessanalyse-catalogimport.md` | de functionele doelanalyse |
 | `scripts/scenario/manual-upload-scenario.sh` | handmatige scenario-checklist (sinds 5-AUTH niet meer scripted; stopt met een melding) |

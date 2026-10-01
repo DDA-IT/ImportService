@@ -1,12 +1,14 @@
 # CatalogImport — standaardflows
 
-Stand: 2026-09-25. Hoofdhandleiding:
+Stand: 2026-10-01. Hoofdhandleiding:
 [`README.md`](README.md). Begrippen: [`begrippen.md`](begrippen.md).
 
 ## Lees dit eerst
 
 - **UI-route** staat bij een flow als het scherm bestaat (zie sectie 4 van de hoofdhandleiding).
-  Anders staat er alleen de **API-route** (inrichting en sjablonen: schermen 1a/1b zijn niet gebouwd).
+  Anders staat er alleen de **API-route**. Voor het inrichten en controleren van een nieuwe leverancier
+  bestaan schermen (flow 1: "Nieuwe leverancier en taak" en "Controleren"); alleen het declareren van
+  invulpunten in een sjabloon kan enkel via de API.
 - Alle API-voorbeelden zijn afgeleid van het scenario in `scripts/scenario/manual-upload-scenario.sh` (sinds
   5-AUTH een handmatige checklist, zie hieronder) en de bestanden `scripts/scenario/levering-1.csv` en
   `levering-2.csv`. Er draaide bij het schrijven geen backend.
@@ -22,8 +24,8 @@ Stand: 2026-09-25. Hoofdhandleiding:
 - **Verzoekvormen.** Voorbeelden staan als `METHODE pad` met een JSON-body en zijn uit te voeren in de
   aangemelde browsersessie: `GET` door de URL `http://localhost:5173/<pad>` te openen, `POST`/`PUT` met
   `fetch` in de browserconsole met de header `X-XSRF-TOKEN` (voorbeeld in de README), uploads via `/upload`.
-  Paden zijn relatief aan `/api/catalog-import` (`$A`); de setup-API (alleen met profiel `demo`) staat onder
-  `$A/setup` (`$S`).
+  Paden zijn relatief aan `/api/catalog-import` (`$A`); de setup-API staat onder `$A/setup` (`$S`) en werkt
+  met het recht Beheren (lezen: Lezen), zonder setup-vlag.
 - De actor (`uploadedBy`, `acceptedBy`, `decidedBy`, `frozenBy`, ...) komt sinds 5-AUTH uit uw login
   (`preferred_username`). Het requestveld is optioneel; is het aanwezig, dan moet het gelijk zijn aan die
   naam (anders 400 `ACTOR_FIELD_MISMATCH`); `system` is verboden. In de voorbeelden hieronder laat ik het weg.
@@ -39,7 +41,7 @@ een unieke suffix (`SFX`, standaard een tijdstempel) in codes zodat u het herhaa
 
 | Flow | Onderwerp | Status |
 | --- | --- | --- |
-| [1](#flow-1--nieuwe-leverancier-of-koppeling-inrichten) | Nieuwe leverancier/koppeling inrichten | Alleen via API (achter de setup-vlag) |
+| [1](#flow-1--nieuwe-leverancier-of-koppeling-inrichten) | Nieuwe leverancier en taak aanmaken, daarna controleren | Beschikbaar in de UI (recht Beheren); ook via API |
 | [2](#flow-2--handmatig-een-csv-uploaden-en-het-resultaat-lezen) | CSV uploaden en resultaat lezen | Frontend beschikbaar op `/upload`; ook via API |
 | [3](#flow-3--herupload-en-idempotentie) | Herupload en idempotentie | Frontend beschikbaar op `/upload` (herstelroute); ook via API |
 | [4](#flow-4--eerste-levering-aanvaarden-als-nulmeting-en-daarna-een-delta-levering) | Nulmeting en delta-levering | Frontend beschikbaar (batchdetail); ook via API |
@@ -50,39 +52,85 @@ een unieke suffix (`SFX`, standaard een tijdstempel) in codes zodat u het herhaa
 
 ---
 
-## Flow 1 — Nieuwe leverancier of koppeling inrichten
+## Flow 1 — Nieuwe leverancier of koppeling inrichten en controleren
 
-**Status: Alleen via API.** Er is geen inrichtingsscherm; een productiewaardig beheerscherm volgt pas na
-Fase 5 (`docs/decisions.md`, 2026-09-22); Keycloak-login (5-AUTH) en rechten per actie (5-PERM, lokale rechtenbron) zijn er al; de setup-API vraagt `manage`/`read`.
+**Status: Beschikbaar in de UI** (twee blokken, beide met het recht *Beheren*; de checklist alleen met *Lezen*),
+**en ook via de API**. De beslissing staat in `docs/decisions.md` (2026-09-30, "Gebruiker richt zelf een nieuwe
+leverancier + taak in"). De setup-vlag is er niet meer voor nodig.
 
-**Doel:** een keten aanmaken waarmee u bestanden van een nieuwe leverancier kunt uploaden.
+**Doel:** een keten aanmaken waarmee u bestanden van een nieuwe leverancier kunt uploaden, en controleren dat
+die keten klopt voordat de eerste echte levering binnenkomt.
 
-**Voorwaarden:**
+**Wat er nodig is voor een werkende keten**, in deze volgorde: **leverancier of aankoopvereniging** →
+**beschrijving van het bestand** met een **versie** (met kolommen) → versie **activeren** → **koppeling** →
+**manuele taak**. Zonder actieve versie geeft een upload 409 `NO_ACTIVE_REVISION`; zonder taak is er geen
+`taskId` om naar te uploaden.
 
-- De backend draait met het profiel `demo` (of de vlag `catalogimport.setup-api.enabled=true`). Zonder die
-  vlag antwoordt elk `/setup`-pad met 404 (na login). **Zet de vlag nooit aan met echte gegevens**: de
-  setup-API vereist een login en het recht `manage`/`read` (de vlag blijft een aparte, tweede beveiliging);
-  wie `manage` heeft kan drempels bepalen en dus de controle uitschakelen.
-- Vereist voor een werkende keten, in deze volgorde: **bronorganisatie** → **definitie** → **revisie** (met
-  mappings) → revisie **activeren** → **koppeling** → **MANUAL-taak**. Zonder actieve revisie geeft een
-  upload 409 `NO_ACTIVE_REVISION`; zonder taak is er geen `taskId` om naar te uploaden.
+### 1U. In de UI — blok 1: Nieuwe leverancier en taak aanmaken
+
+Open **Inrichting** en klik **"Nieuwe leverancier en taak"** (route `/setup/new`). Zonder het recht *Beheren*
+staat de knop uitgeschakeld, met de reden erbij. Elke stap wordt meteen bewaard.
+
+1. **Leverancier** — code, naam en soort (leverancier of aankoopvereniging).
+2. **Startpunt** — **zelf beschrijven**, of **vanuit een sjabloon** van deze leverancier of aankoopvereniging
+   (u vult dan de invulpunten van het sjabloon in; bij een aankoopvereniging kiest of maakt u eerst de
+   leverancier waarvoor de artikelen zijn).
+3. **Beschrijving van het bestand** — scheidingsteken, aanhalingsteken, tekenset, kop, identiteit- en
+   prijskolommen en hoe u een aanbieding herkent. Dat levert een **concept** (versie 1) op. Drempels worden niet
+   gevraagd (standaardwaarden; later aan te passen met een nieuwe versie). Een tab als scheidingsteken kan
+   hier niet.
+4. **Koppeling** — de beschrijving aan de leverancier en de bibliotheek koppelen, met een vaste valuta voor
+   bestanden zonder valutakolom.
+5. **Taak** — een manuele taak, de ingang waarop u later uploadt. Een sjabloon afleiden maakt nooit zelf een
+   taak.
+6. **Klaar** — een samenvatting met de knop **"Controleer en activeer de conceptversie"**. De wizard activeert
+   nooit zelf.
+
+Goed om te weten: sluit u het scherm halverwege, dan staat bij de onafgemaakte leverancier in Inrichting de knop
+**"Verder inrichten"**. Bestaat een code al, dan krijgt u een melding en kunt u **doorgaan met de bestaande**
+(alleen bij dezelfde ouder). Er is **hoogstens één concept per beschrijving**: een tweede wordt geweigerd (409
+`REVISION_DRAFT_ALREADY_EXISTS`) en de wizard toont het bestaande concept. Taken staan in de inrichtingsboom onder
+hun koppeling, met "Taak toevoegen"; een taak zonder actieve versie is op het uploadscherm uitgeschakeld.
+
+### 1V. In de UI — blok 2: Controleren
+
+Per koppeling is er een scherm **Controleren** (`/setup/links/{linkId}/check`), bereikbaar via de samenvatting,
+de inrichtingsboom en een melding op het uploadscherm.
+
+1. **Checklist** — toont **alle** problemen die een levering nu zouden tegenhouden, tegelijk, elk met veld en
+   "Wat moet ik doen?". Staat er "Sommige controles konden nog niet uitgevoerd worden …", dan zijn sommige
+   controles overgeslagen omdat ze afhangen van een fout die er al staat: dat betekent **niet** dat alles in
+   orde is. Los de getoonde fouten op en herlaad. De checklist werkt zonder bestand en controleert niet of de
+   doelbibliotheek in Prodis bestaat.
+2. **Proefinlezing** — kies een bestand; het wordt gelezen volgens deze versie, **zonder iets op te slaan of te
+   publiceren**. U ziet het oordeel (zou aanvaard worden / zou tegengehouden worden, met de eerste blokkade), de
+   tellers ("—" = niet vastgesteld), ontbrekende kolommen, "Zo lezen we uw bestand", de gevonden problemen, de
+   gebruikte drempels, een tekensethint en alle fouten in de beschrijving. Wat een proef **niet** kan
+   controleren (o.a. het creatiebeleid en de vergelijking met de bronstaat) staat onder "Niet gecontroleerd in
+   een proef".
+3. **Activeren** — maakt de conceptversie actief. Is er nog geen **geslaagde** proefinlezing met deze versie
+   geweest, dan krijgt u eerst een waarschuwing. De proef is niet verplicht, wel aangeraden.
+4. **Wat nu?** — de **eerste echte levering** wacht na de screening op uw goedkeuring (`INITIAL_LOAD`, zie
+   flow 2 en 4); dat is de laatste controle.
 
 ### 1A. Via de setup-API (rechtstreeks)
 
 Neem de `id` uit elk antwoord over naar de volgende stap. Onderstaande volgorde en velden komen uit het
-scenarioscript (`$OC` is een unieke bronorganisatiecode, `$DEF`, `$REV`, `$LINK` zijn ids uit de antwoorden).
+scenarioscript (`$OC` is een unieke code van de leverancier, `$DEF`, `$REV`, `$LINK` zijn ids uit de antwoorden).
+De setup-vlag is niet nodig; wie `manage` heeft kan drempels bepalen en dus de controle uitschakelen.
 
-1. **Bronorganisatie:**
+1. **Leverancier of aankoopvereniging** (technisch: bronorganisatie):
    ```
    POST $S/source-organisations
    {"code":"SCN1","name":"Scenario 1","type":"SUPPLIER"}
    ```
-2. **Definitie** (`usageType` `OWN_DEFINITION` voor een eigen definitie):
+2. **Beschrijving van het bestand** (technisch: definitie; `usageType` `OWN_DEFINITION` voor een eigen beschrijving):
    ```
    POST $S/definitions
    {"sourceOrganisationCode":"SCN1","code":"SCN1-CSV","name":"Scenario 1","usageType":"OWN_DEFINITION"}
    ```
-3. **Revisie** (start als `DRAFT`). Het scenario gebruikt een CSV met `;`, een header, een driedelige
+3. **Versie** (technisch: revisie; start als concept, `DRAFT`; hoogstens één concept per beschrijving, anders
+   409 `REVISION_DRAFT_ALREADY_EXISTS`). Het scenario gebruikt een CSV met `;`, een header, een driedelige
    identiteit en percentages voor de drempels:
    ```
    POST $S/definitions/$DEF/revisions
@@ -92,14 +140,14 @@ scenarioscript (`$OC` is een unieke bronorganisatiecode, `$DEF`, `$REV`, `$LINK`
    
    De drempels 10 en 25 zijn bewust ruimer dan de standaard (1): bij een klein bestand valt bij 1% elke
    creatie of fout boven de drempel (zie sectie 6.5 van de hoofdhandleiding).
-4. **Mappings** (extra kolommen, bv. de EAN). Alleen mogelijk op een `DRAFT`-revisie:
+4. **Mappings** (extra kolommen, bv. de EAN). Alleen mogelijk op een concept (`DRAFT`):
    ```
    POST $S/revisions/$REV/mappings
    {"targetFieldCode":"EAN","sourceReference":"ean","sequenceNumber":1}
    ```
    Filters (`/revisions/{id}/filters`) en kritiek-overrules (`/revisions/{id}/field-criticality`) bestaan
    ook, maar het scenario gebruikt ze niet.
-5. **Revisie activeren** (bevriest ze; een vorige actieve revisie wordt `SUPERSEDED`):
+5. **Versie activeren** (bevriest ze; een vorige actieve versie wordt `SUPERSEDED`):
    ```
    POST $S/revisions/$REV/activate
    {}          (approvedBy is optioneel; de naam komt uit uw login)
@@ -115,8 +163,17 @@ scenarioscript (`$OC` is een unieke bronorganisatiecode, `$DEF`, `$REV`, `$LINK`
    POST $S/tasks
    {"linkId":<LINK>,"name":"Scenario manuele levering"}
    ```
-8. **Controle**: `GET $S/overview` toont de hele boom met het `taskId`. Alleen-lezen en (na login) altijd
-   bereikbaar, ook zonder setup-vlag: `GET $A/tasks` (taken), `GET $A/import-links` (koppelingen).
+8. **Controle**: `GET $A/import-links/{id}/readiness` (recht Lezen) geeft de checklist van een koppeling:
+   `ready` en een lijst `checks` (`code`, status `OK`/`PROBLEM`/`INFO`, onderwerp, detail, bij
+   configuratiefouten ook het veld). Alle configuratiefouten van een concept staan er tegelijk in; overgeslagen
+   controles staan als `INFO_CONFIG_CHECKS_SKIPPED` (telt niet mee voor `ready`). Onbekende koppeling: 404
+   `LINK_NOT_FOUND`.
+   Proefinlezing: `POST $A/revisions/{id}/trial-reads` (recht Beheren; multipart `file`, optioneel `linkId`
+   voor de vaste valuta). Slaat niets op; antwoord 200 met `verdict` (`WOULD_BLOCK` of `NO_BLOCKER_FOUND`),
+   tellers (`null` = niet vastgesteld), voorbeeldregels, probleemgroepen, `configProblems` en wat niet beoordeeld
+   is. Zie `docs/design/proefinlezing-design.md`.
+   Ook alleen-lezen: `GET $A/tasks` (taken), `GET $A/import-links` (koppelingen). `GET $S/overview` (de hele
+   boom) blijft achter de setup-vlag.
 
 **Verwachte uitkomst:** een `taskId` waar u naartoe kunt uploaden (flow 2).
 
@@ -124,36 +181,41 @@ scenarioscript (`$OC` is een unieke bronorganisatiecode, `$DEF`, `$REV`, `$LINK`
 
 | Melding | Oorzaak |
 | --- | --- |
-| 404 op `/setup/...` | setup-API staat uit (geen `demo`-profiel) |
-| 409 `*_CODE_IN_USE` (bv. `DEFINITION_CODE_IN_USE`, `LINK_CODE_IN_USE`) | code bestaat al; kies een andere |
-| 400/409 `CONFIG_*` bij mapping of activeren | de revisie is onvolledig of tegenstrijdig, bv. `CONFIG_FIELD_MAPPING_DUPLICATES_REVISION` (u mapt een veld dat de revisie al bepaalt) |
-| 409 `REVISION_NOT_EDITABLE` | mappings/filters kunnen alleen op een `DRAFT` |
+| 404 op `GET /setup/overview` of een sjabloon-declaratiepad | alleen die staan nog achter de setup-vlag (enkel het `demo`-profiel zet ze aan); `POST .../bookmarks` geeft zonder vlag 405 |
+| 409 `*_IN_USE` (bv. `DEFINITION_CODE_IN_USE`, `LINK_CODE_IN_USE`, `TASK_NAME_IN_USE`) | code bestaat al (ook bij twee gelijktijdige aanvragen: 409, geen 500); kies een andere |
+| 409 `REVISION_DRAFT_ALREADY_EXISTS` | er is al een concept voor deze beschrijving (ook bij een opvolger of gelijktijdige aanvragen); werk dat concept af |
+| 400 met `code` (`CONFIG_*`, `<VELD>_REQUIRED`/`_TOO_LONG`/`_INVALID`) | ongeldige waarde; de `code` wijst het veld aan |
+| 400/409 `CONFIG_*` bij mapping of activeren | de versie is onvolledig of tegenstrijdig, bv. `CONFIG_FIELD_MAPPING_DUPLICATES_REVISION` (u mapt een veld dat de versie al bepaalt) |
+| 409 `REVISION_NOT_EDITABLE` | mappings/filters kunnen alleen op een concept (`DRAFT`) |
 | `CONFIG_CANONICALISATION_VERSION_REQUIRED` | versie 2 is verplicht zodra een mapping (voor identiteit/referentie) bestaat.  |
 
-Voor een tweede leverancier met dezelfde bestandsopbouw hergebruikt u een eigen nieuwe keten (of het
-sjabloon, zie 1B). Het **demoprofiel** maakt bij het opstarten al een volledige keten aan (`DEMO`,
+Voor een tweede leverancier met dezelfde bestandsopbouw hergebruikt u een eigen nieuwe keten (of een
+sjabloon, zie 1B; in de UI het startpunt "vanuit een sjabloon"). Het **demoprofiel** maakt bij het opstarten al een volledige keten aan (`DEMO`,
 `DEMO-CSV`, `DEMO-LINK`, taak *Demo manuele levering*) en logt de `taskId`.
 
-### 1B. Via de sjabloonwizard-backend (materialisatie)
+### 1B. Vanuit een sjabloon (afleiden/materialisatie)
 
-**Status: Alleen via API**, achter dezelfde setup-vlag. Een sjabloon is een herbruikbare definitie
-(`usageType` `REUSABLE_TEMPLATE`) met bookmarks (invulvelden). Het endpoint `templates` maakt daaruit in één
-transactie een leveranciersgebonden definitie, een revisie 1 (`DRAFT`) en een koppeling.
+**Status: Beschikbaar in de UI** (startpunt "vanuit een sjabloon" in de wizard, en het scherm **Sjablonen**) en
+via de API, zonder setup-vlag. Alleen het **declareren** van invulpunten en gebruik in een sjabloon zelf kan
+enkel via de API, achter de setup-vlag. Een sjabloon is een herbruikbare beschrijving van het bestand
+(`usageType` `REUSABLE_TEMPLATE`) met invulpunten (technisch: bookmarks). Het endpoint `templates` maakt daaruit in
+één transactie een leveranciersgebonden beschrijving, een versie 1 (concept) en een koppeling. De beschrijving
+blijft eigendom van de leverancier of aankoopvereniging van het sjabloon.
 
 (Sinds 5-AUTH: `materialisedBy`, `createdBy` en `updatedBy` zijn optioneel en moeten, indien meegegeven, gelijk
 zijn aan uw login.)
 
 1. `GET $A/templates` — de beschikbare sjablonen.
-2. `GET $A/templates/{definitionId}/revisions/{revisionId}/bookmarks` — welke bookmarks er ingevuld moeten
+2. `GET $A/templates/{definitionId}/revisions/{revisionId}/bookmarks` — welke invulpunten er ingevuld moeten
    worden (met een lijst `problems`).
 3. `POST $A/templates/{definitionId}/materialisations` met o.a. `templateRevisionId`, `mode`
    (`NEW_DEFINITION` of `REUSE_DEFINITION`, verplicht, geen default), `definitionCode`, `definitionName`,
    `linkCode`, `linkName`, `supplierOrganisationCode`, `libraryCode`, `bookmarkValues`.
    Bij `REUSE_DEFINITION` (+ `reuseDefinitionId`) ontstaat alleen een koppeling; een definitie met een
    per-leverancier waarde is niet deelbaar (409 `DEFINITION_NOT_SHAREABLE`).
-4. **De materialisatie maakt géén taak** (beslissing 2026-09-23, V1). De revisie is `DRAFT`: activeer ze
-   (stap 5 van 1A) en maak daarna een taak (stap 7 van 1A).
-5. Een LINK-bookmarkwaarde later wijzigen: `PUT $A/links/{linkId}/bookmark-values/{name}`
+4. **De materialisatie maakt géén taak** (beslissing 2026-09-23, V1). De versie is een concept: controleer en
+   activeer ze (blok 2, of stap 5 van 1A) en maak daarna een taak (in de UI: "Taak toevoegen"; API: stap 7 van 1A).
+5. Een LINK-invulpuntwaarde later wijzigen: `PUT $A/links/{linkId}/bookmark-values/{name}`
    met `{"value":"..."}` (`updatedBy` optioneel; de naam komt uit uw login). Dat wordt met 409 `LINK_BOOKMARK_LOCKED_BY_OPEN_BATCH`
    geweigerd zolang de koppeling een open batch heeft.
 
@@ -169,7 +231,7 @@ heb ik niet nagelezen: **nog te verifiëren**. Zie `docs/design/sjabloon-materia
 **Doel:** een leveranciersbestand laten screenen en het oordeel lezen.
 
 **Voorwaarden:** een keten uit flow 1 met een `MANUAL`-taak (`$TASK`), en een CSV met de kolommen van de
-actieve revisie. Het voorbeeldbestand `scripts/scenario/levering-1.csv`:
+actieve versie van de beschrijving van het bestand. Het voorbeeldbestand `scripts/scenario/levering-1.csv`:
 
 ```
 leverancier;groep;referentie;omschrijving;prijs;valuta;ean
@@ -231,7 +293,7 @@ aanvaard of gepubliceerd.
 | --- | --- |
 | 404 `TASK_NOT_FOUND` | verkeerd `taskId` |
 | 409 `TASK_NOT_MANUAL` | de taak is niet `MANUAL` |
-| 409 `NO_ACTIVE_REVISION` | activeer eerst een revisie (flow 1) |
+| 409 `NO_ACTIVE_REVISION` | activeer eerst de conceptversie (flow 1, blok "Controleren") |
 | 409 `TASK_RUN_IN_PROGRESS` | er loopt al een uitvoering voor deze taak |
 | 409 `DELIVERY_REFERENCE_REUSED_WITH_DIFFERENT_CONTENT` | referentie al gebruikt met een ander bestand; kies een nieuwe |
 | 400 zonder code | ontbrekend veld (`file`, `deliveryReference`) of ongeldige waarde |
@@ -291,9 +353,11 @@ is een **nulmeting van de lokale bronstaat** en geen publicatie: er gaat niets n
 
 **Stappen:**
 
-1. Neem batch 1 uit flow 2 (`levering-1.csv`, 7 lijnen, 6 geldig, 1 afgewezen).
+1. Neem batch 1 uit flow 2 (`levering-1.csv`, 7 lijnen, 6 geldig, 1 afgewezen). Is dit de eerste echte levering van
+   een net ingerichte koppeling (flow 1), dan wacht ze hier op uw goedkeuring.
 2. **Aanvaard als nulmeting** (verplicht: `reason`; `acceptedBy` is optioneel en moet gelijk zijn aan uw
-   login, nooit `system`). In de UI: batchdetail, knop "Aanvaarden als nulmeting":
+   login, nooit `system`). In de UI: batchdetail, knop "Aanvaarden als nulmeting"; typ ter bevestiging het
+   woord `NULMETING`:
    ```
    POST $A/batches/$B1/accept-baseline
    {"reason":"Scenario: eerste levering als baseline"}
@@ -330,7 +394,7 @@ is een **nulmeting van de lokale bronstaat** en geen publicatie: er gaat niets n
      geeft, wat hiermee consistent is.
    - `validationResult` naar verwachting `REVIEW_REQUIRED` (**nog te verifiëren**).
    - Of de prijssprong van 6,7% een `PRICE_DEVIATION_EXCEEDED`-waarschuwing geeft, hangt af van de ingestelde
-     afwijkingsdrempel van de revisie; het scenario stelt die niet expliciet in. **Niet vastgesteld.**
+     afwijkingsdrempel van de versie; het scenario stelt die niet expliciet in. **Niet vastgesteld.**
 
 **Zelfde bestand opnieuw na de nulmeting** (met een nieuwe referentie): 0 inhoudelijke mutaties, alle geldige
 regels `unchangedCount`. (Demo-voorbeeld in het hoofd-`README.md`: 10 ongewijzigde regels.)
@@ -552,8 +616,8 @@ Voorbeeld uit het hoofd-`README.md` (`docs/samples/05-dubbele-identiteit.csv`): 
 `validationResult` `BLOCKING` en blijven `newCount`, `changedCount` en `unchangedCount` `null` ("niet
 vastgesteld", nooit 0). Andere oorzaken: een structuurfout in de kop (`HEADER_*`), een leeg bestand
 (`SOURCE_FILE_EMPTY`), een niet-kloppend aantal regels of bytes, of een drempel (bv.
-`CRITICAL_RECORD_THRESHOLD_EXCEEDED`). Oplossing: corrigeer het **bestand** (of de configuratie via een nieuwe
-revisie) en upload met een **nieuwe** `deliveryReference`. Dezelfde referentie zou de bestaande, geblokkeerde
+`CRITICAL_RECORD_THRESHOLD_EXCEEDED`). Oplossing: corrigeer het **bestand** (of de beschrijving van het bestand via een nieuwe
+versie) en upload met een **nieuwe** `deliveryReference`. Dezelfde referentie zou de bestaande, geblokkeerde
 levering teruggeven (flow 3). Een `BLOCKED` batch kan niet in een bundel (409 `BATCH_VALIDATION_BLOCKING`).
 
 **`FAILED`** — een technische fout of onderbreking (bv. `SCREENING_INTERRUPTED` na een herstart, of

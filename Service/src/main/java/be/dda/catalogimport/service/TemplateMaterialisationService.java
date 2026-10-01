@@ -9,7 +9,6 @@ import be.dda.catalogimport.dao.ImportFieldMappingRepository;
 import be.dda.catalogimport.dao.ImportLinkBookmarkValueRepository;
 import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
-import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import be.dda.catalogimport.domain.BookmarkUsagePlace;
 import be.dda.catalogimport.domain.BookmarkValueScope;
@@ -24,7 +23,6 @@ import be.dda.catalogimport.domain.ImportFieldMapping;
 import be.dda.catalogimport.domain.ImportLink;
 import be.dda.catalogimport.domain.ImportLinkBookmarkValue;
 import be.dda.catalogimport.domain.ImportRecordFilter;
-import be.dda.catalogimport.domain.ImportRevisionFieldCriticality;
 import be.dda.catalogimport.domain.RevisionCriticalityField;
 import be.dda.catalogimport.domain.RevisionStatus;
 import be.dda.catalogimport.domain.SourceOrganisation;
@@ -32,6 +30,7 @@ import be.dda.catalogimport.service.support.BookmarkDeclarations;
 import be.dda.catalogimport.service.support.BookmarkValueRules;
 import be.dda.catalogimport.service.support.ImportMappingConfigFactory;
 import be.dda.catalogimport.service.support.RevisionConfigHashes;
+import be.dda.catalogimport.service.support.RevisionCopier;
 import be.dda.catalogimport.service.support.ScreeningBlockedException;
 import be.dda.catalogimport.service.support.SourceStructureConfig;
 import be.dda.catalogimport.service.support.SourceStructureConfigFactory;
@@ -287,7 +286,6 @@ public class TemplateMaterialisationService {
     private final ImportDefinitionRevisionRepository revisions;
     private final ImportFieldMappingRepository fieldMappings;
     private final ImportRecordFilterRepository recordFilters;
-    private final ImportRevisionFieldCriticalityRepository fieldCriticalities;
     private final ImportDefinitionBookmarkRepository bookmarks;
     private final ImportDefinitionBookmarkUsageRepository usages;
     private final ImportDefinitionBookmarkValueRepository definitionValues;
@@ -296,12 +294,22 @@ public class TemplateMaterialisationService {
     private final SourceOrganisationRepository organisations;
     private final SourceStructureConfigFactory structureFactory;
     private final ImportMappingConfigFactory mappingFactory;
+    /**
+     * De gedeelde clone-implementatie (S1-X-1): de copy-methoden hieronder delegeren er volledig naar,
+     * zodat de opvolgrevisie (S1-X-2) letterlijk dezelfde kopie maakt als de materialisatie.
+     */
+    private final RevisionCopier revisionCopier;
 
+    /**
+     * De {@code ImportRevisionFieldCriticalityRepository} is uit deze constructor verdwenen in bouwstap
+     * S1-X-1: het kopiëren van de kritiekheidsoverrules — de enige plaats waar deze service die repository
+     * gebruikte — zit nu in {@link RevisionCopier}. Geen enkele aanroeper bouwt deze service met de hand
+     * (uitsluitend constructorinjectie door Spring), dus dit raakt geen bestaande aanroep.
+     */
     public TemplateMaterialisationService(ImportDefinitionRepository definitions,
                                           ImportDefinitionRevisionRepository revisions,
                                           ImportFieldMappingRepository fieldMappings,
                                           ImportRecordFilterRepository recordFilters,
-                                          ImportRevisionFieldCriticalityRepository fieldCriticalities,
                                           ImportDefinitionBookmarkRepository bookmarks,
                                           ImportDefinitionBookmarkUsageRepository usages,
                                           ImportDefinitionBookmarkValueRepository definitionValues,
@@ -309,12 +317,12 @@ public class TemplateMaterialisationService {
                                           ImportLinkBookmarkValueRepository linkValues,
                                           SourceOrganisationRepository organisations,
                                           SourceStructureConfigFactory structureFactory,
-                                          ImportMappingConfigFactory mappingFactory) {
+                                          ImportMappingConfigFactory mappingFactory,
+                                          RevisionCopier revisionCopier) {
         this.definitions = definitions;
         this.revisions = revisions;
         this.fieldMappings = fieldMappings;
         this.recordFilters = recordFilters;
-        this.fieldCriticalities = fieldCriticalities;
         this.bookmarks = bookmarks;
         this.usages = usages;
         this.definitionValues = definitionValues;
@@ -323,6 +331,7 @@ public class TemplateMaterialisationService {
         this.organisations = organisations;
         this.structureFactory = structureFactory;
         this.mappingFactory = mappingFactory;
+        this.revisionCopier = revisionCopier;
     }
 
     /**
@@ -1103,66 +1112,21 @@ public class TemplateMaterialisationService {
      * naar de sjabloonrevisie, en verder een <b>volledige kopie</b> van de configuratievelden. De drie
      * laagversienummers beginnen bewust op 1: dit is revisie 1 van een nieuwe definitie, niet de
      * voortzetting van de versiereeks van het sjabloon.
+     * <p>
+     * Sinds bouwstap S1-X-1 doet {@link RevisionCopier} de kopie zelf (revision-successor-design.md §0),
+     * met exact dezelfde velden; wat hier overblijft is wat <i>materialisatie-eigen</i> is: revisienummer 1
+     * omdat de doeldefinitie nieuw is, en de vaste wijzigingsreden wanneer het verzoek er geen meegeeft.
      */
     private ImportDefinitionRevision copyRevision(ImportDefinition definition,
                                                   ImportDefinitionRevision source, RequestShape shape,
                                                   ActorIdentity actor) {
-        ImportDefinitionRevision copy = new ImportDefinitionRevision(definition, 1,
-                source.getIdentityProfileKind(), actor.username());
-        copy.setCreatedBySubject(actor.subject());
-        copy.setStatus(RevisionStatus.DRAFT);
-        copy.setBasedOnRevision(source);
-        copy.setChangeReason(shape.changeReason() != null ? shape.changeReason()
-                : defaultChangeReason(source));
-        copy.setIdentitySupplierField(source.getIdentitySupplierField());
-        copy.setIdentitySupplierGroupField(source.getIdentitySupplierGroupField());
-        copy.setIdentitySupplierReferenceField(source.getIdentitySupplierReferenceField());
-        copy.setIdentityDiscountCodeField(source.getIdentityDiscountCodeField());
-        copy.setStructureFormat(source.getStructureFormat());
-        copy.setStructureCharset(source.getStructureCharset());
-        copy.setStructureDelimiter(source.getStructureDelimiter());
-        copy.setStructureQuoteChar(source.getStructureQuoteChar());
-        copy.setStructureHasHeader(source.isStructureHasHeader());
-        copy.setStructureHeaderLineNumber(source.getStructureHeaderLineNumber());
-        copy.setStructureFieldReferenceKind(source.getStructureFieldReferenceKind());
-        copy.setStructureExpectedColumnCount(source.getStructureExpectedColumnCount());
-        copy.setAccessDeliverySetKind(source.getAccessDeliverySetKind());
-        copy.setRecordBasePriceField(source.getRecordBasePriceField());
-        copy.setRecordDescriptionField(source.getRecordDescriptionField());
-        copy.setRecordCurrencyField(source.getRecordCurrencyField());
-        copy.setRecordCanonicalisationVersion(source.getRecordCanonicalisationVersion());
-        copy.setBasePriceZeroAllowed(source.isBasePriceZeroAllowed());
-        copy.setBasePriceNegativeAllowed(source.isBasePriceNegativeAllowed());
-        copy.setPriceDeviationPercent(source.getPriceDeviationPercent());
-        copy.setPriceDeviationSeverity(source.getPriceDeviationSeverity());
-        copy.setPriceDerivationTolerance(source.getPriceDerivationTolerance());
-        copy.setPriceAvgShortWindow(source.getPriceAvgShortWindow());
-        copy.setPriceAvgLongWindow(source.getPriceAvgLongWindow());
-        copy.setPriceControlModel(source.getPriceControlModel());
-        copy.setCreationThresholdSharePercent(source.getCreationThresholdSharePercent());
-        copy.setMaxCriticalSharePercent(source.getMaxCriticalSharePercent());
-        copy.setMaxRejectedSharePercent(source.getMaxRejectedSharePercent());
-        copy.setBulkIncidentSharePercent(source.getBulkIncidentSharePercent());
-        copyDeprecatedThresholds(copy, source);
-        // De vier hashkolommen zijn not null: ze moeten al vóór de eerste insert kloppen. Nadat de
+        String changeReason = shape.changeReason() != null ? shape.changeReason()
+                : defaultChangeReason(source);
+        // De vier hashkolommen zijn not null: RevisionCopier zet ze al vóór de eerste insert. Nadat de
         // bookmarkwaarden toegepast zijn, worden ze opnieuw berekend (zie write): een waarde die een
         // revisieveld verandert, moet ook de hash veranderen (§2).
-        RevisionConfigHashes.applyAll(copy);
-        return copy;
-    }
-
-    /**
-     * De drie drempelkolommen die sinds bouwstap 3h-4 niet meer gelezen worden (beslissingslog 20/09:
-     * elke drempel is een percentage). Ze worden tóch meegekopieerd: de afgeleide revisie hoort een
-     * getrouwe kopie te zijn, en een stil afwijkende opgeslagen waarde zou later, als iemand die kolom
-     * weer zou lezen, een ander gedrag geven dan het sjabloon beschreef.
-     */
-    @SuppressWarnings("deprecation")
-    private static void copyDeprecatedThresholds(ImportDefinitionRevision copy,
-                                                 ImportDefinitionRevision source) {
-        copy.setCreationThresholdAbsolute(source.getCreationThresholdAbsolute());
-        copy.setMaxCriticalRecords(source.getMaxCriticalRecords());
-        copy.setMaxRejectedRecords(source.getMaxRejectedRecords());
+        return revisionCopier.copyRevision(source, definition, 1, source, changeReason, actor.username(),
+                actor.subject());
     }
 
     private String defaultChangeReason(ImportDefinitionRevision source) {
@@ -1179,64 +1143,19 @@ public class TemplateMaterialisationService {
     private Map<String, ImportFieldMapping> copyMappings(ImportDefinitionRevision revision,
                                                          ImportDefinitionRevision source,
                                                          ActorIdentity actor) {
-        Map<String, ImportFieldMapping> copies = new LinkedHashMap<>();
-        for (ImportFieldMapping row : fieldMappings.findByRevisionIdWithTargetField(source.getId())) {
-            ImportFieldMapping copy = new ImportFieldMapping(revision, row.getSequenceNumber(),
-                    row.getTargetField(), row.getValueKind(), row.getDataType(), row.getFieldOwner(),
-                    row.getIdentityClass());
-            copy.setSourceReference(row.getSourceReference());
-            copy.setExpectedPosition(row.getExpectedPosition());
-            copy.setFixedValue(row.getFixedValue());
-            copy.setBookmarkName(row.getBookmarkName());
-            copy.setDefaultValue(row.getDefaultValue());
-            copy.setRequired(row.isRequired());
-            copy.setMaxLength(row.getMaxLength());
-            copy.setDecimalScale(row.getDecimalScale());
-            copy.setZeroAllowed(row.isZeroAllowed());
-            copy.setNegativeAllowed(row.isNegativeAllowed());
-            copy.setTransformKind(row.getTransformKind());
-            copy.setTransformConfig(row.getTransformConfig());
-            copy.setPriceComponentCode(row.getPriceComponentCode());
-            copy.setReferenceType(row.getReferenceType());
-            copy.setCriticality(row.getCriticality());
-            copy.setActive(row.isActive());
-            copy.setCreatedBy(actor.username());
-            copy.setCreatedBySubject(actor.subject());
-            copies.put(row.getTargetField().getCode(), copy);
-        }
-        return copies;
+        return revisionCopier.copyMappings(revision, source, actor.username(), actor.subject());
     }
 
     /** @return de nog niet weggeschreven kopieën op volgnummer — de sleutel waarmee een bookmark ze aanwijst */
     private Map<Integer, ImportRecordFilter> copyFilters(ImportDefinitionRevision revision,
                                                          ImportDefinitionRevision source,
                                                          ActorIdentity actor) {
-        Map<Integer, ImportRecordFilter> copies = new LinkedHashMap<>();
-        for (ImportRecordFilter row
-                : recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(source.getId())) {
-            ImportRecordFilter copy = new ImportRecordFilter(revision, row.getSequenceNumber(),
-                    row.getSourceReference(), row.getOperator(), row.getCompareValue(), row.getOutcome());
-            copy.setFilterStage(row.getFilterStage());
-            copy.setCaseSensitive(row.isCaseSensitive());
-            copy.setTrimBeforeCompare(row.isTrimBeforeCompare());
-            copy.setNullBehaviour(row.getNullBehaviour());
-            copy.setMissingColumnBehaviour(row.getMissingColumnBehaviour());
-            copy.setCreatedBy(actor.username());
-            copy.setCreatedBySubject(actor.subject());
-            copies.put(row.getSequenceNumber(), copy);
-        }
-        return copies;
+        return revisionCopier.copyFilters(revision, source, actor.username(), actor.subject());
     }
 
     private void copyFieldCriticalities(ImportDefinitionRevision revision, ImportDefinitionRevision source,
                                         ActorIdentity actor) {
-        for (ImportRevisionFieldCriticality row : fieldCriticalities.findByDefinitionRevisionId(source.getId())) {
-            ImportRevisionFieldCriticality copy = new ImportRevisionFieldCriticality(revision.getId(),
-                    row.getFieldKey(), row.getCriticality());
-            copy.setCreatedBy(actor.username());
-            copy.setCreatedBySubject(actor.subject());
-            fieldCriticalities.save(copy);
-        }
+        revisionCopier.copyFieldCriticalities(revision, source, actor.username(), actor.subject());
     }
 
     /**
@@ -1244,29 +1163,18 @@ public class TemplateMaterialisationService {
      * {@code DEFINITION}-scope declaraties niet. Zonder deze kopie zou de controle "zijn alle
      * verplichte LINK-bookmarks ingevuld?" bij het starten van een levering het sjabloon moeten lezen —
      * precies het runtime-leespad dat R-MAT-02 verbiedt.
+     * <p>
+     * Het kopiëren zelf zit sinds S1-X-1 in {@link RevisionCopier}; de <b>scopekeuze</b> blijft hier, want
+     * die is materialisatie-eigen: een opvolgrevisie neemt juist álle scopes mee
+     * (revision-successor-design.md §2).
      */
     private void copyLinkScopeDeclarations(ImportDefinitionRevision revision, Declarations declarations,
                                            ActorIdentity actor) {
-        for (ImportDefinitionBookmark source : declarations.bookmarks()) {
-            if (source.getValueScope() != BookmarkValueScope.LINK) {
-                continue;
-            }
-            ImportDefinitionBookmark copy = new ImportDefinitionBookmark(revision, source.getName(),
-                    source.getLabel(), source.getDataType(), source.getValueScope(), source.getOwnerRole(),
-                    source.getSortOrder());
-            copy.setDescription(source.getDescription());
-            copy.setRequired(source.isRequired());
-            copy.setDefaultValue(source.getDefaultValue());
-            copy.setAllowedValues(source.getAllowedValues());
-            copy.setValidationPattern(source.getValidationPattern());
-            copy.setCreatedBy(actor.username());
-            copy.setCreatedBySubject(actor.subject());
-            ImportDefinitionBookmark stored = bookmarks.save(copy);
-            for (ImportDefinitionBookmarkUsage usage : declarations.usages().get(source)) {
-                usages.save(new ImportDefinitionBookmarkUsage(stored, usage.getPlaceKind(),
-                        usage.getTargetHint()));
-            }
-        }
+        List<ImportDefinitionBookmark> linkScoped = declarations.bookmarks().stream()
+                .filter(bookmark -> bookmark.getValueScope() == BookmarkValueScope.LINK)
+                .toList();
+        revisionCopier.copyBookmarkDeclarations(revision, linkScoped, declarations.usages(),
+                actor.username(), actor.subject());
     }
 
     /**

@@ -136,10 +136,11 @@ describe('toDecisionFilter (F9, filter-naar-request)', () => {
 });
 
 describe('groupDecisionGate (F9, spiegel van de backend)', () => {
-  it('F9.4: weigert een lege filter met DECISION_FILTER_REQUIRED', () => {
+  it('F9.4: weigert een lege filter, met een Nederlandse reden zonder code', () => {
     const gate = groupDecisionGate('ASSEMBLING', {}, 10);
     expect(gate.allowed).toBe(false);
-    expect(gate.allowed ? '' : gate.reason).toContain('DECISION_FILTER_REQUIRED');
+    expect(gate.allowed ? '' : gate.reason).toContain('minstens één filter');
+    expect(gate.allowed ? '' : gate.reason).not.toContain('DECISION_FILTER_REQUIRED');
   });
 
   it('F9.5: staat enkel identityHash of enkel statusReason toe als filter (C5)', () => {
@@ -166,10 +167,11 @@ describe('groupDecisionGate (F9, spiegel van de backend)', () => {
     expect(groupDecisionGate('ASSEMBLING', { batchId: 1 }, 1).allowed).toBe(true);
   });
 
-  it('F9.8: weigert buiten ASSEMBLING met BUNDLE_NOT_ASSEMBLING', () => {
+  it('F9.8: weigert buiten ASSEMBLING, met de reden dat de bundel bevroren is', () => {
     const gate = groupDecisionGate('FROZEN', { batchId: 1 }, 5);
     expect(gate.allowed).toBe(false);
-    expect(gate.allowed ? '' : gate.reason).toContain('BUNDLE_NOT_ASSEMBLING');
+    expect(gate.allowed ? '' : gate.reason).toContain('bevroren');
+    expect(gate.allowed ? '' : gate.reason).not.toContain('BUNDLE_NOT_ASSEMBLING');
   });
 });
 
@@ -364,8 +366,9 @@ describe('GroupDecisionDialog in BundleMutationsTab', () => {
     await waitFor(() => expect(lastListFilter()).toEqual({ status: 'PLANNED' }));
 
     // Getypt maar NIET op "Filteren" geklikt: de lijst filtert hier niet op, de groepsactie dus ook niet.
-    fireEvent.change(screen.getByLabelText('Statusreden'), { target: { value: 'NIET_TOEGEPAST' } });
+    // (De keuzelijsten, ook die van de statusreden, passen zichzelf meteen toe; enkel de tekstvelden wachten.)
     fireEvent.change(screen.getByLabelText('Batch'), { target: { value: '999' } });
+    fireEvent.change(screen.getByLabelText('Wijzigingsgroep', { exact: true }), { target: { value: HASH } });
 
     const dialog = await openGroupDialog('Groep goedkeuren', 1);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Groep goedkeuren' }));
@@ -383,7 +386,7 @@ describe('GroupDecisionDialog in BundleMutationsTab', () => {
 
     const dialog = await openGroupDialog('Groep goedkeuren', 1234);
     expect(within(dialog).getByText(/De lijst toont/).textContent).toContain('1234 mutaties');
-    expect(within(dialog).getByText(/nooit een geblokkeerde mutatie/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/nooit een tegengehouden mutatie/)).toBeInTheDocument();
     expect(within(dialog).getByRole('heading').textContent).toBe('1234 mutaties goedkeuren (groepsactie)');
     expect(posts()).toHaveLength(0);
 
@@ -433,7 +436,7 @@ describe('GroupDecisionDialog in BundleMutationsTab', () => {
   it('F9.15: (d) een 400 zonder code (IllegalArgumentException) wordt ook getoond, niet stil geslikt', async () => {
     postResponse = () => jsonResponse({ error: 'filter.statusReason is too long' }, 400);
     renderTab(bundle());
-    fireEvent.change(await screen.findByLabelText('Statusreden'), { target: { value: 'X' } });
+    fireEvent.change(await screen.findByLabelText('Statusreden'), { target: { value: 'CHANGED' } });
     fireEvent.click(screen.getByRole('button', { name: 'Filteren' }));
 
     const dialog = await openGroupDialog('Groep goedkeuren', 1);
@@ -480,8 +483,10 @@ describe('GroupDecisionDialog in BundleMutationsTab', () => {
     renderTab(bundle());
     const approve = await screen.findByRole('button', { name: 'Groep goedkeuren (1)' });
     expect(approve).toBeDisabled();
-    expect(approve.getAttribute('title')).toContain('DECISION_FILTER_REQUIRED');
-    expect(screen.getByText(/DECISION_FILTER_REQUIRED/)).toBeInTheDocument();
+    expect(approve.getAttribute('title')).toContain('minstens één filter');
+    expect(approve.getAttribute('title')).toContain('technische code: DECISION_FILTER_REQUIRED');
+    expect(screen.getByText(/minstens één filter/)).toBeInTheDocument();
+    expect(screen.queryByText(/DECISION_FILTER_REQUIRED/)).not.toBeInTheDocument();
     expect(screen.getByText('Geen filter ingesteld.')).toBeInTheDocument();
 
     fireEvent.click(approve);
@@ -497,7 +502,7 @@ describe('GroupDecisionDialog in BundleMutationsTab', () => {
     await waitFor(() => expect(lastListFilter()).toEqual({ status: 'BLOCKED' }));
     const approve = await screen.findByRole('button', { name: 'Groep goedkeuren (1)' });
     expect(approve).toBeDisabled();
-    expect(approve.getAttribute('title')).toContain('status BLOCKED');
+    expect(approve.getAttribute('title')).toContain('status "Tegengehouden"');
   });
 
   it('F9.20: een bevroren bundel biedt de groepsactie niet aan', async () => {
@@ -505,7 +510,7 @@ describe('GroupDecisionDialog in BundleMutationsTab', () => {
     fireEvent.change(await screen.findByLabelText('Status'), { target: { value: 'PLANNED' } });
 
     const approve = await screen.findByRole('button', { name: 'Groep goedkeuren (1)' });
-    await waitFor(() => expect(approve.getAttribute('title')).toContain('BUNDLE_NOT_ASSEMBLING'));
+    await waitFor(() => expect(approve.getAttribute('title')).toContain('de bundel is bevroren'));
     expect(approve).toBeDisabled();
   });
 });

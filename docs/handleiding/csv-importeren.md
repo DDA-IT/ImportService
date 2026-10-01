@@ -27,12 +27,16 @@ voorlopig niet; gebruik het uploadscherm.
 1. Backend draait: zie README sectie 9.2 (twee commando's, poort 8081 met profiel `local`) en de
    Prodis-Keycloak (`:9080`, realm `prodis`, client `catalog-import`, `CATALOG_OIDC_CLIENT_SECRET` in de
    omgeving; zie hoofd-`README.md`, "Lokaal aanmelden"). Open de frontend op `http://localhost:5173` en meld u aan.
-2. Er is een **actieve revisie** van de importdefinitie (anders 409 `NO_ACTIVE_REVISION`), met een
+2. Er is een **actieve versie** van de beschrijving van het bestand (anders 409 `NO_ACTIVE_REVISION`), met een
    basisprijsveld (anders 409 `CONFIG_PRICE_FIELD_MISSING`).
-3. Er is een **koppeling** en een **MANUAL-taak** (flow 1; met profiel `demo` staat er een voorbeeldketen,
-   taak *Demo manuele levering*, en wordt de `taskId` bij het opstarten gelogd).
+3. Er is een **koppeling** en een **manuele taak**. Heeft u die nog niet: maak ze zelf aan via **Inrichting →
+   "Nieuwe leverancier en taak"** (recht *Beheren*) en controleer en activeer de conceptversie op het scherm
+   **Controleren** (zie flow 1 in [`standaardflows.md`](standaardflows.md) en README 4.6 en 4.7). Op het
+   uploadscherm staat een taak waarvan de versie nog niet geactiveerd is als "nog niet klaar: versie niet
+   geactiveerd" en is ze uitgeschakeld. (Met profiel `demo` staat er een voorbeeldketen, taak *Demo manuele
+   levering*, en wordt de `taskId` bij het opstarten gelogd.)
 4. U kent het `taskId`. In de UI kiest u de taak in een lijst op `/upload`. Opzoeken via de API (na login
-   altijd bereikbaar, ook zonder setup-vlag): open `http://localhost:5173/api/catalog-import/tasks` in het
+   altijd bereikbaar): open `http://localhost:5173/api/catalog-import/tasks` in het
    aangemelde tabblad, of
 
 ```
@@ -47,22 +51,23 @@ Elke rij bevat `id` (het `taskId`), `name`, `active`, `triggerType` (moet `MANUA
 
 ## 3. Eisen aan het CSV-bestand
 
-Bijna alles hangt af van de **actieve revisie** van de definitie, niet van de upload. Het bestand moet dus
-passen bij die revisie.
+Bijna alles hangt af van de **actieve versie** van de beschrijving van het bestand, niet van de upload. Het
+bestand moet dus passen bij die versie. Wilt u dat vooraf nagaan zonder iets op te slaan, gebruik dan de
+**proefinlezing** op het scherm Controleren (README 4.7).
 
 | Eigenschap | Wat geldt |
 | --- | --- |
-| Codering | Komt uit de revisie (standaard `UTF-8`); er wordt **nooit geraden**. Een BOM vooraan wordt verwijderd en gemeld als waarschuwing `SOURCE_BOM_REMOVED`. |
-| Scheidingsteken | Precies één teken, uit de revisie (in het scenario `;`). Een ander teken in het bestand geeft een verkeerd kolomaantal. |
-| Aanhalingsteken | Uit de revisie (optioneel). Een aanhalingsteken dat op dezelfde regel niet sluit: regel verworpen (`CSV_UNCLOSED_QUOTE`). |
-| Header | Volgens `hasHeader` en het headerregelnummer van de revisie. Regels vóór de headerregel worden overgeslagen. |
+| Codering | Komt uit de versie (standaard `UTF-8`); er wordt **nooit geraden**. Een BOM vooraan wordt verwijderd en gemeld als waarschuwing `SOURCE_BOM_REMOVED`. |
+| Scheidingsteken | Precies één teken, uit de versie (in het scenario `;`). Een ander teken in het bestand geeft een verkeerd kolomaantal. |
+| Aanhalingsteken | Uit de versie (optioneel). Een aanhalingsteken dat op dezelfde regel niet sluit: regel verworpen (`CSV_UNCLOSED_QUOTE`). |
+| Header | Volgens `hasHeader` en het headerregelnummer van de versie. Regels vóór de headerregel worden overgeslagen. |
 | Eén record = één regel | Ingebedde regeleinden in een veld worden **niet ondersteund**. |
 | Lege regels | Volledig lege regels worden overgeslagen en geteld; een regel met alleen spaties is een (foute) datalijn. |
 | Kolomaantal | Elke regel moet even veel kolommen hebben als de header; anders wordt de regel verworpen (`ROW_COLUMN_COUNT_MISMATCH`), nooit aangevuld of afgekapt. Maximale regellengte standaard 100 000 tekens (`ROW_TOO_LONG`). |
-| Identiteit | Leverancier, groep en referentie (kolomnamen uit de revisie: `supplierField`, `supplierGroupField`, `supplierReferenceField`). Een lege component verwerpt de regel (`IDENTITY_COMPONENT_EMPTY`). Twee regels met dezelfde identiteit: hele levering geblokkeerd (`DUPLICATE_IDENTITY_IN_DELIVERY`). |
-| Prijs | Kolom uit `basePriceField`. Komma of punt als decimaalteken (tenzij de revisie er één verklaart; dan is het andere teken een fout). Leeg of onleesbaar: regel verworpen (`PRICE_MISSING` / `PRICE_UNREADABLE`); nooit 0. Te veel decimalen: `PRICE_SCALE_EXCEEDED`. |
-| Omschrijving | Alleen aanwezig als de revisie het mapt (`descriptionField`); dan moet de kolom in de header staan. |
-| Valuta | Optioneel. Staat er een munt in het bestand (en is het muntveld in de revisie gemapt), dan gaat die voor; een ongeldige of lege munt verwerpt de regel. Zonder munt in het bestand geldt de vaste valuta van de koppeling (`defaultCurrency`), en anders `EUR`. Rijen van vóór deze regel zonder valuta blijven onbekend. |
+| Identiteit | Leverancier, groep en referentie (kolomnamen uit de versie: `supplierField`, `supplierGroupField`, `supplierReferenceField`). Een lege component verwerpt de regel (`IDENTITY_COMPONENT_EMPTY`). Twee regels met dezelfde identiteit: hele levering geblokkeerd (`DUPLICATE_IDENTITY_IN_DELIVERY`). |
+| Prijs | Kolom uit `basePriceField`. Komma of punt als decimaalteken (tenzij de versie er één verklaart; dan is het andere teken een fout). Leeg of onleesbaar: regel verworpen (`PRICE_MISSING` / `PRICE_UNREADABLE`); nooit 0. Te veel decimalen: `PRICE_SCALE_EXCEEDED`. |
+| Omschrijving | Alleen aanwezig als de versie het mapt (`descriptionField`); dan moet de kolom in de header staan. |
+| Valuta | Optioneel. Staat er een munt in het bestand (en is het muntveld in de versie gemapt), dan gaat die voor; een ongeldige of lege munt verwerpt de regel. Zonder munt in het bestand geldt de vaste valuta van de koppeling (`defaultCurrency`), en anders `EUR`. Rijen van vóór deze regel zonder valuta blijven onbekend. |
 | Extra kolommen | Alleen gelezen als een **mapping** ernaar verwijst. Een onbekende kolom achteraan is een waarschuwing (`HEADER_UNKNOWN_COLUMN`); niets gaat verloren of wordt stil gebruikt. |
 | Lege waarde versus `null` | Een lege cel is een lege tekst, geen `null`. Een verplicht veld dat leeg is, is een fout (`VALUE_MISSING`). Het woord `null` in een cel is gewoon tekst. |
 | Grootte | Maximaal `1GB` (`CATALOG_MAX_UPLOAD_SIZE`); de verwerking is synchroon, dus grote bestanden duren lang. |
@@ -74,14 +79,14 @@ passen bij die revisie.
 | --- | --- |
 | Gedeclareerde kolom ontbreekt | levering `BLOCKED`, `HEADER_FIELD_MISSING:<veld>` |
 | Dezelfde kolomnaam twee keer | `BLOCKED`, `HEADER_DUPLICATE_FIELD` |
-| Ander kolomaantal dan de revisie declareert | `BLOCKED`, `HEADER_COLUMN_COUNT_MISMATCH` |
+| Ander kolomaantal dan de versie declareert | `BLOCKED`, `HEADER_COLUMN_COUNT_MISMATCH` |
 | Bestand leeg / eindigt voor de headerregel | `BLOCKED`, `SOURCE_FILE_EMPTY` / `HEADER_LINE_MISSING` |
 | Identiteits-, prijs- of referentiekolom op verwachte positie is een andere kolom | `BLOCKED`, `HEADER_FIELD_SEMANTIC_CHANGE` |
 | Kolom staat op een andere positie dan verwacht | waarschuwing `HEADER_FIELD_SHIFTED`; gelezen op naam |
 | Header, geen enkele datalijn | `BLOCKED`, `SOURCE_NO_DATA_RECORDS` |
 
 Daarnaast blokkeert een overschreden drempel de hele levering (`CRITICAL_RECORD_THRESHOLD_EXCEEDED`, zie
-README 6.5). Welke drempels gelden staat op de revisie.
+README 6.5). Welke drempels gelden staat op de versie.
 
 ### Voorbeeld (uit `scripts/scenario/levering-1.csv`)
 
@@ -93,7 +98,7 @@ SCN;HAMER;S-6;Moker 2kg;abc;EUR;5411234600066
 
 Dit bestand heeft 7 datalijnen: 6 geldig, 1 afgewezen (regel 7, prijs `abc` gaf `PRICE_UNREADABLE`). Bij
 een **eerste levering** op een koppeling is het resultaat `INITIAL_LOAD`: de creaties wachten op
-goedkeuring. De revisie van dit scenario zet daarvoor de drempels op 10 en 25 procent (kleine bestanden).
+goedkeuring. De versie van dit scenario zet daarvoor de drempels op 10 en 25 procent (kleine bestanden).
 Meer voorbeeldbestanden: `docs/samples/01` t/m `05` (o.a. `04-met-fouten.csv`, `05-dubbele-identiteit.csv`).
 
 ## 4. Uploaden
@@ -143,8 +148,9 @@ Het scherm biedt een webformulier voor het uploaden van een CSV-bestand. Stappen
 2. **Scherm openen:** Browse naar `http://localhost:5173/upload`.
 3. **Taak kiezen:** Vervolgkeuzelijst met beschikbare taken. Alleen taken met trigger type `MANUAL` zijn kiesbaar;
    niet-manuele taken staan grijs met reden ("niet manueel" / "inactief"). Het scherm maakt **geen** taak aan —
-   dat gebeurt bij de inrichting van de koppeling (flow 1 en 1B van [`standaardflows.md`](standaardflows.md)).
-4. **Bestand kiezen:** Klik "Selecteer bestand" en kies uw CSV. De bestandsnaam moet max. 500 tekens zijn.
+   dat doet u bij de inrichting (**Inrichting → "Nieuwe leverancier en taak"** of "Taak toevoegen"; flow 1 van
+   [`standaardflows.md`](standaardflows.md)). Het scherm wijst u daarheen als er nog geen manuele taak is.
+4. **Bestand kiezen:** Veld "Bestand (CSV)"; klik op het invoerveld en kies uw CSV. De bestandsnaam moet max. 500 tekens zijn.
 5. **Referentie bepalen:** De `deliveryReference` wordt **automatisch afgeleid** van bestandsnaam en inhoud.
    De hash wordt berekend van de bestandsinhoud (deterministische SHA-256, eerste 12 hexadecimale tekens).
    Vorm: `<bestandsnaam>#<hash>`, zodat het geheel max. 190 tekens is. U kunt de referentie aanpassen;
@@ -180,7 +186,7 @@ teruggevonden, **niet** opnieuw gescreend.
 | --- | --- | --- |
 | "Taak niet gevonden" | `taskId` bestaat niet | taak opnieuw kiezen |
 | "Taak is niet manueel" | geselecteerde taak is niet `MANUAL` | een manuele taak kiezen |
-| "Geen actieve revisie" | de definitie van deze taak heeft geen actieve revisie | revisie activeren (beheerder/setup) |
+| "Geen actieve versie" | de beschrijving van het bestand van deze taak heeft geen actieve versie | de conceptversie activeren: Inrichting → "Controleren" (recht Beheren) |
 | "Referentie is al gebruikt voor een ander bestand" (HTTP 409) | dezelfde `deliveryReference` met ander bestand | nieuwe referentie kiezen |
 | "Bestand te groot" (HTTP 413) | bestand groter dan limiet (standaard 1 GB, `CATALOG_MAX_UPLOAD_SIZE`) | bestand splitsen of limiet verhogen |
 | "Onverwachte serverfout" (HTTP 500) | technische fout op de server | serverlog lezen; herhaal met dezelfde referentie (veilig) |
@@ -205,8 +211,11 @@ Een `SCREENED` batch kan op twee manieren verder, en nooit op allebei (zie secti
 
 Beide acties staan **niet** op het uploadscherm zelf, maar wel op het batchdetail waar u via de batchlink
 hierboven terechtkomt (**Beschikbaar** — `Frontend/src/features/batches/BatchActions.tsx`): een `SCREENED`
-batch toont daar de knoppen "Aanvaarden als nulmeting" en "Opnemen in bundel", elk met een verplichte reden
-en een typ-bevestiging. Alternatief: de API (flow 4 en 5 van [`standaardflows.md`](standaardflows.md)). Bij 409
+batch toont daar twee knoppen:
+- **"Aanvaarden als nulmeting":** verplichte reden (tekstveld) en typ-bevestiging (`NULMETING`).
+- **"Opnemen in bundel":** selecteer een bundel uit de dropdown (alleen bundels in status `ASSEMBLING`; placeholder "— kies een bundel —") en typ de bundelreferentie ter bevestiging; geen redenveld.
+
+Alternatief: de API (flow 4 en 5 van [`standaardflows.md`](standaardflows.md)). Bij 409
 `BATCH_IN_PUBLICATION_BUNDLE` of `BATCH_NOT_ACCEPTABLE` legt het scherm uit waarom de actie niet kan.
 
 ### 4.5 Tweede ontvangstweg: bestand op de server inlezen
@@ -328,8 +337,8 @@ levering vóór `accept-baseline` is opnieuw een `INITIAL_LOAD`.
 | --- | --- | --- |
 | 404 `TASK_NOT_FOUND` | `taskId` bestaat niet | opnieuw opzoeken met `GET /tasks` |
 | 409 `TASK_NOT_MANUAL` | taak heeft niet `triggerType=MANUAL` | een MANUAL-taak gebruiken |
-| 409 `NO_ACTIVE_REVISION` | definitie heeft geen actieve revisie | revisie activeren (flow 1) |
-| 409 `CONFIG_PRICE_FIELD_MISSING` / `CONFIG_REQUIRED_BOOKMARK_MISSING` | revisie zonder prijsveld, of verplichte LINK-bookmark ontbreekt; er is niets gearchiveerd | revisie of bookmarkwaarde corrigeren |
+| 409 `NO_ACTIVE_REVISION` | de beschrijving van het bestand heeft geen actieve versie | versie activeren (flow 1, scherm Controleren) |
+| 409 `CONFIG_PRICE_FIELD_MISSING` / `CONFIG_REQUIRED_BOOKMARK_MISSING` | versie zonder prijsveld, of een verplicht invulpunt van de koppeling is niet ingevuld; er is niets gearchiveerd | versie of invulpuntwaarde corrigeren (de checklist op Controleren toont het) |
 | 409 `TASK_RUN_IN_PROGRESS` | een eerdere uitvoering op deze taak is niet afgerond | wachten; blijft het staan, batchstatus onderzoeken (README 7 punt 15) |
 | 409 `DELIVERY_REFERENCE_REUSED_WITH_DIFFERENT_CONTENT` | referentie eerder gebruikt met ander bestand | nieuwe referentie |
 | 400 (zonder `code`) | ontbrekend of te lang veld, negatieve verwachting | parameters controleren |
@@ -338,10 +347,10 @@ levering vóór `accept-baseline` is opnieuw een `INITIAL_LOAD`.
 | 403 `PERMISSION_DENIED` | u heeft het recht `catalogImport.manage` niet (upload vraagt Beheren) | de beheerder om het recht vragen |
 | 503 `PERMISSION_SOURCE_UNAVAILABLE` | de rechtenbron is onbereikbaar | later opnieuw proberen |
 | 403 `CSRF_TOKEN_INVALID` | schrijfaanroep zonder header `X-XSRF-TOKEN` (cookie `XSRF-TOKEN`) | via het uploadscherm werken; de UI zet de header zelf |
-| 201 met `status=BLOCKED` en `HEADER_*` | header past niet bij de revisie | bestand of revisie aanpassen; nieuwe referentie bij ander bestand |
+| 201 met `status=BLOCKED` en `HEADER_*` | header past niet bij de versie | bestand aanpassen of een nieuwe versie maken; nieuwe referentie bij ander bestand |
 | 201 met `status=BLOCKED`, `RECORD_COUNT_MISMATCH` / `BYTE_SIZE_MISMATCH` | opgegeven verwachting klopt niet met het bestand | verwachting of bestand controleren. Het is een screeningblokkade (201 met `blockedCode`), geen HTTP-fout; HTTP-status **nog te verifiëren** |
 | 201 met `status=FAILED`, `blockedCode=SCREENING_FAILED` | technische fout tijdens screening; levering is wél aangemaakt en gearchiveerd | serverlog lezen; **niet** onder een nieuwe referentie herupload maken zonder eerst de oorzaak te kennen |
 | 413 of 500 zonder body | bestand groter dan de grens (1 GB) | bestand splitsen of `CATALOG_MAX_UPLOAD_SIZE` verhogen; exacte statuscode bij te groot bestand **nog te verifiëren** |
 | Verbinding valt weg tijdens screening | de synchrone verwerking kan doorlopen op de server | herhaal met **dezelfde** referentie en hetzelfde bestand (200 = bestaande uitkomst) |
 | Veel regels afgewezen (`PRICE_UNREADABLE`) | decimaalnotatie of tekst in de prijskolom | `/issues` bekijken, bestand corrigeren, nieuwe referentie |
-| Batch `BLOCKED` op `CRITICAL_RECORD_THRESHOLD_EXCEEDED` | te veel fouten op kritieke kolommen t.o.v. de drempel | bestand corrigeren of drempel op nieuwe revisie bewust verhogen |
+| Batch `BLOCKED` op `CRITICAL_RECORD_THRESHOLD_EXCEEDED` | te veel fouten op kritieke kolommen t.o.v. de drempel | bestand corrigeren of drempel op een nieuwe versie bewust verhogen |

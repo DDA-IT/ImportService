@@ -7,6 +7,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -117,6 +119,28 @@ public final class CsvRecordStreamer {
 
         /** Een probleem op één regel (rijfout of waarschuwing). */
         void issue(LineIssue issue);
+
+        /**
+         * De headerregel zoals ze gelezen is, <b>vóór</b> enige controle erop (kolomaantal, dubbele
+         * naam, ontbrekend veld). Additief en standaard zonder effect (NT-9, contract
+         * {@code docs/design/proefinlezing-design.md} par. 7): de proefinlezing heeft de kolomnamen nodig
+         * om álle ontbrekende verplichte kolommen te tonen, ook wanneer het lezen daarna blokkeert. Wordt
+         * niet aangeroepen voor een bestand zonder header of een headerregel die niet te parsen is.
+         *
+         * @param lineNumber fysiek, 1-gebaseerd regelnummer van de header
+         * @param columns    de kolomnamen zoals ze in het bestand staan (niet getrimd)
+         */
+        default void header(long lineNumber, List<String> columns) {
+        }
+
+        /**
+         * Elke fysieke regel zoals ze gedecodeerd is (na het verwijderen van een BOM op regel 1), vóór ze
+         * verwerkt wordt. Additief en standaard zonder effect; enkel de proefinlezing gebruikt dit om de
+         * regels met een vervangteken (U+FFFD, een tekensethint) te tellen. De tekst mag niet bewaard of
+         * gelogd worden.
+         */
+        default void physicalLine(long lineNumber, String line) {
+        }
     }
 
     /**
@@ -157,6 +181,7 @@ public final class CsvRecordStreamer {
                 if (state.physicalLineCount == 1) {
                     line = state.stripByteOrderMark(line);
                 }
+                sink.physicalLine(state.physicalLineCount, line);
                 state.consume(line);
             }
         } catch (IOException failure) {
@@ -237,6 +262,9 @@ public final class CsvRecordStreamer {
                 throw new ScreeningBlockedException(unreadable.getCode(),
                         "Header line " + physicalLineCount + " cannot be parsed: " + unreadable.getMessage());
             }
+            // Additieve hook (NT-9): vóór elke controle, zodat een lezer die alle kolommen wil tonen ze ook
+            // krijgt wanneer een van de controles hieronder blokkeert. De screening zelf doet hier niets.
+            sink.header(physicalLineCount, Collections.unmodifiableList(Arrays.asList(header.clone())));
             if (config.expectedColumnCount() != null && header.length != config.expectedColumnCount()) {
                 throw new ScreeningBlockedException(CODE_HEADER_COLUMN_COUNT_MISMATCH, null,
                         String.valueOf(header.length), String.valueOf(config.expectedColumnCount()),

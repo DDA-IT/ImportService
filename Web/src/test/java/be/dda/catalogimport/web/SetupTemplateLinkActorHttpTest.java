@@ -150,6 +150,9 @@ class SetupTemplateLinkActorHttpTest {
         long withName = id(postAs(ADMIN, revisionJson("\"createdBy\":\"" + ADMIN.toUpperCase(Locale.ROOT) + "\""),
                 SETUP + "/definitions/{id}/revisions", definitionId)
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        // NT-13: hoogstens een DRAFT per definitie; activeer de eerste voor de tweede revisie wordt aangemaakt.
+        mockMvc.perform(post(SETUP + "/revisions/{id}/activate", withName).with(as(ADMIN)))
+                .andExpect(status().isOk());
         long withoutName = id(postAs(ADMIN, revisionJson(null),
                 SETUP + "/definitions/{id}/revisions", definitionId)
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());

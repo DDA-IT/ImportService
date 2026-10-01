@@ -4,7 +4,6 @@ import be.dda.catalogimport.service.ActorIdentity;
 import be.dda.catalogimport.service.LinkBookmarkValueService;
 import be.dda.catalogimport.service.LinkBookmarkValueService.LinkBookmarkValueRow;
 import be.dda.catalogimport.service.LinkBookmarkValueService.LinkBookmarkValues;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -16,14 +15,13 @@ import org.springframework.web.bind.annotation.RestController;
  * De twee bookmarkwaarde-endpoints van een bestaande importkoppeling
  * (sjabloon-materialisatie-design.md §5, bouwstap 5f).
  *
- * <h2>WAARSCHUWING — dit endpoint staat standaard uit en mag nooit in productie aan</h2>
- * Deze controller bestaat alleen wanneer {@code catalogimport.setup-api.enabled=true} staat, exact
- * dezelfde vlag als {@link CatalogImportSetupController} (beslissingslog 23/09, vraag Q1). De default
- * is {@code false} en {@code application.yml} zet de vlag bewust niet; zonder de vlag antwoordt elk
- * pad hieronder met 404. Sinds Fase 5-AUTH (5A-1) vereist elk pad bovendien een login, maar er is nog
- * geen rechtencontrole per actie (5-PERM), en een LINK-bookmarkwaarde bepaalt mee wat er gefilterd,
- * gemapt en uiteindelijk gepubliceerd wordt. Zet de vlag dus uitsluitend aan op een ontwikkelmachine
- * met wegwerpgegevens.
+ * <h2>Rechten — niet (meer) achter de setup-vlag</h2>
+ * Sinds NT-3 (beslissingslog 2026-09-30 "Nieuwe leverancier + taak (NT-spoor)", V2 = a) bestaat deze
+ * controller <b>altijd</b>, ongeacht {@code catalogimport.setup-api.enabled}: bookmarkwaarden van een
+ * koppeling invullen hoort bij het inrichten van een nieuwe leverancier. Omdat een LINK-bookmarkwaarde mee
+ * bepaalt wat er gefilterd, gemapt en uiteindelijk gepubliceerd wordt, is de bescherming het recht per
+ * actie: lezen vraagt {@code READ}, wijzigen {@code MANAGE} (zonder recht 403 {@code PERMISSION_DENIED},
+ * vóór elke andere controle). Paden, bodies en statuscodes zijn ongewijzigd.
  *
  * <h2>Wie tekent (5A-6)</h2>
  * De PUT roept {@link CurrentActor#signer} aan <b>vóór</b> de service: 400
@@ -48,7 +46,6 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/catalog-import/links")
-@ConditionalOnProperty(prefix = "catalogimport.setup-api", name = "enabled", havingValue = "true")
 public class CatalogImportLinkController {
 
     /**

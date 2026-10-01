@@ -1,5 +1,5 @@
 /**
- * S1-F3 — de koppeling-detailweergave van de wizard: de LINK-bookmarkwaarden van één gematerialiseerde
+ * S1-F3 — de koppeling-detailweergave van de wizard (NT-11d: in de tekst "invulpunten"): de LINK-bookmarkwaarden van één gematerialiseerde
  * koppeling lezen (`GET /links/{linkId}/bookmark-values`) en er één wijzigen
  * (`PUT /links/{linkId}/bookmark-values/{name}`). Hoort bewust hier in `features/templates/` en niet op
  * scherm 1a (`docs/decisions.md` 2026-09-27 "scherm 1a/1b", S1-F3-alinea).
@@ -26,10 +26,20 @@ import { useAction } from '../../hooks/useAction.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { Field } from '../../components/Field.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
+import { INVULPUNT, INVULPUNT_CAP, INVULPUNTEN, INVULPUNTEN_CAP } from '../../terms/wording.ts';
+import { FlagOffNotice } from '../setup/FlagOffNotice.tsx';
 import { isSetupApiDisabledError, SETUP_API_DISABLED_MESSAGE } from './setupApiFlag.ts';
 import styles from './LinkBookmarkValuesSection.module.css';
 
-const ORPHAN_REASON = 'wees: niet (meer) gedeclareerd op de actieve revisie, dus niet bewerkbaar';
+/** NT-11c: gewoon Nederlands i.p.v. "wees"; de waarde blijft enkel bewaard als historiek en wordt nooit toegepast. */
+const ORPHAN_REASON =
+  `niet meer in gebruik: dit ${INVULPUNT} staat niet (meer) gedeclareerd op de actieve versie, dus niet aan te passen`;
+
+/** De naam die de gebruiker ziet: het label van het invulpunt; de technische naam staat enkel in een tooltip. */
+function displayName(row: { label: string | null }): string {
+  return row.label ?? `${INVULPUNT_CAP} zonder declaratie`;
+}
 
 /** Wat er vandaag bewaard is: niets, uitdrukkelijk leeg, of een waarde — nooit op één toestand geveegd. */
 function currentValueLabel(row: LinkBookmarkValueRow): string {
@@ -104,9 +114,9 @@ function BookmarkValueEditor({
   return (
     <div className={styles.editor} data-testid={`editor-${row.bookmarkName}`}>
       <Field
-        label={`Nieuwe waarde voor ${row.bookmarkName}`}
+        label={`Nieuwe waarde voor ${displayName(row)}`}
         htmlFor={inputId}
-        hint="Alleen deze ene waarde wordt verstuurd; de andere bookmarks blijven ongewijzigd."
+        hint={`Alleen deze ene waarde wordt verstuurd; de andere ${INVULPUNTEN} blijven ongewijzigd.`}
       >
         <input
           id={inputId}
@@ -183,13 +193,16 @@ export function LinkBookmarkValuesSection({ linkId, linkCode }: LinkBookmarkValu
 
   return (
     <section className={styles.section} data-testid="link-bookmark-values">
-      <h3 className={styles.title}>Bookmarkwaarden van koppeling {query.data?.importLinkCode ?? linkCode ?? linkId}</h3>
+      <h3 className={styles.title}>{INVULPUNTEN_CAP} van koppeling {query.data?.importLinkCode ?? linkCode ?? linkId}</h3>
+
+      <WhatIsThis>
+        Hier staan de waarden die per koppeling ingevuld worden. Een verplichte waarde die nog leeg is, houdt nieuwe
+        leveringen tegen. Zolang er een levering loopt op deze koppeling, kunt u geen waarde wijzigen.
+      </WhatIsThis>
 
       {query.error !== null &&
         (isSetupApiDisabledError(query.error) ? (
-          <p role="alert" className={styles.flagOff}>
-            {SETUP_API_DISABLED_MESSAGE}
-          </p>
+          <FlagOffNotice message={SETUP_API_DISABLED_MESSAGE} className={styles.flagOff} />
         ) : (
           <ErrorBanner error={query.error} />
         ))}
@@ -204,19 +217,24 @@ export function LinkBookmarkValuesSection({ linkId, linkCode }: LinkBookmarkValu
           )}
           {query.data.missingRequiredNames.length > 0 && (
             <p className={styles.missing} role="alert" data-testid="link-missing-required">
-              Nog niet ingevulde verplichte bookmarks: {query.data.missingRequiredNames.join(', ')}. Een
-              nieuwe levering wordt geweigerd zolang deze lijst niet leeg is.
+              Nog niet ingevulde verplichte {INVULPUNTEN}:{' '}
+              {query.data.missingRequiredNames
+                .map((name) => query.data?.values.find((row) => row.bookmarkName === name)?.label ?? name)
+                .join(', ')}
+              . Een nieuwe levering wordt geweigerd zolang deze lijst niet leeg is.
             </p>
           )}
           {query.data.values.length === 0 ? (
-            <p className={styles.empty}>Deze koppeling heeft nog geen LINK-bookmarkwaarden.</p>
+            <p className={styles.empty}>Deze koppeling heeft nog geen {INVULPUNTEN} die per koppeling ingevuld worden.</p>
           ) : (
             <ul className={styles.list}>
               {query.data.values.map((row) => (
                 <li key={row.bookmarkName} className={styles.listItem}>
                   <div className={styles.rowHeader}>
-                    <span className={styles.code}>{row.bookmarkName}</span>
-                    {row.label !== null && <span>{row.label}</span>}
+                    {/* De technische naam staat in de tooltip (V7), niet als zichtbare tekst. */}
+                    <span className={styles.code} title={`Technische naam: ${row.bookmarkName}`}>
+                      {displayName(row)}
+                    </span>
                     <span>{row.required ? 'verplicht' : 'optioneel'}</span>
                     <span className={styles.value}>{currentValueLabel(row)}</span>
                     {!row.declared && <span className={styles.orphan}>{ORPHAN_REASON}</span>}

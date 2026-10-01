@@ -27,11 +27,12 @@ test.describe.serial('Werkvoorraad (Scherm 0)', () => {
 
     const tiles = page.getByTestId('summary-tiles');
     await expect(tiles.getByText('Totaal', { exact: true })).toBeVisible();
-    await expect(tiles.getByText('SCREENED', { exact: true })).toBeVisible();
+    // NT-11a: het Nederlandse woord voor SCREENED; de code zit enkel nog in de tooltip.
+    await expect(tiles.getByText('Gecontroleerd', { exact: true })).toBeVisible();
 
     const summary = await batchSummary(api);
     const hasNull = summary.byValidationResult.some((entry) => entry.validationResult === null && entry.count > 0);
-    const notEstablishedTile = tiles.getByText('Niet vastgesteld', { exact: true });
+    const notEstablishedTile = tiles.getByText('Nog niet bepaald', { exact: true });
     if (hasNull) {
       await expect(notEstablishedTile).toBeVisible();
     } else {
@@ -93,8 +94,8 @@ test.describe.serial('Werkvoorraad (Scherm 0)', () => {
     await page.getByLabel('Status').selectOption('SCREENED');
     const myRow = page.getByRole('row').filter({ hasText: chain.linkCode });
     await expect(myRow).toHaveCount(1);
-    await expect(myRow.getByText('SCREENED', { exact: true })).toBeVisible();
+    await expect(myRow.getByText('Gecontroleerd', { exact: true })).toBeVisible();
     // Er wachten creaties op goedkeuring (INITIAL_LOAD) en het eindoordeel is vastgesteld.
-    await expect(myRow.getByText('Niet vastgesteld')).toHaveCount(batch.validationResult === null ? 1 : 0);
+    await expect(myRow.getByText('Nog niet bepaald')).toHaveCount(batch.validationResult === null ? 1 : 0);
   });
 });

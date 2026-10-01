@@ -5,7 +5,6 @@ import be.dda.catalogimport.dao.CatalogImportTaskRepository;
 import be.dda.catalogimport.dao.DeliveryFileRepository;
 import be.dda.catalogimport.dao.DeliveryRepository;
 import be.dda.catalogimport.dao.ImportBatchRepository;
-import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.TaskRunRepository;
 import be.dda.catalogimport.domain.CatalogImportTask;
 import be.dda.catalogimport.domain.Delivery;
@@ -13,14 +12,15 @@ import be.dda.catalogimport.domain.DeliveryFile;
 import be.dda.catalogimport.domain.DeliverySourceKind;
 import be.dda.catalogimport.domain.ImportBatch;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
-import be.dda.catalogimport.domain.RevisionStatus;
 import be.dda.catalogimport.domain.TaskRun;
 import be.dda.catalogimport.domain.TaskRunStatus;
+import be.dda.catalogimport.domain.TaskRunTriggerSource;
 import be.dda.catalogimport.domain.TaskTriggerType;
 import be.dda.catalogimport.service.DeliveryArchiveStore.ArchivedObject;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -49,10 +49,22 @@ import org.springframework.transaction.support.TransactionTemplate;
  * meekomt en permanent op de {@link Delivery} bewaard wordt; de bestaande overloads zonder die parameter
  * blijven bestaan en betekenen {@code UPLOAD}.
  * <p>
+ * <b>Racevenster A10 (bouwstap K-4b, LC-2 open punt 2).</b> De registratietransactie (3) neemt als
+ * <b>eerste</b> lezing hetzelfde rijslot op de taak als de taakkoppeling ({@code TaskDeliveryConfigurationService}
+ * vergrendelt alle taken van de koppeling). Koppelen en registreren sluiten elkaar daardoor uit: komt een koppeling
+ * vlak na de voorcontrole (1) maar vóór de registratie, dan wacht de registratie op haar commit en ziet daarna de
+ * Leveringsconfiguratie ({@code TASK_HAS_DELIVERY_CONFIGURATION}, het archiefobject wordt opgeruimd); komt de
+ * registratie eerst, dan ziet de koppeling na het slot de lopende run ({@code TASK_RUN_IN_PROGRESS}). Er kan dus nooit
+ * een upload- of servermaprun ontstaan op een taak met een Leveringsconfiguratie.
+ * <p>
+ * <b>Intake in een bestaande run (K-4b).</b> Een ophaalrun maakt haar {@link TaskRun} al vóór het verbinden (een
+ * aanmeldfout blijft zo zichtbaar zonder levering). {@link #registerInRun} registreert levering, bestand en batch in
+ * die bestaande run, met dezelfde revisiecontroles en dezelfde batchopbouw als de upload.
+ * <p>
  * <b>Grens van deze service.</b> De intake registreert en archiveert alleen; de batch komt op
- * {@code RECEIVED} te staan en de {@code TaskRun} op {@code RUNNING}. De aanroeper (de upload-POST)
- * start daarna de screening, die de batch naar haar eindstatus brengt en de {@code TaskRun} afsluit.
- * Zolang die run open is, blokkeert de concurrency-constraint een volgende upload op dezelfde taak;
+ * {@code RECEIVED} te staan en de {@code TaskRun} op {@code RUNNING}. De aanroeper start daarna de screening
+ * ({@link DeliveryReceptionService#screenIfCreated}), die de batch naar haar eindstatus brengt en de {@code TaskRun}
+ * afsluit. Zolang die run open is, blokkeert de concurrency-constraint een volgende upload op dezelfde taak;
  * dat is het beoogde gedrag. {@code actual_record_count} blijft {@code null} tot de screening geteld
  * heeft.
  */
@@ -60,8 +72,15 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class DeliveryIntakeService {
 
     static final String KEY_PREFIX = "manual:";
+    /** 409: upload/servermap op een taak met een Leveringsconfiguratie (A10, LC-2). */
+    public static final String CODE_TASK_HAS_DELIVERY_CONFIGURATION = "TASK_HAS_DELIVERY_CONFIGURATION";
+    /** 409: de run waarin geregistreerd moet worden, loopt niet meer ({@link #registerInRun}). */
+    public static final String CODE_TASK_RUN_NOT_RUNNING = "TASK_RUN_NOT_RUNNING";
+    /** 404: de run waarin geregistreerd moet worden, bestaat niet ({@link #registerInRun}). */
+    public static final String CODE_TASK_RUN_NOT_FOUND = "TASK_RUN_NOT_FOUND";
     /** {@code delivery.idempotency_key} is varchar(200). */
-    static final int MAX_DELIVERY_REFERENCE_LENGTH = 200 - KEY_PREFIX.length();
+    static final int MAX_IDEMPOTENCY_KEY_LENGTH = 200;
+    static final int MAX_DELIVERY_REFERENCE_LENGTH = MAX_IDEMPOTENCY_KEY_LENGTH - KEY_PREFIX.length();
     /** {@code task_run.triggered_by} en {@code import_batch.created_by} zijn varchar(100). */
     static final int MAX_UPLOADED_BY_LENGTH = 100;
     /** {@code delivery_file.file_name} is varchar(500). */
@@ -77,32 +96,35 @@ public class DeliveryIntakeService {
     private final DeliveryArchiveStore archive;
     private final DeliveryQueryService queries;
     private final CatalogImportTaskRepository tasks;
-    private final ImportDefinitionRevisionRepository revisions;
     private final TaskRunRepository runs;
     private final DeliveryRepository deliveries;
     private final DeliveryFileRepository deliveryFiles;
     private final ImportBatchRepository batches;
-    private final LinkBookmarkValueService linkBookmarkValues;
+    private final ChainConfigurationChecks checks;
     private final BatchBookmarkHashDao bookmarkHashes;
     private final TransactionTemplate transaction;
     private final TransactionTemplate readOnlyTransaction;
 
+    /**
+     * Sinds NT-8 komen de revisie-, prijsveld-, bookmark- en taakcontroles uit {@link ChainConfigurationChecks}; de
+     * afzonderlijke {@code ImportDefinitionRevisionRepository} en {@code LinkBookmarkValueService} zijn daarom geen
+     * parameter meer (enkel Spring bouwt deze service).
+     */
     public DeliveryIntakeService(DeliveryArchiveStore archive, DeliveryQueryService queries,
-                                 CatalogImportTaskRepository tasks, ImportDefinitionRevisionRepository revisions,
+                                 CatalogImportTaskRepository tasks,
                                  TaskRunRepository runs, DeliveryRepository deliveries,
                                  DeliveryFileRepository deliveryFiles, ImportBatchRepository batches,
-                                 LinkBookmarkValueService linkBookmarkValues,
+                                 ChainConfigurationChecks checks,
                                  BatchBookmarkHashDao bookmarkHashes,
                                  PlatformTransactionManager transactionManager) {
         this.archive = archive;
         this.queries = queries;
         this.tasks = tasks;
-        this.revisions = revisions;
         this.runs = runs;
         this.deliveries = deliveries;
         this.deliveryFiles = deliveryFiles;
         this.batches = batches;
-        this.linkBookmarkValues = linkBookmarkValues;
+        this.checks = checks;
         this.bookmarkHashes = bookmarkHashes;
         this.transaction = new TransactionTemplate(transactionManager);
         this.readOnlyTransaction = new TransactionTemplate(transactionManager);
@@ -114,8 +136,8 @@ public class DeliveryIntakeService {
      * de aanroeper.
      *
      * @throws NotFoundException  onbekende taak ({@code TASK_NOT_FOUND})
-     * @throws ConflictException  {@code TASK_NOT_MANUAL}, {@code NO_ACTIVE_REVISION},
-     *                            {@code CONFIG_PRICE_FIELD_MISSING},
+     * @throws ConflictException  {@code TASK_NOT_MANUAL}, {@code TASK_HAS_DELIVERY_CONFIGURATION} (A10),
+     *                            {@code NO_ACTIVE_REVISION}, {@code CONFIG_PRICE_FIELD_MISSING},
      *                            {@code CONFIG_REQUIRED_BOOKMARK_MISSING}, {@code TASK_RUN_IN_PROGRESS},
      *                            {@code DELIVERY_REFERENCE_REUSED_WITH_DIFFERENT_CONTENT}
      * @throws IllegalArgumentException ongeldige aanvraagvelden
@@ -145,7 +167,8 @@ public class DeliveryIntakeService {
      * {@link DeliverySourceKind#LOCAL_DIRECTORY} voor een bestand uit de beheerde servermap. Puur additief:
      * de ontvangst zelf, de idempotentie en de archivering zijn voor beide wegen identiek — de weg wordt
      * enkel permanent vastgelegd op de {@link Delivery}, zodat later navertelbaar blijft waar een levering
-     * vandaan kwam. Een {@code null} betekent {@code UPLOAD}, nooit "onbekend".
+     * vandaan kwam. Een {@code null} betekent {@code UPLOAD}, nooit "onbekend". Sinds K-4b krijgt de nieuwe
+     * {@link TaskRun} ook {@code trigger_source} ({@code UPLOAD} of {@code LOCAL_DIRECTORY}).
      */
     public IntakeResult intake(long taskId, String deliveryReference, ActorIdentity actor,
                                Long expectedRecordCount, Long expectedByteSize,
@@ -183,9 +206,58 @@ public class DeliveryIntakeService {
         }
     }
 
+    /**
+     * Registreert een reeds gearchiveerd bestand als levering in een <b>bestaande</b>, lopende run (bouwstap K-4b:
+     * de ophaalrun maakt haar run vóór het verbinden). Neemt deel aan een lopende transactie als die er is (de
+     * ophaalrun legt haar waarnemingen en uitkomst in dezelfde transactie vast), anders een eigen korte transactie.
+     * <p>
+     * Volgorde: taak van de run → <b>rijslot op de taak</b> (zelfde slot als koppeling en upload) → run moet
+     * {@code RUNNING} zijn → bestaat er al een levering met deze sleutel, dan {@code created = false} en niets nieuws →
+     * dezelfde revisiecontroles als de upload ({@link #requireIntakeConfiguration}) → levering, bestand en batch, met
+     * de run als {@code task_run_id}. Geen {@code TASK_NOT_MANUAL}- en geen A10-controle: die gelden voor de
+     * manuele ontvangstwegen, niet voor de run die de taak zelf uitvoert. Het archiefobject wordt hier nooit
+     * opgeruimd; dat blijft bij de aanroeper, die het ook gearchiveerd heeft.
+     *
+     * @throws NotFoundException  {@link #CODE_TASK_RUN_NOT_FOUND}, {@code TASK_NOT_FOUND}
+     * @throws ConflictException  {@link #CODE_TASK_RUN_NOT_RUNNING}, {@code NO_ACTIVE_REVISION},
+     *                            {@code CONFIG_PRICE_FIELD_MISSING}, {@code CONFIG_REQUIRED_BOOKMARK_MISSING}
+     * @throws IllegalArgumentException ongeldige velden
+     */
+    public IntakeResult registerInRun(long taskRunId, String idempotencyKey, ActorIdentity actor,
+                                      String originalFileName, DeliverySourceKind sourceKind,
+                                      ArchivedObject archived) {
+        String key = requireText(idempotencyKey, "idempotencyKey", MAX_IDEMPOTENCY_KEY_LENGTH);
+        String by = requireText(actor == null ? null : actor.username(), "actor", MAX_UPLOADED_BY_LENGTH);
+        String fileName = requireText(originalFileName, "file name", MAX_FILE_NAME_LENGTH);
+        Objects.requireNonNull(archived, "archived");
+        return transaction.execute(status -> {
+            long taskId = runs.findTaskIdByRunId(taskRunId).orElseThrow(() -> new NotFoundException(
+                    CODE_TASK_RUN_NOT_FOUND, "Task run " + taskRunId + " not found"));
+            CatalogImportTask task = tasks.findByIdForUpdate(taskId).orElseThrow(() -> new NotFoundException(
+                    "TASK_NOT_FOUND", "Task " + taskId + " not found"));
+            TaskRun run = runs.findById(taskRunId).orElseThrow(() -> new NotFoundException(CODE_TASK_RUN_NOT_FOUND,
+                    "Task run " + taskRunId + " not found"));
+            if (run.getStatus() != TaskRunStatus.RUNNING) {
+                throw new ConflictException(CODE_TASK_RUN_NOT_RUNNING, "Task run " + taskRunId
+                        + " is no longer running (" + run.getStatus() + "); nothing was registered");
+            }
+            Delivery existing = deliveries.findByTaskIdAndIdempotencyKey(taskId, key).orElse(null);
+            if (existing != null) {
+                return new IntakeResult(false, queries.getDelivery(existing.getId()));
+            }
+            ImportDefinitionRevision revision = requireIntakeConfiguration(task);
+            Delivery delivery = createDelivery(task, run, key, sourceKind, null, null, fileName, archived,
+                    revision, by, actor.subject(), Instant.now());
+            return new IntakeResult(true, queries.getDelivery(delivery.getId()));
+        });
+    }
+
     private IntakeResult register(long taskId, String idempotencyKey, String uploader, String uploaderSubject,
                                   Long expectedRecordCount, Long expectedByteSize,
                                   String fileName, DeliverySourceKind sourceKind, ArchivedObject archived) {
+        // Racevenster A10 (K-4b): eerst het rijslot van de taakkoppeling, dan pas lezen (zie klassedocumentatie).
+        // Een onbekende taak geeft hieronder dezelfde 404 als vroeger.
+        tasks.findByIdForUpdate(taskId);
         Resolved resolved = resolve(taskId, idempotencyKey);
 
         if (resolved.existing() != null) {
@@ -206,6 +278,7 @@ public class DeliveryIntakeService {
 
         TaskRun run = new TaskRun(task, now, uploader);
         run.setStatus(TaskRunStatus.RUNNING);
+        run.setTriggerSource(TaskRunTriggerSource.forIntake(sourceKind));
         try {
             runs.saveAndFlush(run);
         } catch (DataIntegrityViolationException concurrentRun) {
@@ -213,7 +286,17 @@ public class DeliveryIntakeService {
             throw inProgress(task);
         }
 
-        Delivery delivery = new Delivery(task, idempotencyKey, now);
+        Delivery delivery = createDelivery(task, run, idempotencyKey, sourceKind, expectedRecordCount,
+                expectedByteSize, fileName, archived, resolved.revision(), uploader, uploaderSubject, now);
+        return new IntakeResult(true, queries.getDelivery(delivery.getId()));
+    }
+
+    /** Levering, bestand en batch in de gegeven run; gedeeld door de upload en de intake in een bestaande run. */
+    private Delivery createDelivery(CatalogImportTask task, TaskRun run, String idempotencyKey,
+                                    DeliverySourceKind sourceKind, Long expectedRecordCount, Long expectedByteSize,
+                                    String fileName, ArchivedObject archived, ImportDefinitionRevision revision,
+                                    String createdBy, String createdBySubject, Instant receivedAt) {
+        Delivery delivery = new Delivery(task, idempotencyKey, receivedAt);
         delivery.setTaskRun(run);
         delivery.setSourceKind(sourceKind);
         delivery.setExpectedFileCount(1);
@@ -228,13 +311,12 @@ public class DeliveryIntakeService {
         deliveryFiles.saveAndFlush(new DeliveryFile(delivery, 1, fileName, archived.archiveReference(),
                 archived.sha256Hex(), archived.byteSize()));
 
-        ImportBatch batch = new ImportBatch(delivery, task.getImportLink(), resolved.revision(), 1, uploader);
+        ImportBatch batch = new ImportBatch(delivery, task.getImportLink(), revision, 1, createdBy);
         batch.setTaskRun(run);
-        batch.setCreatedBySubject(uploaderSubject);
+        batch.setCreatedBySubject(createdBySubject);
         batches.saveAndFlush(batch);
         recordBookmarkValuesHash(batch);
-
-        return new IntakeResult(true, queries.getDelivery(delivery.getId()));
+        return delivery;
     }
 
     /**
@@ -263,41 +345,38 @@ public class DeliveryIntakeService {
     private Resolved resolve(long taskId, String idempotencyKey) {
         CatalogImportTask task = tasks.findById(taskId)
                 .orElseThrow(() -> new NotFoundException("TASK_NOT_FOUND", "Task " + taskId + " not found"));
-        if (task.getTriggerType() != TaskTriggerType.MANUAL) {
-            throw new ConflictException("TASK_NOT_MANUAL",
-                    "Task " + taskId + " does not accept manual uploads (trigger type "
-                            + task.getTriggerType() + ")");
-        }
+        // TASK_NOT_MANUAL, dan A10 (beslissingslog 2026-09-29, LC-2): een taak met een Leveringsconfiguratie haalt zelf
+        // op; upload en servermap (beide via deze intake) worden geweigerd, ook als retry, vóór er iets gearchiveerd
+        // wordt. Taken zonder Leveringsconfiguratie (het bestaande gedrag) raken deze regel nooit. Sinds NT-8 één
+        // gedeelde implementatie met de gereedheidscontrole; de eerste bevinding wordt geworpen, zoals vroeger.
+        ChainConfigurationChecks.throwFirst(checks.manualIntakeProblems(task));
         Delivery existing = deliveries.findByTaskIdAndIdempotencyKey(taskId, idempotencyKey).orElse(null);
         if (existing != null) {
             return new Resolved(task, null, existing);
         }
-        ImportDefinitionRevision revision = revisions
-                .findByImportDefinitionIdAndStatus(task.getImportLink().getImportDefinition().getId(),
-                        RevisionStatus.ACTIVE)
-                .orElseThrow(() -> new ConflictException("NO_ACTIVE_REVISION",
-                        "Task " + taskId + " has no active import definition revision"));
-        String priceField = revision.getRecordBasePriceField();
-        if (priceField == null || priceField.isBlank()) {
-            throw new ConflictException("CONFIG_PRICE_FIELD_MISSING",
-                    "Active revision " + revision.getRevisionNumber() + " has no base price field configured");
-        }
-        // Blokkeerpunt verplichte LINK-bookmarks (beslissingslog 23/09 keuze 6, vraag Q4, ontwerp §7):
-        // dezelfde vorm, plaats en foutfamilie als de prijsveldcontrole hierboven. Bewust hier en niet
-        // later: de upload wordt geweigerd vóór er iets gearchiveerd of geregistreerd is, en de batch
-        // wordt niet op BLOCKED gezet - de serverstand is onvolledig, niet de levering.
-        List<String> missingBookmarks = linkBookmarkValues
-                .missingRequiredValues(task.getImportLink().getId(), revision.getId());
-        if (!missingBookmarks.isEmpty()) {
-            throw new ConflictException("CONFIG_REQUIRED_BOOKMARK_MISSING",
-                    "Import link " + task.getImportLink().getId() + " has no value for required LINK bookmark(s) "
-                            + missingBookmarks + " declared in active revision "
-                            + revision.getRevisionNumber());
-        }
+        ImportDefinitionRevision revision = requireIntakeConfiguration(task);
         if (runs.findByTaskIdAndConcurrencyTokenIsNotNull(taskId).isPresent()) {
             throw inProgress(task);
         }
         return new Resolved(task, revision, null);
+    }
+
+    /**
+     * De configuratiecontroles die elke intake vóór het registreren doet: een actieve revisie, een basisprijsveld en
+     * alle verplichte LINK-bookmarkwaarden. Gedeeld door upload/servermap en de ophaalrun (die ze ook als voorcontrole
+     * vóór het verbinden doet, zodat een onvolledig ingerichte taak niets ophaalt). Enkel binnen een transactie
+     * aanroepen.
+     * <p>
+     * Sinds NT-8 staan de controles zelf in {@link ChainConfigurationChecks#intakeConfiguration} (gedeeld met de
+     * gereedheidscontrole {@code GET /import-links/{id}/readiness}); deze methode werpt de eerste bevinding met exact
+     * dezelfde code, status en tekst als vroeger.
+     *
+     * @return de actieve revisie
+     * @throws ConflictException {@code NO_ACTIVE_REVISION}, {@code CONFIG_PRICE_FIELD_MISSING},
+     *                           {@code CONFIG_REQUIRED_BOOKMARK_MISSING}
+     */
+    public ImportDefinitionRevision requireIntakeConfiguration(CatalogImportTask task) {
+        return checks.intakeConfiguration(task.getImportLink(), "Task " + task.getId()).requireActiveRevision();
     }
 
     private static ConflictException inProgress(CatalogImportTask task) {

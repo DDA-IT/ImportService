@@ -302,6 +302,11 @@ public class BatchQueryService {
      * soort incident werkelijk gecontroleerd is. Beide zijn {@code null} wanneer die scope onbekend
      * is; er wordt nooit een noemer geraden. {@code dominantFactor} en {@code patternDescription}
      * blijven in fase 3 leeg: patroonherkenning van bulktransformaties is bewust uitgesteld.
+     * <p>
+     * {@code issueCaseId} is additief toegevoegd in bouwstap S2-B3 (docs/design/issue-case-design.md
+     * §6): het behandelgeval waaraan deze groep gekoppeld is, of {@code null} voor een nog niet
+     * gesynchroniseerde groep. Bewust achteraan: {@code GET /batches/{id}/issue-groups} wordt hiermee
+     * puur additief uitgebreid.
      */
     public record IssueGroupRow(long id, String issueCode, String signature, String severity,
                                 String issueDomain, String controlLevel, String impactScope,
@@ -311,7 +316,7 @@ public class BatchQueryService {
                                 BigDecimal dominantFactor, String referenceType,
                                 String patternDescription, Long firstRowNumber,
                                 Instant firstDetectedAt, Instant lastDetectedAt,
-                                String handlingStatus) {
+                                String handlingStatus, Long issueCaseId) {
 
         private static IssueGroupRow of(GroupRow group) {
             return new IssueGroupRow(group.id(), group.issueCode(), group.signature(), group.severity(),
@@ -320,7 +325,8 @@ public class BatchQueryService {
                     group.scopeRecordCount(), group.sharePercent(), group.bulkIncident(),
                     group.priceComponentCode(), group.deviationDirection(), group.dominantFactor(),
                     group.referenceType(), group.patternDescription(), group.firstRowNumber(),
-                    group.firstDetectedAt(), group.lastDetectedAt(), group.handlingStatus());
+                    group.firstDetectedAt(), group.lastDetectedAt(), group.handlingStatus(),
+                    group.issueCaseId());
         }
     }
 

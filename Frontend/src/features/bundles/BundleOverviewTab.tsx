@@ -6,17 +6,23 @@
  * wordt **uitgeschakeld getoond met de reden erbij**, nooit verborgen (§9.1). Na een geslaagde actie
  * staat de melding hier, en wordt de bundel herladen (§5: het antwoord is bewijs, niet de enige bron).
  *
- * De twee tellers die het bevriezen bepalen — hoeveel `PLANNED` er op naam van de bevriezer goedgekeurd
- * wordt en hoeveel `AWAITING_APPROVAL` het bevriezen blokkeert — komen van `BundleDetail` zelf
+ * De twee tellers die het bevriezen bepalen — hoeveel mutaties met status "gepland" er op naam van de bevriezer
+ * goedgekeurd worden en hoeveel er nog op een beslissing wachten — komen van `BundleDetail` zelf
  * (bouwstap C2, `docs/decisions.md` 2026-09-23 V4: `countPlanned`/`countUndecided`), zodat de UI per
  * constructie toont wat de server zal doen. Niet meer via twee `size=1`-lijstaanroepen (§9.3): die
  * telden ook identiteitsincidenten met dezelfde status mee en konden dus van de server afwijken.
+ *
+ * NT-11b (V7): tellers via het woordenboek (`bundleCounter`, woord + uitleg in de tooltip); geen ruwe codes
+ * in de zichtbare tekst.
  */
 
 import { useState } from 'react';
 import { PERMISSION_APPROVE } from '../../api/types.ts';
 import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
-import { bundleActionGate } from './bundlePolicy.ts';
+import { Term } from '../../terms/Term.tsx';
+import { term } from '../../terms/index.ts';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
+import { bundleActionGate, gateTitle } from './bundlePolicy.ts';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
 import { CancelDialog } from './CancelDialog.tsx';
 import { FreezeDialog } from './FreezeDialog.tsx';
@@ -52,15 +58,14 @@ export function BundleOverviewTab() {
   const freezeGate = withPermission(approveGate, bundleActionGate(bundle.status, 'FREEZE'));
   const cancelGate = withPermission(approveGate, bundleActionGate(bundle.status, 'CANCEL'));
 
-  // Een aankondiging, geen blokkade: de knop blijft aan zodat de voorvlucht (de bron van de blokkades,
+  // Een aankondiging, geen blokkade: de knop blijft aan zodat de voorcontrole (de bron van de blokkades,
   // inclusief de conflicten die hier niet te zien zijn) bekeken kan worden. De dialoog blokkeert.
   const undecided = isAssembling ? bundle.awaitingApprovalCount : null;
   const freezeHint =
     undecided !== null && undecided > 0
       ? `Er ${undecided === 1 ? 'wacht' : 'wachten'} nog ${undecided} ${undecided === 1 ? 'mutatie' : 'mutaties'} ` +
-        'op een beslissing (AWAITING_APPROVAL); de voorvlucht zal bevriezen blokkeren ' +
-        '(BUNDLE_HAS_UNDECIDED_MUTATIONS).'
-      : 'Keurt de resterende PLANNED-mutaties goed op uw naam en legt de bundel vast. Eerst volgt een voorvlucht.';
+        'op een beslissing; de voorcontrole zal bevriezen blokkeren.'
+      : `Keurt de resterende mutaties met status "${term('mutationStatus', 'PLANNED').label}" goed op uw naam en legt de bundel vast. Eerst volgt een voorcontrole.`;
 
   function openDialogFor(dialog: Exclude<OpenDialog, null>) {
     setNotice(null);
@@ -88,8 +93,39 @@ export function BundleOverviewTab() {
     }
   }
 
+  /** Eén teller met woord en uitleg; `later` zet er "vastgesteld bij het bevriezen" onder zolang de bundel in opbouw is. */
+  function counter(code: string, value: number | null, later = false) {
+    return (
+      <div className={styles.counter} key={code}>
+        <dt>
+          <Term domain="bundleCounter" code={code} />
+        </dt>
+        <dd>
+          <Count value={value} />
+        </dd>
+        {later && isAssembling && <p className={styles.counterHint}>vastgesteld bij het bevriezen</p>}
+      </div>
+    );
+  }
+
   return (
     <div className={styles.tab}>
+      <WhatIsThis>
+        <p>
+          Dit is de samenvatting van de bundel: hoeveel leveringen (batches) en wijzigingen (mutaties) erin zitten en in
+          welke toestand ze staan.
+        </p>
+        <p>
+          Bevriezen sluit de bundel af. De mutaties die nog gepland staan, worden in één keer goedgekeurd op uw naam,
+          de getallen en de vingerafdruk van de bundel liggen vast, en er kan niets meer bij of af. Een bevroren bundel
+          kan alleen nog geannuleerd worden.
+        </p>
+        <p>
+          Annuleren laat de mutaties die nog niet klaar zijn vervallen en geeft de batches weer vrij voor een andere
+          bundel.
+        </p>
+      </WhatIsThis>
+
       {notice !== null && (
         <p className={styles.resultNotice} role="status">
           {notice}
@@ -106,108 +142,43 @@ export function BundleOverviewTab() {
           </p>
         )}
         <dl className={styles.counters}>
-          <div className={styles.counter}>
-            <dt>Batches</dt>
-            <dd>
-              <Count value={bundle.batchCount} />
-            </dd>
-          </div>
-          <div className={styles.counter}>
-            <dt>Mutaties</dt>
-            <dd>
-              <Count value={bundle.contentMutationCount} />
-            </dd>
-          </div>
-          <div className={styles.counter}>
-            <dt>Gereed</dt>
-            <dd>
-              <Count value={bundle.readyCount} />
-            </dd>
-          </div>
-          <div className={styles.counter}>
-            <dt>Afgekeurd</dt>
-            <dd>
-              <Count value={bundle.rejectedCount} />
-            </dd>
-          </div>
-          <div className={styles.counter}>
-            <dt>Geblokkeerd</dt>
-            <dd>
-              <Count value={bundle.blockedCount} />
-            </dd>
-          </div>
-          <div className={styles.counter}>
-            <dt>Identiteitsincidenten</dt>
-            <dd>
-              <Count value={bundle.identityIncidentCount} />
-            </dd>
-          </div>
-          <div className={styles.counter}>
-            <dt>Vervallen</dt>
-            <dd>
-              <Count value={bundle.expiredCount} />
-            </dd>
-            {isAssembling && <p className={styles.counterHint}>vastgesteld bij het bevriezen</p>}
-          </div>
-          <div className={styles.counter}>
-            <dt>Bulkincidenten</dt>
-            <dd>
-              <Count value={bundle.bulkIncidentCount} />
-            </dd>
-            {isAssembling && <p className={styles.counterHint}>vastgesteld bij het bevriezen</p>}
-          </div>
-          <div className={styles.counter}>
-            <dt>Kritieke issues</dt>
-            <dd>
-              <Count value={bundle.criticalIssueCount} />
-            </dd>
-            {isAssembling && <p className={styles.counterHint}>vastgesteld bij het bevriezen</p>}
-          </div>
-          <div className={styles.counter}>
-            <dt>Waarschuwingen</dt>
-            <dd>
-              <Count value={bundle.warningCount} />
-            </dd>
-            {isAssembling && <p className={styles.counterHint}>vastgesteld bij het bevriezen</p>}
-          </div>
+          {counter('batchCount', bundle.batchCount)}
+          {counter('contentMutationCount', bundle.contentMutationCount)}
+          {counter('readyCount', bundle.readyCount)}
+          {counter('rejectedCount', bundle.rejectedCount)}
+          {counter('blockedCount', bundle.blockedCount)}
+          {counter('identityIncidentCount', bundle.identityIncidentCount)}
+          {counter('expiredCount', bundle.expiredCount, true)}
+          {counter('bulkIncidentCount', bundle.bulkIncidentCount, true)}
+          {counter('criticalIssueCount', bundle.criticalIssueCount, true)}
+          {counter('warningCount', bundle.warningCount, true)}
           {isAssembling && (
             <>
-              <div className={styles.counter}>
-                <dt>Wordt bij bevriezen goedgekeurd (PLANNED)</dt>
-                <dd>
-                  <Count value={bundle.plannedCount} />
-                </dd>
-              </div>
-              <div className={styles.counter}>
-                <dt>Wacht op beslissing (AWAITING_APPROVAL)</dt>
-                <dd>
-                  <Count value={bundle.awaitingApprovalCount} />
-                </dd>
-              </div>
+              {counter('plannedCount', bundle.plannedCount)}
+              {counter('awaitingApprovalCount', bundle.awaitingApprovalCount)}
             </>
           )}
         </dl>
 
         {isAssembling && bundle.staleMutationCount !== null && bundle.staleMutationCount > 0 && (
           <p className={styles.staleWarning} role="alert">
-            De bronstaat is verschoven sinds de screening ({bundle.staleMutationCount} mutatie(s));
-            bevriezen zal geweigerd worden (SOURCE_STATE_CHANGED_SINCE_SCREENING). Screen de levering
-            opnieuw.
+            De bekende artikelgegevens zijn veranderd sinds de controle van de levering ({bundle.staleMutationCount}{' '}
+            mutatie(s)); bevriezen zal geweigerd worden. Controleer de levering opnieuw.
           </p>
         )}
 
         {bundle.contentHash !== null && (
           <p className={styles.hash}>
-            Bundelhash: <code>{bundle.contentHash.slice(0, 16)}…</code>{' '}
+            Vingerafdruk van de bundel: <code>{bundle.contentHash.slice(0, 16)}…</code>{' '}
             <button type="button" className={styles.copyButton} onClick={handleCopyHash}>
-              {copied ? 'Gekopieerd' : 'Kopieer volledige hash'}
+              {copied ? 'Gekopieerd' : 'Kopieer de volledige vingerafdruk'}
             </button>
           </p>
         )}
       </section>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Audit</h2>
+        <h2 className={styles.sectionTitle}>Wie heeft wat gedaan</h2>
         <dl className={styles.audit}>
           <div className={styles.auditRow}>
             <dt>Aangemaakt door</dt>
@@ -244,7 +215,7 @@ export function BundleOverviewTab() {
               type="button"
               className={styles.actionButton}
               disabled={!freezeGate.allowed}
-              title={freezeGate.allowed ? undefined : freezeGate.reason}
+              title={gateTitle(freezeGate)}
               onClick={() => openDialogFor('freeze')}
             >
               Bevriezen
@@ -256,7 +227,7 @@ export function BundleOverviewTab() {
               type="button"
               className={styles.actionButton}
               disabled={!cancelGate.allowed}
-              title={cancelGate.allowed ? undefined : cancelGate.reason}
+              title={gateTitle(cancelGate)}
               onClick={() => openDialogFor('cancel')}
             >
               Annuleren
@@ -270,7 +241,7 @@ export function BundleOverviewTab() {
         </div>
       </section>
 
-      {/* Pas gemount bij het openen: elke opening begint met een verse voorvlucht en zonder oude fout. */}
+      {/* Pas gemount bij het openen: elke opening begint met een verse voorcontrole en zonder oude fout. */}
       {openDialog === 'freeze' && (
         <FreezeDialog bundle={bundle} onClose={() => setOpenDialog(null)} onFrozen={handleCompleted} />
       )}

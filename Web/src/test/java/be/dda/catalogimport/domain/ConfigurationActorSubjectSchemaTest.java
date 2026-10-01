@@ -110,13 +110,19 @@ class ConfigurationActorSubjectSchemaTest {
                 .hasSize(8);
 
         // Samen met 007-1..007-3 (bundel, bundellidmaatschap, beslissing, batch): 18 op 12; plus
-        // publication_run.requested_by_subject (009-1, 5P-6): 19 op 13.
+        // publication_run.requested_by_subject (009-1, 5P-6): 19 op 13; plus
+        // issue_case.status_changed_by_subject en issue_case_event.changed_by_subject (012-issue-case, S2-B1): 21 op 15;
+        // plus external_credential.{secret_updated,created,revoked}_by_subject en
+        // external_credential_event.changed_by_subject (013-external-credential, K-2a): 25 op 17;
+        // plus created_by_subject op connection_profile, connection_profile_version, delivery_configuration en
+        // delivery_configuration_version, en changed_by_subject op acquisition_config_event
+        // (014-delivery-configuration, LC-1): 30 op 22.
         Long total = jdbc.queryForObject("select count(*) from information_schema.columns "
                 + "where table_schema = current_schema() and column_name like '%\\_by\\_subject'", Long.class);
         Long tables = jdbc.queryForObject("select count(distinct table_name) from information_schema.columns "
                 + "where table_schema = current_schema() and column_name like '%\\_by\\_subject'", Long.class);
-        assertThat(total).isEqualTo(19L);
-        assertThat(tables).isEqualTo(13L);
+        assertThat(total).isEqualTo(30L);
+        assertThat(tables).isEqualTo(22L);
     }
 
     @Test

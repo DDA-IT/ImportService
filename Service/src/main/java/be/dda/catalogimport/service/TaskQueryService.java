@@ -1,6 +1,7 @@
 package be.dda.catalogimport.service;
 
 import be.dda.catalogimport.dao.CatalogImportTaskRepository;
+import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.TaskRunRepository;
 import be.dda.catalogimport.domain.CatalogImportTask;
 import be.dda.catalogimport.domain.ImportLink;
@@ -35,28 +36,34 @@ public class TaskQueryService {
     public record TaskRow(long id, String name, boolean active, TaskTriggerType triggerType,
                           boolean preventConcurrentRuns, long importLinkId, String importLinkCode,
                           String supplierCode, String libraryCode, Instant lastRunStartedAt,
-                          Instant lastRunFinishedAt) {
+                          Instant lastRunFinishedAt, long importDefinitionId, Long activeRevisionId) {
 
-        private static TaskRow of(CatalogImportTask task, TaskRun lastRun) {
+        private static TaskRow of(CatalogImportTask task, TaskRun lastRun, Long activeRevisionId) {
             ImportLink link = task.getImportLink();
             return new TaskRow(task.getId(), task.getName(), task.isActive(), task.getTriggerType(),
                     task.isPreventConcurrentRuns(), link.getId(), link.getCode(),
                     link.getSupplierOrganisation().getCode(), link.getLibraryCode(),
                     lastRun == null ? null : lastRun.getStartedAt(),
-                    lastRun == null ? null : lastRun.getFinishedAt());
+                    lastRun == null ? null : lastRun.getFinishedAt(),
+                    link.getImportDefinition().getId(), activeRevisionId);
         }
     }
 
     private final CatalogImportTaskRepository tasks;
     private final TaskRunRepository runs;
+    private final ImportDefinitionRevisionRepository revisions;
 
-    public TaskQueryService(CatalogImportTaskRepository tasks, TaskRunRepository runs) {
+    public TaskQueryService(CatalogImportTaskRepository tasks, TaskRunRepository runs,
+                            ImportDefinitionRevisionRepository revisions) {
         this.tasks = tasks;
         this.runs = runs;
+        this.revisions = revisions;
     }
 
     /**
      * Alle taken, oplopend op koppelingscode, naam en id, optioneel gefilterd.
+     * <p>
+     * Batch-leest lastRuns en active revisions voor alle taken op de pagina zonder N+1 queries.
      *
      * @throws IllegalArgumentException ongeldige paginering
      */
@@ -72,12 +79,26 @@ public class TaskQueryService {
         PageRequest pageRequest = PageRequest.of(number, Math.min(requested, MAX_PAGE_SIZE), Sort.unsorted());
         Page<CatalogImportTask> result = tasks.findTaskRows(importLinkId, active, pageRequest);
         Map<Long, TaskRun> lastRuns = new HashMap<>();
+        Map<Long, Long> activeRevisionsByDefinitionId = new HashMap<>();
         if (!result.isEmpty()) {
-            List<Long> ids = result.getContent().stream().map(CatalogImportTask::getId).toList();
-            for (TaskRun run : runs.findLatestRunsByTaskIds(ids)) {
+            List<Long> taskIds = result.getContent().stream().map(CatalogImportTask::getId).toList();
+            for (TaskRun run : runs.findLatestRunsByTaskIds(taskIds)) {
                 lastRuns.put(run.getTask().getId(), run);
             }
+            // Batch-fetch active revisions for all definition IDs on this page
+            List<Long> definitionIds = result.getContent().stream()
+                    .map(task -> task.getImportLink().getImportDefinition().getId())
+                    .distinct().toList();
+            if (!definitionIds.isEmpty()) {
+                for (Map<String, Long> row : revisions.findActiveRevisionsByDefinitionIds(definitionIds)) {
+                    activeRevisionsByDefinitionId.put((Long) row.get("definitionId"), (Long) row.get("revisionId"));
+                }
+            }
         }
-        return PageResult.of(result, task -> TaskRow.of(task, lastRuns.get(task.getId())));
+        return PageResult.of(result, task -> {
+            long definitionId = task.getImportLink().getImportDefinition().getId();
+            Long activeRevisionId = activeRevisionsByDefinitionId.get(definitionId);
+            return TaskRow.of(task, lastRuns.get(task.getId()), activeRevisionId);
+        });
     }
 }

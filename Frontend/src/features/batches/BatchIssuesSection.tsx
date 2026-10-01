@@ -11,6 +11,8 @@ import { DataTable, type DataTableColumn } from '../../components/DataTable.tsx'
 import { Pager } from '../../components/Pager.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useQuery } from '../../hooks/useQuery.ts';
+import { IssueCodeTerm } from '../../terms/IssueCodeTerm.tsx';
+import { Term } from '../../terms/Term.tsx';
 import styles from './BatchDetailPage.module.css';
 
 const COLUMNS: readonly DataTableColumn<IssueRow>[] = [
@@ -21,9 +23,10 @@ const COLUMNS: readonly DataTableColumn<IssueRow>[] = [
     render: (row) => (row.rowNumber === null ? <span title="Hoort bij geen bronregel">levering</span> : row.rowNumber),
     align: 'right',
   },
-  { key: 'issueCode', header: 'Foutcode', render: (row) => row.issueCode },
-  { key: 'severity', header: 'Ernst', render: (row) => row.severity },
-  { key: 'fieldName', header: 'Veld', render: (row) => row.fieldName ?? '—' },
+  { key: 'issueCode', header: 'Probleem', render: (row) => <IssueCodeTerm code={row.issueCode} /> },
+  { key: 'severity', header: 'Ernst', render: (row) => <Term domain="severity" code={row.severity} /> },
+  // De naam van de kolom in het bestand of het veld waarop de vaststelling slaat; ze wordt getoond zoals ze binnenkomt.
+  { key: 'fieldName', header: 'Kolom', render: (row) => row.fieldName ?? '—' },
   { key: 'sourceValue', header: 'Bronwaarde', render: (row) => row.sourceValue ?? '—' },
   { key: 'expectedValue', header: 'Verwacht', render: (row) => row.expectedValue ?? '—' },
   { key: 'message', header: 'Melding', render: (row) => row.message ?? '—' },
@@ -42,8 +45,8 @@ export function BatchIssuesSection({ batchId, issueGroupId }: { batchId: number;
     <section data-testid="batch-issues">
       <h2 className={styles.sectionTitle}>Problemen (voorbeelden)</h2>
       <p className={styles.warningNote} role="note">
-        Dit zijn voorbeeldrijen: per foutcode wordt slechts een beperkt aantal bewaard. Het werkelijke aantal staat
-        in de foutgroepen hierboven; een telling over deze lijst is te laag.
+        Dit zijn voorbeeldrijen: per soort probleem wordt slechts een beperkt aantal bewaard. Het werkelijke aantal
+        staat in de foutgroepen hierboven; een telling over deze lijst is te laag.
       </p>
       {issueGroupId !== null && <p>Gefilterd op foutgroep {issueGroupId}.</p>}
       {error !== null && <ErrorBanner error={error} />}

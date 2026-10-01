@@ -171,7 +171,8 @@ describe('CancelDialog (F10, §10.6)', () => {
 
     const total = await waitForCount(dialog);
     expect(total.textContent).toContain('10 mutaties');
-    expect(total.textContent).toContain('vervallen (EXPIRED)');
+    expect(total.textContent).toContain('vervallen en');
+    expect(total.textContent).not.toContain('EXPIRED');
     expect(total.textContent).toContain('nooit meer herleefd');
 
     // De letterlijke zin uit §10.6.
@@ -300,7 +301,8 @@ describe('CancelDialog (F10, §10.6)', () => {
 
     const notice = screen.getByRole('status').textContent ?? '';
     expect(notice).toContain(`Bundel ${REFERENCE} is geannuleerd door An Beslisser`);
-    expect(notice).toContain('EXPIRED');
+    expect(notice).toContain('zijn vervallen');
+    expect(notice).not.toContain('EXPIRED');
     expect(reloadBundle).toHaveBeenCalledTimes(1);
   });
 
@@ -318,7 +320,9 @@ describe('CancelDialog (F10, §10.6)', () => {
 
     const button = await screen.findByRole('button', { name: 'Annuleren' });
     expect(button).toBeDisabled();
-    expect(button.getAttribute('title')).toContain('BUNDLE_NOT_CANCELLABLE');
+    expect(button.getAttribute('title')).toContain('al geannuleerd');
+    expect(button.getAttribute('title')).toContain('technische code: BUNDLE_NOT_CANCELLABLE');
+    expect(screen.queryByText(/BUNDLE_NOT_CANCELLABLE/)).not.toBeInTheDocument();
     fireEvent.click(button);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(fetchCalls()).toHaveLength(0);

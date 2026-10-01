@@ -16,14 +16,18 @@ import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { MutationList } from '../../components/MutationList/MutationList.tsx';
 import type { MutationSource } from '../../components/MutationList/types.ts';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import { describeIssue } from '../../terms/IssueCodeTerm.tsx';
+import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
+import { Term } from '../../terms/Term.tsx';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { BatchActions } from './BatchActions.tsx';
 import { BatchDeliverySection } from './BatchDeliverySection.tsx';
 import { BatchIssueGroupsSection } from './BatchIssueGroupsSection.tsx';
 import { BatchIssuesSection } from './BatchIssuesSection.tsx';
-import { Count, formatDateTime } from './format.tsx';
+import { CounterLabel, Count, formatDateTime } from './format.tsx';
 import styles from './BatchDetailPage.module.css';
 
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+function Fact({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className={styles.fact}>
       <dt>{label}</dt>
@@ -32,25 +36,59 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
+/** De tellers in de volgorde van het scherm; de sleutel is de veldnaam van `BatchDetail` én de woordenboekcode. */
+const COUNTER_KEYS = [
+  'rawRecordCount',
+  'validRecordCount',
+  'rejectedRecordCount',
+  'filteredOutCount',
+  'errorBeforeFilterCount',
+  'duplicateIdentityCount',
+  'newCount',
+  'changedCount',
+  'unchangedCount',
+  'contentMutationCount',
+  'awaitingApprovalCount',
+  'identityIncidentCount',
+  'bulkIncidentCount',
+  'criticalLineCount',
+  'criticalIssueCount',
+  'warningCount',
+] as const satisfies ReadonlyArray<keyof BatchDetail>;
+
 function BatchOverview({ batch }: { batch: BatchDetail }) {
+  const blocked = batch.blockedCode === null ? null : describeIssue(batch.blockedCode);
   return (
     <>
       <div className={styles.header}>
         <h1 className={styles.title}>Batch {batch.batchId}</h1>
-        <StatusBadge status={batch.status} />
+        <StatusBadge status={batch.status} domain="batchStatus" />
         {batch.validationResult === null ? (
-          <span className={styles.notEstablished} title="Het eindoordeel staat nog niet vast">
-            Eindoordeel niet vastgesteld
+          <span>
+            Eindoordeel: <Term domain="validationResult" code={null} />
           </span>
         ) : (
-          <StatusBadge status={batch.validationResult} />
+          <StatusBadge status={batch.validationResult} domain="validationResult" />
         )}
       </div>
+      <WhatIsThis>
+        <p>
+          Een batch is de controle van één aangeleverde levering. De status zegt hoe ver die controle staat; het
+          eindoordeel zegt wat de controle vond. Een woord met een stippellijn heeft een uitleg: ga er met de muis
+          over.
+        </p>
+      </WhatIsThis>
 
-      {batch.blockedCode !== null && (
+      {batch.blockedCode !== null && blocked !== null && (
         <div className={styles.blocked} role="alert" data-testid="batch-blocked">
-          <strong>Geblokkeerd: {batch.blockedCode}</strong>
-          {batch.blockedReason !== null && <p>{batch.blockedReason}</p>}
+          <strong>Tegengehouden: {blocked.label}</strong>
+          <p>{blocked.uitleg}</p>
+          <TechnicalDetails
+            items={[
+              { name: 'Code', value: batch.blockedCode },
+              ...(batch.blockedReason !== null ? [{ name: 'Melding van de server', value: batch.blockedReason }] : []),
+            ]}
+          />
         </div>
       )}
 
@@ -71,12 +109,12 @@ function BatchOverview({ batch }: { batch: BatchDetail }) {
         </Fact>
         <Fact label="Gestart">{formatDateTime(batch.startedAt)}</Fact>
         <Fact label="Afgerond">{formatDateTime(batch.finishedAt)}</Fact>
-        <Fact label="Creatiebeleid">
-          {batch.creationOutcome ?? '—'}
+        <Fact label="Beleid voor nieuwe artikelen">
+          <Term domain="creationPolicy" code={batch.creationOutcome} />
           {batch.creationCandidateCount !== null && batch.creationScopeCount !== null && (
             <span className={styles.secondary}>
               {' '}
-              ({batch.creationCandidateCount} van {batch.creationScopeCount})
+              ({batch.creationCandidateCount} nieuwe artikelen bij {batch.creationScopeCount} bestaande)
             </span>
           )}
         </Fact>
@@ -84,54 +122,11 @@ function BatchOverview({ batch }: { batch: BatchDetail }) {
 
       <h2 className={styles.sectionTitle}>Tellers</h2>
       <dl className={styles.counters} data-testid="batch-counters">
-        <Fact label="Ruwe records">
-          <Count value={batch.rawRecordCount} />
-        </Fact>
-        <Fact label="Geldig">
-          <Count value={batch.validRecordCount} />
-        </Fact>
-        <Fact label="Verworpen">
-          <Count value={batch.rejectedRecordCount} />
-        </Fact>
-        <Fact label="Buiten scope gefilterd">
-          <Count value={batch.filteredOutCount} />
-        </Fact>
-        <Fact label="Fout vóór filter">
-          <Count value={batch.errorBeforeFilterCount} />
-        </Fact>
-        <Fact label="Dubbele identiteit">
-          <Count value={batch.duplicateIdentityCount} />
-        </Fact>
-        <Fact label="Nieuw">
-          <Count value={batch.newCount} />
-        </Fact>
-        <Fact label="Gewijzigd">
-          <Count value={batch.changedCount} />
-        </Fact>
-        <Fact label="Ongewijzigd">
-          <Count value={batch.unchangedCount} />
-        </Fact>
-        <Fact label="Inhoudsmutaties">
-          <Count value={batch.contentMutationCount} />
-        </Fact>
-        <Fact label="Wacht op goedkeuring">
-          <Count value={batch.awaitingApprovalCount} />
-        </Fact>
-        <Fact label="Identiteitsincidenten">
-          <Count value={batch.identityIncidentCount} />
-        </Fact>
-        <Fact label="Bulkincidenten">
-          <Count value={batch.bulkIncidentCount} />
-        </Fact>
-        <Fact label="Kritieke regels">
-          <Count value={batch.criticalLineCount} />
-        </Fact>
-        <Fact label="Kritieke issues">
-          <Count value={batch.criticalIssueCount} />
-        </Fact>
-        <Fact label="Waarschuwingen">
-          <Count value={batch.warningCount} />
-        </Fact>
+        {COUNTER_KEYS.map((key) => (
+          <Fact key={key} label={<CounterLabel counter={key} />}>
+            <Count value={batch[key]} />
+          </Fact>
+        ))}
       </dl>
 
       {batch.baselineAcceptedAt !== null && (
@@ -189,6 +184,13 @@ export function BatchDetailPage() {
           />
           <BatchIssuesSection batchId={batchId} issueGroupId={selectedGroupId} />
           <h2 className={styles.sectionTitle}>Mutaties</h2>
+          <WhatIsThis>
+            <p>
+              Een mutatie is één voorgestelde wijziging aan een artikel: een nieuw artikel, een gewijzigd artikel, een
+              herkenningsprobleem of de vastlegging dat de controle klaar is. Hier kunt u ze bekijken; beslissen
+              (goedkeuren of afkeuren) gebeurt in een bundel.
+            </p>
+          </WhatIsThis>
           <MutationList source={mutationSource} emptyMessage="Deze batch heeft (met deze filter) geen mutaties." />
         </>
       )}

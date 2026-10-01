@@ -45,6 +45,14 @@
   flex-wrap: wrap;
 }
 
+/* S1-F4: de revisierij draagt naast status ook "Detail openen" en "Opvolger maken". */
+.revisionRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+}
+
 .expandButton {
   background: none;
   border: 1px solid var(--color-border-dark);
@@ -81,9 +89,15 @@
   color: var(--color-text-secondary);
 }
 
-.tasksUnavailable {
-  margin: var(--spacing-1) 0 0 0;
-  color: var(--color-text-tertiary);
-  font-size: 0.85rem;
-  font-style: italic;
+/* NT-7: de taken van een koppeling onder de koppelingsrij. */
+.tasks {
+  margin: var(--spacing-2) 0 0 var(--spacing-4);
+}
+
+.taskRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+  padding: var(--spacing-1) 0;
 }

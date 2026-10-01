@@ -37,8 +37,14 @@ import { DataTable, type DataTableColumn } from '../DataTable.tsx';
 import { Pager } from '../Pager.tsx';
 import { StatusBadge } from '../StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
+import { Term } from '../../terms/Term.tsx';
+import { DICTIONARY, term } from '../../terms/index.ts';
 import type { MutationFilter, MutationListProps, MutationQuery, MutationRowAction } from './types.ts';
 import styles from './MutationList.module.css';
+
+/** De redenen uit het woordenboek, in de volgorde daarvan: de keuzelijst van het filter "Statusreden" (NT-11b). */
+const STATUS_REASON_CODES: readonly string[] = Object.keys(DICTIONARY.mutationStatusReason);
 
 /** Hoeveel tekens van de identiteitshash zichtbaar zijn; de volledige waarde staat in de tooltip. */
 const HASH_PREVIEW_LENGTH = 12;
@@ -76,6 +82,36 @@ function amount(value: number | null, currency: string | null) {
   return <>{currency === null || currency === '' ? formatted : `${formatted} ${currency}`}</>;
 }
 
+/**
+ * Wat een wijziging raakt: het masker is een lijst gescheiden door komma's, bv. `ARTICLE,PRICE,PRICE:AKP`. Elk deel
+ * krijgt zijn Nederlandse woord; een code achter een dubbele punt is de code van een prijsonderdeel en staat erbij.
+ */
+function ChangeParts({ mask }: { mask: string | null }) {
+  if (mask === null || mask.trim() === '') {
+    return <Dash />;
+  }
+  const parts = mask
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part !== '');
+  return (
+    <>
+      {parts.map((part, index) => {
+        const separator = part.indexOf(':');
+        const base = separator > 0 ? part.substring(0, separator) : part;
+        const component = separator > 0 ? part.substring(separator + 1) : null;
+        return (
+          <span key={`${part}-${index}`}>
+            {index > 0 && ', '}
+            <Term domain="changePart" code={base} unknownLabel="Ander onderdeel" />
+            {component !== null && ` (prijsonderdeel ${component})`}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 type FilterState = {
   status: string;
   batchId: string;
@@ -108,7 +144,7 @@ export function MutationList({
   const supports = (name: keyof FilterState) => source.supportedFilters.includes(name);
 
   // `applied` is wat er nu in de lijst staat en dus naar de server gaat; `draft` is wat de gebruiker in
-  // de tekstvelden typt maar nog niet toegepast heeft. Keuzelijsten passen zichzelf meteen toe.
+  // de tekstvelden typt maar nog niet toegepast heeft. Keuzelijsten (ook die van de statusreden) passen zichzelf meteen toe.
   const [applied, setApplied] = useState<FilterState>(() => initialFilters(initialQuery));
   const [draft, setDraft] = useState<FilterState>(() => initialFilters(initialQuery));
   const [page, setPage] = useState(initialQuery?.page ?? 0);
@@ -214,28 +250,38 @@ export function MutationList({
     const base: DataTableColumn<MutationRow>[] = [
       { key: 'id', header: 'Mutatie', render: (row) => row.id, align: 'right' },
       { key: 'batchId', header: 'Batch', render: (row) => row.batchId, align: 'right' },
-      { key: 'actionType', header: 'Soort', render: (row) => row.actionType },
+      { key: 'actionType', header: 'Soort', render: (row) => <Term domain="mutationAction" code={row.actionType} /> },
       {
         key: 'status',
         header: 'Status',
         render: (row) => (
           <span className={styles.statusCell}>
-            <StatusBadge status={row.status} />
-            {row.statusReason !== null && <span className={styles.statusReason}>{row.statusReason}</span>}
+            <StatusBadge status={row.status} domain="mutationStatus" />
+            {row.statusReason !== null && (
+              <span className={styles.statusReason}>
+                <Term domain="mutationStatusReason" code={row.statusReason} unknownLabel="Andere reden" />
+              </span>
+            )}
           </span>
         ),
       },
       {
         key: 'identity',
-        header: 'Identiteit',
+        header: 'Artikel',
         render: (row) => (
           <span className={styles.identity}>
             <span>Leverancier: {text(row.identitySupplier)}</span>
             <span>Groep: {text(row.identitySupplierGroup)}</span>
             <span>Referentie: {text(row.identitySupplierReference)}</span>
             <span>
-              Korting: {text(row.identityDiscountCode)}
-              {row.identityDiscountState !== null && ` (${row.identityDiscountState})`}
+              Kortingscode: {text(row.identityDiscountCode)}
+              {row.identityDiscountState !== null && (
+                <>
+                  {' ('}
+                  <Term domain="discountCodeState" code={row.identityDiscountState} />
+                  {')'}
+                </>
+              )}
             </span>
           </span>
         ),
@@ -253,14 +299,21 @@ export function MutationList({
           </span>
         ),
       },
-      { key: 'domainMask', header: 'Domeinmasker', render: (row) => text(row.domainMask) },
+      { key: 'domainMask', header: 'Wat wijzigt', render: (row) => <ChangeParts mask={row.domainMask} /> },
       {
         key: 'reference',
-        header: 'Koppelreferentie',
-        // Alleen gevuld op een IDENTITY_REFERENCE_INCIDENT; anders drie keer "—", geen lege cel.
+        header: 'Verwijzing',
+        // Alleen gevuld bij een herkenningsprobleem; anders drie keer "—", geen lege cel.
         render: (row) => (
           <span className={styles.identity}>
-            <span>Soort: {text(row.referenceType)}</span>
+            <span>
+              Soort:{' '}
+              {row.referenceType === null || row.referenceType === '' ? (
+                <Dash />
+              ) : (
+                <Term domain="referenceType" code={row.referenceType} unknownLabel="Andere verwijzing" />
+              )}
+            </span>
             <span>Voor: {text(row.beforeReferenceValue)}</span>
             <span>Na: {text(row.afterReferenceValue)}</span>
           </span>
@@ -280,11 +333,11 @@ export function MutationList({
             <button
               type="button"
               className={styles.hashButton}
-              title={`Toon de hele wijzigingsgroep — identityHash ${hash}`}
+              title={`Toon alle wijzigingen van dit artikel in één lijst (technische sleutel: ${hash.slice(0, HASH_PREVIEW_LENGTH)}…)`}
               aria-label={`Toon de hele wijzigingsgroep ${hash}`}
               onClick={() => showChangeGroup(hash)}
             >
-              {hash.slice(0, HASH_PREVIEW_LENGTH)}…
+              Toon groep
             </button>
           );
         },
@@ -298,8 +351,15 @@ export function MutationList({
           <span className={styles.identity}>
             <span>Door: {text(row.decidedBy)}</span>
             <span>Op: {dateTime(row.decidedAt)}</span>
-            <span>Vanuit: {text(row.decidedFromStatus)}</span>
-            <span>Beslissing #: {count(row.decisionId)}</span>
+            <span>
+              Vanuit:{' '}
+              {row.decidedFromStatus === null || row.decidedFromStatus === '' ? (
+                <Dash />
+              ) : (
+                <Term domain="mutationStatus" code={row.decidedFromStatus} />
+              )}
+            </span>
+            <span>Beslissingsnummer: {count(row.decisionId)}</span>
           </span>
         ),
       },
@@ -331,7 +391,13 @@ export function MutationList({
                   }
                   disabled={!gate.allowed}
                   // Een verboden actie wordt uitgeschakeld getoond MET de reden, niet verborgen (§9.1).
-                  title={gate.allowed ? undefined : gate.reason}
+                  title={
+                    gate.allowed
+                      ? undefined
+                      : gate.code === undefined
+                        ? gate.reason
+                        : `${gate.reason} (technische code: ${gate.code})`
+                  }
                   aria-label={gate.allowed ? `${action.label} mutatie ${row.id}` : `${action.label} mutatie ${row.id}: ${gate.reason}`}
                   onClick={() => {
                     runner.reset();
@@ -371,7 +437,7 @@ export function MutationList({
               <option value="">Alle</option>
               {MUTATION_STATUSES.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {term('mutationStatus', option).label}
                 </option>
               ))}
             </select>
@@ -389,7 +455,7 @@ export function MutationList({
               <option value="">Alle</option>
               {MUTATION_ACTION_TYPES.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {term('mutationAction', option).label}
                 </option>
               ))}
             </select>
@@ -412,19 +478,31 @@ export function MutationList({
         {supports('statusReason') && (
           <label className={styles.filter} htmlFor="mutation-filter-status-reason">
             Statusreden
-            <input
+            <select
               id="mutation-filter-status-reason"
-              type="text"
+              title="Toon enkel de mutaties met deze reden voor hun status."
               value={draft.statusReason}
-              onChange={(event) => setDraft({ ...draft, statusReason: event.target.value })}
-            />
+              onChange={(event) => applyFilters({ ...draft, statusReason: event.target.value })}
+            >
+              <option value="">Alle</option>
+              {/* Een reden die niet in het woordenboek staat (bv. van een latere versie) blijft selecteerbaar zolang ze actief is. */}
+              {draft.statusReason !== '' && !STATUS_REASON_CODES.includes(draft.statusReason) && (
+                <option value={draft.statusReason}>Andere reden</option>
+              )}
+              {STATUS_REASON_CODES.map((option) => (
+                <option key={option} value={option}>
+                  {term('mutationStatusReason', option).label}
+                </option>
+              ))}
+            </select>
           </label>
         )}
 
         {supports('identityHash') && (
           <label className={styles.filter} htmlFor="mutation-filter-identity-hash">
-            Wijzigingsgroep (identityHash)
+            Wijzigingsgroep
             <input
+              title="De technische sleutel van een wijzigingsgroep; gebruik liever de knop &quot;Toon groep&quot; in de tabel."
               id="mutation-filter-identity-hash"
               type="text"
               value={draft.identityHash}
@@ -452,15 +530,19 @@ export function MutationList({
       )}
       {query.statusReason !== undefined && (
         <p className={styles.notice}>
-          Statusreden filtert op exacte, hoofdlettergevoelige gelijkheid; een onbekende reden geeft een
-          lege lijst.
+          Gefilterd op de reden &quot;
+          <Term domain="mutationStatusReason" code={query.statusReason} unknownLabel="Andere reden" />
+          &quot;; een reden die bij geen enkele mutatie hoort, geeft een lege lijst.
         </p>
       )}
       {query.identityHash !== undefined && (
-        <p className={styles.notice}>
-          Gefilterd op wijzigingsgroep <code>{query.identityHash}</code>. De server bepaalt de groep; er
-          wordt niets in de browser gegroepeerd.
-        </p>
+        <div className={styles.notice}>
+          <p>
+            Gefilterd op één wijzigingsgroep (alle wijzigingen van hetzelfde artikel). De server bepaalt de groep; er
+            wordt niets in de browser gegroepeerd.
+          </p>
+          <TechnicalDetails items={[{ name: 'Sleutel van de wijzigingsgroep', value: query.identityHash }]} />
+        </div>
       )}
 
       {toolbar?.({ filter, listedCount, reload: list.reload })}

@@ -81,13 +81,13 @@ function page<T>(content: T[]) {
 
 const GROUP = {
   id: 55,
-  issueCode: 'PRICE_INVALID',
+  issueCode: 'PRICE_UNREADABLE',
   signature: 'sig',
   severity: 'ERROR',
   issueDomain: 'PRICE',
   controlLevel: 'RECORD',
   impactScope: 'ROW',
-  incidentKind: 'FIELD_ERROR',
+  incidentKind: 'GENERIC',
   occurrenceCount: 1234,
   recordedSampleCount: 10,
   scopeRecordCount: null,
@@ -101,19 +101,19 @@ const GROUP = {
   firstRowNumber: 3,
   firstDetectedAt: '2026-09-20T10:00:10Z',
   lastDetectedAt: '2026-09-20T10:00:20Z',
-  handlingStatus: 'OPEN',
+  handlingStatus: 'DETECTED',
 };
 
 const ISSUE = {
   id: 900,
   rowNumber: null,
-  issueCode: 'STRUCTURE_BAD',
+  issueCode: 'SOURCE_NO_DATA_RECORDS',
   fieldName: null,
   severity: 'BLOCKING',
   issueDomain: 'DELIVERY',
   controlLevel: 'DELIVERY',
   impactScope: 'DELIVERY',
-  handlingStatus: 'OPEN',
+  handlingStatus: 'DETECTED',
   sourceValue: null,
   expectedValue: null,
   message: 'Kop ontbreekt',
@@ -171,9 +171,9 @@ describe('BatchDetailPage', () => {
     expect(within(facts).getByText(/SUP1 · LIB1/)).toBeInTheDocument();
 
     const counters = screen.getByTestId('batch-counters');
-    const raw = within(counters).getByText('Ruwe records').closest('div') as HTMLElement;
+    const raw = within(counters).getByText('Gelezen regels').closest('div') as HTMLElement;
     expect(within(raw).getByText('100')).toBeInTheDocument();
-    const nieuw = within(counters).getByText('Nieuw').closest('div') as HTMLElement;
+    const nieuw = within(counters).getByText('Nieuwe artikelen').closest('div') as HTMLElement;
     expect(within(nieuw).getByText('—')).toBeInTheDocument();
     expect(within(nieuw).queryByText('0')).toBeNull();
   });
@@ -184,7 +184,7 @@ describe('BatchDetailPage', () => {
         ...BATCH,
         status: 'BLOCKED',
         validationResult: null,
-        blockedCode: 'THRESHOLD_EXCEEDED',
+        blockedCode: 'CRITICAL_RECORD_THRESHOLD_EXCEEDED',
         blockedReason: 'Te veel wijzigingen',
         baselineAcceptedBy: 'Jan',
         baselineAcceptedAt: '2026-09-21T10:00:00Z',
@@ -194,10 +194,14 @@ describe('BatchDetailPage', () => {
     renderAt('/batches/101');
 
     const blocked = await screen.findByTestId('batch-blocked');
-    expect(blocked).toHaveTextContent('THRESHOLD_EXCEEDED');
-    expect(blocked).toHaveTextContent('Te veel wijzigingen');
+    // NT-11a (V7): Nederlandse reden met uitleg; de code en de servertekst staan onder "Technische details".
+    expect(within(blocked).getByText(/^Tegengehouden: Te veel regels ter beoordeling$/)).toBeInTheDocument();
+    expect(within(blocked).getByText(/Het aandeel regels dat een beoordeling vraagt/)).toBeInTheDocument();
+    const details = within(blocked).getByText('Technische details (voor support)').closest('details') as HTMLElement;
+    expect(details).toHaveTextContent('CRITICAL_RECORD_THRESHOLD_EXCEEDED');
+    expect(details).toHaveTextContent('Te veel wijzigingen');
     expect(screen.getByTestId('batch-baseline')).toHaveTextContent('Jan');
-    expect(screen.getByText('Eindoordeel niet vastgesteld')).toBeInTheDocument();
+    expect(screen.getByText('Nog niet bepaald')).toBeInTheDocument();
   });
 
   it('A-F1.3: zonder blokkade en nulmeting verschijnen die blokken niet', async () => {
@@ -235,7 +239,7 @@ describe('BatchDetailPage', () => {
     renderAt('/batches/101');
 
     const groups = await screen.findByTestId('batch-issue-groups');
-    await within(groups).findByText('PRICE_INVALID');
+    await within(groups).findByText('Prijs onleesbaar');
     expect(within(groups).getByText('1234')).toBeInTheDocument();
     expect(within(groups).getByText('Ja')).toBeInTheDocument();
     // Scope onbekend: "—", geen geraden noemer.

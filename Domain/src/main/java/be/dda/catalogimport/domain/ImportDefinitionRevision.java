@@ -44,7 +44,10 @@ import java.time.Instant;
                 // wanneer de revisie actief is en NULL in alle andere toestanden; NULL-waarden
                 // botsen niet in een UNIQUE constraint, dus dit dwingt de regel op databaseniveau af.
                 @UniqueConstraint(name = "uk_import_definition_revision_active",
-                        columnNames = {"import_definition_id", "active_marker"})
+                        columnNames = {"import_definition_id", "active_marker"}),
+                // NT-13: hoogstens één DRAFT per definitie, zelfde NULL-markertruc met draft_marker.
+                @UniqueConstraint(name = "uk_import_definition_revision_draft",
+                        columnNames = {"import_definition_id", "draft_marker"})
         })
 public class ImportDefinitionRevision {
 
@@ -73,6 +76,13 @@ public class ImportDefinitionRevision {
      */
     @Column(name = "active_marker")
     private Boolean activeMarker;
+
+    /**
+     * Technische marker die {@link RevisionStatus#DRAFT} op databaseniveau uniek houdt per definitie
+     * (NT-13): {@code TRUE} bij DRAFT, {@code null} in elke andere toestand. Afgeleid uit {@link #status}.
+     */
+    @Column(name = "draft_marker")
+    private Boolean draftMarker;
 
     // --- Laag 1: toegang/levering -------------------------------------------------------------
 
@@ -383,6 +393,7 @@ public class ImportDefinitionRevision {
 
     private void syncActiveMarker() {
         activeMarker = status == RevisionStatus.ACTIVE ? Boolean.TRUE : null;
+        draftMarker = status == RevisionStatus.DRAFT ? Boolean.TRUE : null;
     }
 
     public Long getId() {

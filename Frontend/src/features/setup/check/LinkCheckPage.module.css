@@ -1,0 +1,338 @@
+/* NT-10 — scherm "Controleren". Zelfde tokens en vormen als het stappenplan (Wizard.module.css). */
+
+.page {
+  padding: var(--spacing-4) 0 var(--spacing-8) 0;
+  max-width: 64rem;
+}
+
+.title {
+  margin: 0 0 var(--spacing-2) 0;
+}
+
+.intro {
+  margin: 0 0 var(--spacing-4) 0;
+  color: var(--color-text-secondary);
+}
+
+.context {
+  margin: 0 0 var(--spacing-4) 0;
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 0.875rem;
+}
+
+.context dt {
+  font-weight: 600;
+}
+
+.context dd {
+  margin: 0 0 var(--spacing-2) 0;
+}
+
+.section {
+  padding: var(--spacing-4);
+  margin: 0 0 var(--spacing-6) 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-background);
+  box-shadow: var(--shadow-card);
+}
+
+.sectionTitle {
+  margin: 0 0 var(--spacing-1) 0;
+  font-size: 1.15rem;
+}
+
+.subTitle {
+  margin: var(--spacing-4) 0 var(--spacing-2) 0;
+  font-size: 1rem;
+}
+
+.sectionIntro {
+  margin: 0 0 var(--spacing-3) 0;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.summaryReady,
+.summaryNotReady {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+
+.summaryReady {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+  border: 1px solid var(--color-success);
+}
+
+.summaryNotReady {
+  background: var(--status-rejected-bg);
+  color: var(--status-rejected-text);
+  border: 1px solid var(--color-danger);
+}
+
+.checkList {
+  list-style: none;
+  margin: 0 0 var(--spacing-3) 0;
+  padding: 0;
+}
+
+.checkRow {
+  display: grid;
+  grid-template-columns: 2rem 1fr;
+  gap: var(--spacing-2) var(--spacing-3);
+  padding: var(--spacing-3) 0;
+  border-bottom: 1px dashed var(--color-border-dark);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  font-weight: 700;
+}
+
+.iconOk {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+.iconProblem {
+  background: var(--status-rejected-bg);
+  color: var(--status-rejected-text);
+}
+
+.iconInfo {
+  background: var(--status-neutral-bg);
+  color: var(--status-neutral-text);
+}
+
+.checkHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-weight: 600;
+}
+
+.checkUitleg {
+  margin: var(--spacing-1) 0 0 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.whatToDo {
+  margin: var(--spacing-2) 0 0 0;
+  font-size: 0.875rem;
+}
+
+.caveats {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3) var(--spacing-2) var(--spacing-6);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.nothingStored {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-info);
+  border-radius: var(--radius-sm);
+  background: var(--status-planned-bg);
+  color: var(--status-planned-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.warning {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--status-awaiting-bg);
+  color: var(--status-awaiting-text);
+  font-size: 0.875rem;
+}
+
+.validationError {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--status-rejected-bg);
+  color: var(--status-rejected-text);
+  font-size: 0.875rem;
+}
+
+.input,
+.select {
+  width: 100%;
+  padding: var(--spacing-2);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  align-items: center;
+  margin: 0 0 var(--spacing-3) 0;
+}
+
+.submit {
+  padding: var(--spacing-2) var(--spacing-4);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  font-size: 0.875rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.secondary {
+  padding: var(--spacing-1) var(--spacing-3);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+}
+
+.reason {
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  font-style: italic;
+}
+
+.loading,
+.muted {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.verdictOk,
+.verdictBlock {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-3);
+  border-radius: var(--radius-md);
+}
+
+.verdictOk {
+  border: 1px solid var(--color-success);
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+.verdictBlock {
+  border: 1px solid var(--color-danger);
+  background: var(--status-rejected-bg);
+  color: var(--status-rejected-text);
+}
+
+.verdictTitle {
+  margin: 0 0 var(--spacing-1) 0;
+  font-size: 1.05rem;
+}
+
+.verdictBody {
+  margin: 0 0 var(--spacing-1) 0;
+  font-size: 0.875rem;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: var(--spacing-3);
+  margin: 0 0 var(--spacing-3) 0;
+}
+
+.tile {
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.tile dt {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.tileValue {
+  margin: var(--spacing-1) 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.tileUitleg {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.tableWrap {
+  overflow-x: auto;
+  margin: 0 0 var(--spacing-3) 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.table th {
+  text-align: left;
+  padding: var(--spacing-2);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.table td {
+  padding: var(--spacing-2);
+  border-bottom: 1px dashed var(--color-border-dark);
+  vertical-align: top;
+}
+
+.list {
+  margin: 0 0 var(--spacing-3) 0;
+  padding-left: var(--spacing-6);
+  font-size: 0.875rem;
+}
+
+.list li {
+  margin: 0 0 var(--spacing-1) 0;
+}
+
+.missing {
+  color: var(--status-rejected-text);
+  font-weight: 600;
+}
+
+.code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}

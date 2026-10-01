@@ -17,6 +17,9 @@ import { DataTable, type DataTableColumn } from '../../components/DataTable.tsx'
 import { Pager } from '../../components/Pager.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import { Term } from '../../terms/Term.tsx';
+import { term } from '../../terms/index.ts';
+import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { CreateBundleForm } from './CreateBundleForm.tsx';
 import styles from './BundleListPage.module.css';
 
@@ -49,8 +52,12 @@ const COLUMNS: readonly DataTableColumn<BundleSummary>[] = [
     render: (row) => <Link to={`/bundles/${row.id}`}>{row.bundleReference}</Link>,
   },
   { key: 'description', header: 'Omschrijving', render: (row) => row.description ?? '—' },
-  { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'targetMode', header: 'Doelmodus', render: (row) => row.targetMode },
+  { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} domain="bundleStatus" /> },
+  {
+    key: 'targetMode',
+    header: 'Doelmodus',
+    render: (row) => <Term domain="targetMode" code={row.targetMode} />,
+  },
   {
     key: 'batchCount',
     header: 'Batches',
@@ -91,6 +98,18 @@ export function BundleListPage() {
     <div className={styles.page}>
       <h1 className={styles.title}>Publicatiebundels</h1>
 
+      <WhatIsThis>
+        <p>
+          Een bundel verzamelt goedgekeurde wijzigingen die samen gepubliceerd worden. U voegt er gecontroleerde
+          leveringen (batches) aan toe, beoordeelt de wijzigingen, en bevriest de bundel wanneer alles klaar is.
+          Bevriezen sluit de bundel af: daarna kan er niets meer bij of af, alleen nog geannuleerd worden.
+        </p>
+        <p>
+          Bij het aanmaken kiest u de doelmodus: een proefpublicatie schrijft niets naar Prodis, een controlebibliotheek
+          is bedoeld om te controleren, en een echte publicatie gaat naar de echte bibliotheek.
+        </p>
+      </WhatIsThis>
+
       <CreateBundleForm onCreated={reload} />
 
       <div className={styles.filters}>
@@ -103,7 +122,7 @@ export function BundleListPage() {
           <option value={NO_STATUS_FILTER}>Alle</option>
           {PUBLICATION_BUNDLE_STATUSES.map((option) => (
             <option key={option} value={option}>
-              {option}
+              {term('bundleStatus', option).label}
             </option>
           ))}
         </select>

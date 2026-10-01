@@ -31,12 +31,14 @@ test.describe.serial('Bundels', () => {
     const link = page.getByRole('link', { name: s.bundleRef });
     await expect(link).toBeVisible();
     const row = page.getByRole('row').filter({ has: link });
-    await expect(row.getByText('ASSEMBLING', { exact: true })).toBeVisible();
+    // NT-11b: statussen staan in gewoon Nederlands (ASSEMBLING = "In opbouw"); de code zit in de tooltip.
+    await expect(row.getByText('In opbouw', { exact: true })).toBeVisible();
 
     await link.click();
     await expect(page.getByRole('heading', { name: s.bundleRef })).toBeVisible();
-    await expect(page.getByText('ASSEMBLING', { exact: true }).first()).toBeVisible();
-    const batchesCounter = page.getByRole('term').filter({ hasText: /^Batches$/ }).locator('xpath=following-sibling::dd[1]');
+    await expect(page.getByText('In opbouw', { exact: true }).first()).toBeVisible();
+    // De teller heeft woord + verborgen uitleg in dezelfde <dt>; daarom enkel het begin van de tekst vergelijken.
+    const batchesCounter = page.getByRole('term').filter({ hasText: /^Batches/ }).locator('xpath=following-sibling::dd[1]');
     await expect(batchesCounter).toHaveText('1');
 
     await page.getByRole('link', { name: 'Mutaties' }).click();
@@ -52,10 +54,16 @@ test.describe.serial('Bundels', () => {
     const mutations = await bundleMutations(api, s.bundleId);
     await expect(page.getByText(new RegExp(`1-${mutations.length} van ${mutations.length}`))).toBeVisible();
 
-    // Onbekende statusreden: lege lijst, geen foutbanner.
-    await page.getByLabel('Statusreden').fill('BESTAAT_NIET_E2E');
-    await page.getByRole('button', { name: 'Filteren' }).click();
-    await expect(page.getByText('Deze bundel bevat (met deze filter) geen mutaties.')).toBeVisible();
+    // Statusreden is sinds NT-11b een keuzelijst (Nederlandse woorden; de waarde blijft de technische code) die
+    // meteen toepast. Een reden die in dit scenario niet voorkomt: lege lijst, geen foutbanner.
+    const absentReason = 'AMBIGUOUS'; // "Verwijzing dubbelzinnig"
+    const withReason = mutations.filter((m) => m.statusReason === absentReason);
+    await page.getByLabel('Statusreden').selectOption(absentReason);
+    if (withReason.length === 0) {
+      await expect(page.getByText('Deze bundel bevat (met deze filter) geen mutaties.')).toBeVisible();
+    } else {
+      await expect(page.getByText(new RegExp(`van ${withReason.length}$`))).toBeVisible();
+    }
     await expect(page.getByRole('alert')).toHaveCount(0);
 
     // Filters wissen: alles terug.
@@ -72,8 +80,8 @@ test.describe.serial('Bundels', () => {
     const hash = updates[0].identityHash!;
     expect(hash).toBeTruthy();
     await page.getByRole('button', { name: `Toon de hele wijzigingsgroep ${hash}` }).click();
-    await expect(page.getByLabel('Wijzigingsgroep (identityHash)')).toHaveValue(hash);
-    await expect(page.getByText(/Gefilterd op wijzigingsgroep/)).toBeVisible();
+    await expect(page.getByLabel('Wijzigingsgroep', { exact: true })).toHaveValue(hash);
+    await expect(page.getByText(/Gefilterd op één wijzigingsgroep/)).toBeVisible();
     await page.getByLabel('Soort').selectOption({ label: 'Alle' }); // de hele groep, ook andere soorten
     const inGroup = mutations.filter((m) => m.identityHash === hash);
     await expect(page.getByText(new RegExp(`van ${inGroup.length}$`))).toBeVisible();

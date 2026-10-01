@@ -2,6 +2,9 @@
  * De levering achter een batch (A-F2): bestanden, verwachte versus werkelijke aantallen en of de
  * volledigheid bewezen is. Alleen-lezen. `completenessProven = false` wordt uitdrukkelijk getoond
  * (in de huidige fase altijd zo); verwachte waarden zijn `null` zonder manifest.
+ *
+ * NT-11a (V7): de sleutel van de levering en de vingerafdruk van elk bestand zijn technisch en staan onder
+ * "Technische details (voor support)"; bovenaan staan enkel gewone woorden.
  */
 
 import * as batchesApi from '../../api/batches.ts';
@@ -9,14 +12,14 @@ import { DataTable, type DataTableColumn } from '../../components/DataTable.tsx'
 import type { DeliveryFileView } from '../../api/types.ts';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useQuery } from '../../hooks/useQuery.ts';
+import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
 import { Count, formatDateTime } from './format.tsx';
 import styles from './BatchDetailPage.module.css';
 
 const FILE_COLUMNS: readonly DataTableColumn<DeliveryFileView>[] = [
   { key: 'sequenceNumber', header: '#', render: (f) => f.sequenceNumber, align: 'right' },
   { key: 'fileName', header: 'Bestand', render: (f) => f.fileName },
-  { key: 'byteSize', header: 'Bytes', render: (f) => f.byteSize, align: 'right' },
-  { key: 'hash', header: 'Hash', render: (f) => `${f.hashAlgorithm}: ${f.contentHash}` },
+  { key: 'byteSize', header: 'Grootte in bytes', render: (f) => f.byteSize, align: 'right' },
 ];
 
 export function BatchDeliverySection({ deliveryId }: { deliveryId: number }) {
@@ -37,11 +40,7 @@ export function BatchDeliverySection({ deliveryId }: { deliveryId: number }) {
               <dd>{formatDateTime(data.receivedAt)}</dd>
             </div>
             <div className={styles.fact}>
-              <dt>Sleutel</dt>
-              <dd>{data.idempotencyKey}</dd>
-            </div>
-            <div className={styles.fact}>
-              <dt>Manifest</dt>
+              <dt>Begeleidend overzicht</dt>
               <dd>{data.manifestReference ?? '—'}</dd>
             </div>
             <div className={styles.fact}>
@@ -51,27 +50,47 @@ export function BatchDeliverySection({ deliveryId }: { deliveryId: number }) {
               </dd>
             </div>
             <div className={styles.fact}>
-              <dt>Records (verwacht / werkelijk)</dt>
+              <dt>Regels (verwacht / werkelijk)</dt>
               <dd>
                 <Count value={data.expectedRecordCount} /> / <Count value={data.actualRecordCount} />
               </dd>
             </div>
             <div className={styles.fact}>
-              <dt>Bytes (verwacht / werkelijk)</dt>
+              <dt>Grootte in bytes (verwacht / werkelijk)</dt>
               <dd>
                 <Count value={data.expectedByteSize} /> / {data.actualByteSize}
               </dd>
             </div>
             <div className={styles.fact}>
               <dt>Volledigheid</dt>
-              <dd>{data.completenessProven ? 'Bewezen' : 'Niet bewezen'}</dd>
+              <dd>
+                <span
+                  title="Of zeker is dat de levering volledig aankwam. Dat kan pas met een begeleidend overzicht; zonder is het altijd 'Niet bewezen'."
+                  style={{ textDecoration: 'underline dotted', cursor: 'help' }}
+                >
+                  {data.completenessProven ? 'Bewezen' : 'Niet bewezen'}
+                </span>
+              </dd>
             </div>
           </dl>
+          <p className={styles.secondary}>
+            Het begeleidend overzicht is een overzicht dat de aanleveraar meestuurt met wat er in de levering hoort te
+            zitten. Zonder dat overzicht zijn de verwachte waarden niet vastgesteld (&quot;—&quot;).
+          </p>
           <DataTable
             columns={FILE_COLUMNS}
             rows={data.files}
             rowKey={(f) => f.sequenceNumber}
             emptyMessage="Deze levering heeft geen bestanden."
+          />
+          <TechnicalDetails
+            items={[
+              { name: 'Sleutel van de levering', value: data.idempotencyKey },
+              ...data.files.map((f) => ({
+                name: `Vingerafdruk van bestand ${f.sequenceNumber} (${f.fileName})`,
+                value: `${f.hashAlgorithm}: ${f.contentHash}`,
+              })),
+            ]}
           />
         </>
       )}

@@ -105,35 +105,39 @@ describe('describe(error) — errors/codes.ts', () => {
   });
 
   describe('T1.2: onbekende code — familie-fallback', () => {
-    it('CONFIG_* krijgt de configuratie-fallback en toont de code letterlijk in de titel', () => {
+    // NT-11a (V7): de titel en uitleg van een fallback zijn gewoon Nederlands; de code staat enkel in `technical`.
+    it('CONFIG_* krijgt de configuratie-fallback, zonder de code in titel of uitleg', () => {
       const error = new ApiError(409, 'CONFIG_INCOMPLETE', 'Config incomplete', '/import-links/1');
       const result = describeError(error);
 
-      expect(result.title).toBe('Geweigerd (CONFIG_INCOMPLETE)');
-      expect(result.explanation).toContain('configuratie van de importdefinitie');
+      expect(result.title).toBe('De beschrijving van het bestand klopt niet');
+      expect(result.explanation).toContain('beschrijving van het bestand');
+      expect(result.title).not.toContain('CONFIG_INCOMPLETE');
+      expect(result.technical).toContain('CONFIG_INCOMPLETE');
     });
 
     it('*_NOT_FOUND krijgt de "niet gevonden"-fallback', () => {
       const error = new ApiError(404, 'SUPPLIER_NOT_FOUND', 'Supplier not found', '/suppliers/9');
       const result = describeError(error);
 
-      expect(result.title).toBe('Geweigerd (SUPPLIER_NOT_FOUND)');
+      expect(result.title).toBe('Niet gevonden');
       expect(result.explanation).toBe('Niet gevonden.');
+      expect(result.technical).toContain('SUPPLIER_NOT_FOUND');
     });
 
     it('*_IN_USE krijgt de "al in gebruik"-fallback', () => {
       const error = new ApiError(409, 'DISCOUNT_CODE_IN_USE', 'Discount code in use', '/discounts');
       const result = describeError(error);
 
-      expect(result.title).toBe('Geweigerd (DISCOUNT_CODE_IN_USE)');
-      expect(result.explanation).toBe('Die code of scope is al in gebruik.');
+      expect(result.title).toBe('Al in gebruik');
+      expect(result.explanation).toBe('Die code of combinatie is al in gebruik.');
     });
 
     it('*_CHANGED* krijgt de "toestand veranderd"-fallback', () => {
       const error = new ApiError(409, 'BUNDLE_STATUS_CHANGED_UNEXPECTEDLY', 'Status changed', '/bundles/42');
       const result = describeError(error);
 
-      expect(result.title).toBe('Geweigerd (BUNDLE_STATUS_CHANGED_UNEXPECTEDLY)');
+      expect(result.title).toBe('Intussen veranderd');
       expect(result.explanation).toBe('De toestand is ondertussen veranderd; lees opnieuw.');
     });
 
@@ -141,8 +145,9 @@ describe('describe(error) — errors/codes.ts', () => {
       const error = new ApiError(409, 'SOME_FUTURE_CODE', 'Some future code', '/bundles/42/whatever');
       const result = describeError(error);
 
-      expect(result.title).toBe('Geweigerd (SOME_FUTURE_CODE)');
+      expect(result.title).toBe('De bewerking is geweigerd');
       expect(result.explanation).toBe('De bewerking is geweigerd in de huidige toestand.');
+      expect(result.title).not.toContain('SOME_FUTURE_CODE');
     });
 
     it('toont de technische regel ook bij een onbekende code', () => {
@@ -150,6 +155,22 @@ describe('describe(error) — errors/codes.ts', () => {
       const result = describeError(error);
 
       expect(result.technical).toBe('SOME_FUTURE_CODE · HTTP 409 · /bundles/42/whatever');
+    });
+  });
+
+  describe('T1.2b: geen ruwe codes in de Nederlandse teksten (NT-11a, V7)', () => {
+    // Een ruwe code is een woord met een underscore (BUNDLE_NOT_FOUND) of een enumwaarde in hoofdletters
+    // (DRAFT, SCREENED); die horen enkel in de technische regel, nooit in titel, uitleg of "wat nu".
+    const RAW_CODE = /\b[A-Z]+_[A-Z_]+\b/;
+    const RAW_WORD = /\b[A-Z]{4,}\b/;
+
+    it('geen enkele ingang van CODE_MESSAGES toont een ruwe code', () => {
+      for (const [code, entry] of Object.entries(CODE_MESSAGES)) {
+        for (const text of [entry.title, entry.explanation, entry.whatNow ?? '']) {
+          expect(RAW_CODE.test(text), `${code}: ruwe code in "${text}"`).toBe(false);
+          expect(RAW_WORD.test(text), `${code}: enumwaarde in "${text}"`).toBe(false);
+        }
+      }
     });
   });
 

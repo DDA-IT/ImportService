@@ -6,7 +6,7 @@ Zie `docs/design/frontend-scherm3-bundel-design.md` voor het volledige ontwerp.
 
 ## Starten voor lokale ontwikkeling
 
-De frontend werkt via de Vite-devproxy die `/api` doorleidt naar `http://localhost:8081` (de `Web`-module). Tot Fase 5 (Keycloak) is dit de enige manier om de frontend te draaien — geen CORS-configuratie, geen statische uitlevering.
+De frontend werkt via de Vite-devproxy die `/api`, `/oauth2` en `/login` doorleidt naar `http://localhost:8081` (de `Web`-module). Voor lokale ontwikkeling is dit de enige manier — geen CORS-configuratie, geen statische uitlevering.
 
 ### Vereisten
 
@@ -42,34 +42,34 @@ Onderstaande scenario's controleren het samenspel met de echte backend. Ze volge
 1. Backend draait op poort 8081
 2. Frontend runt op poort 5173 via `npm run dev`
 3. Open http://localhost:5173 in een browser
-4. Voer een naam in bij "Ingelogd als" (zichtbaar in de app shell)
+4. Meld u aan via Keycloak (de app stuurt u automatisch door); de header toont daarna "Aangemeld als [naam]" met een knop "Afmelden"
 
 ### Scenario's
 
 1. **Bundel aanmaken; tweemaal dezelfde referentie ⇒ idempotent, met melding**
    - Ga naar "Publicatiebundels"
    - Klik "Nieuwe bundel"
-   - Vul `bundleReference` (bv. `TEST-001`), selecteer een `targetMode`, klik "Aanmaken"
+   - Vul "Bundelreferentie" (bv. `TEST-001`), selecteer een "Doelmodus", klik "Bundel aanmaken"
    - Bundel verschijnt in de lijst
-   - Herhaal dezelfde referentie → server geeft melding "Bundel bestond al"
+   - Herhaal dezelfde referentie → melding "Deze bundelreferentie bestond al" (er wordt geen nieuwe bundel gemaakt)
 
 2. **Kandidaten toevoegen; een al toegevoegde batch nogmaals ⇒ fout, niets veranderd**
    - Open een bundel (status ASSEMBLING)
    - Klik tabblad "Leden"
-   - Selecteer kandidaten, klik "Toevoegen"
+   - Selecteer kandidaten, klik "[N] geselecteerde batch(es) toevoegen"
    - Bij succes: tabel "Leden" toont ze
-   - Selecteer dezelfde batch nogmaals, klik "Toevoegen" → server: `BATCH_ALREADY_IN_BUNDLE`, selectie blijft intact
+   - Selecteer dezelfde batch nogmaals, klik "[N] geselecteerde batch(es) toevoegen" → server: `BATCH_ALREADY_IN_BUNDLE`, selectie blijft intact
 
 3. **Eén mutatie goedkeuren; dezelfde nogmaals door dezelfde persoon ⇒ idempotent**
    - Open bundel → tabblad "Mutaties"
-   - Mutatie met status `AWAITING_APPROVAL` kiezen
+   - Mutatie met status "Wacht op goedkeuring" (`AWAITING_APPROVAL`) kiezen
    - Klik "Goedkeuren", bevestig in de dialoog
    - Melding: "Goedkeuring vastgelegd" (of idempotentiemelding als het zelfde account meteen)
-   - Klik opnieuw "Goedkeuren" met dezelfde naam → melding "geen tweede regel geschreven"
+   - Klik opnieuw "Goedkeuren" met dezelfde naam → melding "Deze beslissing stond al zo op uw naam; er is geen tweede regel geschreven"
 
 4. **Goedkeuring herzien naar afkeuring ⇒ reden verplicht, beide regels in register**
    - Open bundel → tabblad "Mutaties"
-   - Mutatie die al goedgekeurd is (status `READY_FOR_PUBLICATION`, `decidedBy` ingevuld)
+   - Mutatie die al goedgekeurd is (status "Goedgekeurd", technisch `READY_FOR_PUBLICATION`; beslisser ingevuld)
    - Klik "Afkeuren" (herzien)
    - Dialoog toont: "U keert een eerdere beslissing om"
    - Reden wordt verplicht (knop uit tot ingevuld)
@@ -81,7 +81,7 @@ Onderstaande scenario's controleren het samenspel met de echte backend. Ze volge
    - Klik "Groep goedkeuren (N)" of "Groep afkeuren (N)" (in het toolbar onder de tabel)
    - Dialoog toont het aantal mutaties dat eraan voldoet, en zegt welke mutaties de groepsactie nooit raakt
    - Bevestig
-   - Tabblad "Beslissingen" toont een rij met `decisionScope = GROUP`, `decisionKind = APPROVE` of `REJECT`, en het aantal betrokken mutaties
+   - Tabblad "Beslissingen" toont een rij met bereik "Groep mutaties" (technisch `GROUP`), soort "Goedkeuring" of "Afkeuring" (`APPROVE`/`REJECT`), en het aantal betrokken mutaties
 
 6. **Bevriezen met openstaande `AWAITING_APPROVAL` ⇒ blokkade in dialoog**
    - Open bundel → tabblad "Overzicht"
@@ -92,7 +92,7 @@ Onderstaande scenario's controleren het samenspel met de echte backend. Ze volge
    - Sluit de dialoog, ga naar "Mutaties", keur alle `AWAITING_APPROVAL`-mutaties goed
    - Terug naar "Overzicht" → open bevriezen opnieuw
    - Ditmaal is de blokkade weg; klik "Bevriezen" in de dialoog (typ de bundelreferentie over)
-   - Status wisselt naar `FROZEN`, tellers worden vastgesteld, `PLANNED`-mutaties → `READY_FOR_PUBLICATION`
+   - Status wisselt naar "Bevroren" (`FROZEN`), tellers worden vastgesteld, `PLANNED`-mutaties → `READY_FOR_PUBLICATION`
    - Melding: "Bundel is bevroren ... (AUTO_APPROVE_PLANNED)" met hoeveel op uw naam zijn goedgekeurd
 
 7. **Tweede keer bevriezen ⇒ 409 leesbaar getoond**
@@ -119,6 +119,25 @@ Onderstaande scenario's controleren het samenspel met de echte backend. Ze volge
     - Beide prijzen tonen in nl-BE-formaat (komma als decimaalseparator)
     - Geen berekend verschil in een kolom "Δ prijs"
 
+11. **Nieuwe leverancier en taak aanmaken (recht Beheren)**
+    - Ga naar "Inrichting" en klik "Nieuwe leverancier en taak" (zonder het recht Beheren staat de knop uit, met reden)
+    - Doorloop: leverancier → startpunt (zelf beschrijven of vanuit een sjabloon) → beschrijving van het bestand → koppeling → taak → samenvatting
+    - Sluit het scherm halverwege; in "Inrichting" staat nu "Verder inrichten" bij de onafgemaakte leverancier en brengt u terug bij de volgende stap
+    - Een code die al bestaat geeft een melding met "Doorgaan met de bestaande" (enkel bij dezelfde ouder)
+    - Een tweede concept voor dezelfde beschrijving (bv. in een tweede tabblad) wordt geweigerd: 409 `REVISION_DRAFT_ALREADY_EXISTS`, de wizard toont het bestaande concept
+    - Zonder actieve versie staat de taak op "Levering uploaden" zichtbaar maar uitgeschakeld ("nog niet klaar: versie niet geactiveerd")
+
+12. **Controleren van een koppeling**
+    - Samenvatting van de wizard → "Controleer en activeer de conceptversie" (route `/setup/links/{linkId}/check`)
+    - Checklist: alle problemen tegelijk, met veld ("Veld:", "Doelveld:", "Kolom:") en "Wat moet ik doen?"; bij overgeslagen controles de melding "Sommige controles konden nog niet uitgevoerd worden …" (dat betekent niet dat alles in orde is)
+    - Proefinlezing: kies een CSV; banner "Er wordt niets opgeslagen of gepubliceerd"; oordeel, tellers ("—" = niet vastgesteld), "Zo lezen we uw bestand", "Niet gecontroleerd in een proef"
+    - Activeren zonder geslaagde proefinlezing toont vooraf een waarschuwing; na activeren wordt de checklist herladen
+    - "Wat nu?": de eerste echte levering wacht na de screening op uw goedkeuring (`INITIAL_LOAD`)
+
+## Terminologie
+
+Gebruikerstekst is Nederlands en volgt de woordenlijst (`src/terms/`, redactionele bron: `docs/handleiding/begrippen.md`; een test bewaakt dat ze gelijklopen en weert ruwe codes in labels). Gekozen woorden: "invulpunt" (technisch bookmark), "versie" (revisie), "beschrijving van het bestand" (importdefinitie), "leverancier of aankoopvereniging" (bronorganisatie); Batch, Mutatie en Bundel blijven, met "Wat betekent dit?". Technische codes staan onder "Technische details (voor support)" of in een tooltip, nooit als hoofdtekst. Bij een nieuwe tekst: voeg eerst het woord toe in `begrippen.md`.
+
 ## Architectuur-highlights
 
 - **Geen server-state-bibliotheek:** twee eigen hooks (`useQuery`, `useAction`) met expliciete cache-invalidatie. Reden: optimistische updates zijn ongewenst bij financiële beslissingen.
@@ -135,4 +154,6 @@ Zie `docs/design/frontend-scherm3-bundel-design.md` voor details.
 - Linting: `npm run lint` — Oxlint met React-rules
 - Build: `npm run build` — TypeScript + Vite
 
-Alle componenten in `src/` zijn **geïmplementeerd in Fase 4** (scherm 3 Publicatiebundel). Toekomstige schermen kunnen componenten hergebruiken zonder wijzigingen (zie het `MutationList`-contract in §11 van het ontwerp).
+De bundelschermen (scherm 3) zijn gebouwd in Fase 4; later kwamen werkvoorraad, batchdetail, upload, behandelgevallen, Inrichting, Sjablonen, de wizard "Nieuwe leverancier en taak" en "Controleren" bij. Schermen kunnen componenten hergebruiken zonder wijzigingen (zie het `MutationList`-contract in §11 van het ontwerp).
+
+Het label van de knop op het publicatietabblad is "Proefpublicatie starten" (voorheen "Simulatierun starten"; sommige codecommentaren gebruiken nog de oude naam).

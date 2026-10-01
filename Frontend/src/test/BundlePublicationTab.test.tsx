@@ -134,12 +134,15 @@ describe('BundlePublicationTab', () => {
     renderTab(bundle({ status: 'ASSEMBLING' }));
 
     expect(await screen.findByText(/alleen gestart worden voor een bevroren bundel/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Simulatierun starten' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Proefpublicatie starten' })).not.toBeInTheDocument();
+    // Enkel Nederlandse woorden: de bundelstatus staat als woord in de uitleg, nooit als code.
+    expect(screen.getByText(/alleen gestart worden voor een bevroren bundel/).textContent).toContain('In opbouw');
+    expect(screen.getByText(/alleen gestart worden voor een bevroren bundel/).textContent).not.toContain('ASSEMBLING');
   });
 
   it('FROZEN zonder actieve run: de knop is beschikbaar en start een run', async () => {
     renderTab(bundle());
-    const button = await screen.findByRole('button', { name: 'Simulatierun starten' });
+    const button = await screen.findByRole('button', { name: 'Proefpublicatie starten' });
     expect(button).toBeEnabled();
 
     fireEvent.click(button);
@@ -155,9 +158,10 @@ describe('BundlePublicationTab', () => {
     runs = [run({ id: 9, status: 'PREPARING' })];
     renderTab(bundle());
 
-    const button = await screen.findByRole('button', { name: 'Simulatierun starten' });
+    const button = await screen.findByRole('button', { name: 'Proefpublicatie starten' });
     expect(button).toBeDisabled();
-    expect(button.getAttribute('title')).toContain('PUBLICATION_RUN_IN_PROGRESS');
+    expect(button.getAttribute('title')).toContain('Er loopt al een publicatierun');
+    expect(button.getAttribute('title')).toContain('technische code: PUBLICATION_RUN_IN_PROGRESS');
     expect(button.getAttribute('title')).toContain('#9');
   });
 
@@ -168,21 +172,36 @@ describe('BundlePublicationTab', () => {
     await screen.findByText(/SHA-256/);
     expect(screen.getByText(/999 byte/)).toBeInTheDocument();
 
-    const artifactLink = screen.getByRole('link', { name: 'Download het runartefact (CSV)' });
+    const artifactLink = screen.getByRole('link', { name: 'Download het bestand van deze run (CSV)' });
     expect(artifactLink.getAttribute('href')).toContain('/publication-runs/5/artifact');
 
-    const previewLink = screen.getByRole('link', { name: 'Bekijk de volledige PSIMPORT-preview (CSV)' });
+    const previewLink = screen.getByRole('link', {
+      name: 'Bekijk het volledige voorbeeld van het importbestand voor Prodis (CSV)',
+    });
     expect(previewLink.getAttribute('href')).toContain('/bundles/42/psimport-preview?format=csv');
   });
 
-  it('een FAILED-run toont failureCode/failureMessage als platte tekst', async () => {
+  it('een FAILED-run toont een Nederlandse uitleg; failureCode/failureMessage staan als platte tekst onder "Technische details"', async () => {
     runs = [
       run({ id: 6, status: 'FAILED', artifactSha256: null, failureCode: 'ARTIFACT_WRITE_FAILED', failureMessage: 'disk full' }),
     ];
     renderTab(bundle());
 
-    expect(await screen.findByText(/ARTIFACT_WRITE_FAILED/)).toBeInTheDocument();
+    expect(await screen.findByText(/technisch mislukt of afgebroken/)).toBeInTheDocument();
+    const code = screen.getByText('ARTIFACT_WRITE_FAILED');
+    expect(code.closest('details')?.textContent).toContain('Technische details (voor support)');
     expect(screen.getByText('disk full')).toBeInTheDocument();
+  });
+
+  it('de banner legt de proefpublicatie uit zonder ruwe codes; de contractstatus staat onder "Technische details"', async () => {
+    renderTab(bundle());
+
+    const banner = await screen.findByRole('note');
+    expect(banner.textContent).toContain('niets naar Prodis geschreven');
+    expect(banner.querySelector('details')?.textContent).toContain('UNVERIFIED_FIELD_INVENTORY');
+    banner.querySelector('details')?.remove();
+    expect(banner.textContent).not.toMatch(/[A-Z]+_[A-Z_]+/);
+    expect(banner.textContent).not.toContain('PSIMPORT');
   });
 
   it('incompleteRowCount > 0 toont de onvolledigheidsmelding', async () => {

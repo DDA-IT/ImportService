@@ -32,3 +32,11 @@ databaseChangeLog:
       file: db/changelog/011-delivery-source-kind.sql
   - include:
       file: db/changelog/012-issue-case.sql
+  - include:
+      file: db/changelog/013-external-credential.sql
+  - include:
+      file: db/changelog/014-delivery-configuration.sql
+  - include:
+      file: db/changelog/015-fetch-run.sql
+  - include:
+      file: db/changelog/016-revision-draft-marker.sql

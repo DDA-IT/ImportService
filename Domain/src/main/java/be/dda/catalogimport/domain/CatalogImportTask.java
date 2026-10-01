@@ -69,6 +69,16 @@ public class CatalogImportTask {
     @Column(name = "last_run_finished_at")
     private Instant lastRunFinishedAt;
 
+    /**
+     * De Leveringsconfiguratie-versie waarmee deze taak automatisch ophaalt (changeset 014-7, L2); {@code null} voor
+     * een taak zonder automatische ophaling (het bestaande gedrag). Een nieuwe DC-versie wordt expliciet
+     * overgenomen; A11 (hoogstens één DC-taak per koppeling) wordt in de service afgedwongen.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "delivery_configuration_version_id",
+            foreignKey = @ForeignKey(name = "fk_catalog_import_task_dc_version"))
+    private DeliveryConfigurationVersion deliveryConfigurationVersion;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -165,6 +175,14 @@ public class CatalogImportTask {
 
     public void setLastRunFinishedAt(Instant lastRunFinishedAt) {
         this.lastRunFinishedAt = lastRunFinishedAt;
+    }
+
+    public DeliveryConfigurationVersion getDeliveryConfigurationVersion() {
+        return deliveryConfigurationVersion;
+    }
+
+    public void setDeliveryConfigurationVersion(DeliveryConfigurationVersion deliveryConfigurationVersion) {
+        this.deliveryConfigurationVersion = deliveryConfigurationVersion;
     }
 
     public Instant getCreatedAt() {

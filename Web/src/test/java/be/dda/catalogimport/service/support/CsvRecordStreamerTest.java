@@ -10,6 +10,8 @@ import be.dda.catalogimport.service.support.SourceStructureConfig.FieldReference
 import java.io.ByteArrayInputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -213,7 +215,69 @@ class CsvRecordStreamerTest {
         assertThat(summary.physicalLineCount()).isEqualTo(4);
     }
 
+    // --- NT-9: additieve sinkhooks (docs/design/proefinlezing-design.md par. 7) ------------------
+
+    @Test
+    void theHeaderHookReceivesTheColumnsBeforeAMissingFieldBlocksTheDelivery() {
+        List<String> seen = new ArrayList<>();
+        long[] headerLine = new long[1];
+        CsvRecordStreamer.Sink sink = new NoOpSink() {
+            @Override
+            public void header(long lineNumber, List<String> columns) {
+                headerLine[0] = lineNumber;
+                seen.addAll(columns);
+            }
+        };
+
+        assertThatThrownBy(() -> new CsvRecordStreamer().read(
+                stream("LEVERANCIER; groep ;REFERENTIE\nACME;G1;R1\n", config()), config(),
+                CsvRecordStreamer.DEFAULT_MAX_LINE_LENGTH, sink))
+                .isInstanceOf(ScreeningBlockedException.class)
+                .hasMessageContaining("PRIJS");
+        assertThat(headerLine[0]).isEqualTo(1);
+        assertThat(seen).containsExactly("LEVERANCIER", " groep ", "REFERENTIE");
+    }
+
+    @Test
+    void thePhysicalLineHookSeesEveryLineOnceWithTheByteOrderMarkRemoved() {
+        List<String> lines = new ArrayList<>();
+        CsvRecordStreamer.Sink sink = new NoOpSink() {
+            @Override
+            public void physicalLine(long lineNumber, String line) {
+                lines.add(lineNumber + "|" + line);
+            }
+        };
+        SourceStructureConfig prefixed = config(';', '"', true, 2, null, StandardCharsets.UTF_8, null);
+
+        ReadSummary summary = new CsvRecordStreamer().read(
+                stream("﻿export van vandaag\n" + HEADER + "\n\nACME;G1;R1;1,50\n", prefixed), prefixed,
+                CsvRecordStreamer.DEFAULT_MAX_LINE_LENGTH, sink);
+
+        assertThat(lines).containsExactly("1|export van vandaag", "2|" + HEADER, "3|", "4|ACME;G1;R1;1,50");
+        assertThat(summary.physicalLineCount()).isEqualTo(4);
+        assertThat(summary.prefixLineCount()).isEqualTo(1);
+    }
+
+    @Test
+    void aSinkWithoutTheHooksReadsExactlyAsBefore() {
+        CollectingSink sink = read(HEADER + "\nACME;G1;R1;1,50\n", config());
+
+        assertThat(sink.rows()).hasSize(1);
+        assertThat(sink.issues()).isEmpty();
+    }
+
     // --- Helpers -------------------------------------------------------------------------------
+
+    /** Een sink die rijen en problemen negeert; de hooktests overschrijven enkel de hook die ze bewijzen. */
+    private static class NoOpSink implements CsvRecordStreamer.Sink {
+        @Override
+        public void record(CsvRecordStreamer.ParsedRow row) {
+        }
+
+        @Override
+        public void issue(CsvRecordStreamer.LineIssue issue) {
+        }
+    }
 
     private static CollectingSink read(String content, SourceStructureConfig config) {
         CollectingSink sink = new CollectingSink();

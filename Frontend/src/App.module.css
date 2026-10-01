@@ -1,0 +1,161 @@
+.shell {
+  min-height: 100vh;
+  background: var(--color-background);
+  font-family: var(--font-sans);
+}
+
+/* Zijbalk (Prodis nav-vertical: 300px breed in Prodis, hier 280px) */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 1100;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--color-background);
+  border-right: 1px dashed rgba(145, 158, 171, 0.12);
+}
+
+.title {
+  margin: 0;
+  padding: 24px 20px;
+  font-family: var(--font-heading);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-text);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 16px 16px;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 4px 8px 4px 12px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+}
+
+.navItem:hover {
+  background: var(--color-hover-bg);
+}
+
+.navItemActive,
+.navItemActive:hover {
+  background: var(--color-accent-soft-bg);
+  color: var(--color-accent-soft-text);
+  font-weight: 600;
+}
+
+.backdrop {
+  display: none;
+}
+
+/* Rechterkolom */
+.content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  margin-left: 280px;
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+  padding: 0 40px;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(6px);
+}
+
+.menuButton {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.menuButton:hover {
+  background: var(--color-hover-bg);
+}
+
+.headerActor {
+  margin-left: auto;
+}
+
+.main {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 8px 40px 64px;
+  background: var(--color-background);
+}
+
+.noPermissions {
+  padding: 24px;
+  background: var(--color-background);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+/* Onder 1200px (Prodis breakpoint lg): zijbalk als overlay */
+@media (max-width: 1199px) {
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  .sidebarOpen {
+    transform: translateX(0);
+    box-shadow: var(--shadow-dialog);
+  }
+
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    background: rgba(28, 37, 46, 0.48);
+  }
+
+  .content {
+    margin-left: 0;
+  }
+
+  .header {
+    padding: 0 16px;
+  }
+
+  .menuButton {
+    display: inline-flex;
+  }
+
+  .main {
+    padding: 8px 16px 64px;
+  }
+}
