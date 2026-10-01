@@ -2418,3 +2418,16 @@ en `REQUEST_BODY_UNREADABLE`; (3) een niet-vastgelegd artefact wordt opgeruimd m
 **Nog open:** S1-c (Dao-tests) en alle `@SpringBootTest`/HTTP-tests — geen werkende lokale DB-login (`catalog_import` faalt). Te draaien door de mens:
 `PublicationRunHttpTest`, `PublicationRunSimulationTest`, plus een volledige ronde `run-full-tests.ps1`. V1 (changelogs naar Dao verhuizen) ligt bij de mens.
 **Bron:** hoofdsessie na verificatie
+
+## 2026-10-01 — V1: Liquibase-changelogs blijven in Web
+**Vraag:** Moeten de changelogs naar `Dao/src/main/resources` verhuizen?
+**Beslissing:** Nee. Ze blijven in `Web/src/main/resources/db/changelog`; Dao leest ze als test-resource (`<testResources>`), back-upscripts ongewijzigd.
+**Bron:** mens ("changelogs laten we in Web")
+
+## 2026-10-01 — Stap 4 en 5 gestart
+**Vraag:** Krijgt hervatten een exclusieve verwerkingsclaim per batch, en wordt accept-baseline herontworpen?
+**Beslissing:** Ja, beide (mens: "ga verder met stap 4 + 5"). Stap 4: exclusieve verwerkingsclaim per batch voor screenen en hervatten, 409
+`BATCH_BEING_PROCESSED` zolang een worker actief is, met concurrency-test. Stap 5: accept-baseline mag geen bronstaat/prijsobservaties achterlaten van een
+batch die niet aanvaard wordt, en `addOneBatch` neemt het batchslot (R-BAS-02). De technische invulling (slotmechanisme, eventueel API-veld voor
+"loopt nog" vs "onderbroken", volgorde van schrijven) werkt een denker-zwaar uit; die wordt apart gelogd vóór een bouwer start.
+**Bron:** mens / analyse ImportService 2026-10-01
