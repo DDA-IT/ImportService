@@ -498,14 +498,18 @@ tests daar draait, met kleine verbindingspools en een contextcache van 2, zodat 
 De echte data in `public` blijft onaangeroerd; `public` wordt altijd geweigerd.
 
 ```powershell
-.\scripts\test\run-full-tests.ps1                                  # alle tests van de Web-module
+.\scripts\test\run-full-tests.ps1                                  # alle tests van de Web-module (incl. upstream-modules)
+.\scripts\test\run-full-tests.ps1 -Module Service                  # Domain, Dao en Service (Domain|Dao|Service|Web)
+.\scripts\test\run-full-tests.ps1 -Module Domain                   # zonder database, geen schema-reset
 .\scripts\test\run-full-tests.ps1 -Tests BundleHttpTest,SecurityHttpTest
 .\scripts\test\run-full-tests.ps1 -DropAfter                       # schema na afloop verwijderen
 ```
 
 Het script vereist alleen CREATE op de database (geen CREATEDB), leest `CATALOG_DB_URL`/`_USERNAME`/`_PASSWORD`
-(defaults zoals `application-local.yml`) en schrijft het volledige log naar `Web/target/full-test.log`. Het
-toont per klasse wat er faalt; "BUILD SUCCESS" zegt niets, want falende tests breken de build niet. Een volledige
+(defaults zoals `application-local.yml`) en schrijft het volledige log naar `<Module>/target/full-test.log`. Het
+geeft totalen per module (uit de surefire-rapporten van Domain, Dao, Service en Web) en toont per klasse wat er faalt.
+Falende tests laten Maven nu falen (`-fae`, geen `failure.ignore`) en het script eindigt dan met exitcode 1.
+Modules die in de Reactor Summary `SKIPPED` staan, zijn niet getest en worden expliciet gemeld. Een volledige
 ronde duurt lang omdat elke Spring-context opnieuw opstart.
 
 Frontend: `tsc --noEmit -p .` in `Frontend/` controleert niets (het root-tsconfig verwijst enkel door). Gebruik

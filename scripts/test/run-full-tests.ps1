@@ -1,4 +1,4 @@
-# Volledige (of gerichte) testronde van de Web-module tegen een AFGESCHERMD PostgreSQL-schema.
+# Volledige (of gerichte) testronde van een module (default Web, incl. -am) tegen een AFGESCHERMD PostgreSQL-schema.
 #
 # Waarom een eigen schema: de tests draaien tegen PostgreSQL (profiel local) en een deel ervan (o.a.
 # ImportControlSchemaTest, ScreeningSchemaTest) gebruikt vaste codes zonder op te ruimen, dus slaagt alleen op een
@@ -13,6 +13,7 @@
 # Gebruik (vanuit de projectroot):
 #   .\scripts\test\run-full-tests.ps1                                   # alle tests, schoon schema ci_fulltest
 #   .\scripts\test\run-full-tests.ps1 -Tests BundleHttpTest,SecurityHttpTest
+#   .\scripts\test\run-full-tests.ps1 -Module Service                # Service (+ Domain/Dao) i.p.v. Web
 #   .\scripts\test\run-full-tests.ps1 -NoReset                          # schema NIET leegmaken
 #   .\scripts\test\run-full-tests.ps1 -DropAfter                        # schema na afloop verwijderen
 #
@@ -26,6 +27,7 @@
 [CmdletBinding()]
 param(
     [string]$Schema = "ci_fulltest",
+    [ValidateSet("Domain", "Dao", "Service", "Web")][string]$Module = "Web",
     [string[]]$Tests = @(),
     [int]$CacheSize = 2,
     [int]$PoolSize = 3,
@@ -75,7 +77,9 @@ function Invoke-SchemaAction {
     if ($LASTEXITCODE -ne 0) { Fail "schema-actie '$Action' mislukt (heeft de gebruiker CREATE op de database?)." }
 }
 
-if ($NoReset) {
+if ($Module -eq "Domain") {
+    Write-Log "module Domain: geen database nodig, schema-reset overgeslagen"
+} elseif ($NoReset) {
     Write-Log "schema '$Schema' blijft bestaan (-NoReset)"
     Invoke-SchemaAction "create"
 } else {
@@ -88,16 +92,16 @@ $argLine = "-Dspring.datasource.url=$testUrl " +
     "-Dspring.datasource.hikari.minimum-idle=0 " +
     "-Dspring.test.context.cache.maxSize=$CacheSize"
 
-$mvnArgs = @("-pl", "Web", "-am", "test", "-Dmaven.test.failure.ignore=true", "-DargLine=$argLine")
+$mvnArgs = @("-pl", $Module, "-am", "-fae", "test", "-DargLine=$argLine")
 if ($Tests.Count -gt 0) {
     $mvnArgs += "-Dtest=$($Tests -join ',')"
     $mvnArgs += "-Dsurefire.failIfNoSpecifiedTests=false"
     Write-Log ("gerichte run: " + ($Tests -join ", "))
 } else {
-    Write-Log "volledige run van de Web-module (kan lang duren: elke Spring-context start opnieuw op)"
+    Write-Log "volledige run van module $Module (kan lang duren: elke Spring-context start opnieuw op)"
 }
 
-$logFile = Join-Path $root "Web\target\full-test.log"
+$logFile = Join-Path $root "$Module\target\full-test.log"
 New-Item -ItemType Directory -Force (Split-Path $logFile) | Out-Null
 $started = Get-Date
 # Windows PowerShell 5.1 maakt van elke stderr-regel van een extern commando een ErrorRecord; onder "Stop" breekt
@@ -109,22 +113,35 @@ $mavenExit = $LASTEXITCODE
 $ErrorActionPreference = $previousPreference
 $minutes = [math]::Round(((Get-Date) - $started).TotalMinutes, 1)
 
-# Samenvatting uit de surefire-rapporten. 'BUILD SUCCESS' zegt hier niets: failure.ignore staat aan.
-$reports = Get-ChildItem (Join-Path $root "Web\target\surefire-reports") -Filter "*.txt" -ErrorAction SilentlyContinue |
-    Where-Object { $_.LastWriteTime -ge $started }
-$totalRun = 0; $totalFail = 0; $totalErr = 0; $bad = @()
-foreach ($report in $reports) {
-    $line = (Get-Content $report.FullName -TotalCount 4)[3]
-    if ($line -match 'Tests run: (\d+), Failures: (\d+), Errors: (\d+)') {
-        $totalRun += [int]$Matches[1]; $totalFail += [int]$Matches[2]; $totalErr += [int]$Matches[3]
-        if ([int]$Matches[2] + [int]$Matches[3] -gt 0) {
-            $bad += ("{0}: {1} fout(en)/falend van {2}" -f ($report.BaseName -replace '^.*\.', ''), ([int]$Matches[2] + [int]$Matches[3]), $Matches[1])
+# Samenvatting uit de surefire-rapporten van alle modules in de reactor. Falende tests laten Maven nu falen
+# (geen failure.ignore meer); '-fae' laat onafhankelijke modules wel doorlopen. Modules die in de Reactor Summary
+# SKIPPED staan (bv. omdat een upstream-module faalde) hebben dus NIET getest en worden expliciet gemeld.
+$totalRun = 0; $totalFail = 0; $totalErr = 0; $bad = @(); $reportCount = 0
+foreach ($mod in @("Domain", "Dao", "Service", "Web")) {
+    $dir = Join-Path $root "$mod\target\surefire-reports"
+    $reports = @(Get-ChildItem $dir -Filter "*.txt" -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $started })
+    $run = 0; $fail = 0; $err = 0
+    foreach ($report in $reports) {
+        $line = (Get-Content $report.FullName -TotalCount 4)[3]
+        if ($line -match 'Tests run: (\d+), Failures: (\d+), Errors: (\d+)') {
+            $run += [int]$Matches[1]; $fail += [int]$Matches[2]; $err += [int]$Matches[3]
+            if ([int]$Matches[2] + [int]$Matches[3] -gt 0) {
+                $bad += ("{0}/{1}: {2} fout(en)/falend van {3}" -f $mod, ($report.BaseName -replace '^.*\.', ''), ([int]$Matches[2] + [int]$Matches[3]), $Matches[1])
+            }
         }
+    }
+    $reportCount += $reports.Count
+    $totalRun += $run; $totalFail += $fail; $totalErr += $err
+    $skipped = Select-String -Path $logFile -Pattern ("^\[INFO\] .*\b" + $mod + "\b.* SKIPPED") -ErrorAction SilentlyContinue
+    if ($skipped) {
+        Write-Log ("{0}: SKIPPED in de Reactor Summary (NIET getest)" -f $mod)
+    } else {
+        Write-Log ("{0}: klassen {1}; tests {2}; falend {3}; fouten {4}" -f $mod, $reports.Count, $run, $fail, $err)
     }
 }
 
 Write-Log "klaar in $minutes min (mvn exit $mavenExit); log: $logFile"
-Write-Log "klassen: $($reports.Count); tests: $totalRun; falend: $totalFail; fouten: $totalErr"
+Write-Log "totaal: klassen $reportCount; tests: $totalRun; falend: $totalFail; fouten: $totalErr"
 if ($bad.Count -gt 0) {
     Write-Log "klassen met problemen:"
     $bad | ForEach-Object { Write-Output "  - $_" }

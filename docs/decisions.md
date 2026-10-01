@@ -2370,3 +2370,41 @@ woorden in `begrippen.md`; Playwright-specs (`e2e/tests/*.spec.ts`) draaien; eve
 **Bron:** hoofdsessie na verificatie
 **Aanvulling (mens, 2026-10-01, "Ja doen"):** de checklist neemt de standaardvaluta van de koppeling mee en activatie niet — **aanvaard** (NT-14-2-invulling).
 Het demofilmpje wordt bijgewerkt naar de nieuwe woorden.
+
+---
+
+## 2026-10-01 — Analyse-opvolging stap 1: elke module apart testen
+**Vraag:** Alle 136 testbestanden staan in `Web`; Domain, Dao en Service hebben geen eigen tests. Moet dat zo blijven?
+**Beslissing:** Nee. Elke module (Domain, Dao, Service, Web) wordt apart getest met een eigen gericht commando (`mvn -pl <Module> -am test`).
+`run-full-tests.ps1` mag falende tests niet meer verbergen. De concrete testaanpak per module (frameworks, eerste testklassen, wat uit `Web` verhuist)
+werkt een denker-subagent uit; die invulling wordt hieronder apart gelogd vóór een bouwer start.
+**Bron:** mens ("elke blok apart aftesten", "ja, start met stap 1, 2 en 3") / analyse ImportService 2026-10-01
+
+## 2026-10-01 — Analyse-opvolging stap 2: frontend-dataflow en dialoog
+**Vraag:** Hoe lossen we oude data na een sleutelwissel, dubbel versturen en de modale laag op?
+**Beslissing:** (a) `useQuery` zet `data` terug op `null` bij een sleutelwissel (fix in de hook, niet per scherm). (b) `useAction.execute` krijgt een
+ref-guard: een tweede aanroep terwijl een actie loopt doet niets. (c) `ConfirmDialog` gebruikt `<dialog>.showModal()` (focus trap, Escape, focus terug),
+een scrollbare body, en een z-index-schaal naar MUI (appBar 1100, drawer 1200, modal 1300). (d) `Pager` en `ConfirmDialog` gebruiken `useId()` in plaats
+van vaste ids. Met tests per onderdeel.
+**Bron:** denker-zwaar (frontendanalyse) + mens (akkoord stap 2) / analyse ImportService 2026-10-01
+
+## 2026-10-01 — Analyse-opvolging stap 3: foutafhandeling en statusguard publicatierun
+**Vraag:** Hoe stoppen we interne fouten die als 400 lekken, en de race tussen afbreken en afronden van een publicatierun?
+**Beslissing:** (a) `ApiExceptionHandler`: `IllegalStateException` wordt 500 met een vaste boodschap zonder interne tekst (IAE blijft 400); de body is
+null-veilig; eigen codes voor `MaxUploadSizeExceededException` en `HttpMessageNotReadableException`. Bewuste contractwijziging: ISE gaf 400, nu 500.
+(b) `completeRun`/`failRun` (en `PublicationRun.recordSimulated/recordFailed`) herlezen de run onder slot en werken alleen vanuit PREPARING, naar het
+precedent van `FetchRunService.close`; een afgebroken run blijft afgebroken. Met tests.
+**Bron:** denker-zwaar (backendanalyse) + mens (akkoord stap 3) / analyse ImportService 2026-10-01
+
+## 2026-10-01 — Stap 1 uitgewerkt: testaanpak per module (S1-a t/m S1-f)
+**Vraag:** Hoe wordt elke module concreet apart getest?
+**Beslissing:**
+- Domain: JUnit 5 + AssertJ (test-scope), geen Spring. Dao: `spring-boot-starter-test` + postgresql + liquibase-core (test-scope), lokale PostgreSQL
+  (geen Testcontainers, geen H2), `@DataJpaTest` + `@AutoConfigureTestDatabase(replace = NONE)` + expliciet `ddl-auto: validate`; transactioneel terugrollen,
+  codes met UUID-suffix. Service: `spring-boot-starter-test` (Mockito), zonder Spring-context. Web blijft.
+- Geen test-jar/testFixtures. Changelogs blijven in `Web/src/main/resources`; Dao leest `db/changelog/**` als test-resource via `<testResources>` (geen
+  Maven-afhankelijkheid Dao→Web). Verhuizen naar Dao blijft een open vraag voor de mens (V1), later als aparte story.
+- `run-full-tests.ps1`: `maven.test.failure.ignore` eruit, `-fae`, parameter `-Module`, exit 1 bij falen.
+- Volgorde (één commit per story): S1-a script, S1-b Domain-tests, S1-c Dao-infra + tests, S1-d Service-tests, S1-e 24 pure unit-tests `git mv` Web→Service,
+  S1-f `ApiExceptionHandlerContractTest`. Daarna stap 2 (frontend) en stap 3 (backend).
+**Bron:** denker-zwaar / docs/decisions.md 2026-10-01 stap 1
