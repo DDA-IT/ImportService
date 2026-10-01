@@ -30,6 +30,14 @@ public interface PublicationRunRepository extends JpaRepository<PublicationRun, 
     Optional<PublicationRun> findByBundleIdAndActiveMarkerIsNotNull(Long bundleId);
 
     /**
+     * Enkel de bundel-id van een run, zonder de run zelf te laden. Wie een bestaande run wil afronden of afbreken,
+     * vergrendelt daarna de bundel ({@link PublicationBundleRepository#findByIdForUpdate}) en leest de run vers
+     * <b>na</b> het slot (analyse-opvolging stap 3b; zelfde patroon als {@code TaskRunRepository.findTaskIdByRunId}).
+     */
+    @Query("select r.bundle.id from PublicationRun r where r.id = :runId")
+    Optional<Long> findBundleIdByRunId(@Param("runId") Long runId);
+
+    /**
      * Het hoogste {@code attempt} van deze bundel in deze modus, of 0 wanneer er nog geen run bestaat.
      * Per modus en niet over de bundel heen: {@code attempt} telt de pogingen naar één doel, en de
      * idempotentiesleutel {@code run:<bundleId>:<mode>:<attempt>} draagt de modus al.

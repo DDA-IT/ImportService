@@ -20,7 +20,8 @@ import java.time.Instant;
  * (docs/design/fase5-pub-design.md par. 3, changeset 009-1). De statusovergangen die 5-PUB-a gebruikt
  * staan hieronder als drie samengestelde overgangen ({@link #markPreparing}, {@link #recordSimulated},
  * {@link #recordFailed}, bouwstap 5P-7); er zijn bewust geen losse setters, zodat status, marker en de
- * bijbehorende velden nooit los van elkaar gezet kunnen worden.
+ * bijbehorende velden nooit los van elkaar gezet kunnen worden. {@link #recordSimulated} en
+ * {@link #recordFailed} werken enkel vanuit {@code PREPARING}: een afgebroken run blijft afgebroken.
  * <p>
  * {@code activeMarker} is {@code TRUE} zolang de run niet-terminaal is en {@code null} daarna; samen met
  * {@code uk_publication_run_active} maximaal één niet-terminale run per bundel.
@@ -148,10 +149,14 @@ public class PublicationRun {
      *                    {@code artifactSha256}, binair in plaats van hex)
      * @param incompleteRowCount het aantal rijen met minstens één onbekend of niet-gesnapshot veld; nooit
      *                           stil op 0 gezet
+     * @throws IllegalStateException de run staat niet (meer) op {@code PREPARING}, bv. omdat ze intussen
+     *                               afgebroken is; de run blijft dan ongewijzigd (docs/decisions.md 2026-10-01,
+     *                               analyse-opvolging stap 3b)
      */
     public void recordSimulated(Instant finishedAt, String artifactReference, String artifactSha256,
                                 long artifactByteSize, byte[] payloadHash, long rowCount,
                                 long incompleteRowCount) {
+        requirePreparing("SIMULATED");
         this.status = PublicationRunStatus.SIMULATED;
         this.finishedAt = finishedAt;
         this.artifactReference = artifactReference;
@@ -170,13 +175,25 @@ public class PublicationRun {
      * in een actieve toestand blijft hangen na een uitzondering.
      *
      * @param failureMessage korte, door de aanroeper al ingekorte uitleg zonder stacktrace of bestandspad
+     * @throws IllegalStateException de run staat niet (meer) op {@code PREPARING}; een afgebroken of al
+     *                               afgeronde run blijft ongewijzigd, haar {@code failure_code} wordt nooit
+     *                               overschreven (docs/decisions.md 2026-10-01, analyse-opvolging stap 3b)
      */
     public void recordFailed(Instant finishedAt, String failureCode, String failureMessage) {
+        requirePreparing("FAILED");
         this.status = PublicationRunStatus.FAILED;
         this.finishedAt = finishedAt;
         this.failureCode = failureCode;
         this.failureMessage = failureMessage;
         this.activeMarker = null;
+    }
+
+    /** Domeinregel: een run wordt enkel vanuit {@code PREPARING} afgerond. Controleert vóór elke wijziging. */
+    private void requirePreparing(String target) {
+        if (this.status != PublicationRunStatus.PREPARING) {
+            throw new IllegalStateException("Publication run " + this.id + " cannot move from " + this.status
+                    + " to " + target + "; only a PREPARING run can be finished");
+        }
     }
 
     public Long getId() {

@@ -75,7 +75,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       databasetransactie openhouden zolang er een bestand van willekeurige grootte geschreven wordt,
  *       zou een verbinding en een slot op de bundel vasthouden voor werk dat de database niet raakt.</li>
  *   <li><b>Tweede transactie</b>: {@code SIMULATED} met de artefactvelden en de tellers, of {@code FAILED}
- *       met een foutcode — in beide gevallen met {@code finished_at} en marker {@code null}.</li>
+ *       met een foutcode — in beide gevallen met {@code finished_at} en marker {@code null}. Opnieuw achter het
+ *       schrijfslot op de bundel en enkel als de run dan nog {@code PREPARING} is: een intussen afgebroken run
+ *       blijft afgebroken (analyse-opvolging stap 3b).</li>
  * </ol>
  * Een run mag na een uitzondering <b>nooit</b> in een actieve toestand blijven hangen: elke fout in stap 2
  * loopt langs {@link #failRun}, dat de run afsluit en het (hoogstens tijdelijke) artefactbestand opruimt.
@@ -340,6 +342,10 @@ public class PublicationRunService {
      * Er is geen kolom om wie dit deed vast te leggen (geen nieuwe migratie nodig, zie het beslissingsblok);
      * de aanvrager wordt daarom net als bij een technische mislukking in {@code failure_message} bewaard, en
      * in de logregel met het volledige subject.
+     * <p>
+     * De run wordt gelezen onder het schrijfslot op haar bundel ({@link #lockedRun}), hetzelfde slot dat
+     * {@link #completeRun}, {@link #failRun} en de automatische timeout nemen: afbreken en afronden kunnen
+     * elkaar dus niet overschrijven (analyse-opvolging stap 3b).
      *
      * @param actor verplicht; dezelfde naamregels als een handtekening elders in dit domein
      * @return de runview met status {@code FAILED}
@@ -353,7 +359,7 @@ public class PublicationRunService {
             throw new IllegalArgumentException("Missing abortedBy");
         }
         String aborter = ActorNames.requireActorName(actor.username(), "abortedBy", MAX_ACTOR_LENGTH);
-        PublicationRun run = requireRun(runId);
+        PublicationRun run = lockedRun(runId);
         if (run.getStatus() != PublicationRunStatus.PREPARING) {
             throw new ConflictException(CODE_RUN_NOT_STUCK, "Publication run " + runId + " is " + run.getStatus()
                     + "; only a PREPARING run can be aborted");
@@ -556,20 +562,41 @@ public class PublicationRunService {
      * over exact de geschreven bytes — maar binair; zodra 5-PUB-b/c een ander doelformaat krijgt, blijft
      * {@code payload_hash} "de hash van wat er verzonden is" en {@code artifact_sha256} "de hash van het
      * bewaarde bestand".
+     * <p>
+     * Onder het schrijfslot op de bundel en met een verse lezing van de run daarna (analyse-opvolging stap 3b,
+     * precedent {@code FetchRunService.close}): staat de run intussen niet meer op {@code PREPARING} — afgebroken
+     * via {@link #abortRun} of door een timeout afgesloten — dan wordt er <b>niets</b> vastgelegd. Dat is geen
+     * fout voor de aanvrager: hij krijgt de run zoals ze nu is (bv. {@code FAILED}/{@link #FAILURE_MANUALLY_ABORTED})
+     * en er komt een waarschuwing in het logboek. Het intussen geschreven artefact hoort dan bij geen enkele run
+     * en wordt opgeruimd ({@link PublicationArtifactStore#deleteQuietly}).
      */
     private PublicationRunView completeRun(RunStart start, Artifact artifact) {
-        return transaction.execute(status -> {
+        boolean[] recorded = {false};
+        PublicationRunView view = transaction.execute(status -> {
+            bundles.findByIdForUpdate(start.bundleId());
             PublicationRun run = requireRun(start.runId());
+            if (run.getStatus() != PublicationRunStatus.PREPARING) {
+                LOG.warn("Publication run {} for bundle {} was already closed ({}, failure code {}); outcome "
+                                + "SIMULATED not recorded", run.getId(), start.bundleId(), run.getStatus(),
+                        run.getFailureCode());
+                return PublicationRunView.of(run, start.snapshotSpecVersion());
+            }
             run.recordSimulated(clock.instant(), artifact.stored().reference(), artifact.stored().sha256Hex(),
                     artifact.stored().byteSize(), artifact.payloadHash(), artifact.rowCount(),
                     artifact.incompleteRowCount());
             runs.saveAndFlush(run);
+            recorded[0] = true;
             LOG.info("Publication run {} simulated for bundle {}: {} row(s), {} incomplete, {} byte(s), "
                             + "sha256 {}. SIMULATED means the artifact was written and NOTHING was published.",
                     run.getId(), start.bundleId(), artifact.rowCount(), artifact.incompleteRowCount(),
                     artifact.stored().byteSize(), artifact.stored().sha256Hex());
             return PublicationRunView.of(run, start.snapshotSpecVersion());
         });
+        if (!recorded[0]) {
+            // Pas na de transactie: geen enkele run verwijst naar dit bestand.
+            artifacts.deleteQuietly(artifact.stored().reference());
+        }
+        return view;
     }
 
     /**
@@ -579,6 +606,10 @@ public class PublicationRunService {
      * <p>
      * Er blijft geen artefactbestand achter: {@link PublicationArtifactStore#write} ruimt het tijdelijke
      * bestand op en hernoemt pas als laatste stap, dus het definitieve pad bestaat na een mislukking niet.
+     * <p>
+     * Zelfde slot en verse lezing als {@link #completeRun}: is de run intussen niet meer {@code PREPARING}, dan
+     * blijft ze zoals ze is — een afgebroken run houdt haar eigen {@code failure_code} — met een waarschuwing in
+     * het logboek, en krijgt de aanvrager die run terug.
      */
     private PublicationRunView failRun(RunStart start, RuntimeException failure) {
         String code = failure instanceof UncheckedIOException ? FAILURE_ARTIFACT_WRITE_FAILED
@@ -586,7 +617,14 @@ public class PublicationRunService {
         LOG.warn("Publication run {} for bundle {} failed with {}", start.runId(), start.bundleId(), code,
                 failure);
         return transaction.execute(status -> {
+            bundles.findByIdForUpdate(start.bundleId());
             PublicationRun run = requireRun(start.runId());
+            if (run.getStatus() != PublicationRunStatus.PREPARING) {
+                LOG.warn("Publication run {} for bundle {} was already closed ({}, failure code {}); outcome "
+                                + "FAILED/{} not recorded", run.getId(), start.bundleId(), run.getStatus(),
+                        run.getFailureCode(), code);
+                return PublicationRunView.of(run, start.snapshotSpecVersion());
+            }
             run.recordFailed(clock.instant(), code, failureMessage(failure));
             runs.saveAndFlush(run);
             return PublicationRunView.of(run, start.snapshotSpecVersion());
@@ -610,6 +648,20 @@ public class PublicationRunService {
     private PublicationRun requireRun(long runId) {
         return runs.findById(runId).orElseThrow(
                 () -> new NotFoundException(CODE_RUN_NOT_FOUND, "Publication run " + runId + " not found"));
+    }
+
+    /**
+     * De run onder het schrijfslot van haar bundel (hetzelfde slot als aanvragen, afronden en de timeout), met
+     * een verse lezing <b>na</b> het slot: eerst enkel de bundel-id, zodat er vóór het slot geen runrij in de
+     * persistentiecontext belandt. Binnen een transactie aanroepen.
+     *
+     * @throws NotFoundException {@link #CODE_RUN_NOT_FOUND}
+     */
+    private PublicationRun lockedRun(long runId) {
+        Long bundleId = runs.findBundleIdByRunId(runId).orElseThrow(
+                () -> new NotFoundException(CODE_RUN_NOT_FOUND, "Publication run " + runId + " not found"));
+        bundles.findByIdForUpdate(bundleId);
+        return requireRun(runId);
     }
 
     /** Tekst naar modus: leeg is niet hetzelfde als onbekend, en geen van beide wordt een aanname. */
