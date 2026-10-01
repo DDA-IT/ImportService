@@ -2408,3 +2408,13 @@ precedent van `FetchRunService.close`; een afgebroken run blijft afgebroken. Met
 - Volgorde (één commit per story): S1-a script, S1-b Domain-tests, S1-c Dao-infra + tests, S1-d Service-tests, S1-e 24 pure unit-tests `git mv` Web→Service,
   S1-f `ApiExceptionHandlerContractTest`. Daarna stap 2 (frontend) en stap 3 (backend).
 **Bron:** denker-zwaar / docs/decisions.md 2026-10-01 stap 1
+
+## 2026-10-01 — Stap 1 (behalve S1-c), stap 2 en stap 3 uitgevoerd
+**Vraag:** Zijn de stappen afgerond en geverifieerd?
+**Beslissing:** Ja, op branch `verbeteringen-stap-1-3`, één commit per story (S1-a, S1-b, S1-d, S1-e, S1-f, stap 2, 3a, 3b). Door de hoofdsessie gericht
+herhaald: Domain 52/52, Service 553/553, `ApiExceptionHandlerContractTest` 17/17, frontend `tsc -b` schoon + geraakte vitest 97/97 en `codes.test.ts` 19/19.
+Aanvaarde invullingen: (1) "afgebroken run" = `FAILED` + `FAILURE_MANUALLY_ABORTED` (geen nieuwe status ABORTED); (2) `codes.ts` kent `UPLOAD_TOO_LARGE`
+en `REQUEST_BODY_UNREADABLE`; (3) een niet-vastgelegd artefact wordt opgeruimd met `artifacts.deleteQuietly`; (4) `abortRun` neemt hetzelfde bundelslot.
+**Nog open:** S1-c (Dao-tests) en alle `@SpringBootTest`/HTTP-tests — geen werkende lokale DB-login (`catalog_import` faalt). Te draaien door de mens:
+`PublicationRunHttpTest`, `PublicationRunSimulationTest`, plus een volledige ronde `run-full-tests.ps1`. V1 (changelogs naar Dao verhuizen) ligt bij de mens.
+**Bron:** hoofdsessie na verificatie
