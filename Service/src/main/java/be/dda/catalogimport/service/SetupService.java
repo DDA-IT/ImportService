@@ -127,9 +127,9 @@ public class SetupService {
     /** {@code created_by}/{@code approved_by}. */
     private static final int MAX_USER_LENGTH = 100;
     /** {@code identity_*_field}, {@code record_*_field}, {@code source_reference}. */
-    private static final int MAX_FIELD_REFERENCE_LENGTH = 200;
+    static final int MAX_FIELD_REFERENCE_LENGTH = 200;
     /** {@code import_definition_revision.change_reason}. */
-    private static final int MAX_CHANGE_REASON_LENGTH = 500;
+    static final int MAX_CHANGE_REASON_LENGTH = 500;
     /** Wie een rij aanmaakte wanneer de aanroeper niets meegeeft; nooit een echte gebruikersnaam. */
     private static final String DEFAULT_CREATED_BY = "setup-api";
 
@@ -147,7 +147,7 @@ public class SetupService {
     /**
      * De negen drempel- en prijsbeleidsvelden die zowel het aanmaken ({@link CreateRevisionCommand}) als
      * het wijzigen ({@link UpdateRevisionCommand}) van een revisie kent, zodat
-     * {@link #applyThresholds(ImportDefinitionRevision, RevisionThresholds)} één implementatie blijft.
+     * {@link RevisionFieldRules#applyThresholds(ImportDefinitionRevision, RevisionThresholds)} één implementatie blijft.
      * <p>
      * Deze velden zijn financieel bepalend (blokkeerdrempels, prijsafwijking, prijsreconstructie). Twee
      * kopieën van dezelfde toepassingsregels zouden op termijn uit elkaar lopen en dan zou dezelfde
@@ -391,9 +391,9 @@ public class SetupService {
      * @throws IllegalArgumentException ontbrekende of te lange velden
      */
     public SourceOrganisationView createSourceOrganisation(CreateSourceOrganisationCommand command) {
-        String code = requireText(command.code(), "code", MAX_CODE_LENGTH);
-        String name = requireText(command.name(), "name", MAX_NAME_LENGTH);
-        SourceOrganisationType type = require(command.type(), "type");
+        String code = SetupInput.requireText(command.code(), "code", MAX_CODE_LENGTH);
+        String name = SetupInput.requireText(command.name(), "name", MAX_NAME_LENGTH);
+        SourceOrganisationType type = SetupInput.require(command.type(), "type");
         if (organisations.existsByCode(code)) {
             throw sourceOrganisationCodeInUse(code);
         }
@@ -430,14 +430,14 @@ public class SetupService {
      * overload; het verzoek draagt hier geen actorveld, dus er valt niets te vergelijken.
      */
     public DefinitionView createDefinition(CreateDefinitionCommand command, ActorIdentity actor) {
-        String code = requireText(command.code(), "code", MAX_CODE_LENGTH);
-        String name = requireText(command.name(), "name", MAX_NAME_LENGTH);
+        String code = SetupInput.requireText(command.code(), "code", MAX_CODE_LENGTH);
+        String name = SetupInput.requireText(command.name(), "name", MAX_NAME_LENGTH);
         SourceOrganisation organisation = organisation(command.sourceOrganisationCode());
         if (definitions.findBySourceOrganisationIdAndCode(organisation.getId(), code).isPresent()) {
             throw definitionCodeInUse(code, organisation);
         }
         ImportDefinition definition = new ImportDefinition(organisation, code, name,
-                requireText(orDefault(actor.username(), DEFAULT_CREATED_BY), "createdBy", MAX_USER_LENGTH));
+                SetupInput.requireText(SetupInput.orDefault(actor.username(), DEFAULT_CREATED_BY), "createdBy", MAX_USER_LENGTH));
         definition.setCreatedBySubject(actor.subject());
         if (command.usageType() != null) {
             definition.setUsageType(command.usageType());
@@ -494,35 +494,35 @@ public class SetupService {
                 .mapToInt(ImportDefinitionRevision::getRevisionNumber).max().orElse(0) + 1;
 
         ImportDefinitionRevision revision = new ImportDefinitionRevision(definition, revisionNumber,
-                identityKind, requireText(orDefault(actor.username(), DEFAULT_CREATED_BY), "createdBy",
+                identityKind, SetupInput.requireText(SetupInput.orDefault(actor.username(), DEFAULT_CREATED_BY), "createdBy",
                 MAX_USER_LENGTH));
         revision.setCreatedBySubject(actor.subject());
         revision.setIdentitySupplierField(
-                requireText(command.supplierField(), "supplierField", MAX_FIELD_REFERENCE_LENGTH));
+                SetupInput.requireText(command.supplierField(), "supplierField", MAX_FIELD_REFERENCE_LENGTH));
         revision.setIdentitySupplierGroupField(
-                requireText(command.supplierGroupField(), "supplierGroupField", MAX_FIELD_REFERENCE_LENGTH));
-        revision.setIdentitySupplierReferenceField(requireText(command.supplierReferenceField(),
+                SetupInput.requireText(command.supplierGroupField(), "supplierGroupField", MAX_FIELD_REFERENCE_LENGTH));
+        revision.setIdentitySupplierReferenceField(SetupInput.requireText(command.supplierReferenceField(),
                 "supplierReferenceField", MAX_FIELD_REFERENCE_LENGTH));
         // De databasecheck ck_import_definition_revision_identity houdt profiel en kortingscodeveld
         // consistent: null (niet gemapt) en "" (expliciet leeg) zijn verschillende toestanden.
-        String discountCodeField = optionalText(command.discountCodeField(), "discountCodeField",
+        String discountCodeField = SetupInput.optionalText(command.discountCodeField(), "discountCodeField",
                 MAX_FIELD_REFERENCE_LENGTH);
-        requireIdentityConsistency(identityKind, discountCodeField);
+        RevisionFieldRules.requireIdentityConsistency(identityKind, discountCodeField);
         revision.setIdentityDiscountCodeField(discountCodeField);
         revision.setRecordBasePriceField(
-                requireText(command.basePriceField(), "basePriceField", MAX_FIELD_REFERENCE_LENGTH));
+                SetupInput.requireText(command.basePriceField(), "basePriceField", MAX_FIELD_REFERENCE_LENGTH));
         revision.setRecordDescriptionField(
-                optionalText(command.descriptionField(), "descriptionField", MAX_FIELD_REFERENCE_LENGTH));
+                SetupInput.optionalText(command.descriptionField(), "descriptionField", MAX_FIELD_REFERENCE_LENGTH));
         revision.setRecordCurrencyField(
-                optionalText(command.currencyField(), "currencyField", MAX_FIELD_REFERENCE_LENGTH));
-        revision.setStructureDelimiter(requireText(command.delimiter(), "delimiter", 1));
+                SetupInput.optionalText(command.currencyField(), "currencyField", MAX_FIELD_REFERENCE_LENGTH));
+        revision.setStructureDelimiter(SetupInput.requireText(command.delimiter(), "delimiter", 1));
         if (command.quoteChar() != null) {
             // "" betekent hier uitdrukkelijk: deze bron kent geen quoting.
             revision.setStructureQuoteChar(command.quoteChar().isEmpty() ? null
-                    : requireText(command.quoteChar(), "quoteChar", 1));
+                    : SetupInput.requireText(command.quoteChar(), "quoteChar", 1));
         }
         if (command.charset() != null) {
-            revision.setStructureCharset(requireText(command.charset(), "charset", 40));
+            revision.setStructureCharset(SetupInput.requireText(command.charset(), "charset", 40));
         }
         if (command.hasHeader() != null) {
             revision.setStructureHasHeader(command.hasHeader());
@@ -532,14 +532,14 @@ public class SetupService {
         }
         if (command.fieldReferenceKind() != null) {
             revision.setStructureFieldReferenceKind(
-                    requireText(command.fieldReferenceKind(), "fieldReferenceKind", 20));
+                    SetupInput.requireText(command.fieldReferenceKind(), "fieldReferenceKind", 20));
         }
         revision.setStructureExpectedColumnCount(command.expectedColumnCount());
         if (command.canonicalisationVersion() != null) {
             revision.setRecordCanonicalisationVersion(command.canonicalisationVersion());
         }
-        applyThresholds(revision, command);
-        revision.setChangeReason(optionalText(command.changeReason(), "changeReason", MAX_CHANGE_REASON_LENGTH));
+        RevisionFieldRules.applyThresholds(revision, command);
+        revision.setChangeReason(SetupInput.optionalText(command.changeReason(), "changeReason", MAX_CHANGE_REASON_LENGTH));
         // Bouwstap 5c: dezelfde vier regels als voorheen, nu als één gedeelde berekening. De
         // materialisatiewizard moet exact dezelfde hashes op een afgeleide revisie kunnen zetten; twee
         // kopieën van deze opbouw zouden op termijn uit elkaar lopen (zie RevisionConfigHashes#applyAll).
@@ -581,46 +581,6 @@ public class SetupService {
                     + "next configuration side by side");
         }
         return violation;
-    }
-
-    /**
-     * Thresholds zijn altijd een percentage (beslissingslog 20/09). {@code null} laat de bestaande
-     * default staan; een negatief percentage wordt geweigerd in plaats van stil op 0 gezet.
-     */
-    private static void applyThresholds(ImportDefinitionRevision revision, RevisionThresholds command) {
-        if (command.creationThresholdSharePercent() != null) {
-            revision.setCreationThresholdSharePercent(
-                    requireNotNegative(command.creationThresholdSharePercent(), "creationThresholdSharePercent"));
-        }
-        if (command.maxCriticalSharePercent() != null) {
-            revision.setMaxCriticalSharePercent(
-                    requireNotNegative(command.maxCriticalSharePercent(), "maxCriticalSharePercent"));
-        }
-        if (command.maxRejectedSharePercent() != null) {
-            revision.setMaxRejectedSharePercent(
-                    requireNotNegative(command.maxRejectedSharePercent(), "maxRejectedSharePercent"));
-        }
-        if (command.bulkIncidentSharePercent() != null) {
-            revision.setBulkIncidentSharePercent(
-                    requireNotNegative(command.bulkIncidentSharePercent(), "bulkIncidentSharePercent"));
-        }
-        if (command.priceDeviationPercent() != null) {
-            revision.setPriceDeviationPercent(
-                    requireNotNegative(command.priceDeviationPercent(), "priceDeviationPercent"));
-        }
-        if (command.priceDeviationSeverity() != null) {
-            revision.setPriceDeviationSeverity(command.priceDeviationSeverity());
-        }
-        if (command.priceDerivationTolerance() != null) {
-            revision.setPriceDerivationTolerance(
-                    requireNotNegative(command.priceDerivationTolerance(), "priceDerivationTolerance"));
-        }
-        if (command.basePriceZeroAllowed() != null) {
-            revision.setBasePriceZeroAllowed(command.basePriceZeroAllowed());
-        }
-        if (command.basePriceNegativeAllowed() != null) {
-            revision.setBasePriceNegativeAllowed(command.basePriceNegativeAllowed());
-        }
     }
 
     // --- Een DRAFT-revisie wijzigen (endpoint E3, bouwstap S1-X-4) ---------------------------------
@@ -682,122 +642,20 @@ public class SetupService {
     public RevisionView updateRevision(long revisionId, UpdateRevisionCommand command) {
         ImportDefinitionRevision revision = editableRevision(revisionId);
         UpdateRevisionCommand request = command == null ? UpdateRevisionCommand.empty() : command;
-        IdentityBefore before = IdentityBefore.of(revision);
+        RevisionFieldRules.IdentityBefore before = RevisionFieldRules.IdentityBefore.of(revision);
 
-        applyScalars(revision, request);
+        RevisionFieldRules.applyScalars(revision, request);
 
         // R-REV-X2 gaat voor: die blokkade is met geen enkele bevestiging te omzeilen, dus ze is het
         // eerste dat de aanroeper hoort te lezen wanneer hij beide wijzigingen in één verzoek stuurt.
         requireCanonicalisationChangeAllowed(revision, before);
-        requireIdentityChangeAcknowledged(revision, before, request);
+        RevisionFieldRules.requireIdentityChangeAcknowledged(revision, before, request);
 
         // Altijd ná het zetten van alle velden: de hash beschrijft de revisie zoals ze nu is. Drempels en
         // prijsbeleid zitten bewust niet in enige hash (zie de ontdekking in ontwerp §9), dus een verzoek
         // dat enkel drempels wijzigt, laat de vier hashes terecht ongewijzigd.
         RevisionConfigHashes.applyAll(revision);
         return view(revisions.saveAndFlush(revision));
-    }
-
-    /**
-     * Zet elk veld dat het verzoek noemt; {@code null} laat de bestaande waarde staan. De regels per veld
-     * zijn letterlijk die van {@link #createRevision(long, CreateRevisionCommand, ActorIdentity)} —
-     * verplichte velden via {@link #requireText}, optionele via {@link #optionalText} (waarbij {@code ""}
-     * "uitdrukkelijk leeg" betekent) en de drempels via de gedeelde {@link #applyThresholds}.
-     */
-    private static void applyScalars(ImportDefinitionRevision revision, UpdateRevisionCommand command) {
-        if (command.identityProfileKind() != null) {
-            revision.setIdentityProfileKind(command.identityProfileKind());
-        }
-        if (command.supplierField() != null) {
-            revision.setIdentitySupplierField(
-                    requireText(command.supplierField(), "supplierField", MAX_FIELD_REFERENCE_LENGTH));
-        }
-        if (command.supplierGroupField() != null) {
-            revision.setIdentitySupplierGroupField(requireText(command.supplierGroupField(),
-                    "supplierGroupField", MAX_FIELD_REFERENCE_LENGTH));
-        }
-        if (command.supplierReferenceField() != null) {
-            revision.setIdentitySupplierReferenceField(requireText(command.supplierReferenceField(),
-                    "supplierReferenceField", MAX_FIELD_REFERENCE_LENGTH));
-        }
-        if (command.discountCodeField() != null) {
-            revision.setIdentityDiscountCodeField(optionalText(command.discountCodeField(),
-                    "discountCodeField", MAX_FIELD_REFERENCE_LENGTH));
-        }
-        // Het paar profiel + kortingscodeveld wordt beoordeeld op de toestand ná de wijziging, niet op wat
-        // het verzoek meebracht: wie enkel het profiel omzet, moet hier al de leesbare fout krijgen in
-        // plaats van een databasefout op ck_import_definition_revision_identity.
-        requireIdentityConsistency(revision.getIdentityProfileKind(), revision.getIdentityDiscountCodeField());
-        if (command.basePriceField() != null) {
-            revision.setRecordBasePriceField(
-                    requireText(command.basePriceField(), "basePriceField", MAX_FIELD_REFERENCE_LENGTH));
-        }
-        if (command.descriptionField() != null) {
-            revision.setRecordDescriptionField(optionalText(command.descriptionField(), "descriptionField",
-                    MAX_FIELD_REFERENCE_LENGTH));
-        }
-        if (command.currencyField() != null) {
-            revision.setRecordCurrencyField(optionalText(command.currencyField(), "currencyField",
-                    MAX_FIELD_REFERENCE_LENGTH));
-        }
-        if (command.delimiter() != null) {
-            revision.setStructureDelimiter(requireText(command.delimiter(), "delimiter", 1));
-        }
-        if (command.quoteChar() != null) {
-            // "" betekent hier uitdrukkelijk: deze bron kent geen quoting.
-            revision.setStructureQuoteChar(command.quoteChar().isEmpty() ? null
-                    : requireText(command.quoteChar(), "quoteChar", 1));
-        }
-        if (command.charset() != null) {
-            revision.setStructureCharset(requireText(command.charset(), "charset", 40));
-        }
-        if (command.hasHeader() != null) {
-            revision.setStructureHasHeader(command.hasHeader());
-        }
-        if (command.headerLineNumber() != null) {
-            revision.setStructureHeaderLineNumber(command.headerLineNumber());
-        }
-        if (command.fieldReferenceKind() != null) {
-            revision.setStructureFieldReferenceKind(
-                    requireText(command.fieldReferenceKind(), "fieldReferenceKind", 20));
-        }
-        if (command.expectedColumnCount() != null) {
-            revision.setStructureExpectedColumnCount(command.expectedColumnCount());
-        }
-        if (command.canonicalisationVersion() != null) {
-            revision.setRecordCanonicalisationVersion(command.canonicalisationVersion());
-        }
-        applyThresholds(revision, command);
-        if (command.changeReason() != null) {
-            revision.setChangeReason(
-                    optionalText(command.changeReason(), "changeReason", MAX_CHANGE_REASON_LENGTH));
-        }
-    }
-
-    /**
-     * De identiteits- en canonicalisatievelden zoals ze <b>vóór</b> de wijziging op de revisie stonden:
-     * R-REV-X2 en R-REV-X3 zijn beide een vergelijking tussen oud en nieuw, niet een controle op wat het
-     * verzoek meebracht. Wie een veld op exact dezelfde waarde zet, wijzigt niets en heeft dus ook geen
-     * bevestiging nodig.
-     */
-    private record IdentityBefore(IdentityProfileKind profileKind, String supplierField,
-                                  String supplierGroupField, String supplierReferenceField,
-                                  String discountCodeField, int canonicalisationVersion) {
-
-        static IdentityBefore of(ImportDefinitionRevision revision) {
-            return new IdentityBefore(revision.getIdentityProfileKind(), revision.getIdentitySupplierField(),
-                    revision.getIdentitySupplierGroupField(), revision.getIdentitySupplierReferenceField(),
-                    revision.getIdentityDiscountCodeField(), revision.getRecordCanonicalisationVersion());
-        }
-
-        /** R-REV-X3: het profiel of een van de vier identiteitsvelden verschilt van de huidige waarde. */
-        boolean identityChangedIn(ImportDefinitionRevision revision) {
-            return profileKind != revision.getIdentityProfileKind()
-                    || !Objects.equals(supplierField, revision.getIdentitySupplierField())
-                    || !Objects.equals(supplierGroupField, revision.getIdentitySupplierGroupField())
-                    || !Objects.equals(supplierReferenceField, revision.getIdentitySupplierReferenceField())
-                    || !Objects.equals(discountCodeField, revision.getIdentityDiscountCodeField());
-        }
     }
 
     /**
@@ -811,7 +669,7 @@ public class SetupService {
      * verlagen zou een even onomkeerbare wijziging stil doorlaten.
      */
     private void requireCanonicalisationChangeAllowed(ImportDefinitionRevision revision,
-                                                      IdentityBefore before) {
+                                                      RevisionFieldRules.IdentityBefore before) {
         int after = revision.getRecordCanonicalisationVersion();
         if (after == before.canonicalisationVersion()) {
             return;
@@ -826,42 +684,6 @@ public class SetupService {
                 + " already has accepted source state. The version is part of the offer identity hash, so "
                 + "every existing offer would come back as NEW (a mass creation) and there is no migration "
                 + "for that. Nothing was saved");
-    }
-
-    /**
-     * R-REV-X3 (§5). Patroon {@code MATERIALISATION_MODE_REQUIRED}: er is geen default en geen stille
-     * correctie, want een geraden keuze bepaalt hier of de volledige catalogus van deze koppeling opnieuw
-     * als nieuw beschouwd wordt.
-     */
-    private static void requireIdentityChangeAcknowledged(ImportDefinitionRevision revision,
-                                                          IdentityBefore before,
-                                                          UpdateRevisionCommand command) {
-        if (!before.identityChangedIn(revision)
-                || Boolean.TRUE.equals(command.acknowledgeIdentityChange())) {
-            return;
-        }
-        throw new ConflictException("IDENTITY_CHANGE_NOT_ACKNOWLEDGED", "Revision " + revision.getId()
-                + " changes the offer identity (identityProfileKind or one of the identity fields). That "
-                + "changes the canonical identity text, so every existing offer comes back as NEW. Resend "
-                + "with acknowledgeIdentityChange=true if that is intended; nothing was saved");
-    }
-
-    /**
-     * De databasecheck {@code ck_import_definition_revision_identity} houdt profiel en kortingscodeveld
-     * consistent: {@code null} (niet gemapt) en {@code ""} (expliciet leeg) zijn verschillende toestanden.
-     * Deze controle staat vóór het flushen, zodat een verkeerde combinatie een leesbare 400 oplevert in
-     * plaats van een databasefout.
-     */
-    private static void requireIdentityConsistency(IdentityProfileKind identityKind, String discountCodeField) {
-        if (identityKind == IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE && discountCodeField == null) {
-            throw new BadRequestException(fieldCode("discountCodeField", "REQUIRED"),
-                    "identityProfileKind FOUR_PART_WITH_DISCOUNT_CODE requires discountCodeField");
-        }
-        if (identityKind == IdentityProfileKind.THREE_PART && discountCodeField != null) {
-            throw new BadRequestException(fieldCode("discountCodeField", "INVALID"),
-                    "identityProfileKind THREE_PART must not carry a "
-                    + "discountCodeField; use FOUR_PART_WITH_DISCOUNT_CODE when the discount code is mapped");
-        }
     }
 
     /**
@@ -916,7 +738,7 @@ public class SetupService {
         // in dezelfde volgorde als vroeger; de eerste bevinding wordt geworpen.
         ChainConfigurationChecks.throwFirst(checks.activationProblems(revision));
         long definitionId = revision.getImportDefinition().getId();
-        String approver = requireText(orDefault(actor.username(), DEFAULT_CREATED_BY), "approvedBy",
+        String approver = SetupInput.requireText(SetupInput.orDefault(actor.username(), DEFAULT_CREATED_BY), "approvedBy",
                 MAX_USER_LENGTH);
         try {
             Optional<ImportDefinitionRevision> current =
@@ -1030,7 +852,7 @@ public class SetupService {
      */
     public MappingView addMapping(long revisionId, CreateMappingCommand command, ActorIdentity actor) {
         ImportDefinitionRevision revision = editableRevision(revisionId);
-        String targetFieldCode = requireText(command.targetFieldCode(), "targetFieldCode", 60);
+        String targetFieldCode = SetupInput.requireText(command.targetFieldCode(), "targetFieldCode", 60);
         ImportFieldCatalogEntry target = fieldCatalog.findById(targetFieldCode)
                 .orElseThrow(() -> new NotFoundException("FIELD_NOT_FOUND",
                         "Target field '" + targetFieldCode + "' does not exist in the field catalogue"));
@@ -1050,15 +872,15 @@ public class SetupService {
         }
         // Type, eigenaar, identiteitsklasse, prijscomponent en referentietype komen uit de catalogus.
         ImportFieldMapping mapping = new ImportFieldMapping(revision, sequenceNumber, target,
-                orDefault(command.valueKind(), FieldValueKind.SOURCE_FIELD), target.getDataType(),
+                SetupInput.orDefault(command.valueKind(), FieldValueKind.SOURCE_FIELD), target.getDataType(),
                 target.getDefaultOwner(), target.getIdentityClass());
         mapping.setPriceComponentCode(target.getPriceComponentCode());
         mapping.setReferenceType(target.getReferenceType());
         mapping.setSourceReference(
-                optionalText(command.sourceReference(), "sourceReference", MAX_FIELD_REFERENCE_LENGTH));
+                SetupInput.optionalText(command.sourceReference(), "sourceReference", MAX_FIELD_REFERENCE_LENGTH));
         mapping.setExpectedPosition(command.expectedPosition());
-        mapping.setFixedValue(optionalText(command.fixedValue(), "fixedValue", 500));
-        mapping.setDefaultValue(optionalText(command.defaultValue(), "defaultValue", 500));
+        mapping.setFixedValue(SetupInput.optionalText(command.fixedValue(), "fixedValue", 500));
+        mapping.setDefaultValue(SetupInput.optionalText(command.defaultValue(), "defaultValue", 500));
         mapping.setRequired(Boolean.TRUE.equals(command.required()));
         mapping.setMaxLength(command.maxLength());
         mapping.setDecimalScale(command.decimalScale());
@@ -1067,9 +889,9 @@ public class SetupService {
         if (command.transformKind() != null) {
             mapping.setTransformKind(command.transformKind());
         }
-        mapping.setTransformConfig(optionalText(command.transformConfig(), "transformConfig", 1000));
+        mapping.setTransformConfig(SetupInput.optionalText(command.transformConfig(), "transformConfig", 1000));
         mapping.setCriticality(command.criticality());
-        mapping.setCreatedBy(orDefault(actor.username(), DEFAULT_CREATED_BY));
+        mapping.setCreatedBy(SetupInput.orDefault(actor.username(), DEFAULT_CREATED_BY));
         mapping.setCreatedBySubject(actor.subject());
         ImportFieldMapping stored = fieldMappings.saveAndFlush(mapping);
         validateConfiguration(revision);
@@ -1102,10 +924,10 @@ public class SetupService {
                     + "undefined");
         }
         ImportRecordFilter filter = new ImportRecordFilter(revision, sequenceNumber,
-                requireText(command.sourceReference(), "sourceReference", MAX_FIELD_REFERENCE_LENGTH),
-                require(command.operator(), "operator"),
-                requireText(command.compareValue(), "compareValue", 500),
-                require(command.outcome(), "outcome"));
+                SetupInput.requireText(command.sourceReference(), "sourceReference", MAX_FIELD_REFERENCE_LENGTH),
+                SetupInput.require(command.operator(), "operator"),
+                SetupInput.requireText(command.compareValue(), "compareValue", 500),
+                SetupInput.require(command.outcome(), "outcome"));
         if (command.caseSensitive() != null) {
             filter.setCaseSensitive(command.caseSensitive());
         }
@@ -1118,7 +940,7 @@ public class SetupService {
         if (command.missingColumnBehaviour() != null) {
             filter.setMissingColumnBehaviour(command.missingColumnBehaviour());
         }
-        filter.setCreatedBy(orDefault(actor.username(), DEFAULT_CREATED_BY));
+        filter.setCreatedBy(SetupInput.orDefault(actor.username(), DEFAULT_CREATED_BY));
         filter.setCreatedBySubject(actor.subject());
         ImportRecordFilter stored = recordFilters.saveAndFlush(filter);
         validateConfiguration(revision);
@@ -1145,16 +967,16 @@ public class SetupService {
     public FieldCriticalityView addFieldCriticality(long revisionId, CreateFieldCriticalityCommand command,
                                                     ActorIdentity actor) {
         ImportDefinitionRevision revision = editableRevision(revisionId);
-        String fieldKey = requireText(command.fieldKey(), "fieldKey", 60);
+        String fieldKey = SetupInput.requireText(command.fieldKey(), "fieldKey", 60);
         RevisionCriticalityField field = RevisionCriticalityField.byKey(fieldKey)
-                .orElseThrow(() -> new BadRequestException(fieldCode("fieldKey", "INVALID"), "fieldKey '"
+                .orElseThrow(() -> new BadRequestException(SetupInput.fieldCode("fieldKey", "INVALID"), "fieldKey '"
                         + fieldKey + "' is not a field of the revision itself; known keys are "
                         + List.of(RevisionCriticalityField.values())));
-        Criticality criticality = require(command.criticality(), "criticality");
+        Criticality criticality = SetupInput.require(command.criticality(), "criticality");
         // Dezelfde regels als de databasecheck en de configuratievalidatie, maar vóór het flushen: een
         // constraintfout zou hier een 500 opleveren in plaats van een leesbaar antwoord.
         if (field.isIdentity() && criticality == Criticality.NON_CRITICAL) {
-            throw new BadRequestException(fieldCode("criticality", "INVALID"), "Field '" + fieldKey
+            throw new BadRequestException(SetupInput.fieldCode("criticality", "INVALID"), "Field '" + fieldKey
                     + "' is part of the offer identity and can never be " + Criticality.NON_CRITICAL);
         }
         if (fieldCriticalities.findByDefinitionRevisionId(revisionId).stream()
@@ -1165,7 +987,7 @@ public class SetupService {
         }
         ImportRevisionFieldCriticality row = new ImportRevisionFieldCriticality(revisionId, fieldKey,
                 criticality);
-        row.setCreatedBy(orDefault(actor.username(), DEFAULT_CREATED_BY));
+        row.setCreatedBy(SetupInput.orDefault(actor.username(), DEFAULT_CREATED_BY));
         row.setCreatedBySubject(actor.subject());
         ImportRevisionFieldCriticality stored = fieldCriticalities.saveAndFlush(row);
         validateConfiguration(revision);
@@ -1277,13 +1099,13 @@ public class SetupService {
      * @throws IllegalArgumentException ontbrekende of te lange velden
      */
     public LinkView createLink(CreateLinkCommand command) {
-        Long definitionId = require(command.definitionId(), "definitionId");
+        Long definitionId = SetupInput.require(command.definitionId(), "definitionId");
         ImportDefinition definition = definitions.findById(definitionId)
                 .orElseThrow(() -> new NotFoundException("DEFINITION_NOT_FOUND",
                         "Import definition " + definitionId + " does not exist"));
-        String code = requireText(command.code(), "code", MAX_CODE_LENGTH);
-        String name = requireText(command.name(), "name", MAX_NAME_LENGTH);
-        String libraryCode = requireText(command.libraryCode(), "libraryCode", MAX_LIBRARY_CODE_LENGTH);
+        String code = SetupInput.requireText(command.code(), "code", MAX_CODE_LENGTH);
+        String name = SetupInput.requireText(command.name(), "name", MAX_NAME_LENGTH);
+        String libraryCode = SetupInput.requireText(command.libraryCode(), "libraryCode", MAX_LIBRARY_CODE_LENGTH);
         SourceOrganisation supplier = organisation(command.supplierCode());
         if (links.findByCode(code).isPresent()) {
             throw linkCodeInUse(code);
@@ -1305,7 +1127,7 @@ public class SetupService {
         ImportLink link = new ImportLink(code, name, definition, supplier, libraryCode);
         link.setDefaultCurrency(defaultCurrency);
         link.setLibrarySearchSupplierCode(
-                optionalText(command.librarySearchSupplierCode(), "librarySearchSupplierCode", MAX_CODE_LENGTH));
+                SetupInput.optionalText(command.librarySearchSupplierCode(), "librarySearchSupplierCode", MAX_CODE_LENGTH));
         try {
             return view(links.saveAndFlush(link));
         } catch (DataIntegrityViolationException violation) {
@@ -1333,11 +1155,11 @@ public class SetupService {
      * @throws IllegalArgumentException ontbrekende of te lange velden
      */
     public TaskView createTask(CreateTaskCommand command) {
-        Long linkId = require(command.linkId(), "linkId");
+        Long linkId = SetupInput.require(command.linkId(), "linkId");
         ImportLink link = links.findById(linkId)
                 .orElseThrow(() -> new NotFoundException("LINK_NOT_FOUND",
                         "Import link " + linkId + " does not exist"));
-        String name = requireText(command.name(), "name", MAX_NAME_LENGTH);
+        String name = SetupInput.requireText(command.name(), "name", MAX_NAME_LENGTH);
         if (tasks.findByImportLinkIdAndName(linkId, name).isPresent()) {
             throw taskNameInUse(name, linkId);
         }
@@ -1432,7 +1254,7 @@ public class SetupService {
     }
 
     private SourceOrganisation organisation(String code) {
-        String wanted = requireText(code, "sourceOrganisationCode", MAX_CODE_LENGTH);
+        String wanted = SetupInput.requireText(code, "sourceOrganisationCode", MAX_CODE_LENGTH);
         return organisations.findByCode(wanted)
                 .orElseThrow(() -> new NotFoundException("SOURCE_ORGANISATION_NOT_FOUND",
                         "Source organisation '" + wanted + "' does not exist"));
@@ -1479,57 +1301,5 @@ public class SetupService {
     private static TaskView view(CatalogImportTask task) {
         return new TaskView(task.getId(), task.getImportLink().getId(), task.getName(),
                 task.getTriggerType().name(), task.isActive(), task.isPreventConcurrentRuns());
-    }
-
-    // --- Hulpmiddelen ----------------------------------------------------------------------------------
-
-    // NT-3: elke veldfout hieronder draagt een stabiele code naast de ongewijzigde tekst. Vorm
-    // <VELD>_REQUIRED / <VELD>_TOO_LONG / <VELD>_INVALID, met <VELD> de veldnaam uit het verzoek in
-    // hoofdletters met underscores (fieldCode) — dezelfde vorm als CHANGE_REASON_REQUIRED en
-    // CREDENTIAL_LABEL_REQUIRED.
-
-    private static String requireText(String value, String field, int maxLength) {
-        if (value == null || value.isBlank()) {
-            throw new BadRequestException(fieldCode(field, "REQUIRED"), field + " must not be blank");
-        }
-        String trimmed = value.trim();
-        if (trimmed.length() > maxLength) {
-            throw new BadRequestException(fieldCode(field, "TOO_LONG"),
-                    field + " must be at most " + maxLength + " characters");
-        }
-        return trimmed;
-    }
-
-    private static String optionalText(String value, String field, int maxLength) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        return requireText(value, field, maxLength);
-    }
-
-    private static <T> T require(T value, String field) {
-        if (value == null) {
-            throw new BadRequestException(fieldCode(field, "REQUIRED"), field + " must not be null");
-        }
-        return value;
-    }
-
-    private static BigDecimal requireNotNegative(BigDecimal value, String field) {
-        if (value.signum() < 0) {
-            throw new BadRequestException(fieldCode(field, "INVALID"), field + " must not be negative");
-        }
-        return value;
-    }
-
-    /**
-     * {@code delimiter} + {@code REQUIRED} → {@code DELIMITER_REQUIRED};
-     * {@code sourceOrganisationCode} + {@code TOO_LONG} → {@code SOURCE_ORGANISATION_CODE_TOO_LONG}.
-     */
-    static String fieldCode(String field, String suffix) {
-        return field.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toUpperCase(Locale.ROOT) + "_" + suffix;
-    }
-
-    private static <T> T orDefault(T value, T fallback) {
-        return value == null ? fallback : value;
     }
 }
