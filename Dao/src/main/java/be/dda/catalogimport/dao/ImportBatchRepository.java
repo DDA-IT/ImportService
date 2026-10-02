@@ -54,9 +54,8 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, Long> 
     List<ImportBatch> findByStatus(ImportBatchStatus status);
 
     /**
-     * De batch met een schrijfslot tot het einde van de transactie. Gebruikt door de afsluitende
-     * transactie van accept-baseline, zodat twee gelijktijdige acceptaties van dezelfde batch de
-     * statuscontrole en de overgang naar {@code BASELINE_ACCEPTED} niet allebei kunnen winnen.
+     * De batch met een schrijfslot tot het einde van de transactie (wacht op een bezet slot). Gebruikt door de
+     * screening en het opstartherstel. Accept-baseline gebruikt sinds S5-c {@link #findByIdForUpdateNowait}.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select b from ImportBatch b where b.id = :id")
@@ -74,6 +73,16 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, Long> 
     @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "0"))
     @Query("select b from ImportBatch b where b.id = :id")
     Optional<ImportBatch> findByIdForUpdateNowait(@Param("id") Long id);
+
+    /**
+     * Enkel de id van de importkoppeling van een batch, zonder de batch zelf als entiteit te laden (S5-c). Nodig wie
+     * eerst de koppeling en pas daarna de batch wil vergrendelen (slotvolgorde koppeling vóór batch): een eerder
+     * geladen, niet-vergrendelde batch zou in de persistentiecontext blijven en de latere
+     * {@link #findByIdForUpdateNowait} zou dan die oude toestand teruggeven in plaats van de rij onder het slot.
+     * Leeg als de batch niet bestaat. De koppeling van een batch wijzigt nooit.
+     */
+    @Query("select b.importLink.id from ImportBatch b where b.id = :id")
+    Optional<Long> findImportLinkIdById(@Param("id") Long id);
 
     /**
      * Fencing van de verwerkingsclaim (stap 4, changeset 017): ververst het levensteken enkel als de batch nog

@@ -55,6 +55,26 @@ class LockFailuresTest {
     }
 
     @Test
+    void theLateBoundOverloadDecidesTheConflictOnlyAfterTheFailureAndKeepsTheCause() {
+        String[] stage = {"FIRST"};
+        CannotAcquireLockException failure = new CannotAcquireLockException("nowait");
+        assertThatThrownBy(() -> LockFailures.translate(() -> {
+            stage[0] = "SECOND";
+            throw failure;
+        }, () -> new ConflictException(stage[0], "busy")))
+                .isInstanceOfSatisfying(ConflictException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo("SECOND");
+                    assertThat(e.getSuppressed()).containsExactly(failure);
+                });
+
+        RuntimeException other = new IllegalStateException("not a lock failure");
+        assertThatThrownBy(() -> LockFailures.translate(() -> {
+            throw other;
+        }, () -> new ConflictException("NEVER", "never"))).isSameAs(other);
+        assertThat(LockFailures.translate(() -> 7, () -> new ConflictException("NEVER", "never"))).isEqualTo(7);
+    }
+
+    @Test
     void otherSqlStatesAndOtherExceptionsPassThroughUnchanged() {
         RuntimeException constraint = new IllegalStateException(new SQLException("unique", "23505"));
         assertThatThrownBy(() -> LockFailures.translate(() -> {

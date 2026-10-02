@@ -35,13 +35,15 @@ import org.springframework.stereotype.Repository;
  * niet actief zijn. Een regel met classificatie {@code IDENTITY_INCIDENT} wordt nergens aanvaard: ze
  * valt buiten élke query hier, want elke filtert op {@code classification in ('NEW', 'CHANGED')}.
  * <p>
- * <b>Hervatbaar.</b> Elke schrijfoperatie is idempotent: een insert slaat identiteiten over die al
+ * <b>Idempotent.</b> Elke schrijfoperatie is idempotent: een insert slaat identiteiten over die al
  * bestaan, een update raakt enkel rijen waarvan de gecombineerde vingerafdruk nog afwijkt. Een
- * onderbroken of herhaalde acceptatie kan dus vanaf het begin herstarten zonder dubbele of foutieve
- * rijen, en zonder {@code updated_at} te verschuiven van wat al klaar was.
+ * bronstaatrij die al exact de kandidaat is, wordt dus nooit opnieuw geschreven en haar
+ * {@code updated_at} verschuift niet.
  * <p>
  * <b>Transactiegrens.</b> Deze DAO opent zelf geen transactie; de baseline-service bepaalt de
- * chunkgrens (dezelfde {@code catalogimport.screening.mutation-chunk-size} als de mutatiegeneratie).
+ * chunkgrens (dezelfde {@code catalogimport.screening.mutation-chunk-size} als de mutatiegeneratie)
+ * en voert sinds S5-c alle chunks van één aanvaarding uit in één transactie: een onderbroken
+ * aanvaarding laat niets achter, een herhaling begint van nul.
  */
 @Repository
 public class SourceStateDao {

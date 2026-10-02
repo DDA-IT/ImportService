@@ -3,6 +3,7 @@ package be.dda.catalogimport.service;
 import be.dda.catalogimport.dao.CandidatePriceDao;
 import be.dda.catalogimport.dao.CandidateReferenceDao;
 import be.dda.catalogimport.dao.ImportBatchRepository;
+import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.dao.PriceObservationDao;
 import be.dda.catalogimport.dao.PriceObservationDao.ObservationContext;
@@ -96,16 +97,37 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       dezelfde koppeling werd eerst aanvaard) wordt geweigerd ({@link #CODE_SOURCE_STATE_CHANGED}) in
  *       plaats van stilzwijgend overschreven of overgeslagen.</li>
  * </ul>
- * <b>Transacties.</b> Deze orchestrator is niet {@code @Transactional}. Eerst één korte transactie die
- * de voorwaarden controleert, dan één transactie per chunk
- * ({@code catalogimport.screening.mutation-chunk-size}) die de bronstaat schrijft, en tot slot één
- * atomaire transactie die de batch vergrendelt, de status opnieuw controleert, de mutaties op
- * {@code SKIPPED} zet en de batch naar {@code BASELINE_ACCEPTED} brengt.
+ * <b>Transacties: alles of niets (S5-c, beslissingslog 2026-10-01 "Stap 4 en 5 uitgewerkt").</b> Deze
+ * orchestrator is niet {@code @Transactional}; de volledige aanvaarding is <b>één</b>
+ * {@code TransactionTemplate}-transactie, in deze volgorde:
+ * <ol>
+ *   <li>de importkoppeling van de batch vergrendelen met {@code NOWAIT} — bezet: meteen 409
+ *       {@link #CODE_BASELINE_ACCEPTANCE_IN_PROGRESS}. Dit is het serialisatiepunt tussen twee aanvaardingen op
+ *       dezelfde koppeling (ook van twee verschillende batches): zij schrijven dezelfde bronstaat;</li>
+ *   <li>de batch vergrendelen met {@code NOWAIT} — bezet (bv. een gelijktijdige opname in een bundel): meteen
+ *       409 {@link #CODE_BATCH_BEING_PROCESSED};</li>
+ *   <li>onder die sloten: status {@code SCREENED}, geen actief bundellidmaatschap, en de bronstaat is niet
+ *       gewijzigd sinds de screening;</li>
+ *   <li>de bronstaat, prijscomponenten, kritieke referenties en goedgekeurde dagwaarden, chunk per chunk
+ *       ({@code catalogimport.screening.mutation-chunk-size}). De chunks begrenzen enkel het geheugen (alles is
+ *       set-based JDBC; enkel de gewijzigde rijen van één chunk worden ingelezen), niet de transactie;</li>
+ *   <li>de open inhoudelijke mutaties op {@code SKIPPED} en de batch op {@code BASELINE_ACCEPTED} met de audit.</li>
+ * </ol>
+ * Slotvolgorde zoals overal: bundel, run, koppeling, batch. Deze actie neemt geen bundel- of runslot; geen
+ * aanroeper houdt er een vast (de enige aanroeper is de controller, zonder transactie).
  * <p>
- * <b>Hervatbaar.</b> Elke chunkschrijfactie is idempotent (insert met {@code not exists}, update enkel
- * bij afwijkende vingerafdruk). Valt de verwerking halverwege weg, dan staat de batch nog op
- * {@code SCREENED} en herhaalt de aanroeper de actie; er ontstaan geen dubbele of foutieve rijen. Rijen
- * die een eerdere poging al schreef, behouden hun {@code accepted_by}/{@code accepted_at}.
+ * <b>Er blijft nooit half werk staan.</b> Elke fout — in de voorwaarden, in om het even welke chunk of in de
+ * eindtransitie — draait de hele transactie terug: geen bronstaatrij, geen prijscomponent, geen referentie en geen
+ * prijsobservatie van deze batch blijft achter, en de batch blijft {@code SCREENED}. Een bezet slot of een
+ * deadlock (SQLState 55P03/40P01) wordt <b>buiten</b> de transactie vertaald ({@link LockFailures}): PostgreSQL
+ * breekt de transactie bij zo'n fout zelf af. De aanvaarding is dus niet meer hervatbaar per chunk (mens:
+ * alles-of-niets); wie na een fout opnieuw aanvaardt, begint van nul. De schrijfqueries in {@code SourceStateDao}
+ * en {@code PriceObservationDao} blijven idempotent ({@code not exists}, update enkel bij afwijkende vingerafdruk):
+ * dat is nu geen hervatmechanisme meer maar de inhoudelijke regel dat een al gelijke bronstaatrij of een al
+ * vastgelegde dagwaarde niet opnieuw geschreven wordt (A16 "eerste waarde van de dag wint").
+ * <p>
+ * Eén {@code acceptedAt}-instant voor alles wat deze aanvaarding schrijft (ontwerp par. 18, C9: de ondertekenaar
+ * van een referentierij is enkel via {@code (import_link_id, accepted_at)} te herleiden).
  */
 @Service
 public class SourceStateBaselineService {
@@ -120,15 +142,25 @@ public class SourceStateBaselineService {
      * Een kritieke koppelreferentie van deze levering werd tussen de screening en deze aanvaarding
      * door een andere batch actief gemaakt voor een andere aanbieding in dezelfde bibliotheek
      * (R-REF-06). De unieke constraint {@code uk_catalog_reference_state_active} vangt die race op;
-     * de chunk wordt volledig teruggedraaid, zodat er nooit half werk blijft staan. De levering moet
-     * opnieuw gescreend worden tegen de gewijzigde bibliotheek.
+     * de volledige aanvaarding wordt teruggedraaid, zodat er nooit half werk blijft staan. De levering
+     * moet opnieuw gescreend worden tegen de gewijzigde bibliotheek.
      */
     public static final String CODE_REFERENCE_ALREADY_ACTIVE = "REFERENCE_ALREADY_ACTIVE_FOR_OTHER_OFFER";
     /**
      * De batch heeft een actief lidmaatschap in een Publicatiebundel (fase 4, R-BAS-02): de twee
-     * routes sluiten elkaar per batch uit. Gecontroleerd vóór er iets geschreven wordt.
+     * routes sluiten elkaar per batch uit. Gecontroleerd onder het batchslot, vóór er iets geschreven wordt.
      */
     public static final String CODE_BATCH_IN_PUBLICATION_BUNDLE = "BATCH_IN_PUBLICATION_BUNDLE";
+    /**
+     * S5-c: op dezelfde importkoppeling loopt al een aanvaarding (het koppelingsslot is bezet), of de aanvaarding
+     * verloor een deadlock. Meteen 409, niet wachten; er is niets geschreven en de batch blijft {@code SCREENED}.
+     */
+    public static final String CODE_BASELINE_ACCEPTANCE_IN_PROGRESS = "BASELINE_ACCEPTANCE_IN_PROGRESS";
+    /**
+     * S5-c: het rijslot van de batch zelf is bezet (bv. een gelijktijdige opname in een Publicatiebundel). Dezelfde
+     * code als de verwerkingsclaim en de bundelopname ({@link BatchProcessingClaims#CODE_BATCH_BEING_PROCESSED}).
+     */
+    public static final String CODE_BATCH_BEING_PROCESSED = BatchProcessingClaims.CODE_BATCH_BEING_PROCESSED;
 
     /** {@code catalog_source_state.accepted_by} en {@code import_batch.baseline_accepted_by}: varchar(100). */
     static final int MAX_ACCEPTED_BY_LENGTH = 100;
@@ -147,9 +179,25 @@ public class SourceStateBaselineService {
                                      int skippedMutationCount) {
     }
 
-    /** Wat buiten een transactie nodig is; bewust geen JPA-entiteiten. */
-    private record Prepared(long batchId, long deliveryId, long importLinkId, String libraryCode,
-                            String identityProfileKind) {
+    /**
+     * Welk slot de transactie op dit moment probeert te nemen. Gezet in de callback, gelezen door de vertaling
+     * buiten de transactie ({@link LockFailures#translate(java.util.function.Supplier, java.util.function.Supplier)}):
+     * zo komt bij een bezet batchslot {@link #CODE_BATCH_BEING_PROCESSED} terug en in elk ander geval (bezet
+     * koppelingsslot, deadlock tijdens de chunks) {@link #CODE_BASELINE_ACCEPTANCE_IN_PROGRESS}. Eén instantie per
+     * aanroep, dus nooit gedeeld tussen threads.
+     */
+    private static final class LockStage {
+        private boolean takingBatchLock;
+
+        ConflictException conflict(long batchId) {
+            if (takingBatchLock) {
+                return new ConflictException(CODE_BATCH_BEING_PROCESSED, "Batch " + batchId + " is being "
+                        + "processed right now; try again when that processing has finished");
+            }
+            return new ConflictException(CODE_BASELINE_ACCEPTANCE_IN_PROGRESS, "A baseline acceptance for the "
+                    + "import link of batch " + batchId + " is in progress; nothing was written, try again when it "
+                    + "has finished");
+        }
     }
 
     private final SourceStateDao sourceState;
@@ -158,6 +206,7 @@ public class SourceStateBaselineService {
     private final PriceObservationDao observations;
     private final MutationDao mutations;
     private final ImportBatchRepository batches;
+    private final ImportLinkRepository links;
     private final PublicationBundleBatchRepository bundleMemberships;
     private final TransactionTemplate transaction;
     private final Clock clock;
@@ -165,7 +214,7 @@ public class SourceStateBaselineService {
     public SourceStateBaselineService(SourceStateDao sourceState, CandidatePriceDao candidatePrices,
                                       CandidateReferenceDao candidateReferences,
                                       PriceObservationDao observations, MutationDao mutations,
-                                      ImportBatchRepository batches,
+                                      ImportBatchRepository batches, ImportLinkRepository links,
                                       PublicationBundleBatchRepository bundleMemberships,
                                       PlatformTransactionManager transactionManager, Clock clock) {
         this.sourceState = sourceState;
@@ -174,6 +223,7 @@ public class SourceStateBaselineService {
         this.observations = observations;
         this.mutations = mutations;
         this.batches = batches;
+        this.links = links;
         this.bundleMemberships = bundleMemberships;
         this.transaction = new TransactionTemplate(transactionManager);
         this.clock = clock;
@@ -185,7 +235,10 @@ public class SourceStateBaselineService {
      * @throws IllegalArgumentException ontbrekende of ongeldige {@code acceptedBy}/{@code reason}
      * @throws NotFoundException        onbekende batch ({@code BATCH_NOT_FOUND})
      * @throws ConflictException        {@link #CODE_BATCH_NOT_ACCEPTABLE} (status is niet {@code SCREENED}),
-     *                                  {@link #CODE_SOURCE_STATE_CHANGED}
+     *                                  {@link #CODE_SOURCE_STATE_CHANGED}, {@link #CODE_BATCH_IN_PUBLICATION_BUNDLE},
+     *                                  {@link #CODE_REFERENCE_ALREADY_ACTIVE},
+     *                                  {@link #CODE_BASELINE_ACCEPTANCE_IN_PROGRESS} (koppelingsslot bezet of
+     *                                  deadlock), {@link #CODE_BATCH_BEING_PROCESSED} (batchslot bezet)
      */
     public BaselineAcceptance acceptBaseline(long batchId, String acceptedBy, String reason) {
         return acceptBaseline(batchId, ActorIdentity.unverified(acceptedBy), reason);
@@ -202,17 +255,60 @@ public class SourceStateBaselineService {
         String motivation = ActorNames.requireText(reason, "reason", MAX_REASON_LENGTH);
 
         Instant acceptedAt = clock.instant();
-        // Eén keer per aanvaarding bepaald en niet per chunk: een verwerking die over middernacht
-        // heen loopt, mag haar observaties nooit over twee kalenderdagen verspreiden (R-PRI-13).
+        // Eén keer per aanvaarding bepaald: een verwerking die over middernacht heen loopt, mag haar
+        // observaties nooit over twee kalenderdagen verspreiden (R-PRI-13).
         LocalDate observationDate = LocalDate.ofInstant(acceptedAt, PriceObservationDao.OBSERVATION_ZONE);
-        Prepared prepared = transaction.execute(status -> prepare(batchId));
+        LockStage stage = new LockStage();
+        long started = System.nanoTime();
+        // Eén transactie, alles of niets (S5-c). De vertaling van een lock-fout gebeurt hier, rond de
+        // transactie-aanroep: PostgreSQL heeft de transactie op dat moment al afgebroken en teruggedraaid.
+        BaselineAcceptance result = LockFailures.translate(() -> transaction.execute(status ->
+                        acceptInOneTransaction(batchId, user, userSubject, motivation, acceptedAt, observationDate,
+                                stage)),
+                () -> stage.conflict(batchId));
+        // De duur staat in de logregel: één transactie over de hele levering, de mens meet zo zelf grote leveringen.
+        LOG.info("Batch {} accepted as baseline by {} ({} mutations skipped) in {} ms: {}", batchId, user,
+                result.skippedMutationCount(), (System.nanoTime() - started) / 1_000_000L, motivation);
+        return result;
+    }
 
-        // Chunkgewijs: elke chunk is één transactie en volledig idempotent (design par. 9 stap E).
-        AcceptanceContext context = new AcceptanceContext(prepared.importLinkId(), prepared.batchId(),
-                prepared.deliveryId(), prepared.libraryCode(), prepared.identityProfileKind(),
+    /**
+     * De volledige aanvaarding binnen de ene transactie: sloten, voorwaarden, chunks, eindtransitie. Een fout
+     * eender waar draait alles terug.
+     */
+    private BaselineAcceptance acceptInOneTransaction(long batchId, String user, String userSubject, String reason,
+                                                      Instant acceptedAt, LocalDate observationDate,
+                                                      LockStage stage) {
+        // 1. Koppeling eerst (slotvolgorde koppeling vóór batch). Enkel de id lezen: de batch zelf mag pas onder
+        //    haar eigen slot in de persistentiecontext komen, anders gaat een oudere toestand mee.
+        long importLinkId = batches.findImportLinkIdById(batchId)
+                .orElseThrow(() -> new NotFoundException("BATCH_NOT_FOUND", "Batch " + batchId + " not found"));
+        links.findByIdForUpdateNowait(importLinkId).orElseThrow(() -> new IllegalStateException(
+                "Import link " + importLinkId + " of batch " + batchId + " not found"));
+
+        // 2. Dan de batch. Enkel tijdens dit ene statement betekent een lock-fout "batch bezet".
+        stage.takingBatchLock = true;
+        ImportBatch batch = batches.findByIdForUpdateNowait(batchId)
+                .orElseThrow(() -> new NotFoundException("BATCH_NOT_FOUND", "Batch " + batchId + " not found"));
+        stage.takingBatchLock = false;
+
+        // 3. Voorwaarden, onder beide sloten: nog niets geschreven.
+        requireScreened(batch);
+        requireNoActiveBundleMembership(batchId);
+        long stale = sourceState.countRowsStaleSinceScreening(batchId, importLinkId);
+        if (stale > 0) {
+            throw new ConflictException(CODE_SOURCE_STATE_CHANGED, "The source state of import link "
+                    + importLinkId + " changed after batch " + batchId + " was screened (" + stale
+                    + " offers affected); screen the delivery again before accepting a baseline");
+        }
+
+        // 4. De chunks, binnen deze transactie, enkel om het geheugen te begrenzen: alles is JDBC en de
+        //    persistentiecontext bevat enkel de koppeling, de batch en hun associaties (geen flush/clear nodig).
+        AcceptanceContext context = new AcceptanceContext(importLinkId, batchId, batch.getDelivery().getId(),
+                batch.getImportLink().getLibraryCode(), batch.getDefinitionRevision().getIdentityProfileKind().name(),
                 SourceStateOrigin.BASELINE_ACCEPTED.name(), user, acceptedAt, acceptedAt);
-        ObservationContext observationContext = new ObservationContext(prepared.importLinkId(),
-                prepared.batchId(), observationDate, user, acceptedAt);
+        ObservationContext observationContext = new ObservationContext(importLinkId, batchId, observationDate, user,
+                acceptedAt);
         // Draagt deze levering prijscomponenten? Zo niet, blijven catalog_source_state_price-rijen
         // volledig ongemoeid. Een revisie die haar componentmappings verloren heeft, wist zo nooit
         // stilzwijgend eerder aanvaarde verhoudingen: dat vraagt een bewuste herbaselining.
@@ -223,39 +319,43 @@ public class SourceStateBaselineService {
         long from = 0L;
         Long boundary;
         while ((boundary = sourceState.nextChunkBoundary(batchId, from)) != null) {
-            long chunkFrom = from;
-            long chunkTo = boundary;
-            transaction.executeWithoutResult(status -> {
-                sourceState.insertNewFromStage(context, chunkFrom, chunkTo);
-                sourceState.updateChangedFromStage(context, chunkFrom, chunkTo);
-                if (withPriceComponents) {
-                    // Ná de bronstaatrijen zelf: de prijscomponenten hangen eraan met een foreign key.
-                    sourceState.insertNewPricesFromStage(context, chunkFrom, chunkTo);
-                    sourceState.replaceChangedPricesFromStage(context, chunkFrom, chunkTo);
-                }
-                if (withReferences) {
-                    // R-REF-06: eerste vastlegging van een kritieke koppelreferentie, enkel na
-                    // normalisatie, enkel wanneer ze binnen de bibliotheek nog niet actief is en enkel
-                    // voor regels die werkelijk aanvaard worden. Een vastgehouden regel
-                    // (IDENTITY_INCIDENT) komt hier nooit langs.
-                    acceptReferences(context, chunkFrom, chunkTo);
-                }
-                // De goedgekeurde dagwaarden (R-PRI-13): append-only, in dezelfde transactie als de
-                // bronstaatrij waarnaar ze verwijzen. UNCHANGED levert bewust geen observatie op - de
-                // historiek bevat vastgelegde goedgekeurde waarden, geen doorgetrokken kalenderdagen.
-                observations.insertBasePriceObservations(observationContext, chunkFrom, chunkTo);
-                if (withPriceComponents) {
-                    observations.insertComponentObservations(observationContext, chunkFrom, chunkTo);
-                }
-            });
-            from = chunkTo;
+            writeChunk(context, observationContext, from, boundary, withPriceComponents, withReferences);
+            from = boundary;
         }
 
-        BaselineAcceptance result = transaction.execute(status ->
-                finish(batchId, user, userSubject, acceptedAt, motivation));
-        LOG.info("Batch {} accepted as baseline by {} ({} mutations skipped): {}", batchId, user,
-                result.skippedMutationCount(), motivation);
-        return result;
+        // 5. De eindtransitie, met de audit.
+        int skipped = mutations.skipOpenContentMutations(batchId, SKIPPED_REASON);
+        batch.setStatus(ImportBatchStatus.BASELINE_ACCEPTED);
+        batch.recordBaselineAcceptance(user, userSubject, acceptedAt, reason);
+        batches.saveAndFlush(batch);
+        return new BaselineAcceptance(batchId, batch.getStatus().name(), user, acceptedAt, reason,
+                batch.getNewCount(), batch.getChangedCount(), batch.getUnchangedCount(), skipped);
+    }
+
+    /** Eén chunk regels {@code (fromExclusive, toInclusive]}: bronstaat, prijscomponenten, referenties, dagwaarden. */
+    private void writeChunk(AcceptanceContext context, ObservationContext observationContext, long fromExclusive,
+                            long toInclusive, boolean withPriceComponents, boolean withReferences) {
+        sourceState.insertNewFromStage(context, fromExclusive, toInclusive);
+        sourceState.updateChangedFromStage(context, fromExclusive, toInclusive);
+        if (withPriceComponents) {
+            // Ná de bronstaatrijen zelf: de prijscomponenten hangen eraan met een foreign key.
+            sourceState.insertNewPricesFromStage(context, fromExclusive, toInclusive);
+            sourceState.replaceChangedPricesFromStage(context, fromExclusive, toInclusive);
+        }
+        if (withReferences) {
+            // R-REF-06: eerste vastlegging van een kritieke koppelreferentie, enkel na
+            // normalisatie, enkel wanneer ze binnen de bibliotheek nog niet actief is en enkel
+            // voor regels die werkelijk aanvaard worden. Een vastgehouden regel
+            // (IDENTITY_INCIDENT) komt hier nooit langs.
+            acceptReferences(context, fromExclusive, toInclusive);
+        }
+        // De goedgekeurde dagwaarden (R-PRI-13): append-only, in dezelfde transactie als de
+        // bronstaatrij waarnaar ze verwijzen. UNCHANGED levert bewust geen observatie op - de
+        // historiek bevat vastgelegde goedgekeurde waarden, geen doorgetrokken kalenderdagen.
+        observations.insertBasePriceObservations(observationContext, fromExclusive, toInclusive);
+        if (withPriceComponents) {
+            observations.insertComponentObservations(observationContext, fromExclusive, toInclusive);
+        }
     }
 
     /**
@@ -263,12 +363,13 @@ public class SourceStateBaselineService {
      * andere batch om in een duidelijk conflict (R-REF-06).
      * <p>
      * De {@code not exists}-controle en de insert zitten in dezelfde statement maar niet in dezelfde
-     * grendel: een andere batch kan de waarde er tussenin actief maken. De unieke constraint
-     * {@code uk_catalog_reference_state_active} vangt dat op. Omdat de volledige chunk in één
-     * transactie zit, wordt alles van die chunk teruggedraaid — er blijft nooit half werk staan, en de
-     * batch blijft op {@code SCREENED} zodat ze opnieuw gescreend kan worden tegen de gewijzigde
-     * bibliotheek. Stilzwijgend overslaan zou betekenen dat de aanbieding zonder referentie in de
-     * bronstaat belandt en dat het conflict nooit gezien wordt.
+     * grendel: een andere batch (van een andere koppeling in dezelfde bibliotheek, dus niet door het
+     * koppelingsslot tegengehouden) kan de waarde er tussenin actief maken. De unieke constraint
+     * {@code uk_catalog_reference_state_active} vangt dat op. De fout breekt de ene transactie af, dus
+     * wordt de volledige aanvaarding teruggedraaid — er blijft nooit half werk staan, en de batch blijft op
+     * {@code SCREENED} zodat ze opnieuw gescreend kan worden tegen de gewijzigde bibliotheek. Stilzwijgend
+     * overslaan zou betekenen dat de aanbieding zonder referentie in de bronstaat belandt en dat het
+     * conflict nooit gezien wordt.
      */
     private void acceptReferences(AcceptanceContext context, long fromExclusive, long toInclusive) {
         try {
@@ -277,45 +378,8 @@ public class SourceStateBaselineService {
             throw new ConflictException(CODE_REFERENCE_ALREADY_ACTIVE, "A critical reference of batch "
                     + context.batchId() + " became active for another offer in library "
                     + context.libraryCode() + " while this baseline was being accepted; nothing of this "
-                    + "chunk was written. Screen the delivery again before accepting a baseline");
+                    + "acceptance was written. Screen the delivery again before accepting a baseline");
         }
-    }
-
-    /** Controleert de voorwaarden; schrijft niets, zodat een afgewezen aanroep nooit iets achterlaat. */
-    private Prepared prepare(long batchId) {
-        ImportBatch batch = batches.findById(batchId)
-                .orElseThrow(() -> new NotFoundException("BATCH_NOT_FOUND", "Batch " + batchId + " not found"));
-        requireScreened(batch);
-        requireNoActiveBundleMembership(batchId);
-        long importLinkId = batch.getImportLink().getId();
-        long stale = sourceState.countRowsStaleSinceScreening(batchId, importLinkId);
-        if (stale > 0) {
-            throw new ConflictException(CODE_SOURCE_STATE_CHANGED, "The source state of import link "
-                    + importLinkId + " changed after batch " + batchId + " was screened (" + stale
-                    + " offers affected); screen the delivery again before accepting a baseline");
-        }
-        return new Prepared(batchId, batch.getDelivery().getId(), importLinkId,
-                batch.getImportLink().getLibraryCode(),
-                batch.getDefinitionRevision().getIdentityProfileKind().name());
-    }
-
-    /**
-     * De atomaire eindtransitie: vergrendel de batch, controleer de status opnieuw (een gelijktijdige
-     * tweede aanvaarding is dan al klaar), zet de mutaties op {@code SKIPPED} en de batch op
-     * {@code BASELINE_ACCEPTED}, met de audit.
-     */
-    private BaselineAcceptance finish(long batchId, String user, String userSubject, Instant acceptedAt,
-                                      String reason) {
-        ImportBatch batch = batches.findByIdForUpdate(batchId)
-                .orElseThrow(() -> new NotFoundException("BATCH_NOT_FOUND", "Batch " + batchId + " not found"));
-        requireScreened(batch);
-        requireNoActiveBundleMembership(batchId);
-        int skipped = mutations.skipOpenContentMutations(batchId, SKIPPED_REASON);
-        batch.setStatus(ImportBatchStatus.BASELINE_ACCEPTED);
-        batch.recordBaselineAcceptance(user, userSubject, acceptedAt, reason);
-        batches.saveAndFlush(batch);
-        return new BaselineAcceptance(batchId, batch.getStatus().name(), user, acceptedAt, reason,
-                batch.getNewCount(), batch.getChangedCount(), batch.getUnchangedCount(), skipped);
     }
 
     private static void requireScreened(ImportBatch batch) {
@@ -327,10 +391,9 @@ public class SourceStateBaselineService {
 
     /**
      * R-BAS-02 (fase 4, "Important technical constraint discovered" in het ontwerp): {@code accept-baseline}
-     * en de Publicatiebundel sluiten elkaar per batch uit. Gecontroleerd vóór er iets geschreven wordt,
-     * zowel in {@link #prepare} als opnieuw in {@link #finish} (dezelfde dubbele controle als
-     * {@link #requireScreened}), zodat een lidmaatschap dat tussen beide momenten ontstaat ook gevangen
-     * wordt.
+     * en de Publicatiebundel sluiten elkaar per batch uit. Gecontroleerd onder het batchslot, vóór er iets
+     * geschreven wordt. Een gelijktijdige opname kan er niet meer tussen komen: die neemt hetzelfde batchslot
+     * met {@code NOWAIT} (S5-b) en krijgt dan 409, of komt pas na de commit en ziet {@code BASELINE_ACCEPTED}.
      */
     private void requireNoActiveBundleMembership(long batchId) {
         if (bundleMemberships.findByBatchIdAndActiveMarkerIsNotNull(batchId).isPresent()) {

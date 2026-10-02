@@ -111,6 +111,22 @@ class NowaitLockTest {
         assertThat(missing).isTrue();
     }
 
+    /**
+     * S5-c: de link-id van een batch lezen zonder de batch te laden, ook terwijl een andere transactie het batchslot
+     * houdt (gewone lezing, geen slot: de aanvaarding vergrendelt eerst de koppeling en pas daarna de batch).
+     */
+    @Test
+    void theImportLinkIdOfABatchIsReadWithoutTakingOrWaitingForTheBatchLock() throws Exception {
+        createChain();
+        holdingRowLock(() -> batches.findByIdForUpdate(batchId), () -> {
+            long start = System.nanoTime();
+            assertThat(batches.findImportLinkIdById(batchId)).contains(linkId);
+            assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
+                    .isLessThan(MUST_FAIL_WITHIN.toMillis());
+        });
+        assertThat(batches.findImportLinkIdById(-1L)).isEmpty();
+    }
+
     /** Verwacht een lock-fout en geeft de verstreken tijd tot die fout terug. */
     private long timeToFailure(Runnable nowaitLock) {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);

@@ -36,11 +36,23 @@ public final class LockFailures {
      * {@link ConflictException}{@code (code, message)}.
      */
     public static <T> T translate(Supplier<T> action, String code, String message) {
+        return translate(action, () -> new ConflictException(code, message));
+    }
+
+    /**
+     * Zoals {@link #translate(Supplier, String, String)}, maar het conflict wordt pas bepaald <b>na</b> de mislukte
+     * vergrendeling (S5-c). Voor een transactie die meerdere sloten na elkaar neemt en per slot een andere code
+     * teruggeeft: de callback houdt bij welk slot ze aan het nemen is, {@code conflict} leest dat uit. Ook hier
+     * gebeurt de vertaling buiten de transactie.
+     */
+    public static <T> T translate(Supplier<T> action, Supplier<ConflictException> conflict) {
         try {
             return action.get();
         } catch (RuntimeException failure) {
             if (isLockFailure(failure)) {
-                throw new ConflictException(code, message);
+                ConflictException translated = conflict.get();
+                translated.addSuppressed(failure);
+                throw translated;
             }
             throw failure;
         }

@@ -364,8 +364,12 @@ class BatchBaselineHttpTest {
 
     // --- Onderbroken en herhaalde acceptatie ---------------------------------------------------------------
 
+    /**
+     * S5-c (alles of niets): een fout in de tweede chunk draait ook de eerste chunk terug. Er blijft geen enkele
+     * bronstaatrij of prijsobservatie staan; een gewone herhaling schrijft daarna alles in één keer.
+     */
     @Test
-    void anAcceptanceThatIsInterruptedAfterTheFirstChunkCanBeRepeatedWithoutDuplicateOrWrongRows()
+    void anAcceptanceThatFailsInTheSecondChunkLeavesNothingAndCanBeRepeated()
             throws Exception {
         Fixture f = fixture("CRASHNEW", false);
         Uploaded first = upload(f, "REF-1", csv(false, FIVE_ROWS));
@@ -380,8 +384,10 @@ class BatchBaselineHttpTest {
         assertThatThrownBy(() -> accept(first.batchId(), ACCEPTED_BY, REASON))
                 .hasRootCauseInstanceOf(IOException.class);
 
-        // Chunk 1 (twee regels) is gecommit, de rest niet; de batch is niet aanvaard en niets is overgeslagen.
-        assertThat(stateRows(f)).hasSize(2);
+        // Ook chunk 1 (twee regels) is teruggedraaid; de batch is niet aanvaard en niets is overgeslagen.
+        assertThat(stateRows(f)).isEmpty();
+        assertThat(jdbc.queryForObject("select count(*) from catalog_price_observation where import_link_id = ?",
+                Long.class, f.linkId())).isZero();
         assertThat(batches.findById(first.batchId()).orElseThrow().getStatus()).isEqualTo(ImportBatchStatus.SCREENED);
         assertThat(batches.findById(first.batchId()).orElseThrow().getBaselineAcceptedBy()).isNull();
         assertThat(jdbc.queryForObject("select count(*) from import_mutation where batch_id = ? "
@@ -402,7 +408,7 @@ class BatchBaselineHttpTest {
     }
 
     @Test
-    void anInterruptedAcceptanceOfChangedRowsIsRepeatableAndOnlyTouchesTheChangedRowsOnce() throws Exception {
+    void aFailedAcceptanceOfChangedRowsLeavesTheBaselineUntouchedAndIsRepeatable() throws Exception {
         Fixture f = fixture("CRASHUPD", false);
         Uploaded first = upload(f, "REF-1", csv(false, FIVE_ROWS));
         accept(first.batchId(), ACCEPTED_BY, REASON).andExpect(status().isOk());
@@ -425,10 +431,9 @@ class BatchBaselineHttpTest {
         assertThatThrownBy(() -> accept(second.batchId(), ACCEPTED_BY, REASON))
                 .hasRootCauseInstanceOf(IOException.class);
 
-        List<StateRow> interrupted = stateRows(f);
-        assertThat(interrupted.get(0).basePrice()).isEqualByComparingTo("1.75");
-        assertThat(interrupted.get(1).basePrice()).isEqualByComparingTo("2.50");
-        assertThat(interrupted.get(2).basePrice()).isEqualByComparingTo("3.00"); // chunk 2 nog niet gecommit
+        // S5-c (alles of niets): ook de update van chunk 1 (R1, R2) is teruggedraaid; de bronstaat is exact de
+        // nulmeting van de eerste batch.
+        assertThat(stateRows(f)).isEqualTo(baseline);
         assertThat(batches.findById(second.batchId()).orElseThrow().getStatus()).isEqualTo(ImportBatchStatus.SCREENED);
 
         Mockito.reset(sourceState);
@@ -439,10 +444,8 @@ class BatchBaselineHttpTest {
         assertThat(after.get(0).basePrice()).isEqualByComparingTo("1.75");
         assertThat(after.get(1).basePrice()).isEqualByComparingTo("2.50");
         assertThat(after.get(2).basePrice()).isEqualByComparingTo("3.25");
-        // Wat de eerste (onderbroken) poging al klaar had, is bij de herhaling niet nogmaals aangeraakt.
-        assertThat(after.get(0)).isEqualTo(interrupted.get(0));
-        assertThat(after.get(1)).isEqualTo(interrupted.get(1));
-        assertThat(after.get(2).lastChangeBatchId()).isEqualTo(second.batchId());
+        assertThat(after.subList(0, 3)).allSatisfy(row ->
+                assertThat(row.lastChangeBatchId()).isEqualTo(second.batchId()));
         // R4 en R5 zijn ongewijzigd en blijven onaangeroerd.
         assertThat(after.get(3)).isEqualTo(baseline.get(3));
         assertThat(after.get(4)).isEqualTo(baseline.get(4));

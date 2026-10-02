@@ -37,10 +37,12 @@ import org.springframework.stereotype.Repository;
  * de dag expliciet mee, zodat er binnen één aanvaarding nooit twee dagen door elkaar lopen wanneer de
  * verwerking over middernacht heen loopt.
  *
- * <h2>Set-based en hervatbaar</h2>
+ * <h2>Set-based en idempotent</h2>
  * Beide schrijfroutes zijn één {@code insert ... select} per chunk: de bedragen en de binaire
- * identiteitshashes verlaten de database niet. Een onderbroken of herhaalde aanvaarding schrijft
- * niets dubbel. Deze DAO opent zelf geen transactie; de baseline-service bepaalt de chunkgrens.
+ * identiteitshashes verlaten de database niet. Een herhaalde aanvaarding schrijft niets dubbel
+ * ({@code not exists}: de eerste waarde van de dag wint, A16). Deze DAO opent zelf geen transactie; de
+ * baseline-service bepaalt de chunkgrens en voert sinds S5-c alle chunks van één aanvaarding uit in
+ * één transactie, zodat een onderbroken aanvaarding niets achterlaat.
  */
 @Repository
 public class PriceObservationDao {
