@@ -95,7 +95,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       en wie/wanneer/waarom op de batch (changeset 003).</li>
  *   <li>Een batch die gescreend werd tegen een inmiddels gewijzigde bronstaat (bv. een andere batch van
  *       dezelfde koppeling werd eerst aanvaard) wordt geweigerd ({@link #CODE_SOURCE_STATE_CHANGED}) in
- *       plaats van stilzwijgend overschreven of overgeslagen.</li>
+ *       plaats van stilzwijgend overschreven of overgeslagen. Dat geldt voor {@code NEW}, {@code CHANGED}
+ *       én {@code UNCHANGED} (S5-d): een {@code UNCHANGED}-regel zegt "de bronstaat is al gelijk aan de
+ *       levering"; is die bronstaat sinds de screening door een andere aanvaarding anders geworden, dan
+ *       klopt die uitspraak niet meer. Een bronstaat die al gelijk is aan de kandidaat van de regel telt
+ *       niet als gewijzigd (er valt niets te overschrijven; zo blijft een identieke tweede levering
+ *       aanvaardbaar, A16).</li>
  * </ul>
  * <b>Transacties: alles of niets (S5-c, beslissingslog 2026-10-01 "Stap 4 en 5 uitgewerkt").</b> Deze
  * orchestrator is niet {@code @Transactional}; de volledige aanvaarding is <b>één</b>

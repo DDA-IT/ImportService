@@ -95,12 +95,18 @@ public class SourceStateDao {
             + "where import_link_id = ? and identity_hash = ? and combined_fingerprint <> ?";
 
     /**
-     * Rijen van deze batch waarvan de bronstaat sinds de screening veranderd is. Een {@code NEW}-regel
-     * waarvan de identiteit al bestaat met een andere vingerafdruk, of een {@code CHANGED}-regel
-     * waarvan de bronstaat niet meer de "voor"-toestand van de mutatie is (en ook nog niet de
-     * "na"-toestand), is gescreend tegen een verouderde bronstaat. Zo'n batch aanvaarden zou
-     * stilzwijgend overschrijven of overslaan. Rijen die door een onderbroken eigen poging al
-     * bijgewerkt zijn (bronstaat = kandidaat) tellen niet mee.
+     * Rijen van deze batch waarvan de bronstaat sinds de screening veranderd is (S5-d: ook
+     * {@code UNCHANGED}). De stage-vingerafdruk is het bewijs van wat de screening zag: bij
+     * {@code UNCHANGED} was de bronstaat gelijk aan de kandidaat, dus een afwijkende (of verdwenen)
+     * bronstaat nu betekent dat een andere aanvaarding ze wijzigde.
+     * <ul>
+     *   <li>{@code NEW}: de identiteit bestaat nu met een andere vingerafdruk dan de kandidaat.</li>
+     *   <li>{@code CHANGED}: de bronstaat ontbreekt, of is niet meer de "voor"-toestand van de mutatie
+     *       en ook niet de kandidaat.</li>
+     *   <li>{@code UNCHANGED}: de bronstaat ontbreekt of heeft een andere vingerafdruk dan de kandidaat.</li>
+     * </ul>
+     * Een bronstaat die al gelijk is aan de kandidaat telt nooit mee: er valt niets te overschrijven
+     * (een andere aanvaarding leverde identieke inhoud; de inserts/updates zijn dan idempotent, A16).
      */
     private static final String COUNT_STALE_ROWS = "select count(*) from import_candidate_stage stage "
             + "left join catalog_source_state state "
@@ -108,10 +114,11 @@ public class SourceStateDao {
             + "left join import_mutation mutation "
             + "  on mutation.batch_id = stage.batch_id and mutation.source_row_number = stage.row_number "
             + " and mutation.action_type <> 'IMPORT_MARKER' "
-            + "where stage.batch_id = ? and stage.classification in ('NEW', 'CHANGED') "
-            + "  and ((state.id is null and stage.classification = 'CHANGED') "
+            + "where stage.batch_id = ? and stage.classification in ('NEW', 'CHANGED', 'UNCHANGED') "
+            + "  and ((state.id is null and stage.classification in ('CHANGED', 'UNCHANGED')) "
             + "    or (state.id is not null and state.combined_fingerprint <> stage.combined_fingerprint "
-            + "        and (mutation.before_combined_fingerprint is null "
+            + "        and (stage.classification = 'UNCHANGED' "
+            + "             or mutation.before_combined_fingerprint is null "
             + "             or state.combined_fingerprint <> mutation.before_combined_fingerprint)))";
 
     /**

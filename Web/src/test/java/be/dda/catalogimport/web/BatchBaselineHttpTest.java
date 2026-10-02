@@ -362,6 +362,60 @@ class BatchBaselineHttpTest {
         assertThat(batches.findById(older.batchId()).orElseThrow().getStatus()).isEqualTo(ImportBatchStatus.SCREENED);
     }
 
+    /**
+     * S5-d: een UNCHANGED-regel van batch B ("bronstaat is al gelijk aan de levering") klopt niet meer als batch A
+     * die bronstaat na B's screening wijzigde. B wordt geweigerd; er wordt niets geschreven.
+     */
+    @Test
+    void anUnchangedRowWhoseSourceStateWasChangedByAnotherAcceptanceAfterScreeningRefusesTheAcceptance()
+            throws Exception {
+        Fixture f = fixture("STALEUNCH", false);
+        accept(upload(f, "REF-0", csv(false, FIVE_ROWS)).batchId(), ACCEPTED_BY, REASON).andExpect(status().isOk());
+
+        String[] changedA = FIVE_ROWS.clone();
+        changedA[2] = "ACME;G1;R3;9,95;Hamer";
+        Uploaded a = upload(f, "REF-A", csv(false, changedA));
+        String[] changedB = FIVE_ROWS.clone();
+        changedB[0] = "ACME;G1;R1;1,75;Boormachine";
+        Uploaded b = upload(f, "REF-B", csv(false, changedB));
+        // R3 is in B UNCHANGED (tegen de nulmeting), R1 CHANGED.
+        assertThat(b.changedCount()).isEqualTo(1L);
+        assertThat(b.unchangedCount()).isEqualTo(4L);
+
+        accept(a.batchId(), ACCEPTED_BY, REASON).andExpect(status().isOk());
+        List<StateRow> afterA = stateRows(f);
+
+        accept(b.batchId(), ACCEPTED_BY, REASON).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SOURCE_STATE_CHANGED_SINCE_SCREENING"));
+        assertThat(stateRows(f)).isEqualTo(afterA);
+        assertThat(batches.findById(b.batchId()).orElseThrow().getStatus()).isEqualTo(ImportBatchStatus.SCREENED);
+        assertThat(jdbc.queryForObject("select count(*) from import_mutation where batch_id = ? "
+                + "and status = 'SKIPPED'", Long.class, b.batchId())).isZero();
+    }
+
+    /** S5-d: raakt de andere aanvaarding geen enkele regel van B, dan slaagt B gewoon. */
+    @Test
+    void anAcceptanceStillSucceedsWhenTheOtherAcceptanceDidNotTouchAnyRowOfThisBatch() throws Exception {
+        Fixture f = fixture("UNTOUCHED", false);
+        accept(upload(f, "REF-0", csv(false, FIVE_ROWS)).batchId(), ACCEPTED_BY, REASON).andExpect(status().isOk());
+
+        String[] changedA = FIVE_ROWS.clone();
+        changedA[2] = "ACME;G1;R3;9,95;Hamer";
+        Uploaded a = upload(f, "REF-A", csv(false, changedA));
+        // B bevat enkel R1 (gewijzigd) en R2 (ongewijzigd); R3 zit er niet in. Een levering mag een
+        // deelverzameling zijn zonder dat de bronstaat van de ontbrekende regels geraakt wordt.
+        Uploaded b = upload(f, "REF-B", csv(false, "ACME;G1;R1;1,75;Boormachine", FIVE_ROWS[1]));
+        assertThat(b.status()).isEqualTo("SCREENED");
+        assertThat(b.unchangedCount()).isEqualTo(1L);
+
+        accept(a.batchId(), ACCEPTED_BY, REASON).andExpect(status().isOk());
+        accept(b.batchId(), ACCEPTED_BY, REASON).andExpect(status().isOk());
+
+        assertThat(stateRows(f)).extracting(StateRow::reference).containsExactly("R1", "R2", "R3", "R4", "R5");
+        assertThat(stateRows(f).get(0).basePrice()).isEqualByComparingTo("1.75");
+        assertThat(stateRows(f).get(2).basePrice()).isEqualByComparingTo("9.95");
+    }
+
     // --- Onderbroken en herhaalde acceptatie ---------------------------------------------------------------
 
     /**
