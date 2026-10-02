@@ -2455,3 +2455,17 @@ batch die niet aanvaard wordt, en `addOneBatch` neemt het batchslot (R-BAS-02). 
   S5-a NOWAIT-repositories, S5-b addOneBatch, S5-c atomaire baseline, S5-d stale-check UNCHANGED, S5-e frontend/handleiding. Eén commit per story.
 - Prestatietest van de atomaire aanvaarding op ~1M regels doet de mens op PostgreSQL. Geen gebruikerskolom op de claim (V2 2026-09-23 blijft).
 **Bron:** denker-zwaar + mens (lease 60 min, alles-of-niets, S5-d ja, DB-omgeving door de mens) / docs/design/fase2-screening-design.md §9, §18
+
+## 2026-10-02 — Stap 4 uitgevoerd (S4-a t/m S4-f), S1-c afgerond
+**Vraag:** Zijn de verwerkingsclaim en de Dao-tests afgerond en geverifieerd?
+**Beslissing:** Ja, op branch `verbeteringen-stap-1-3`. S1-c: Dao 18 tests (`@DataJpaTest` tegen PostgreSQL). Stap 3 nu ook tegen de DB bewezen
+(`PublicationRunHttpTest`, `PublicationRunSimulationTest`, K-4c-tests, `BatchBaselineHttpTest`: 78/78). Stap 4: Domain 68, Dao 30, Service 596,
+gerichte Web-ronde 252 + `BatchProcessingClaimConcurrencyTest` 3/3 (vijf runs) door de hoofdsessie herhaald.
+Aanvaarde invullingen: (1) de claim komt ook vrij bij een technische onderbreking zonder eindstatus (hervatten blijft meteen mogelijk);
+(2) `start()` neemt het schrijfslot (een gelijktijdige tweede `screen()` krijgt `BATCH_NOT_SCREENABLE`); (3) `RecoveryReport.resumableBatchIds` bevat geen
+batches met een levende vreemde claim meer; (4) env-variabele voor de instance-id is `CATALOGIMPORT_INSTANCEID`; (5) instance-id max 63 tekens, zonder `/`.
+**Omgeving:** lokale tests vereisen `C:\tmp\catalogimport-local-source` en `C:\tmp\catalogimport-archive`, en rol/database `catalog_import` in de
+PostgreSQL-container `prodis-postgresql-1`.
+**Nog open:** volledige Web-ronde door de mens; stap 5 (S5-a t/m S5-e); terugschrijven naar `fase2-screening-design.md` §9 (beperking "één instantie"
+achterhaald, fencing-update moet eerste statement van de transactie zijn) na akkoord.
+**Bron:** hoofdsessie na verificatie
