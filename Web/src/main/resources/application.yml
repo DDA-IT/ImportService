@@ -144,6 +144,21 @@ catalogimport:
     # Het expliciete afbreek-endpoint (POST .../abort, recht APPROVE) kent GEEN tijdsvoorwaarde en is dus
     # niet aan deze drempel gebonden.
     stuck-after: PT60M
+  staging-retention:
+    # Opruiming van de kandidaatstaging (stap 7, docs/decisions.md 2026-10-02 "Stap 7 uitgewerkt"; zie de handleiding
+    # par. 9.10). Verwijdert ENKEL import_candidate_stage/_price/_reference van BASELINE_ACCEPTED-batches die langer dan
+    # "after" geleden aanvaard zijn en die de opruimguard toelaat; zet daarna import_batch.staging_purged_at.
+    # Row-issues, mutaties, bronstaat, prijsobservaties, snapshots, issuegroepen, batch- en leveringsrijen en tellers
+    # blijven ALTIJD. SCREENED, BLOCKED en FAILED worden niet opgeruimd.
+    # Standaard UIT: zet per omgeving CATALOGIMPORT_STAGINGRETENTION_ENABLED=true. Uit = geen geplande taak en geen
+    # scheduler.
+    enabled: false
+    # Wanneer de taak draait (Spring-cron met seconden, tijdzone van de JVM). Default dagelijks 03:30.
+    cron: "0 30 3 * * *"
+    # Retentie na de aanvaarding (ISO-8601-duur). Een ongeldige of niet-positieve waarde laat de applicatie niet opstarten.
+    after: P7D
+    # Aantal stagerijen per chunk-transactie (met hun prijzen en referenties). Ongeldig of <= 0 stopt de opstart.
+    chunk-size: 10000
 server:
   error:
     include-message: never

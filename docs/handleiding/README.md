@@ -859,8 +859,10 @@ GROUP BY status
 ORDER BY batch_count DESC;
 ```
 
-Toont: batchstatus, aantal batches met die status, totaal van `staged_row_count` (de ingevoerde en nog niet
-opgeruimde kandidaatrijen). Het helpt inzien waar de gestage gegevens zitten.
+Toont: batchstatus, aantal batches met die status, totaal van `staged_row_count` (het aantal kandidaatrijen dat
+ooit gestaged werd). Let op: `staged_row_count` is een historische teller en daalt **niet** wanneer de staging
+opgeruimd wordt (par. 9.10); wat nog werkelijk in de staging staat, telt u in `import_candidate_stage` zelf, en
+`staging_purged_at` op `import_batch` zegt of de staging van een batch al opgeruimd is.
 
 **Query 3: Top 20 grootste batches, met status en nulmeting-aanvaardingstijdstip**
 
@@ -893,7 +895,53 @@ nog niet aanvaard), moment van aanmaak.
 
 - Alle queries zijn **read-only** en kunnen op een draaiende productieomgeving zonder risico draaien.
 
-### 9.10 Het beslissingslog
+### 9.10 Opruiming van de kandidaatstaging
+
+Een geplande taak ruimt de kandidaatstaging op van leveringen die als nulmeting aanvaard zijn (beslissing stap 7,
+`docs/decisions.md` 2026-10-02). De taak staat **standaard uit** en wordt per omgeving aangezet.
+
+**Wat wordt verwijderd.** Enkel de kandidaatstaging — `import_candidate_stage` met de bijhorende
+`import_candidate_price` en `import_candidate_reference` — van batches die aan **alle** voorwaarden voldoen:
+
+- status `BASELINE_ACCEPTED`;
+- aanvaard (`baseline_accepted_at`) langer dan de retentie geleden (default 7 dagen);
+- nog niet opgeruimd (`staging_purged_at` is leeg);
+- de opruimguard laat het toe: geen actief lidmaatschap van een niet-geannuleerde bundel, en elke bundel waarin
+  de batch ooit zat heeft een snapshot.
+
+Daarna krijgt de batch `staging_purged_at`; ze wordt nooit opnieuw behandeld.
+
+**Wat blijft altijd.** Row-issues (bewaartermijn 7 jaar), issuegroepen en behandelgevallen, mutaties, bronstaat
+en prijshistoriek (`catalog_source_state*`, `catalog_price_observation`), bundels, snapshots, publicatieruns en
+artefacten, de batch- en leveringsrij met hun tellers (`staged_row_count` blijft het aantal ooit gestagede regels)
+en het archief van het bronbestand. Batches in `SCREENED`, `BLOCKED` of `FAILED` worden niet opgeruimd.
+
+**Gevolg voor wie de batch daarna bekijkt.** De mutaties, issues en tellers van een opgeruimde batch blijven
+leesbaar. Wat enkel in de staging stond (de genormaliseerde kandidaatregels zelf), is weg; het bronbestand blijft
+in het archief.
+
+**Hoe het werkt.** Per batch wordt het rijslot genomen zonder te wachten (`NOWAIT`): is de batch bezet, dan
+slaat de taak ze over en probeert de volgende run opnieuw. Onder het slot worden alle voorwaarden opnieuw
+gecontroleerd. De staging wordt in stukken (chunks) verwijderd, elk in een eigen transactie met dezelfde
+controle; een onderbroken opruiming gaat bij de volgende run verder waar ze stopte. Meerdere instanties mogen de
+taak tegelijk draaien. Elke run logt een samenvatting (aantal kandidaten, opgeruimd, overgeslagen, mislukt,
+verwijderde rijen per tabel).
+
+**Instellingen** (`application.yml`, `catalogimport.staging-retention.*`):
+
+| Property | Default | Betekenis |
+| --- | --- | --- |
+| `enabled` | `false` | `true` zet de geplande taak aan (env `CATALOGIMPORT_STAGINGRETENTION_ENABLED`). Uit = geen taak en geen scheduler. |
+| `cron` | `0 30 3 * * *` | Wanneer de taak draait (Spring-cron met seconden, tijdzone van de JVM). |
+| `after` | `P7D` | Retentie na de aanvaarding (ISO-8601-duur). Ongeldig of niet positief: de applicatie start niet. |
+| `chunk-size` | `10000` | Aantal stagerijen per transactie. Ongeldig of niet positief: de applicatie start niet. |
+
+**Ruimte op schijf.** PostgreSQL geeft de ruimte van verwijderde rijen niet meteen terug aan het
+besturingssysteem: na een (auto)`VACUUM` wordt ze binnen de tabel hergebruikt voor nieuwe staging. Pas een
+`VACUUM FULL` (neemt een exclusief tabelslot; enkel in een onderhoudsvenster) verkleint de bestanden zelf. Meet de
+groei met de query's uit par. 9.9.
+
+### 9.11 Het beslissingslog
 
 `docs/decisions.md` legt architectuur- en businessbeslissingen vast. Eerdere beslissingen zijn **bindend**
 tot de mens ze expliciet herroept. Lees het bij twijfel over "waarom werkt het zo". Enkele beslissingen die
@@ -901,7 +949,7 @@ u als gebruiker raakt: één persoon volstaat voor `accept-baseline` (geen vier-
 ontwikkelhulpmiddel; een gebruiker met het recht Beheren richt zelf een leverancier en taak in (2026-09-30), en
 alleen sjabloonbeheer en het setup-overzicht blijven achter de setup-vlag.
 
-### 9.11 Overige documentatie
+### 9.12 Overige documentatie
 
 | Document | Inhoud |
 | --- | --- |

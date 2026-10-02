@@ -204,6 +204,13 @@ Er is bewust geen Keycloak- of SFTP-indicator. De `diskSpace`-indicator controle
 (drempel `CATALOG_DISK_THRESHOLD`, default `2GB`): die map **moet bij de deploy bestaan**, anders meldt
 `diskSpace` DOWN en dus ook `/actuator/health` (liveness en readiness blijven los daarvan).
 
+**Opruiming van de kandidaatstaging (deploy, S7-P1..P3):** een geplande taak verwijdert de kandidaatstaging
+(`import_candidate_stage/_price/_reference`) van `BASELINE_ACCEPTED`-batches, standaard 7 dagen na de aanvaarding,
+en zet `import_batch.staging_purged_at`. Row-issues, mutaties, bronstaat, prijshistoriek, snapshots en tellers
+blijven. De taak staat **standaard uit**; aanzetten per omgeving met `CATALOGIMPORT_STAGINGRETENTION_ENABLED=true`
+(verder `catalogimport.staging-retention.cron`, `.after`, `.chunk-size`). Details, ook over `VACUUM`: handleiding
+par. 9.10.
+
 ## Lokaal starten met het demoprofiel
 
 Het profiel `demo` gebruikt dezelfde PostgreSQL-database als `local`, **zet de setup-vlag aan** (nodig voor

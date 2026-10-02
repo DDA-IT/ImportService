@@ -41,7 +41,8 @@ import org.springframework.test.context.DynamicPropertySource;
 /**
  * Bouwstap 5P-5 (docs/design/fase5-pub-design.md par. 1 en 6; docs/decisions.md 2026-09-26 "5-PUB (deel a):
  * ontwerp bindend"): bewijst dat {@link StagingRetentionDao} de drie voorwaarden voor opruimbare kandidaatstaging
- * afleidt. De guard is read-only; er bestaat nog geen delete.
+ * afleidt. De guard is read-only; de enige delete is de geplande opruiming van stap 7 ({@code StagingPurgeService},
+ * bewezen in {@code StagingPurgeTest}), die deze guard versmalt en onder het batchslot herhaalt.
  *
  * <h2>Wat hier bewezen wordt</h2>
  * <ul>
