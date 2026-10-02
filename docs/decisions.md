@@ -2494,3 +2494,12 @@ slotvolgorde (enige plek; §17 verwijst ernaar). §16/§17/§18/§10: accept-bas
 rule), C9 vanzelf waar; bekend restrisico "twee gelijktijdige accepts → 500" als achterhaald gemarkeerd. `FOR NO KEY UPDATE` staat erin met de
 aantekening dat het enkel empirisch (tijdelijke diagnosetest S5-c) en niet in een blijvende test vastgelegd is.
 **Bron:** mens / bouwer-gemiddeld, nagekeken door de hoofdsessie
+
+## 2026-10-02 — Stap 6, 8 en 9 gestart
+**Vraag:** Welke analyse-stappen worden nu opgepakt?
+**Beslissing:** Stap 6 (DB-checks op de kernstatussen), stap 8 (frontend-duplicatie en tooling) en stap 9 (grote klassen opsplitsen) — mens:
+"ga verder met stap 6, 8 en 9". Stap 7 (operationeel) niet. Werk op branch `verbeteringen-stap-6-8-9`, vertakt van `verbeteringen-stap-1-3` (PR open).
+Stap 6: additieve CHECK-constraints op de status van `import_batch`, `import_mutation`, `task_run` en `import_definition_revision` met exact de
+waarden van de Java-enums, met een precondition die stopt (HALT) als bestaande data ze schendt, zoals 016; `ck_publication_bundle_batch_removed`
+corrigeren naar `is true`. Stap 8 en 9: invulling door een denker-subagent, apart gelogd vóór een bouwer start. Stap 9 zonder gedragswijziging.
+**Bron:** mens / analyse ImportService 2026-10-01
