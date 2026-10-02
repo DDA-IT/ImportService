@@ -2486,3 +2486,11 @@ rechtenbewaking zou verzwakken). Les: na elke story die testcode in `web` toevoe
 `fase2-screening-design.md` §9/§17/§18 (één instantie achterhaald, accept-baseline niet meer hervatbaar, fencing als eerste statement,
 `FOR NO KEY UPDATE`) en de business rule over UNCHANGED-regels, na akkoord.
 **Bron:** hoofdsessie na verificatie
+
+## 2026-10-02 — Ontwerpdocument bijgewerkt na stap 4 en 5
+**Vraag:** Mogen de ontdekkingen van stap 4 en 5 terug in `docs/design/fase2-screening-design.md`?
+**Beslissing:** Ja (mens: "werk het design-document bij"). §9: verwerkingsclaim per batch vervangt de beperking "één instantie", plus de globale
+slotvolgorde (enige plek; §17 verwijst ernaar). §16/§17/§18/§10: accept-baseline atomair, NOWAIT-codes, stale-check incl. UNCHANGED (business
+rule), C9 vanzelf waar; bekend restrisico "twee gelijktijdige accepts → 500" als achterhaald gemarkeerd. `FOR NO KEY UPDATE` staat erin met de
+aantekening dat het enkel empirisch (tijdelijke diagnosetest S5-c) en niet in een blijvende test vastgelegd is.
+**Bron:** mens / bouwer-gemiddeld, nagekeken door de hoofdsessie

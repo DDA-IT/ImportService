@@ -23,7 +23,7 @@ Loopt dit vast: escaleren, niet zelf kiezen.
 
 Kolommen: `id` bigint identity; `delivery_id` fk not null; `import_link_id` fk not null;
 `definition_revision_id` fk not null; `task_run_id` fk null; `attempt_no` int not null
-default 1; `status` varchar(40); `open_marker` boolean null (TRUE zolang niet-terminaal,
+default 1; `status` varchar(40); (stap 4: vier `processing_*`-claimkolommen, changeset 017, zie §9); `open_marker` boolean null (TRUE zolang niet-terminaal,
 anders NULL); `started_at`/`finished_at` timestamptz; `staged_row_count` bigint default 0;
 `mutation_progress_row_number` bigint default 0; nullable tellers (`null` = onbekend, nooit
 stil 0): `raw_record_count`, `valid_record_count`, `rejected_record_count`,
@@ -183,7 +183,7 @@ A. Archiveren: geen DB-transactie (wees-object bij crash is onschuldig). B. Regi
 C. Staging: microbatch-commit; crash ⇒ batch FAILED, staging+issues van die batch weg,
 nieuwe poging met `attempt_no+1`. D. Duplicaat-/collisiedetectie: read-only, herhaalbaar.
 E. Delta + mutatiegeneratie: chunk-commit (`mutation-chunk-size` 5000), hervatbaar via
-idempotency_key. F. Afronding (tellers, marker, SCREENED/BLOCKED, TaskRun COMPLETED): één
+idempotency_key (sinds stap 4 elke schrijvende transactie gefenced op de verwerkingsclaim, zie hieronder). F. Afronding (tellers, marker, SCREENED/BLOCKED, TaskRun COMPLETED): één
 transactie. Orchestrator NIET `@Transactional`; gebruikt `TransactionTemplate`.
 Fouttypes: technische/bronfout ⇒ batch+TaskRun FAILED, geen marker, geen mutaties.
 Contract-/structuurfout (leeg bestand `SOURCE_FILE_EMPTY`, header-only
@@ -193,11 +193,65 @@ duplicaat-identiteit, hashcollisie, te veel rijfouten) ⇒ BLOCKED, 0 inhoudelij
 batch → SCREENED met `rejected_record_count > 0`.
 `ScreeningRecoveryService` op `ApplicationReadyEvent`: SCREENING → FAILED
 `SCREENING_INTERRUPTED` (staging+issues weg); MUTATING → hervatbaar via
-`POST /batches/{id}/continue`.
+`POST /batches/{id}/continue`. Sinds stap 4 is dit **claim-bewust** (zie "Verwerkingsclaim" hieronder).
 
-> Important technical constraint discovered
-> Recovery veronderstelt precies één applicatie-instantie (geen lease/heartbeat;
-> `task_run.locked_by/locked_at` bestaan maar worden nog niet gebruikt). Pas oplossen in Fase 5.
+### Verwerkingsclaim per batch (stap 4/5, docs/decisions.md 2026-10-01/02)
+
+Vervangt de oude beperking "recovery veronderstelt precies één applicatie-instantie" (geen lease/heartbeat;
+`task_run.locked_by/locked_at` blijven ongebruikt). Er is geen advisory lock: de claim staat op de batchrij.
+
+- **Kolommen (changeset `017-batch-processing-claim.sql`, additief):** op `import_batch` vier nullable kolommen
+  `processing_claim_token` uuid, `processing_claimed_at`, `processing_heartbeat_at` (timestamptz) en
+  `processing_claimed_by` varchar(100), formaat `<instanceId>/<bootId>` (gesplitst op de laatste `/`). Twee checks:
+  `ck_import_batch_claim_open` (token gezet ⇒ `open_marker is true`: een terminale overgang moet de claim dus in
+  dezelfde transactie vrijgeven) en `ck_import_batch_claim_complete` (de vier velden samen gezet of samen leeg).
+- **Levend of dood** (`ImportBatch.isProcessingClaimAlive`, `BatchProcessingClaims.isAlive`): levend = token gezet,
+  heartbeat niet ouder dan de lease (`catalogimport.screening.claim-lease`, default `PT60M`, ISO-8601; ongeldig of
+  niet-positief ⇒ de applicatie start niet), en niet van een **vorige boot van dezelfde instantie** (zelfde
+  `instanceId`, andere `bootId` ⇒ dood, zonder op de lease te wachten). `bootId` is een UUID die bij elke JVM-start
+  nieuw is; `instance-id` (`catalogimport.instance-id`) is default de hostnaam.
+- **Claim nemen:** `start()` (RECEIVED → SCREENING) en `resume()` (`continue`) lezen de batch onder schrijfslot
+  (`findByIdForUpdate`, wacht op een bezet slot) en nemen de claim in dezelfde transactie. Levende claim ⇒ 409
+  `BATCH_BEING_PROCESSED`; een dode claim wordt overgenomen met een nieuwe token (de vorige houder valt bij zijn
+  volgende fencing-update buiten). `start()` neemt het schrijfslot ook zelf: een gelijktijdige tweede `screen()`
+  krijgt `BATCH_NOT_SCREENABLE` (status is dan al SCREENING).
+- **Fencing per schrijvende transactie:** elke schrijvende transactie na de start (`inClaim`/`inClaimWithoutResult`)
+  begint met `ImportBatchRepository.touchProcessingClaim` (`update ... set processing_heartbeat_at where id and token`).
+  0 rijen ⇒ `ClaimLostException` ⇒ rollback en stoppen: er wordt niets geschreven en niets opgeruimd (ook geen
+  `fail()`-opruiming, de batch is dan van de nieuwe houder); de aanroeper krijgt 409 `BATCH_BEING_PROCESSED`.
+- **Vrijgeven:** in dezelfde transactie als elke eindstatus (SCREENED, BLOCKED, FAILED) en bij een technische
+  onderbreking zonder eindstatus (batch blijft MUTATING, of SCREENING bij een mislukte blokkade): de claim gaat dan
+  meteen vrij (gefenced, `releaseQuietly`), zodat `continue` direct kan; lukt dat vrijgeven niet, dan loopt de lease af.
+- **Claim-bewust opstartherstel:** per batch een eigen transactie met compare-and-set onder schrijfslot (status
+  nog zoals waargenomen, token nog exact de waargenomen token, claim dood). SCREENING + dode claim ⇒ FAILED
+  `SCREENING_INTERRUPTED` met vrijgave in dezelfde wijziging; MUTATING + dode claim ⇒ token gewist, batch blijft
+  hervatbaar. Een levende claim (ook een nieuwe claim die intussen genomen werd) blijft ongemoeid en staat niet in
+  `RecoveryReport.resumableBatchIds`.
+- **API:** `BatchDetail` heeft additief het veld `boolean processingActive` (= `BatchProcessingClaims.isAlive`);
+  `false` betekent veilig te herstarten of nooit een claim gehad. Geen gebruikerskolom op de claim.
+
+> Important technical constraint discovered (stap 4, docs/decisions.md 2026-10-02)
+>
+> (a) De fencing-update moet het **eerste statement** van de transactie zijn. Het is een JPQL-bulkupdate die de
+> persistentiecontext niet bijwerkt: een batch die vóór de update al geladen was, draagt nog de oude heartbeat en
+> schrijft die bij de flush terug.
+>
+> (b) De heartbeat wordt enkel op transactiegrenzen ververst (begin van elke gefencede transactie), er is geen
+> achtergrondthread. Een stap zonder commit die langer duurt dan de lease verliest haar claim: een andere worker mag
+> de batch dan overnemen en de eerstvolgende fencing-update van de oorspronkelijke worker faalt.
+>
+> (c) `instance-id` moet uniek zijn per draaiende instantie: twee instanties met dezelfde id hebben verschillende
+> `bootId`'s, dus beschouwt elk de levende claim van de ander als claim van een "vorige boot van dezelfde instantie"
+> (dood) en neemt hem over. Verder hoogstens 63 tekens (claimed_by is varchar(100) = id + `/` + 36 tekens bootId),
+> geen `/`, geen controletekens, niet leeg; anders start de applicatie niet.
+> Omgevingsvariabele: `CATALOGIMPORT_INSTANCEID` (Spring relaxed binding). Containers met dezelfde hostnaam moeten
+> hem expliciet zetten.
+
+### Globale slotvolgorde (stap 4/5, docs/decisions.md 2026-10-01)
+
+**Bundel → run → koppeling(en, oplopend id) → batch(es, oplopend id).** Een taakslot wordt nooit genomen terwijl een
+van deze vastgehouden wordt. Alle plaatsen die meerdere sloten nemen (accept-baseline §17/§18, `addBatches` van de
+bundel, screening/hervatten) volgen deze volgorde; andere passages verwijzen hiernaar.
 
 ## 10. Service/Web
 
@@ -213,7 +267,7 @@ REST (inline records): `POST /api/catalog-import/tasks/{taskId}/deliveries` (mul
 `GET /api/catalog-import/batches/{id}/mutations?actionType=&page=&size=`;
 `GET /api/catalog-import/batches/{id}/issues?page=&size=`;
 `POST /api/catalog-import/batches/{id}/accept-baseline` (`{acceptedBy, reason}`; enkel vanuit
-SCREENED) ; `POST /api/catalog-import/batches/{id}/continue`. Screening synchroon in de POST
+SCREENED; atomair, 409 `BASELINE_ACCEPTANCE_IN_PROGRESS`/`BATCH_BEING_PROCESSED` bij een bezet slot, zie §17) ; `POST /api/catalog-import/batches/{id}/continue`. Screening synchroon in de POST
 (Fase 5: asynchroon). Manuele levering: taak met `TaskTriggerType.MANUAL`;
 `Delivery.idempotencyKey = "manual:" + deliveryReference`; zelfde referentie + identieke hash
 ⇒ 200 met bestaande deliveryId; zelfde referentie + andere inhoud ⇒ 409
@@ -307,6 +361,8 @@ na Fase 3.
 - Technische fout tijdens mutatiegeneratie ⇒ batch blijft `MUTATING` (hervatbaar via
   `continueMutating`), niet FAILED; enkel de stagingfase levert FAILED. Een steken gebleven MUTATING-batch
   houdt `open_marker` en de TaskRun-concurrency-token vast tot 2e (endpoint + opstartrecovery) er is.
+  (Stap 4/5, docs/decisions.md 2026-10-01/02: de verwerkingsclaim op zo'n batch komt bij de technische
+  onderbreking meteen vrij, zodat `continue` direct mogelijk is; zie §9.)
 - Upload-POST screent synchroon; bij FAILED antwoordt hij 201 met batchstatus FAILED en
   `blockedCode=SCREENING_FAILED` (de levering bestaat en is gearchiveerd; 500 zou heruploaden uitnodigen).
 - Delta als `update ... case` met `exists`/`not exists` (portabel H2/PostgreSQL); issue-cap cumulatief.
@@ -323,15 +379,50 @@ na Fase 3.
   `baseline_accepted_at`, `baseline_accept_reason` op `import_batch` (audit persistent).
 - Extra guard `SOURCE_STATE_CHANGED_SINCE_SCREENING` (409): twee SCREENED-batches van dezelfde
   koppeling kunnen naast elkaar bestaan; het aanvaarden van de oudere mag de nieuwere bronstaat
-  niet stilzwijgend overschrijven. Eigen onderbroken poging telt niet als stale.
+  niet stilzwijgend overschrijven. Een bronstaatrij die al gelijk is aan de kandidaat van de regel telt niet als
+  stale (idempotente insert/update, A16). (Stap 5/S5-d, docs/decisions.md 2026-10-01/02: de check geldt nu ook voor
+  UNCHANGED-regels, zie het blok hieronder; de oude formulering "eigen onderbroken poging telt niet als stale"
+  is vervallen: een accept-baseline is niet meer hervatbaar, zie het blok "atomair" hieronder.)
+
+> **Important business rule discovered**
+>
+> Een UNCHANGED-regel is een bewering over de bronstaat op het moment van de controle ("al gelijk aan de levering"). Wijzigt een andere aanvaarding die bronstaat daarna, dan is de bewering vals: de aanvaarding wordt geweigerd (409 `SOURCE_STATE_CHANGED_SINCE_SCREENING`) in plaats van de regel stil over te slaan. Bewijs: `stage.combined_fingerprint`; geen extra opslag. De uitzondering "bronstaat = kandidaat" blijft (A16, idempotente insert/update).
+
 - Recovery op opstart (`catalogimport.screening.recovery-on-startup`, default true): SCREENING ⇒
   FAILED `SCREENING_INTERRUPTED` (staging/issues weg, TaskRun FAILED); MUTATING blijft hervatbaar via
   `POST /batches/{id}/continue` (enkel vanuit MUTATING, anders 409 `BATCH_NOT_RESUMABLE`).
-  Veronderstelt één applicatie-instantie.
+  (Stap 4/5, docs/decisions.md 2026-10-01/02: de beperking "veronderstelt één applicatie-instantie" is vervallen;
+  het herstel is claim-bewust en raakt enkel batches met een dode verwerkingsclaim aan, zie §9.)
+- **Accept-baseline is atomair (stap 5, docs/decisions.md 2026-10-01/02).** De volledige aanvaarding is één
+  `TransactionTemplate`-transactie (alles of niets), niet meer hervatbaar per chunk. Volgorde: (1) de koppeling
+  vergrendelen met NOWAIT, bezet ⇒ 409 `BASELINE_ACCEPTANCE_IN_PROGRESS` (serialisatiepunt tussen twee aanvaardingen
+  op dezelfde koppeling, ook van verschillende batches); (2) de batch vergrendelen met NOWAIT, bezet (bv. een
+  gelijktijdige bundelopname of verwerking) ⇒ 409 `BATCH_BEING_PROCESSED`; (3) onder beide sloten `requireScreened`,
+  geen actief bundellidmaatschap en de stale-check; (4) chunklus (`mutation-chunk-size`) enkel om het geheugen te
+  begrenzen, niet de transactie; (5) open inhoudelijke mutaties ⇒ SKIPPED en batch ⇒ BASELINE_ACCEPTED met audit.
+  Slotvolgorde: zie "Globale slotvolgorde" in §9. Een fout eender waar draait alles terug: geen bronstaatrij,
+  referentiestaatrij, prijscomponent of prijsobservatie blijft achter en de batch blijft SCREENED; wie opnieuw
+  aanvaardt begint van nul (de schrijfqueries blijven idempotent, maar dat is geen hervatmechanisme meer). Tijdens een
+  lopende aanvaarding op een koppeling krijgt ook een al aanvaarde batch van die koppeling `BASELINE_ACCEPTANCE_IN_PROGRESS`.
+  `PublicationBundleService.addOneBatch` neemt voortaan het batchslot (NOWAIT, batch-ids oplopend; bezet ⇒ 409
+  `BATCH_BEING_PROCESSED`; R-BAS-02).
+
+> Important technical constraint discovered (stap 5, docs/decisions.md 2026-10-02)
+>
+> (a) Een lock-fout (SQLState 55P03 of 40P01) breekt in PostgreSQL de lopende transactie af (daarna `25P02`). De
+> vertaling naar 409 gebeurt daarom **buiten** `TransactionTemplate.execute` (`LockFailures.translate`), nooit in de
+> callback. (b) De ouder moet vóór het kind vergrendeld worden en de batch mag pas onder haar eigen slot geladen
+> worden: de koppeling wordt via `ImportBatchRepository.findImportLinkIdById` (enkel de id) gevonden, zodat er geen
+> oudere, niet-vergrendelde batch in de persistentiecontext blijft. (c) Hibernate 6 vertaalt `PESSIMISTIC_WRITE` naar
+> `FOR NO KEY UPDATE` (volgens decisions.md; niet in code of test vastgelegd, de repositorycommentaar spreekt van
+> `FOR UPDATE NOWAIT`): FK-checks en uploads voor de koppeling worden niet geblokkeerd, updates van de koppeling
+> wachten wel. (d) Eén transactie over de hele levering is lang bij ~1M regels; de prestatietest op PostgreSQL is nog
+> open bij de mens (de duur staat wel in de logregel).
 - Leesendpoints: `/batches/{id}`, `/batches/{id}/mutations`, `/batches/{id}/issues`; paginering
   0-gebaseerd, default 50, max 200; mutatielijst zonder hashkolommen.
-- Bekend restrisico: twee gelijktijdige accepts van dezelfde batch kunnen voor de verliezer een
-  500 (unieke bronstaatconstraint) geven; de actie is herhaalbaar.
+- ~~Bekend restrisico: twee gelijktijdige accepts van dezelfde batch kunnen voor de verliezer een
+  500 (unieke bronstaatconstraint) geven.~~ Achterhaald (stap 5): het koppelingsslot (NOWAIT) serialiseert
+  gelijktijdige aanvaardingen; de verliezer krijgt 409 `BASELINE_ACCEPTANCE_IN_PROGRESS` en niets wordt geschreven.
 
 ## 18. Aanvullingen na Fase 5-AUTH (geïmplementeerd, mens akkoord op terugschrijven 2026-09-26)
 
@@ -358,7 +449,11 @@ Bron: `docs/design/fase5-auth-design.md` §11 (C3, C9) en `docs/design/frontend-
 > `catalog_reference_state` (changeset 004) heeft geen batch-FK (enkel `source_state_id` en `import_link_id`). De
 > ondertekenaar van een referentierij is daardoor alleen te herleiden via `(import_link_id, accepted_at)` =
 > `import_batch.(import_link_id, baseline_accepted_at)`. Dat werkt alleen omdat `SourceStateBaselineService` in
-> `acceptBaseline` één `acceptedAt`-instant gebruikt voor de chunks én voor `finish`, een fragiele koppeling. Daarom heeft
+> `acceptBaseline` één `acceptedAt`-instant gebruikt voor alles wat de aanvaarding schrijft, een fragiele koppeling.
+> (Stap 5, docs/decisions.md 2026-10-01/02: de aanvaarding is nu één transactie, alles of niets; `acceptedAt` wordt
+> één keer vóór de transactie bepaald en elke schrijfquery krijgt dezelfde waarde, dus de gelijkheid van `acceptedAt`
+> over bronstaat, referenties, observaties en batch is nu vanzelf waar; een gedeeltelijk geschreven referentiestaat met
+> een ander instant na een hervatting kan niet meer voorkomen.) Daarom heeft
 > deze tabel (net als `catalog_source_state`, `catalog_price_observation` en `task_run.triggered_by`) bewust geen eigen
 > `*_by_subject`-kolom (changeset 007).
 
