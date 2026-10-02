@@ -94,8 +94,9 @@ In woorden:
 2. Het resultaat is een **batch** met een `status`, een eindoordeel (`validationResult`), tellers en een
    lijst **mutaties**.
 3. Een gescreende batch (`SCREENED`) kan op twee manieren verder, en nooit op allebei:
-   - **`accept-baseline`**: de batch wordt de nulmeting van de bronstaat. Zo weet het systeem bij een
-     volgende levering wat "ongewijzigd" is. Er wordt niets gepubliceerd.
+   - **`accept-baseline`**: de batch wordt de nulmeting van de bronstaat. Alles-of-niets: een volledige
+     aanvaarding of geen wijzigingen. Zo weet het systeem bij een volgende levering wat "ongewijzigd" is
+     (ook ongewijzigde regels tellen mee). Er wordt niets gepubliceerd.
    - **Publicatiebundel**: de batch wordt in een bundel opgenomen, de mutaties worden goedgekeurd of
      afgekeurd, en de bundel wordt bevroren.
 4. Bevriezen en annuleren zijn binnen de applicatie niet meer ongedaan te maken.
@@ -186,8 +187,10 @@ Alleen-lezen overzicht van een batch, plus de acties die vanaf een `SCREENED`- o
     bevestigingsdialoog met een verplichte reden en het overtypen van een vaste bevestigingstekst
     (`NULMETING` resp. de bundelreferentie). Een batch die al in een bundel zit of al aanvaard is, geeft de
     bekende 409-foutcodes.
-  - Bij `MUTATING`: **Batch hervatten** (`continue`), met een expliciete vermelding dat deze actie niet op
-    naam wordt vastgelegd (het endpoint heeft geen actorveld).
+  - Bij `MUTATING`: **Batch hervatten** (`continue`). De UI toont "Deze batch wordt nog verwerkt" met de
+    knop uitgeschakeld zolang de verwerking loopt. Een vastgelopen verwerking geldt na 60 minuten zonder
+    levensteken als gestopt (instelbaar via `catalogimport.screening.claim-lease`); na een herstart van
+    dezelfde server meteen. Deze actie wordt niet op naam vastgelegd (het endpoint heeft geen actorveld).
 - Een teller die niet vastgesteld is, staat als "—", nooit als 0. Het scherm is bereikbaar vanuit de werkvoorraad
   en vanuit scherm 0 (klik op een rij) en vanuit het uploadscherm na een geslaagde upload.
 - Foutcodes bij de acties: 409 `BATCH_IN_PUBLICATION_BUNDLE` (de batch zit al in een actieve bundel; annuleer
@@ -473,9 +476,10 @@ Kort:
 2. **Bevriezen en annuleren zijn onomkeerbaar.** Het scherm vraagt een typ-bevestiging van de
    bundelreferentie (`FreezeDialog.tsx`, `CancelDialog.tsx`, zie 4.3).
 3. **`accept-baseline` kan maar één keer** per batch en alleen vanuit `SCREENED` (409
-   `BATCH_NOT_ACCEPTABLE` anders). `acceptedBy` en `reason` zijn verplicht; `acceptedBy` mag niet `system`
-   zijn. Ook wachtende creaties (`AWAITING_APPROVAL`) worden dan `SKIPPED`: de aanvaarding *is* de
-   goedkeuring ervan. Vastgehouden identiteitsincidenten worden nooit aanvaard.
+   `BATCH_NOT_ACCEPTABLE` anders). Alles-of-niets: een mislukte of onderbroken aanvaarding laat niets
+   achter en kan gewoon opnieuw gestart worden (niet hervatbaar per chunk). `acceptedBy` en `reason` zijn
+   verplicht; `acceptedBy` mag niet `system` zijn. Ook wachtende creaties (`AWAITING_APPROVAL`) worden dan
+   `SKIPPED`: de aanvaarding *is* de goedkeuring ervan. Vastgehouden identiteitsincidenten worden nooit aanvaard.
 4. **Idempotente herupload.** Dezelfde `deliveryReference` met een **identiek bestand** geeft **200** en de
    bestaande levering, zonder nieuwe screening. Dezelfde referentie met een **ander bestand** geeft 409
    `DELIVERY_REFERENCE_REUSED_WITH_DIFFERENT_CONTENT`. Een nieuwe levering vraagt dus een nieuwe
@@ -591,7 +595,7 @@ Onderstaande tabel is een selectie. De volledige lijst voor het bundelscherm sta
 | `BUNDLE_NOT_FROZEN` | 409 | PSIMPORT-preview van een bundel die niet `FROZEN` is | eerst bevriezen |
 | `BUNDLE_EMPTY` | 409 | bundel heeft geen actieve leden | eerst een batch toevoegen |
 | `BUNDLE_HAS_UNDECIDED_MUTATIONS` | 409 | er staan nog mutaties op `AWAITING_APPROVAL` | goedkeuren of afkeuren, dan opnieuw bevriezen |
-| `SOURCE_STATE_CHANGED_SINCE_SCREENING` | 409 | de bronstaat is veranderd sinds de screening (bv. een andere batch is aanvaard) | de levering opnieuw screenen (opnieuw uploaden) |
+| `SOURCE_STATE_CHANGED_SINCE_SCREENING` | 409 | de bronstaat is veranderd sinds de screening (bv. een andere batch is aanvaard; ook ongewijzigde regels tellen mee) | de levering opnieuw screenen (opnieuw uploaden) |
 | `BUNDLE_OFFER_CONFLICT` | 409 | twee mutaties in deze bundel raken dezelfde aanbieding | één afkeuren |
 | `OFFER_ALREADY_IN_ANOTHER_BUNDLE` | 409 | aanbieding zit al bevroren in een andere bundel | die bundel eerst publiceren of annuleren |
 | `BUNDLE_CONTENT_CHANGED_DURING_FREEZE` / `..._DURING_CANCEL` | 409 | inhoud wijzigde tijdens de actie (in de praktijk onbereikbaar) | bundel herladen en opnieuw proberen |
@@ -614,6 +618,11 @@ Onderstaande tabel is een selectie. De volledige lijst voor het bundelscherm sta
 | `BATCH_NOT_ACCEPTABLE` | 409 | `accept-baseline` kan alleen vanuit `SCREENED` | batchstatus controleren |
 | `BATCH_IN_PUBLICATION_BUNDLE` | 409 | batch zit in een actieve bundel | bundel annuleren of doorwerken via de bundel |
 | `BATCH_NOT_RESUMABLE` | 409 | `continue` kan alleen vanuit `MUTATING` | batchstatus controleren |
+| `BATCH_BEING_PROCESSED` | 409 | deze batch wordt al verwerkt (screening, hervatting of opname in bundel loopt) | later opnieuw proberen |
+| `BASELINE_ACCEPTANCE_IN_PROGRESS` | 409 | er loopt al een aanvaarding als nulmeting op deze koppeling | later opnieuw proberen |
+| `INTERNAL_ERROR` | 500 | onverwachte serverfout; details enkel in het serverlogboek | het serverlogboek raadplegen |
+| `UPLOAD_TOO_LARGE` | 413 | het bestand is groter dan de toegelaten uploadgrootte | het bestand splitsen of de beheerder vragen de limiet te verhogen |
+| `REQUEST_BODY_UNREADABLE` | 400 | het verzoek kon niet gelezen worden (ontbrekend, onvolledig of ongeldig) | pagina opnieuw laden en opnieuw proberen |
 
 De exacte HTTP-status van `RECORD_COUNT_MISMATCH` en `BYTE_SIZE_MISMATCH` (issuecode of foutcode) is
 **nog te verifiëren**.
@@ -725,6 +734,13 @@ samengevoegd. Herstart de backend na een wijziging.
 en dus de controle uitschakelen. Ken `manage` daarom bewust toe. De setup-vlag (`catalogimport.setup-api.enabled`)
 beschermt sinds het NT-spoor enkel nog sjabloonbeheer (invulpunten/gebruik declareren) en
 `GET /setup/overview`; zet ze niet aan met echte gegevens.
+
+**Overige configuratie.** In `application-local.yml` en/of `application-demo.yml` kunt u aanvullen:
+
+| Property | Standaard | Doel |
+| --- | --- | --- |
+| `catalogimport.screening.claim-lease` | `PT60M` | Duur waarna een vastgelopen screening/verwerking als gestopt geldt (ISO 8601-duur, bv. `PT1H` = 1 uur, `PT30M` = 30 minuten); na een herstart meteen. |
+| `catalogimport.instance-id` | hostnaam | Unieke identifier per backend-instantie (max 63 tekens, geen `/`; ook via env `CATALOGIMPORT_INSTANCEID`). Gebruikt voor locks en lease-timeout. |
 
 ### 9.4 Frontend starten
 

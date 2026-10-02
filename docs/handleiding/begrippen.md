@@ -18,7 +18,7 @@ De enumwaarden hieronder komen uit `Domain/src/main/java/be/dda/catalogimport/do
 
 | Begrip | Uitleg |
 | --- | --- |
-| **accept-baseline** | Geauditeerde actie die een `SCREENED` batch aanvaardt als nulmeting van de lokale bronstaat. Geen publicatie. Kan één keer per batch en sluit bundel-opname uit. Verplicht: `acceptedBy` (niet `system`) en `reason`. |
+| **accept-baseline** | Geauditeerde actie die een `SCREENED` batch aanvaardt als nulmeting van de lokale bronstaat. Alles-of-niets: een volledige aanvaarding of geen wijzigingen. Geen publicatie. Kan één keer per batch en sluit bundel-opname uit. Verplicht: `acceptedBy` (niet `system`) en `reason`. |
 | **Actor** | De naam die bij een schrijfactie wordt vastgelegd. Sinds 5-AUTH komt die naam uit de Keycloak-login (`preferred_username`); de actorvelden in een request zijn optioneel en moeten, indien aanwezig, gelijk zijn aan die naam (anders 400 `ACTOR_FIELD_MISMATCH`). |
 | **Aanbieding** | Eén artikel van een leverancier, geïdentificeerd door de aanbiedingsidentiteit. |
 | **Aanbiedingsidentiteit** | Leverancier + leveranciersgroep + leveranciersreferentie, optioneel + kortingscode. Bibliotheek en leverancier of aankoopvereniging zijn scope, geen sleutel. Een lege component verwerpt de regel. |

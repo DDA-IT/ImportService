@@ -153,8 +153,8 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     showBackendDetail: true,
   },
   SOURCE_STATE_CHANGED_SINCE_SCREENING: {
-    title: 'Bronstaat is veranderd sinds de screening',
-    explanation: 'De bekende stand van de artikelen is veranderd sinds de controle van een batch in deze bundel.',
+    title: 'Bronstaat is veranderd sinds de controle',
+    explanation: 'De bekende stand van de artikelen is veranderd sinds de controle van een batch in deze bundel, bijvoorbeeld omdat intussen een andere batch als nulmeting aanvaard is. Dat geldt ook voor artikelen die bij de controle ongewijzigd waren.',
     whatNow: 'Laat de betrokken levering opnieuw controleren.',
     showBackendDetail: true,
   },
