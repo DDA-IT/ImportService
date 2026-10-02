@@ -2469,3 +2469,20 @@ PostgreSQL-container `prodis-postgresql-1`.
 **Nog open:** volledige Web-ronde door de mens; stap 5 (S5-a t/m S5-e); terugschrijven naar `fase2-screening-design.md` §9 (beperking "één instantie"
 achterhaald, fencing-update moet eerste statement van de transactie zijn) na akkoord.
 **Bron:** hoofdsessie na verificatie
+
+## 2026-10-02 — Stap 5 uitgevoerd (S5-a t/m S5-e) + regressiefix S1-f
+**Vraag:** Zijn de NOWAIT-sloten, addOneBatch, de atomaire accept-baseline en de strengere stale-check afgerond en geverifieerd?
+**Beslissing:** Ja, op branch `verbeteringen-stap-1-3`, één commit per story. Door de hoofdsessie herhaald: Domain 68, Dao 35, Service 619;
+`AcceptBaselineAtomicityTest` 7/7, regressieronde baseline/bundel 56/56, `BatchBaselineHttpTest` + atomiciteit 23/23, bundelslot 9/9.
+Aanvaarde invullingen: (1) twee bestaande tests in `BatchBaselineHttpTest` die het oude halve-werk-gedrag vastlegden zijn omgedraaid (gevolg van
+"alles-of-niets"); (2) tijdens een lopende aanvaarding op een koppeling krijgt ook een al aanvaarde batch `BASELINE_ACCEPTANCE_IN_PROGRESS`; (3) een
+referentierace draait nu de volledige aanvaarding terug; (4) `addBatches` geeft resultaten in oplopende batch-id-volgorde; (5) de uitzondering
+"bronstaat = kandidaat" in de stale-check blijft (A16, idempotente insert/update); (6) Hibernate gebruikt `FOR NO KEY UPDATE`: uploads voor een
+koppeling worden tijdens een aanvaarding niet geblokkeerd, updates van de koppeling wachten.
+**Regressie:** de geneste testcontroller van S1-f liet `PermissionCoverageTest` falen sinds 88a5926; opgelost door hem naar pakket
+`be.dda.contracttest` te verplaatsen (`PermissionCoverageTest` ongewijzigd — een voorgestelde skip op `@Profile` is geweigerd omdat die de
+rechtenbewaking zou verzwakken). Les: na elke story die testcode in `web` toevoegt, `PermissionCoverageTest` meedraaien.
+**Nog open bij de mens:** volledige Web-ronde (loopt), prestatietest accept-baseline op ~1M regels, terugschrijven naar
+`fase2-screening-design.md` §9/§17/§18 (één instantie achterhaald, accept-baseline niet meer hervatbaar, fencing als eerste statement,
+`FOR NO KEY UPDATE`) en de business rule over UNCHANGED-regels, na akkoord.
+**Bron:** hoofdsessie na verificatie
