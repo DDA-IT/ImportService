@@ -1,0 +1,18 @@
+# Testconfiguratie van de Dao-module (docs/decisions.md 2026-10-01, stap 1 / S1-c). Zelfde variabelen en defaults als
+# Web/src/main/resources/application.yml; scripts/test/run-full-tests.ps1 overschrijft de URL (met currentSchema) via
+# -Dspring.datasource.url in de argLine.
+spring:
+  datasource:
+    url: ${CATALOG_DB_URL:jdbc:postgresql://localhost:5432/catalog_import}
+    username: ${CATALOG_DB_USERNAME:catalog_import}
+    password: ${CATALOG_DB_PASSWORD:catalog_import}
+    hikari:
+      data-source-properties:
+        logServerErrorDetail: false
+  jpa:
+    hibernate:
+      # Expliciet: de schemavalidatie (entiteiten tegen Liquibase) is precies wat deze module bewaakt.
+      ddl-auto: validate
+    open-in-view: false
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
