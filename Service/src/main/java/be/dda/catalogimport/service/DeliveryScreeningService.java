@@ -75,11 +75,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
+import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -220,6 +225,14 @@ import org.springframework.transaction.support.TransactionTemplate;
  * chunks) mag niet weggegooid worden, en design par. 9 merkt {@code MUTATING} expliciet als
  * hervatbaar aan. De HTTP-ingang ({@code POST /batches/{id}/continue}) en de opstartrecovery
  * ({@link ScreeningRecoveryService}) zijn bouwstap 2e.
+ * <p>
+ * <b>Verwerkingsclaim (stap 4, beslissingslog 2026-10-01).</b> De start ({@code RECEIVED → SCREENING})
+ * en de hervatting nemen onder schrijfslot een claim op de batch ({@link BatchProcessingClaims}); een
+ * levende claim van een andere worker geeft 409 {@code BATCH_BEING_PROCESSED}. Elke schrijvende
+ * transactie daarna begint met een fencing-update op de eigen token ({@code inClaim}); is de claim
+ * verloren, dan stopt de verwerking zonder iets te schrijven of op te ruimen. De claim gaat vrij in
+ * dezelfde transactie als {@code SCREENED}/{@code BLOCKED}/{@code FAILED}, en meteen na een technische
+ * onderbreking zonder eindstatus, zodat de batch onmiddellijk hervat kan worden.
  */
 @Service
 public class DeliveryScreeningService {
@@ -323,7 +336,7 @@ public class DeliveryScreeningService {
                            BigDecimal creationThresholdSharePercent,
                            BigDecimal maxCriticalSharePercent,
                            BigDecimal maxRejectedSharePercent,
-                           ScreeningBlockedException configFailure) {
+                           ScreeningBlockedException configFailure, UUID claimToken) {
 
         private MutationContext mutationContext() {
             return new MutationContext(batchId, deliveryId, importLinkId, definitionRevisionId, taskRunId,
@@ -421,6 +434,8 @@ public class DeliveryScreeningService {
      */
     private final IssueCaseSyncService issueCaseSync;
     private final MutationDao mutations;
+    /** Stap 4: verwerkingsclaim met lease en fencing op de batch (beslissingslog 2026-10-01). */
+    private final BatchProcessingClaims claims;
     private final TransactionTemplate transaction;
     private final int stageBatchSize;
     private final int maxSampleRowsPerCode;
@@ -438,6 +453,7 @@ public class DeliveryScreeningService {
                                     IssueAggregationService aggregation,
                                     IssueCaseSyncService issueCaseSync,
                                     MutationDao mutations, PlatformTransactionManager transactionManager,
+                                    BatchProcessingClaims claims,
                                     @Value("${catalogimport.screening.stage-batch-size:2000}") int stageBatchSize,
                                     @Value("${catalogimport.screening.max-sample-rows-per-code:"
                                             + DEFAULT_MAX_SAMPLE_ROWS_PER_CODE + "}")
@@ -460,6 +476,7 @@ public class DeliveryScreeningService {
         this.aggregation = aggregation;
         this.issueCaseSync = issueCaseSync;
         this.mutations = mutations;
+        this.claims = claims;
         this.transaction = new TransactionTemplate(transactionManager);
         this.stageBatchSize = stageBatchSize > 0 ? stageBatchSize : CandidateStageDao.DEFAULT_BATCH_SIZE;
         this.maxSampleRowsPerCode = maxSampleRowsPerCode > 0
@@ -473,7 +490,9 @@ public class DeliveryScreeningService {
      *
      * @throws NotFoundException onbekende batch ({@code BATCH_NOT_FOUND})
      * @throws ConflictException {@code DELIVERY_ALREADY_SCREENED_WITH_THIS_REVISION},
-     *                           {@code BATCH_NOT_SCREENABLE}, {@code DELIVERY_FILE_COUNT_UNSUPPORTED}
+     *                           {@code BATCH_NOT_SCREENABLE}, {@code DELIVERY_FILE_COUNT_UNSUPPORTED};
+     *                           {@code BATCH_BEING_PROCESSED} als de verwerkingsclaim onderweg verloren
+     *                           ging (een andere worker nam de batch over na het verlopen van de lease)
      * @throws RuntimeException  bij een technische fout tijdens het stagen; de batch staat dan al op
      *                           {@code FAILED} met opgeruimde staging. Breekt de mutatiegeneratie af,
      *                           dan blijft de batch op {@code MUTATING} staan en is
@@ -481,6 +500,19 @@ public class DeliveryScreeningService {
      */
     public ScreeningOutcome screen(long batchId) {
         Context context = transaction.execute(status -> start(batchId));
+        try {
+            return screenClaimed(context);
+        } catch (ClaimLostException lost) {
+            throw claimLost(context, lost);
+        }
+    }
+
+    /**
+     * De screening ná de start, onder de claim van {@code context}. Een {@link ClaimLostException} wordt
+     * vóór de technische fout gevangen en gaat ongemoeid door: de batch is dan van een andere worker en
+     * mag niet op {@code FAILED} gezet of opgeruimd worden.
+     */
+    private ScreeningOutcome screenClaimed(Context context) {
         Progress progress = new Progress();
         try {
             if (context.configFailure() != null) {
@@ -491,33 +523,125 @@ public class DeliveryScreeningService {
             progress.rawRecordCount = summary.rawRecordCount();
             flush(context, progress);
             verifyRecordCount(context, progress);
-            transaction.executeWithoutResult(status -> toMutating(context, progress));
+            inClaimWithoutResult(context, status -> toMutating(context, progress));
         } catch (ScreeningBlockedException blocked) {
             flushBeforeBlocking(context, progress);
-            return transaction.execute(status -> block(context, Blockage.of(blocked), progress));
+            return releasingOnInterruption(context,
+                    () -> inClaim(context, status -> block(context, Blockage.of(blocked), progress)));
+        } catch (ClaimLostException lost) {
+            throw lost;
         } catch (RuntimeException | Error technical) {
             fail(context, technical);
             throw technical;
         }
-        return mutate(context);
+        return releasingOnInterruption(context, () -> mutate(context));
     }
 
     /**
      * Hervat de mutatiefase van een batch die op {@code MUTATING} is blijven staan (onderbroken
      * verwerking of herstart van de applicatie). Reeds geschreven mutaties worden niet herhaald.
+     * <p>
+     * <b>Verwerkingsclaim (stap 4).</b> Eerst wordt de status zonder slot gelezen, zodat een batch die
+     * niet hervatbaar is meteen 409 {@code BATCH_NOT_RESUMABLE} geeft zonder op een slot te wachten. Dan
+     * wordt de batch onder schrijfslot herlezen, de status opnieuw gecontroleerd en de claim genomen; een
+     * levende claim van een andere worker geeft 409 {@code BATCH_BEING_PROCESSED}.
      *
      * @throws NotFoundException onbekende batch ({@code BATCH_NOT_FOUND})
-     * @throws ConflictException {@code BATCH_NOT_RESUMABLE} als de batch niet in {@code MUTATING} staat
+     * @throws ConflictException {@code BATCH_NOT_RESUMABLE} als de batch niet in {@code MUTATING} staat,
+     *                           {@code BATCH_BEING_PROCESSED} als een andere worker de batch verwerkt of
+     *                           de eigen claim onderweg verloren ging
      */
     public ScreeningOutcome continueMutating(long batchId) {
-        return mutate(transaction.execute(status -> resume(batchId)));
+        transaction.executeWithoutResult(status -> requireResumable(findBatch(batchId)));
+        Context context = transaction.execute(status -> resume(batchId));
+        try {
+            return releasingOnInterruption(context, () -> mutate(context));
+        } catch (ClaimLostException lost) {
+            throw claimLost(context, lost);
+        }
+    }
+
+    // --- Verwerkingsclaim (stap 4, beslissingslog 2026-10-01) ----------------------------------
+
+    /**
+     * Eén schrijvende transactie onder de claim: eerst de fencing-update op de eigen token (die ook de
+     * heartbeat ververst en het rijslot neemt), dan het werk. Is de claim verloren, dan rolt de
+     * transactie terug vóór er iets geschreven is ({@link ClaimLostException}).
+     */
+    private <T> T inClaim(Context context, TransactionCallback<T> work) {
+        return transaction.execute(status -> {
+            claims.touch(context.batchId(), context.claimToken());
+            return work.doInTransaction(status);
+        });
+    }
+
+    private void inClaimWithoutResult(Context context, Consumer<TransactionStatus> work) {
+        transaction.executeWithoutResult(status -> {
+            claims.touch(context.batchId(), context.claimToken());
+            work.accept(status);
+        });
+    }
+
+    /**
+     * Breekt de verwerking technisch af zonder eindstatus (de batch blijft {@code MUTATING} of, bij een
+     * mislukte blokkade, {@code SCREENING}), dan wordt de claim meteen vrijgegeven: er is geen worker
+     * meer actief, en de batch moet dus onmiddellijk opnieuw hervat kunnen worden in plaats van pas na
+     * het verlopen van de lease ("dezelfde aanroep mag herhaald worden", {@code POST /continue}). Een
+     * verloren claim wordt niet vrijgegeven: die is van een ander.
+     */
+    private ScreeningOutcome releasingOnInterruption(Context context, Supplier<ScreeningOutcome> work) {
+        try {
+            return work.get();
+        } catch (ClaimLostException lost) {
+            throw lost;
+        } catch (RuntimeException | Error interrupted) {
+            releaseQuietly(context);
+            throw interrupted;
+        }
+    }
+
+    /** Geeft de eigen claim gefenced vrij; faalt dat, dan loopt de lease gewoon af (enkel loggen). */
+    private void releaseQuietly(Context context) {
+        try {
+            inClaimWithoutResult(context, status -> {
+                ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
+                batch.releaseProcessing();
+                batches.saveAndFlush(batch);
+            });
+        } catch (ClaimLostException lost) {
+            LOG.warn("Batch {}: the processing claim was already lost; nothing to release", context.batchId());
+        } catch (RuntimeException failure) {
+            LOG.error("Batch {}: cannot release the processing claim; it expires after the lease of {}",
+                    context.batchId(), claims.lease(), failure);
+        }
+    }
+
+    private static ConflictException claimLost(Context context, ClaimLostException lost) {
+        LOG.warn("Batch {}: processing stopped because the processing claim was lost", context.batchId());
+        ConflictException conflict = BatchProcessingClaims.beingProcessed(context.batchId(), null);
+        conflict.initCause(lost);
+        return conflict;
+    }
+
+    private ImportBatch findBatch(long batchId) {
+        return batches.findById(batchId)
+                .orElseThrow(() -> new NotFoundException("BATCH_NOT_FOUND", "Batch " + batchId + " not found"));
+    }
+
+    private ImportBatch findBatchForUpdate(long batchId) {
+        return batches.findByIdForUpdate(batchId)
+                .orElseThrow(() -> new NotFoundException("BATCH_NOT_FOUND", "Batch " + batchId + " not found"));
     }
 
     // --- Stap 1: overgang naar SCREENING -----------------------------------------------------
 
+    /**
+     * De batch wordt onder schrijfslot gelezen: twee gelijktijdige starts van dezelfde batch kunnen zo
+     * niet allebei {@code RECEIVED} zien; de tweede wacht en krijgt daarna {@code BATCH_NOT_SCREENABLE}.
+     * De claim wordt in dezelfde transactie als de overgang naar {@code SCREENING} genomen.
+     */
     private Context start(long batchId) {
-        ImportBatch batch = batches.findById(batchId)
-                .orElseThrow(() -> new NotFoundException("BATCH_NOT_FOUND", "Batch " + batchId + " not found"));
+        ImportBatch batch = findBatchForUpdate(batchId);
         Delivery delivery = batch.getDelivery();
         long revisionId = batch.getDefinitionRevision().getId();
         // De marker is het bewijs dat deze levering onder deze revisie al afgerond is; de unieke
@@ -547,11 +671,12 @@ public class DeliveryScreeningService {
         // één keer per batch gelezen - nooit per regel en nooit per chunk (R-PRI-10).
         PriceControl priceControl = priceControl(batch);
 
+        UUID token = claims.claim(batch);
         batch.setStatus(ImportBatchStatus.SCREENING);
         batch.setStartedAt(Instant.now());
         batches.saveAndFlush(batch);
 
-        return context(batch, delivery, file, config, mappingConfig, priceControl, configFailure);
+        return context(batch, delivery, file, config, mappingConfig, priceControl, configFailure, token);
     }
 
     /**
@@ -584,17 +709,26 @@ public class DeliveryScreeningService {
                 batch.getDefinitionRevision().getPriceAvgLongWindow());
     }
 
+    /**
+     * Onder schrijfslot: status opnieuw controleren (een gelijktijdige hervatting kan de batch intussen
+     * afgerond hebben), dan de claim nemen - of 409 {@code BATCH_BEING_PROCESSED} bij een levende claim.
+     */
     private Context resume(long batchId) {
-        ImportBatch batch = batches.findById(batchId)
-                .orElseThrow(() -> new NotFoundException("BATCH_NOT_FOUND", "Batch " + batchId + " not found"));
-        if (batch.getStatus() != ImportBatchStatus.MUTATING) {
-            throw new ConflictException(CODE_BATCH_NOT_RESUMABLE, "Batch " + batchId + " is in status "
-                    + batch.getStatus() + "; only a batch in MUTATING can be resumed");
-        }
+        ImportBatch batch = findBatchForUpdate(batchId);
+        requireResumable(batch);
+        UUID token = claims.claim(batch);
+        batches.saveAndFlush(batch);
         Delivery delivery = batch.getDelivery();
         // De bronconfiguratie is hier niet meer nodig: het bestand is al gelezen en gestaged. Het
         // prijsbeleid wél: de prijscontrolepass draait ná het stagen en kan dus hervat worden.
-        return context(batch, delivery, singleFile(delivery), null, null, priceControl(batch), null);
+        return context(batch, delivery, singleFile(delivery), null, null, priceControl(batch), null, token);
+    }
+
+    private static void requireResumable(ImportBatch batch) {
+        if (batch.getStatus() != ImportBatchStatus.MUTATING) {
+            throw new ConflictException(CODE_BATCH_NOT_RESUMABLE, "Batch " + batch.getId() + " is in status "
+                    + batch.getStatus() + "; only a batch in MUTATING can be resumed");
+        }
     }
 
     private DeliveryFile singleFile(Delivery delivery) {
@@ -610,7 +744,7 @@ public class DeliveryScreeningService {
     private static Context context(ImportBatch batch, Delivery delivery, DeliveryFile file,
                                    SourceStructureConfig config, ImportMappingConfig mappingConfig,
                                    PriceControl priceControl,
-                                   ScreeningBlockedException configFailure) {
+                                   ScreeningBlockedException configFailure, UUID claimToken) {
         // Het bulkpercentage komt van dezelfde (lazy) revisie en wordt hier, binnen de openende
         // transactie, exact één keer per batch gelezen - nooit per groep en nooit per chunk. Ook een
         // hervatte batch leest het opnieuw, zodat pass E4 na een onderbreking hetzelfde oordeelt.
@@ -634,7 +768,8 @@ public class DeliveryScreeningService {
                 batch.getTaskRun() == null ? null : batch.getTaskRun().getId(), file.getArchiveReference(),
                 file.getByteSize(), file.getContentHash(), delivery.getExpectedRecordCount(),
                 delivery.getExpectedByteSize(), config, mappingConfig, priceControl, bulkSharePercent,
-                creationSharePercent, maxCriticalSharePercent, maxRejectedSharePercent, configFailure);
+                creationSharePercent, maxCriticalSharePercent, maxRejectedSharePercent, configFailure,
+                claimToken);
     }
 
     // --- Stap 2: volledigheidscontroles ------------------------------------------------------
@@ -821,7 +956,7 @@ public class DeliveryScreeningService {
         List<PriceRow> prices = List.copyOf(progress.pendingPrices);
         List<ReferenceRow> references = List.copyOf(progress.pendingReferences);
         List<IssueRow> issues = List.copyOf(progress.pendingIssues);
-        transaction.executeWithoutResult(status -> {
+        inClaimWithoutResult(context, status -> {
             stage.insertBatch(rows);
             // Ná de stagingrijen: import_candidate_price en import_candidate_reference hebben een
             // foreign key naar de kandidaat, en een prijscomponent of referentie zonder haar regel mag
@@ -848,6 +983,8 @@ public class DeliveryScreeningService {
     private void flushBeforeBlocking(Context context, Progress progress) {
         try {
             flush(context, progress);
+        } catch (ClaimLostException lost) {
+            throw lost;
         } catch (RuntimeException technical) {
             fail(context, technical);
             throw technical;
@@ -891,18 +1028,20 @@ public class DeliveryScreeningService {
     private ScreeningOutcome mutate(Context context) {
         Blockage blockage = detectIdentityProblems(context);
         if (blockage != null) {
-            return transaction.execute(status -> block(context, blockage, null));
+            return inClaim(context, status -> block(context, blockage, null));
         }
         detectDuplicateReferences(context);
         classifyCandidates(context);
         controlReferences(context);
         controlPrices(context);
-        aggregate(context);
+        // Pass E4 schrijft (groepen, behandelgevallen) en hoort dus ook onder de claim; de transacties
+        // van de aggregatie en de koppeling aan het behandelgeval sluiten bij deze gefencede transactie aan.
+        inClaim(context, status -> aggregate(context));
         Blockage exceeded = evaluateThresholds(context);
         if (exceeded != null) {
             // Boven een leveringsdrempel: geen enkele inhoudelijke mutatie meer. E5 draait dus niet
             // en de levering eindigt op BLOCKED, met haar staging en haar meldingen als bewijs.
-            return transaction.execute(status -> block(context, exceeded, null));
+            return inClaim(context, status -> block(context, exceeded, null));
         }
         // Pas ná de drempels, en enkel wanneer de levering doorgaat (bouwstap 3h-5): een geblokkeerde
         // levering genereert nul inhoudelijke mutaties, dus er valt geen enkele creatie te beoordelen.
@@ -911,7 +1050,7 @@ public class DeliveryScreeningService {
         CreationOutcome creationOutcome = evaluateCreationPolicy(context);
         generateMutations(context, creationOutcome);
         holdPriceUpdatesOnBulkIncident(context);
-        return transaction.execute(status -> complete(context));
+        return inClaim(context, status -> complete(context));
     }
 
     // --- Stap E4: groeperen en bulkincidenten (ontwerp fase 3 par. 3.1, R-THR-04) ---------------
@@ -1015,7 +1154,7 @@ public class DeliveryScreeningService {
                 context.creationThresholdSharePercent());
         // Oordeel, noemer en melding in dezelfde transactie: er bestaat nooit een vastgelegd oordeel
         // zonder zijn melding, en nooit een melding zonder het oordeel dat haar verklaart.
-        transaction.executeWithoutResult(status -> {
+        inClaimWithoutResult(context, status -> {
             ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
             batch.setCreationOutcome(decision.outcome());
             batch.setCreationScopeCount(decision.scope());
@@ -1072,7 +1211,7 @@ public class DeliveryScreeningService {
                 ImportIssueCatalog.BULK_PRICE_INCIDENT) == 0) {
             return;
         }
-        int held = transaction.execute(status -> mutations.holdPlannedPriceUpdates(context.batchId(),
+        int held = inClaim(context, status -> mutations.holdPlannedPriceUpdates(context.batchId(),
                 ImportIssueCatalog.BULK_PRICE_INCIDENT));
         LOG.info("Batch {} has a bulk price incident: {} planned price updates now await approval",
                 context.batchId(), held);
@@ -1113,7 +1252,7 @@ public class DeliveryScreeningService {
      *         blijft (of er geen oordeel mogelijk is)
      */
     private Blockage evaluateThresholds(Context context) {
-        ThresholdCounts counts = transaction.execute(status -> measureThresholdCounts(context));
+        ThresholdCounts counts = inClaim(context, status -> measureThresholdCounts(context));
         ThresholdEvaluator.Judgement critical = ThresholdEvaluator.evaluateCritical(
                 ThresholdEvaluator.criticalRecordCount(counts.criticalLineCount(),
                         counts.identityIncidentCount()),
@@ -1124,7 +1263,7 @@ public class DeliveryScreeningService {
         if (leading == null) {
             return null;
         }
-        transaction.executeWithoutResult(status -> {
+        inClaimWithoutResult(context, status -> {
             if (critical.blocks()) {
                 recordThresholdIssue(context, critical, ThresholdEvaluator.criticalMessage(critical,
                         counts.criticalLineCount(), counts.identityIncidentCount()));
@@ -1238,7 +1377,7 @@ public class DeliveryScreeningService {
             return;
         }
         Map<String, String> fieldNames = referenceControl.fieldNameByReferenceType();
-        transaction.executeWithoutResult(status -> {
+        inClaimWithoutResult(context, status -> {
             referenceControl.classifyDuplicateReferences(context.batchId(),
                     MutationDao.IDENTITY_INCIDENT_CLASSIFICATION);
             int budget = (int) Math.min(maxSampleRowsPerCode, duplicates);
@@ -1289,7 +1428,7 @@ public class DeliveryScreeningService {
         while ((boundary = mutations.nextChunkBoundary(context.batchId(), from)) != null) {
             long chunkFrom = from;
             long chunkTo = boundary;
-            transaction.executeWithoutResult(status -> {
+            inClaimWithoutResult(context, status -> {
                 mutations.classifyChunk(context.batchId(), context.importLinkId(), chunkFrom, chunkTo);
                 ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
                 batch.setClassifyProgressRowNumber(chunkTo);
@@ -1339,7 +1478,7 @@ public class DeliveryScreeningService {
             long chunkTo = boundary;
             // Meldingen, incidenten, classificatie en hervatpunt in dezelfde transactie: na een crash
             // wordt geen enkele chunk een tweede keer beoordeeld en ontstaat er geen dubbel incident.
-            transaction.executeWithoutResult(status -> {
+            inClaimWithoutResult(context, status -> {
                 evaluateReferenceChunk(context, fieldNames, pass, chunkFrom, chunkTo);
                 ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
                 batch.setReferenceProgressRowNumber(chunkTo);
@@ -1503,7 +1642,7 @@ public class DeliveryScreeningService {
             long chunkTo = boundary;
             // Meldingen en hervatpunt in dezelfde transactie: na een crash wordt geen enkele chunk
             // een tweede keer beoordeeld en ontstaan er dus geen dubbele prijsissues.
-            transaction.executeWithoutResult(status -> {
+            inClaimWithoutResult(context, status -> {
                 evaluateChunk(context, control, fieldNames, pass, chunkFrom, chunkTo);
                 ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
                 batch.setPriceProgressRowNumber(chunkTo);
@@ -1511,7 +1650,7 @@ public class DeliveryScreeningService {
             });
             from = chunkTo;
         }
-        transaction.executeWithoutResult(status -> recordMissingReferenceSummary(context, control));
+        inClaimWithoutResult(context, status -> recordMissingReferenceSummary(context, control));
     }
 
     private void evaluateChunk(Context context, PriceControl control, Map<String, String> fieldNames,
@@ -1670,7 +1809,7 @@ public class DeliveryScreeningService {
         while ((boundary = mutations.nextChunkBoundary(context.batchId(), from)) != null) {
             long chunkFrom = from;
             long chunkTo = boundary;
-            transaction.executeWithoutResult(status -> {
+            inClaimWithoutResult(context, status -> {
                 mutations.insertContentMutations(mutationContext, componentCodes, creationStatusReason,
                         chunkFrom, chunkTo, Instant.now());
                 ImportBatch batch = batches.findById(context.batchId()).orElseThrow();
@@ -1707,6 +1846,9 @@ public class DeliveryScreeningService {
         measureJudgementCounters(context, batch);
         ValidationResult validationResult = determineValidationResult(context.batchId(), false, batch);
         batch.setValidationResult(validationResult);
+        // De claim gaat vrij in dezelfde wijziging als de terminale overgang: een terminale batch met
+        // een token weigert de database (ck_import_batch_claim_open).
+        batch.releaseProcessing();
         batch.setStatus(ImportBatchStatus.SCREENED);
         batch.setFinishedAt(Instant.now());
         batches.saveAndFlush(batch);
@@ -1823,6 +1965,7 @@ public class DeliveryScreeningService {
         batch.setValidationResult(validationResult);
         batch.setBlockedCode(truncate(blockage.code(), MAX_BLOCKED_CODE_LENGTH));
         batch.setBlockedReason(truncate(blockage.code() + ": " + blockage.reason(), MAX_BLOCKED_REASON_LENGTH));
+        batch.releaseProcessing();
         batch.setStatus(ImportBatchStatus.BLOCKED);
         batch.setFinishedAt(Instant.now());
         batches.saveAndFlush(batch);
@@ -1953,10 +2096,14 @@ public class DeliveryScreeningService {
     /**
      * Technische fout: batch en run op FAILED, staging en problemen van deze poging weg, geen marker.
      * Faalt ook dat nog, dan wordt die tweede fout gelogd en niet over de oorspronkelijke heen gegooid.
+     * <p>
+     * <b>Gefenced (stap 4).</b> Is de claim intussen verloren, dan wordt er <b>niets</b> opgeruimd: de
+     * staging en de batch zijn dan van de worker die de claim overnam. De claim gaat vrij in dezelfde
+     * wijziging als de overgang naar {@code FAILED}.
      */
     private void fail(Context context, Throwable cause) {
         try {
-            transaction.executeWithoutResult(status -> {
+            inClaimWithoutResult(context, status -> {
                 // Eerst de prijscomponenten en de referenties: ze hangen met een foreign key aan de
                 // staging. De databasecascade zou ze ook opruimen; ze hier expliciet verwijderen houdt
                 // de bedoeling zichtbaar in plaats van ze aan een schema-eigenschap over te laten.
@@ -1971,11 +2118,15 @@ public class DeliveryScreeningService {
                 batch.setStagedRowCount(0);
                 batch.setBlockedCode(CODE_SCREENING_FAILED);
                 batch.setBlockedReason(truncate(CODE_SCREENING_FAILED + ": " + cause, MAX_BLOCKED_REASON_LENGTH));
+                batch.releaseProcessing();
                 batch.setStatus(ImportBatchStatus.FAILED);
                 batch.setFinishedAt(Instant.now());
                 batches.saveAndFlush(batch);
                 finishTaskRun(context, TaskRunStatus.FAILED);
             });
+        } catch (ClaimLostException lost) {
+            LOG.warn("Batch {} is not marked FAILED after {}: the processing claim was lost, so nothing is "
+                    + "cleaned up", context.batchId(), cause.toString());
         } catch (RuntimeException secondary) {
             LOG.error("Cannot mark batch {} as FAILED after {}", context.batchId(), cause, secondary);
         }

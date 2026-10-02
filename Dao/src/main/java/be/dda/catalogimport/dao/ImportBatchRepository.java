@@ -7,10 +7,12 @@ import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -57,6 +59,22 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select b from ImportBatch b where b.id = :id")
     Optional<ImportBatch> findByIdForUpdate(@Param("id") Long id);
+
+    /**
+     * Fencing van de verwerkingsclaim (stap 4, changeset 017): ververst het levensteken enkel als de batch nog
+     * exact deze claim-token draagt. Levert 1 als de claim nog van de aanroeper is, 0 als ze intussen gewist of
+     * door een andere claim vervangen werd (claim verloren). De update neemt het rijslot tot het einde van de
+     * transactie, zodat de claim tijdens de rest van die transactie niet kan wisselen; een gelijktijdige
+     * overname of opstartherstel wacht en ziet daarna de verse heartbeat.
+     * <p>
+     * Hoort als <b>eerste</b> statement in de transactie: een batch die vóór deze update al in de
+     * persistence context geladen werd, draagt nog de oude heartbeat (er wordt niet automatisch gewist, zodat een
+     * geladen entiteit nooit stil losgekoppeld raakt).
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("update ImportBatch b set b.processingHeartbeatAt = :now "
+            + "where b.id = :id and b.processingClaimToken = :token")
+    int touchProcessingClaim(@Param("id") Long id, @Param("token") UUID token, @Param("now") Instant now);
 
     /**
      * Batches die in aanmerking komen om aan een Publicatiebundel toegevoegd te worden (ontwerp fase 4

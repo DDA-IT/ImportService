@@ -103,6 +103,8 @@ class ScreeningRecoveryServiceTest {
     @Autowired
     private IssueCaseDao issueCases;
     @Autowired
+    private BatchProcessingClaims claims;
+    @Autowired
     private PlatformTransactionManager transactionManager;
     @Autowired
     private SourceOrganisationRepository sourceOrganisations;
@@ -208,12 +210,12 @@ class ScreeningRecoveryServiceTest {
         assertThat(batches.findById(stuck.batchId()).orElseThrow().getStatus()).isEqualTo(ImportBatchStatus.SCREENING);
 
         ScreeningRecoveryService disabled = new ScreeningRecoveryService(batches, runs, stage, rowIssues,
-                issueGroups, issueCases, transactionManager, false);
+                issueGroups, issueCases, claims, transactionManager, false);
         disabled.onApplicationReady();
         assertThat(batches.findById(stuck.batchId()).orElseThrow().getStatus()).isEqualTo(ImportBatchStatus.SCREENING);
 
         ScreeningRecoveryService enabled = new ScreeningRecoveryService(batches, runs, stage, rowIssues,
-                issueGroups, issueCases, transactionManager, true);
+                issueGroups, issueCases, claims, transactionManager, true);
         enabled.onApplicationReady();
         ImportBatch batch = batches.findById(stuck.batchId()).orElseThrow();
         assertThat(batch.getStatus()).isEqualTo(ImportBatchStatus.FAILED);

@@ -14,6 +14,8 @@ import be.dda.catalogimport.service.support.ImportIssueCatalog;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,9 +47,18 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Uitschakelbaar met {@code catalogimport.screening.recovery-on-startup=false} (standaard aan); tests
  * gebruiken dat zodat gedeelde testdata elkaar niet beïnvloeden.
  * <p>
- * <b>Beperking.</b> Dit veronderstelt precies één applicatie-instantie: zonder lease of heartbeat
- * (design par. 9) is een {@code SCREENING}-batch die een andere instantie nog bezig is te verwerken niet
- * te onderscheiden van een verweesde. Pas op te lossen in Fase 5.
+ * <b>Claim-bewust (stap 4, S4-c, beslissingslog 2026-10-01).</b> Sinds de verwerkingsclaim
+ * ({@link BatchProcessingClaims}) is een batch die een andere instantie nog verwerkt wél te onderscheiden van een
+ * verweesde:
+ * <ul>
+ *   <li>{@code SCREENING} gaat enkel naar {@code FAILED} als de claim <b>dood</b> is (geen token, verlopen lease,
+ *       of een vorige boot van deze instantie). Compare-and-set: onder schrijfslot moet de token nog exact de
+ *       waargenomen token zijn; de claim gaat vrij in dezelfde wijziging als de overgang naar {@code FAILED}.</li>
+ *   <li>{@code MUTATING} met een dode claim: de token wordt gewist (zelfde compare-and-set) en gelogd; de batch
+ *       blijft hervatbaar.</li>
+ *   <li>Een levende claim van een andere instantie blijft ongemoeid: die batch wordt niet gefaald, niet
+ *       vrijgegeven en niet als hervatbaar gemeld (enkel gelogd).</li>
+ * </ul>
  */
 @Service
 public class ScreeningRecoveryService {
@@ -61,9 +72,23 @@ public class ScreeningRecoveryService {
     /**
      * Wat het herstel gedaan heeft: {@code failedBatchIds} zijn de onderbroken screenings die op
      * {@code FAILED} gezet zijn, {@code resumableBatchIds} de {@code MUTATING}-batches die hervatbaar
-     * bleven.
+     * bleven. Een batch met een levende claim van een andere worker staat in geen van beide.
      */
     public record RecoveryReport(List<Long> failedBatchIds, List<Long> resumableBatchIds) {
+    }
+
+    /** Wat er met één open batch gebeurde. */
+    private enum Recovered {
+        /** Gefaald ({@code SCREENING}) of hervatbaar gelaten ({@code MUTATING}). */
+        HANDLED,
+        /** Een levende (of intussen vernieuwde) claim van een andere worker: ongemoeid gelaten. */
+        ACTIVE,
+        /** Intussen niet meer in de verwachte status (of verdwenen): niets gedaan. */
+        GONE
+    }
+
+    /** Een open batch zoals waargenomen in de lijst, vóór het slot: id en claim-token. */
+    private record Observed(long batchId, UUID claimToken) {
     }
 
     private final ImportBatchRepository batches;
@@ -76,12 +101,15 @@ public class ScreeningRecoveryService {
      * (docs/design/issue-case-design.md par. 3, laatste alinea).
      */
     private final IssueCaseDao issueCases;
+    /** Stap 4 (S4-c): beoordeelt of de claim op een open batch nog levend is. */
+    private final BatchProcessingClaims claims;
     private final TransactionTemplate transaction;
     private final boolean enabled;
 
     public ScreeningRecoveryService(ImportBatchRepository batches, TaskRunRepository runs,
                                     CandidateStageDao stage, RowIssueDao rowIssues,
                                     IssueGroupDao issueGroups, IssueCaseDao issueCases,
+                                    BatchProcessingClaims claims,
                                     PlatformTransactionManager transactionManager,
                                     @Value("${catalogimport.screening.recovery-on-startup:true}")
                                     boolean enabled) {
@@ -91,6 +119,7 @@ public class ScreeningRecoveryService {
         this.rowIssues = rowIssues;
         this.issueGroups = issueGroups;
         this.issueCases = issueCases;
+        this.claims = claims;
         this.transaction = new TransactionTemplate(transactionManager);
         this.enabled = enabled;
     }
@@ -115,30 +144,97 @@ public class ScreeningRecoveryService {
      */
     public RecoveryReport recover() {
         List<Long> failed = new ArrayList<>();
-        List<Long> interrupted = batches.findByStatus(ImportBatchStatus.SCREENING).stream()
-                .map(ImportBatch::getId).toList();
-        for (Long batchId : interrupted) {
+        for (Observed observed : observe(ImportBatchStatus.SCREENING)) {
             try {
-                Boolean done = transaction.execute(status -> failInterrupted(batchId));
-                if (Boolean.TRUE.equals(done)) {
-                    failed.add(batchId);
+                Recovered result = transaction.execute(status -> failInterrupted(observed));
+                if (result == Recovered.HANDLED) {
+                    failed.add(observed.batchId());
                 }
             } catch (RuntimeException failure) {
-                LOG.error("Cannot recover interrupted screening of batch {}", batchId, failure);
+                LOG.error("Cannot recover interrupted screening of batch {}", observed.batchId(), failure);
             }
         }
-        List<Long> resumable = batches.findByStatus(ImportBatchStatus.MUTATING).stream()
-                .map(ImportBatch::getId).toList();
-        resumable.forEach(batchId -> LOG.warn("Batch {} is in MUTATING and can be resumed with "
-                + "POST /api/catalog-import/batches/{}/continue", batchId, batchId));
-        return new RecoveryReport(List.copyOf(failed), resumable);
+        List<Long> resumable = new ArrayList<>();
+        for (Observed observed : observe(ImportBatchStatus.MUTATING)) {
+            try {
+                Recovered result = transaction.execute(status -> releaseDeadClaim(observed));
+                if (result == Recovered.HANDLED) {
+                    resumable.add(observed.batchId());
+                    LOG.warn("Batch {} is in MUTATING and can be resumed with "
+                            + "POST /api/catalog-import/batches/{}/continue", observed.batchId(), observed.batchId());
+                }
+            } catch (RuntimeException failure) {
+                LOG.error("Cannot recover the processing claim of batch {}", observed.batchId(), failure);
+            }
+        }
+        return new RecoveryReport(List.copyOf(failed), List.copyOf(resumable));
     }
 
-    /** @return {@code false} als de batch intussen al niet meer in {@code SCREENING} stond */
-    private boolean failInterrupted(long batchId) {
-        ImportBatch batch = batches.findById(batchId).orElse(null);
-        if (batch == null || batch.getStatus() != ImportBatchStatus.SCREENING) {
-            return false;
+    private List<Observed> observe(ImportBatchStatus status) {
+        return batches.findByStatus(status).stream()
+                .map(batch -> new Observed(batch.getId(), batch.getProcessingClaimToken()))
+                .toList();
+    }
+
+    /**
+     * Compare-and-set onder schrijfslot: de batch moet nog in {@code expected} staan, de token moet nog exact de
+     * waargenomen token zijn, en de claim moet dood zijn. Anders blijft de batch ongemoeid en staat de reden in
+     * {@code outcome[0]}.
+     *
+     * @return de vergrendelde, verweesde batch, of {@code null}
+     */
+    private ImportBatch lockIfOrphaned(Observed observed, ImportBatchStatus expected, Recovered[] outcome) {
+        ImportBatch batch = batches.findByIdForUpdate(observed.batchId()).orElse(null);
+        if (batch == null || batch.getStatus() != expected) {
+            outcome[0] = Recovered.GONE;
+            return null;
+        }
+        if (!Objects.equals(batch.getProcessingClaimToken(), observed.claimToken())) {
+            // Een andere worker nam intussen (opnieuw) een claim: die is per definitie vers.
+            LOG.info("Batch {} ({}) got a new processing claim from {} while recovering; left untouched",
+                    observed.batchId(), expected, batch.getProcessingClaimedBy());
+            outcome[0] = Recovered.ACTIVE;
+            return null;
+        }
+        if (claims.isAlive(batch)) {
+            LOG.info("Batch {} ({}) is being processed by {} (last heartbeat {}); left untouched",
+                    observed.batchId(), expected, batch.getProcessingClaimedBy(), batch.getProcessingHeartbeatAt());
+            outcome[0] = Recovered.ACTIVE;
+            return null;
+        }
+        return batch;
+    }
+
+    /** {@code MUTATING} met een dode claim: token wissen en loggen; zonder claim verandert er niets. */
+    private Recovered releaseDeadClaim(Observed observed) {
+        Recovered[] outcome = new Recovered[1];
+        ImportBatch batch = lockIfOrphaned(observed, ImportBatchStatus.MUTATING, outcome);
+        if (batch == null) {
+            return outcome[0];
+        }
+        if (batch.getProcessingClaimToken() != null) {
+            LOG.warn("Batch {} (MUTATING): releasing the dead processing claim of {} (last heartbeat {})",
+                    observed.batchId(), batch.getProcessingClaimedBy(), batch.getProcessingHeartbeatAt());
+            batch.releaseProcessing();
+            batches.saveAndFlush(batch);
+        }
+        return Recovered.HANDLED;
+    }
+
+    /**
+     * {@code SCREENING} met een dode claim (of zonder claim) wordt {@code FAILED}; de claim gaat vrij in dezelfde
+     * wijziging.
+     */
+    private Recovered failInterrupted(Observed observed) {
+        Recovered[] outcome = new Recovered[1];
+        ImportBatch batch = lockIfOrphaned(observed, ImportBatchStatus.SCREENING, outcome);
+        if (batch == null) {
+            return outcome[0];
+        }
+        long batchId = observed.batchId();
+        if (batch.getProcessingClaimToken() != null) {
+            LOG.warn("Batch {} (SCREENING): the processing claim of {} is dead (last heartbeat {})", batchId,
+                    batch.getProcessingClaimedBy(), batch.getProcessingHeartbeatAt());
         }
         stage.deleteByBatchId(batchId);
         rowIssues.deleteByBatchId(batchId);
@@ -165,6 +261,8 @@ public class ScreeningRecoveryService {
         batch.setBlockedReason(truncate(CODE_SCREENING_INTERRUPTED
                 + ": the application stopped while this batch was being screened; staging and row issues "
                 + "were removed, upload the delivery again"));
+        // In dezelfde wijziging als de terminale overgang (ck_import_batch_claim_open).
+        batch.releaseProcessing();
         batch.setStatus(ImportBatchStatus.FAILED);
         batch.setFinishedAt(Instant.now());
         batches.saveAndFlush(batch);
@@ -176,7 +274,7 @@ public class ScreeningRecoveryService {
         }
         LOG.warn("Batch {} was interrupted while screening: marked FAILED ({})", batchId,
                 CODE_SCREENING_INTERRUPTED);
-        return true;
+        return Recovered.HANDLED;
     }
 
     private static String truncate(String value) {

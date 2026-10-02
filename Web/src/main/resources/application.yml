@@ -108,9 +108,18 @@ catalogimport:
     # Maximale lengte van een datalijn in tekens; langere regels worden verworpen, niet afgekapt.
     max-line-length: 100000
     # Bij het opstarten: een batch die op SCREENING bleef staan wordt FAILED (SCREENING_INTERRUPTED); een batch
-    # op MUTATING blijft hervatbaar via POST /api/catalog-import/batches/{id}/continue. Veronderstelt precies
-    # één applicatie-instantie (geen lease/heartbeat tot Fase 5).
+    # op MUTATING blijft hervatbaar via POST /api/catalog-import/batches/{id}/continue. Sinds stap 4 claim-bewust:
+    # enkel batches met een dode verwerkingsclaim worden aangeraakt; een levende claim van een andere instantie
+    # blijft ongemoeid.
     recovery-on-startup: true
+    # Verwerkingsclaim per batch (stap 4, docs/decisions.md 2026-10-01): een screening/hervatting houdt een claim
+    # met heartbeat; een claim waarvan de heartbeat ouder is dan deze lease geldt als dood en mag overgenomen
+    # worden. ISO-8601-duur; een ongeldige of niet-positieve waarde laat de applicatie niet opstarten.
+    claim-lease: PT60M
+  # catalogimport.instance-id staat hier BEWUST NIET als waarde: default is de hostnaam. Moet uniek zijn per
+  # draaiende instantie (stap 4, verwerkingsclaim: eigenaar = <instance-id>/<bootId>). Geen '/', hoogstens 63
+  # tekens; anders start de applicatie niet. Zet per omgeving bv. CATALOGIMPORT_INSTANCEID (Spring-relaxed binding) wanneer twee instanties
+  # dezelfde hostnaam kunnen hebben (containers).
   trial-read:
     # Proefinlezing POST /api/catalog-import/revisions/{id}/trial-reads (NT-9, docs/design/proefinlezing-design.md
     # par. 3). Er wordt niets bewaard; de bestandsgrootte is begrensd door de bestaande multipartlimiet en de
