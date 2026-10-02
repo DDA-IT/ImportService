@@ -75,6 +75,11 @@ public class BatchQueryService {
      * {@code UPDATE}-mutaties die op goedkeuring wachten; de vierde is de teller waarop het
      * creatiebeleid geoordeeld heeft, naast de reeds bestaande noemer {@code creationScopeCount}.
      * Alle vier {@code null} wanneer ze niet vastgesteld zijn, nooit stil 0.
+     * <p>
+     * {@code processingActive} is additief toegevoegd in bouwstap S4-d (ontwerp stap 4 par. 6.1): een
+     * boolean die aangeeft of de batch op dit moment door een worker wordt verwerkt
+     * ({@code BatchProcessingClaims.isAlive(batch)}). {@code false} wil zeggen dat het veilig is om de
+     * batch te herstarten (of dat ze nooit een claim had).
      */
     public record BatchDetail(long batchId, long deliveryId, long importLinkId, String importLinkCode,
                               String supplierCode, String libraryCode, long definitionRevisionId,
@@ -91,31 +96,8 @@ public class BatchQueryService {
                               Long creationCandidateCount,
                               String blockedCode,
                               String blockedReason, String baselineAcceptedBy, Instant baselineAcceptedAt,
-                              String baselineAcceptReason, Instant createdAt, String createdBy) {
-
-        private static BatchDetail of(ImportBatch batch) {
-            ImportLink link = batch.getImportLink();
-            return new BatchDetail(batch.getId(), batch.getDelivery().getId(), link.getId(), link.getCode(),
-                    link.getSupplierOrganisation().getCode(), link.getLibraryCode(),
-                    batch.getDefinitionRevision().getId(),
-                    batch.getTaskRun() == null ? null : batch.getTaskRun().getId(), batch.getAttemptNo(),
-                    batch.getStatus().name(),
-                    batch.getValidationResult() == null ? null : batch.getValidationResult().name(),
-                    batch.getStartedAt(), batch.getFinishedAt(),
-                    batch.getStagedRowCount(), batch.getMutationProgressRowNumber(), batch.getRawRecordCount(),
-                    batch.getValidRecordCount(), batch.getRejectedRecordCount(),
-                    batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
-                    batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
-                    batch.getUnchangedCount(), batch.getIdentityIncidentCount(),
-                    batch.getContentMutationCount(), batch.getBulkIncidentCount(),
-                    batch.getCriticalLineCount(), batch.getCriticalIssueCount(),
-                    batch.getWarningCount(), batch.getAwaitingApprovalCount(),
-                    batch.getCreationOutcome() == null ? null : batch.getCreationOutcome().name(),
-                    batch.getCreationScopeCount(), batch.getCreationCandidateCount(),
-                    batch.getBlockedCode(),
-                    batch.getBlockedReason(), batch.getBaselineAcceptedBy(), batch.getBaselineAcceptedAt(),
-                    batch.getBaselineAcceptReason(), batch.getCreatedAt(), batch.getCreatedBy());
-        }
+                              String baselineAcceptReason, Instant createdAt, String createdBy,
+                              boolean processingActive) {
     }
 
     /**
@@ -336,20 +318,47 @@ public class BatchQueryService {
     private final IssueGroupDao issueGroups;
     /** Enkel voor de niet-gemapte {@code identity_hash} van een opgehaalde pagina (bouwstap C4). */
     private final MutationDao mutationHashes;
+    private final BatchProcessingClaims processingClaims;
 
     public BatchQueryService(ImportBatchRepository batches, ImportMutationRepository mutations,
                              ImportRowIssueRepository issues, IssueGroupDao issueGroups,
-                             MutationDao mutationHashes) {
+                             MutationDao mutationHashes, BatchProcessingClaims processingClaims) {
         this.batches = batches;
         this.mutations = mutations;
         this.issues = issues;
         this.issueGroups = issueGroups;
         this.mutationHashes = mutationHashes;
+        this.processingClaims = processingClaims;
+    }
+
+    private BatchDetail of(ImportBatch batch) {
+        ImportLink link = batch.getImportLink();
+        return new BatchDetail(batch.getId(), batch.getDelivery().getId(), link.getId(), link.getCode(),
+                link.getSupplierOrganisation().getCode(), link.getLibraryCode(),
+                batch.getDefinitionRevision().getId(),
+                batch.getTaskRun() == null ? null : batch.getTaskRun().getId(), batch.getAttemptNo(),
+                batch.getStatus().name(),
+                batch.getValidationResult() == null ? null : batch.getValidationResult().name(),
+                batch.getStartedAt(), batch.getFinishedAt(),
+                batch.getStagedRowCount(), batch.getMutationProgressRowNumber(), batch.getRawRecordCount(),
+                batch.getValidRecordCount(), batch.getRejectedRecordCount(),
+                batch.getFilteredOutCount(), batch.getErrorBeforeFilterCount(),
+                batch.getDuplicateIdentityCount(), batch.getNewCount(), batch.getChangedCount(),
+                batch.getUnchangedCount(), batch.getIdentityIncidentCount(),
+                batch.getContentMutationCount(), batch.getBulkIncidentCount(),
+                batch.getCriticalLineCount(), batch.getCriticalIssueCount(),
+                batch.getWarningCount(), batch.getAwaitingApprovalCount(),
+                batch.getCreationOutcome() == null ? null : batch.getCreationOutcome().name(),
+                batch.getCreationScopeCount(), batch.getCreationCandidateCount(),
+                batch.getBlockedCode(),
+                batch.getBlockedReason(), batch.getBaselineAcceptedBy(), batch.getBaselineAcceptedAt(),
+                batch.getBaselineAcceptReason(), batch.getCreatedAt(), batch.getCreatedBy(),
+                processingClaims.isAlive(batch));
     }
 
     /** @throws NotFoundException onbekende batch ({@code BATCH_NOT_FOUND}) */
     public BatchDetail getBatch(long batchId) {
-        return BatchDetail.of(batches.findDetailById(batchId).orElseThrow(() -> notFound(batchId)));
+        return of(batches.findDetailById(batchId).orElseThrow(() -> notFound(batchId)));
     }
 
     /**

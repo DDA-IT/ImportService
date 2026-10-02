@@ -535,6 +535,7 @@ class BatchBaselineHttpTest {
                 .andExpect(jsonPath("$.unchangedCount").value(0))
                 .andExpect(jsonPath("$.contentMutationCount").value(5))
                 .andExpect(jsonPath("$.stagedRowCount").value(5))
+                .andExpect(jsonPath("$.processingActive").value(false))
                 .andExpect(jsonPath("$.blockedCode").doesNotExist())
                 .andExpect(jsonPath("$.baselineAcceptedBy").doesNotExist());
 
