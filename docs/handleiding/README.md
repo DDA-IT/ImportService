@@ -823,7 +823,77 @@ Doel (beslissing D13, 2026-09-23): **RPO ≤ 24 uur, RTO ≤ 4 uur**. Uitwerking
 
 De stappen staan in [flow 8](standaardflows.md#flow-8--back-up-en-hersteltest-draaien).
 
-### 9.9 Het beslissingslog
+### 9.9 Groei van de database meten
+
+Voor beheer en operationeel toezicht: drie read-only SQL-query's voor PostgreSQL die de groei van de database
+meten. Ze draaien met een leesaccount of via `psql` in de container. Vrijgekomen ruimte na opruiming wordt pas
+zichtbaar na een `VACUUM` (automatisch af en toe, expliciete vraag mogelijk voor grote wijzigingen).
+
+**Query 1: Tabelgrootte inclusief indexen en toast, gesorteerd op grootte**
+
+```sql
+SELECT
+  schemaname,
+  tablename,
+  pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)::bigint) AS total_size,
+  pg_total_relation_size(schemaname||'.'||tablename)::bigint AS size_bytes
+FROM pg_tables
+WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+  AND tablename IN ('import_candidate_stage', 'import_candidate_price', 'import_candidate_reference',
+                    'import_row_issue', 'import_issue_group', 'import_mutation',
+                    'catalog_price_observation', 'catalog_source_state')
+ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
+```
+
+Toont: schémanaam, tabelnaam, totale grootte (mensleesbaar en in bytes). Inclusief indexen en toast.
+
+**Query 2: Batch-aantallen per status, met totaal gestage rijen**
+
+```sql
+SELECT
+  status,
+  COUNT(*) AS batch_count,
+  COALESCE(SUM(staged_row_count), 0) AS total_staged_rows
+FROM import_batch
+GROUP BY status
+ORDER BY batch_count DESC;
+```
+
+Toont: batchstatus, aantal batches met die status, totaal van `staged_row_count` (de ingevoerde en nog niet
+opgeruimde kandidaatrijen). Het helpt inzien waar de gestage gegevens zitten.
+
+**Query 3: Top 20 grootste batches, met status en nulmeting-aanvaardingstijdstip**
+
+```sql
+SELECT
+  id,
+  staged_row_count,
+  status,
+  baseline_accepted_at,
+  created_at
+FROM import_batch
+ORDER BY staged_row_count DESC
+LIMIT 20;
+```
+
+Toont: batch-id, aantal gestage rijen, batchstatus, moment waarop de batch als nulmeting aanvaard werd (NULL als
+nog niet aanvaard), moment van aanmaak.
+
+**Uitvoering:**
+
+- Via `psql` in de container:
+  ```bash
+  docker exec -i prodis-postgresql-1 psql -h localhost -U catalog_import -d catalog_import << 'EOF'
+  [voer de query hier in]
+  EOF
+  ```
+
+- Of via een leesaccount (maak aan via een databasebeheerder met de gebruikelijke omgevingsvariabelen
+  `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`).
+
+- Alle queries zijn **read-only** en kunnen op een draaiende productieomgeving zonder risico draaien.
+
+### 9.10 Het beslissingslog
 
 `docs/decisions.md` legt architectuur- en businessbeslissingen vast. Eerdere beslissingen zijn **bindend**
 tot de mens ze expliciet herroept. Lees het bij twijfel over "waarom werkt het zo". Enkele beslissingen die
@@ -831,7 +901,7 @@ u als gebruiker raakt: één persoon volstaat voor `accept-baseline` (geen vier-
 ontwikkelhulpmiddel; een gebruiker met het recht Beheren richt zelf een leverancier en taak in (2026-09-30), en
 alleen sjabloonbeheer en het setup-overzicht blijven achter de setup-vlag.
 
-### 9.10 Overige documentatie
+### 9.11 Overige documentatie
 
 | Document | Inhoud |
 | --- | --- |
