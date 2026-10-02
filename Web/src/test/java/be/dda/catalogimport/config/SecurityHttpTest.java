@@ -171,18 +171,19 @@ class SecurityHttpTest {
     }
 
     /**
-     * {@code /actuator/health} en {@code /actuator/info} staan open. CatalogImport heeft (nog) geen
-     * actuator-dependency: het verzoek komt voorbij de beveiliging (geen 401, geen redirect) en eindigt op
-     * 404. Wordt 200 zodra actuator toegevoegd is. Een ander actuatorpad blijft wél achter de login.
+     * Contract sinds S7-c (docs/decisions.md 2026-10-02): enkel {@code GET /actuator/health} is anoniem bereikbaar
+     * (200; het volledige contract staat in {@code ActuatorHealthHttpTest}). {@code /actuator/info} bestaat niet
+     * meer en is niet vrijgegeven: anoniem 302 naar de login (nooit 200). Een ander actuatorpad is evenmin anoniem
+     * bereikbaar (302 naar de login).
      */
     @Test
-    void healthAndInfoAreOpenButOtherActuatorPathsAreNot() throws Exception {
+    void onlyHealthIsOpenAndOtherActuatorPathsAreBehindTheLogin() throws Exception {
         bareMvc.perform(get("/actuator/health"))
-                .andExpect(status().isNotFound())
+                .andExpect(status().isOk())
                 .andExpect(header().doesNotExist(HttpHeaders.LOCATION));
         bareMvc.perform(get("/actuator/info"))
-                .andExpect(status().isNotFound())
-                .andExpect(header().doesNotExist(HttpHeaders.LOCATION));
+                .andExpect(status().isFound())
+                .andExpect(header().string(HttpHeaders.LOCATION, endsWith("/oauth2/authorization/keycloak")));
         bareMvc.perform(get("/actuator/env"))
                 .andExpect(status().isFound());
     }

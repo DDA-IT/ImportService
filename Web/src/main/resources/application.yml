@@ -4,7 +4,10 @@ spring:
   datasource:
     url: ${CATALOG_DB_URL:jdbc:postgresql://localhost:5432/catalog_import}
     username: ${CATALOG_DB_USERNAME:catalog_import}
-    password: ${CATALOG_DB_PASSWORD:catalog_import}
+    # Bewust GEEN default (docs/decisions.md 2026-10-02, S7-b): zet CATALOG_DB_PASSWORD. Niet gezet = de applicatie
+    # start niet (DatasourcePasswordCheck, voor de DataSource/Liquibase). Leeg (CATALOG_DB_PASSWORD=) mag expliciet.
+    # De profielen local/demo/ewoutdev zetten hun eigen lokale waarde.
+    password: ${CATALOG_DB_PASSWORD}
     hikari:
       data-source-properties:
         # pgjdbc-property (geldt voor alle profielen, de URL blijft ongewijzigd): zonder dit bevat een
@@ -153,8 +156,33 @@ server:
         # lax, niet strict: de Keycloak-callback is een top-level GET en moet de sessiecookie meedragen.
         same-site: lax
         secure: ${CATALOG_SESSION_COOKIE_SECURE:true}
+# Actuator (docs/decisions.md 2026-10-02, stap 7, S7-c; Spring Boot 3.4-eigenschappen): ENKEL health (+ de probes
+# liveness/readiness), zelfde poort, zonder details of componenten (anoniem bereikbaar via SecurityConfiguration, dus
+# nooit infrastructuurdetails prijsgeven). Elk ander endpoint is uitgeschakeld (access.default none), ook al zou het
+# ooit blootgesteld worden. /actuator/info bestaat niet meer.
 management:
   endpoints:
+    access:
+      default: none
     web:
       exposure:
-        include: health,info
+        include: health
+  endpoint:
+    health:
+      access: read-only
+      show-details: never
+      show-components: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          # Geen Keycloak- of SFTP-indicator: een extern systeem dat even weg is mag de instantie niet uit de rotatie halen.
+          include: readinessState,db
+  health:
+    diskspace:
+      # Moet bij de deploy bestaan: anders meldt diskSpace DOWN (en dus ook /actuator/health). Het pad komt uit het
+      # verplichte catalogimport.archive.root (geen default in dit bestand; zonder start de applicatie sowieso niet).
+      path: ${catalogimport.archive.root}
+      threshold: ${CATALOG_DISK_THRESHOLD:2GB}

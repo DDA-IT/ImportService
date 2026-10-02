@@ -10,8 +10,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * Registreert {@link PermissionInterceptor} (Fase 5-PERM, ontwerp par. 3).
  * <p>
  * Enkel op {@code /api/**}: dat is exact het gebied dat {@code SecurityConfiguration} als
- * geauthenticeerde JSON-API behandelt. {@code /actuator/health} en {@code /actuator/info} zijn daar
- * publiek en blijven dat; een rechtencheck erop zou ze onbruikbaar maken voor een load balancer.
+ * geauthenticeerde JSON-API behandelt. {@code /actuator/health} en de probes {@code /actuator/health/liveness|readiness}
+ * zijn daar publiek en blijven dat; een rechtencheck erop zou ze onbruikbaar maken voor een load balancer.
  * <p>
  * Bewust <b>geen</b> {@code @EnableWebMvc}: die zou de Boot-autoconfiguratie van Spring MVC uitschakelen
  * en daarmee bestaande conventies (Jackson, foutafhandeling, multipart) stilzwijgend wijzigen. Een kale

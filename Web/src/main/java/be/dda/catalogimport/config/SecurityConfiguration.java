@@ -103,8 +103,10 @@ public class SecurityConfiguration {
         http
                 .authorizeHttpRequests(authorize -> authorize
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        // Exacte paden (geen /actuator/health/**): enkel health en de twee probes zijn anoniem.
                         .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/actuator/health"),
-                                AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/actuator/info")).permitAll()
+                                AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/actuator/health/liveness"),
+                                AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/actuator/health/readiness")).permitAll()
                         .requestMatchers(api).authenticated()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions

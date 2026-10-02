@@ -178,8 +178,31 @@ Een Nederlandstalige gebruikers- en beheerdershandleiding staat in [`docs/handle
 Java 21 en Maven 3.9+. PostgreSQL is de standaarddatabase (`CATALOG_DB_URL`, `CATALOG_DB_USERNAME`,
 `CATALOG_DB_PASSWORD`); Liquibase voert de migraties uit. Ook lokaal is PostgreSQL nodig: de profielen
 `local` en `demo` verbinden met `jdbc:postgresql://localhost:5432/catalog_import`
-(gebruiker/wachtwoord `catalog_import`, zie `application-local.yml` en `application-demo.yml`). H2 volstaat
-**niet**.
+(gebruiker/wachtwoord `catalog_import`, zie `application-local.yml` en `application-demo.yml`). H2 is geen
+dependency meer van de applicatie (ook niet voor tests) en volstaat **niet**; de `dbms:h2`-changesets in de
+Liquibase-changelog blijven bestaan maar worden nergens uitgevoerd.
+
+**Databasewachtwoord (deploy):** `CATALOG_DB_PASSWORD` heeft sinds stap 7 (S7-b) **geen default** meer in
+`application.yml`. Zonder profiel `local`/`demo`/`ewoutdev` (die hun lokale ontwikkelwaarde zelf zetten) moet de
+variabele dus gezet zijn; anders stopt de applicatie bij het opstarten, vóór de databaseverbinding en Liquibase, met
+"Database password (spring.datasource.password) is unresolved; set the environment variable CATALOG_DB_PASSWORD".
+Een expliciet leeg wachtwoord (`CATALOG_DB_PASSWORD=`) blijft toegelaten. `CATALOG_DB_URL` en
+`CATALOG_DB_USERNAME` houden hun lokale default. De tests (profiel `local`, en de Dao-testconfiguratie met eigen
+default) en `run-full-tests.ps1` blijven zonder variabele werken.
+
+**Health en probes (deploy, S7-c):** de applicatie stelt via Spring Boot Actuator enkel `health` bloot, op dezelfde
+poort en anoniem, zonder details of componenten (alleen `status`; alle andere actuator-endpoints, ook `info`, `env`,
+`beans` en `heapdump`, zijn uitgeschakeld):
+
+| Doel | Pad | Bevat |
+| --- | --- | --- |
+| Algemeen | `GET /actuator/health` | alle indicatoren (db, diskSpace, ping) |
+| Liveness-probe | `GET /actuator/health/liveness` | enkel de procestoestand |
+| Readiness-probe | `GET /actuator/health/readiness` | `readinessState` + databaseverbinding (`db`) |
+
+Er is bewust geen Keycloak- of SFTP-indicator. De `diskSpace`-indicator controleert `catalogimport.archive.root`
+(drempel `CATALOG_DISK_THRESHOLD`, default `2GB`): die map **moet bij de deploy bestaan**, anders meldt
+`diskSpace` DOWN en dus ook `/actuator/health` (liveness en readiness blijven los daarvan).
 
 ## Lokaal starten met het demoprofiel
 
