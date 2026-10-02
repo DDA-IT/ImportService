@@ -55,26 +55,18 @@
   /* Surface colors */
   --color-background: #ffffff;
   --color-surface: #f4f6f8;
-  --color-surface-muted: #f4f6f8;
   --color-surface-variant: #dfe3e8;
   --color-border: rgba(145, 158, 171, 0.2);
   --color-border-dark: rgba(145, 158, 171, 0.32);
   --color-hover-bg: rgba(145, 158, 171, 0.08);
 
   /* Status colors (soft: colour at 16% alpha, text in darker tint) */
-  --status-planned: rgba(0, 167, 111, 0.16);
   --status-planned-text: #004b50;
-  --status-awaiting: rgba(255, 171, 0, 0.16);
   --status-awaiting-text: #7a4100;
-  --status-ready: rgba(34, 197, 94, 0.16);
   --status-ready-text: #065e49;
-  --status-rejected: rgba(255, 86, 48, 0.16);
   --status-rejected-text: #7a0916;
-  --status-blocked: rgba(255, 86, 48, 0.16);
   --status-blocked-text: #7a0916;
-  --status-expired: rgba(145, 158, 171, 0.16);
   --status-expired-text: #637381;
-  --status-neutral: #dfe3e8;
   --status-neutral-text: #1c252e;
 
   /* Status color shorthand for backgrounds */
@@ -87,10 +79,7 @@
   --status-neutral-bg: #dfe3e8;
 
   /* Shadow */
-  --shadow-sm: 0 0 2px 0 rgba(145, 158, 171, 0.2), 0 12px 24px -4px rgba(145, 158, 171, 0.12);
   --shadow-md: 0 8px 16px 0 rgba(145, 158, 171, 0.16);
-  --shadow-lg: -40px 40px 80px -8px rgba(0, 0, 0, 0.24);
-  --shadow-z8: 0 8px 16px 0 rgba(145, 158, 171, 0.16);
   --shadow-card: 0 0 2px 0 rgba(145, 158, 171, 0.2), 0 12px 24px -4px rgba(145, 158, 171, 0.12);
   --shadow-dialog: -40px 40px 80px -8px rgba(0, 0, 0, 0.24);
   --shadow-dropdown: 0 0 2px 0 rgba(145, 158, 171, 0.24), -20px 20px 40px -4px rgba(145, 158, 171, 0.24);

@@ -33,7 +33,7 @@
 }
 
 .input:disabled {
-  background: var(--color-surface-muted, #f3f4f6);
+  background: var(--color-surface);
   cursor: not-allowed;
 }
 
