@@ -1,0 +1,97 @@
+/*
+ * Gedeelde knopstijl (docs/decisions.md 2026-10-02, S8-g + V1). Geen <Button>-component en geen `composes`:
+ * een component importeert deze module en zet `className={button.primary}` (eventueel gecombineerd met een
+ * lokale LAYOUT-klasse: margin, align-self, width, ...). Kleur, rand, opvulling, font en uitgeschakeld-stijl
+ * staan alleen hier. Modifier `small` (rijacties) combineer je met een variant: `${button.secondary} ${button.small}`.
+ *
+ * Varianten: primary (donker gevuld), secondary (outlined, grijze rand), danger (gevuld, #B71D18 = 6,6:1 op wit),
+ * dangerOutlined (tekst #B71D18, rand #FF5630) — bewust donkerder dan Prodis' #FF5630 voor WCAG AA.
+ */
+
+.primary,
+.secondary,
+.danger,
+.dangerOutlined {
+  display: inline-block;
+  box-sizing: border-box;
+  padding: var(--spacing-2) var(--spacing-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.primary:focus-visible,
+.secondary:focus-visible,
+.danger:focus-visible,
+.dangerOutlined:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+.secondary {
+  background: var(--color-background);
+  border-color: var(--color-border-dark);
+  color: var(--color-text);
+}
+
+.danger {
+  background: var(--color-danger-hover);
+  border-color: var(--color-danger-hover);
+  color: var(--color-primary-contrast);
+}
+
+.dangerOutlined {
+  background: var(--color-background);
+  border-color: var(--color-danger);
+  color: var(--color-danger-hover);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--color-hover-bg);
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--color-danger-darker);
+  border-color: var(--color-danger-darker);
+}
+
+.dangerOutlined:hover:not(:disabled) {
+  background: var(--status-rejected-bg);
+}
+
+/* Modifier: rijacties en andere compacte knoppen. Staat na de varianten zodat ze de opvulling overschrijft. */
+.small {
+  padding: var(--spacing-1) var(--spacing-2);
+}
+
+/* Modifier: gekozen/actieve keuze in een rij knoppen (bv. geselecteerde revisie). */
+.selected {
+  border-color: var(--color-accent);
+  font-weight: 600;
+}
+
+/* Eén uitgeschakeld-stijl voor alle varianten. */
+.primary:disabled,
+.secondary:disabled,
+.danger:disabled,
+.dangerOutlined:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

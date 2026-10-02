@@ -6,6 +6,7 @@
 
 import { useState } from 'react';
 import { formatActor, useActor } from './ActorContext';
+import button from '../components/Button.module.css';
 import styles from './ActorBar.module.css';
 
 export function ActorBar() {
@@ -27,7 +28,7 @@ export function ActorBar() {
       <span className={styles.current}>
         Aangemeld als <strong>{formatActor(actorContext)}</strong>
       </span>
-      <button type="button" className={styles.button} onClick={handleLogout}>
+      <button type="button" className={`${button.primary} ${button.small}`} onClick={handleLogout}>
         Afmelden
       </button>
       {logoutFailed && (
@@ -38,7 +39,7 @@ export function ActorBar() {
       {sessionExpired && (
         <p className={styles.error} role="alert">
           Uw sessie is verlopen.{' '}
-          <button type="button" className={styles.button} onClick={reauthenticate}>
+          <button type="button" className={`${button.primary} ${button.small}`} onClick={reauthenticate}>
             Opnieuw aanmelden
           </button>
         </p>

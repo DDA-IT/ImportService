@@ -5,6 +5,7 @@
  */
 
 import { useId } from 'react';
+import button from './Button.module.css';
 import styles from './Pager.module.css';
 
 const PAGE_SIZES = [25, 50, 100, 200] as const;
@@ -27,13 +28,23 @@ export function Pager({ page, size, totalElements, onPageChange, onSizeChange }:
 
   return (
     <div className={styles.pager}>
-      <button type="button" onClick={() => onPageChange(page - 1)} disabled={!hasPrevious}>
+      <button
+        type="button"
+        className={`${button.secondary} ${button.small}`}
+        onClick={() => onPageChange(page - 1)}
+        disabled={!hasPrevious}
+      >
         Vorige
       </button>
       <span className={styles.summary}>
         {totalElements === 0 ? '0 van 0' : `${from}-${to} van ${totalElements}`}
       </span>
-      <button type="button" onClick={() => onPageChange(page + 1)} disabled={!hasNext}>
+      <button
+        type="button"
+        className={`${button.secondary} ${button.small}`}
+        onClick={() => onPageChange(page + 1)}
+        disabled={!hasNext}
+      >
         Volgende
       </button>
       <label className={styles.sizeLabel} htmlFor={sizeId}>

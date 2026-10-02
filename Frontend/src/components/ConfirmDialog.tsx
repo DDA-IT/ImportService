@@ -13,6 +13,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type SyntheticEvent } from 'react';
 import { formatActor, useActor } from '../actor/ActorContext';
 import { Field } from './Field';
+import button from './Button.module.css';
 import styles from './ConfirmDialog.module.css';
 
 export type ConfirmDialogReasonRequirement = 'required' | 'optional' | 'none';
@@ -181,12 +182,12 @@ export function ConfirmDialog({
         </div>
 
         <div className={styles.actions}>
-          <button type="button" className={styles.cancelButton} onClick={onCancel} disabled={pending}>
+          <button type="button" className={button.secondary} onClick={onCancel} disabled={pending}>
             {cancelLabel}
           </button>
           <button
             type="submit"
-            className={variant === 'danger' ? styles.dangerButton : styles.primaryButton}
+            className={variant === 'danger' ? button.danger : button.primary}
             disabled={pending || !canConfirm}
           >
             {pending ? 'Bezig…' : confirmLabel}

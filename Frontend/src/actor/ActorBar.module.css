@@ -26,20 +26,6 @@
   font-size: 0.875rem;
 }
 
-.button {
-  padding: var(--spacing-1) var(--spacing-3);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: white;
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-
-.button:hover {
-  background: var(--color-primary-hover);
-}
-
 .current {
   font-size: 0.875rem;
   color: var(--color-text-secondary);

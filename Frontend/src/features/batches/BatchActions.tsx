@@ -22,6 +22,7 @@ import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { Term } from '../../terms/Term.tsx';
+import button from '../../components/Button.module.css';
 import styles from './BatchActions.module.css';
 
 /**
@@ -240,6 +241,7 @@ function ContinueSection({
           <div className={styles.buttons}>
             <button
               type="button"
+              className={button.primary}
               disabled={buttonDisabled}
               title={buttonTitle}
               onClick={() => setConfirming(true)}
@@ -257,10 +259,10 @@ function ContinueSection({
           </p>
           {runner.error !== null && <ErrorBanner error={runner.error} />}
           <div className={styles.buttons}>
-            <button type="button" onClick={() => void handleContinue()} disabled={runner.pending}>
+            <button type="button" className={button.primary} onClick={() => void handleContinue()} disabled={runner.pending}>
               {runner.pending ? 'Bezig…' : 'Hervatten bevestigen'}
             </button>
-            <button type="button" onClick={() => setConfirming(false)} disabled={runner.pending}>
+            <button type="button" className={button.secondary} onClick={() => setConfirming(false)} disabled={runner.pending}>
               Annuleren
             </button>
           </div>
@@ -296,6 +298,7 @@ export function BatchActions({ batch, onChanged }: Props) {
           <div className={styles.buttons}>
             <button
               type="button"
+              className={button.secondary}
               disabled={!approveGate.allowed}
               title={approveGate.allowed ? undefined : approveGate.reason}
               onClick={() => setDialog('baseline')}
@@ -304,6 +307,7 @@ export function BatchActions({ batch, onChanged }: Props) {
             </button>
             <button
               type="button"
+              className={button.primary}
               disabled={!manageGate.allowed}
               title={manageGate.allowed ? undefined : manageGate.reason}
               onClick={() => setDialog('bundle')}
