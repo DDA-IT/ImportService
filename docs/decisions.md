@@ -2503,3 +2503,22 @@ Stap 6: additieve CHECK-constraints op de status van `import_batch`, `import_mut
 waarden van de Java-enums, met een precondition die stopt (HALT) als bestaande data ze schendt, zoals 016; `ck_publication_bundle_batch_removed`
 corrigeren naar `is true`. Stap 8 en 9: invulling door een denker-subagent, apart gelogd vóór een bouwer start. Stap 9 zonder gedragswijziging.
 **Bron:** mens / analyse ImportService 2026-10-01
+
+## 2026-10-02 — Stap 8 en 9 uitgewerkt
+**Vraag:** Hoe worden frontend-duplicatie en tooling (8) en de grote klassen (9) aangepakt?
+**Beslissing:**
+- **Stap 8 (sequentieel, één commit per story):** S8-a tests typechecken (`tsconfig.test.json`, vitest/jest-dom-types, node-types; stopregel
+  >40 echte fouten → rapporteren); S8-b oxlint met jsx-a11y + `react/exhaustive-deps` (elke onderdrukking met reden); S8-c één `src/actor/gate.ts`
+  (`Gate`, `ALLOWED`, `denied`, `gateTitle`; `PermissionGate` → `Gate`); S8-d één `src/format.ts` `formatDateTime` (`UploadPage` krijgt `nl-BE`;
+  `formatByteSize` blijft dubbel omdat de tekst verschilt); S8-e terugvalteksten via de dictionary-entry, `linkCheck.baseCode` → `issueBaseCode`,
+  één `OLD_WORDING`-bron (UNKNOWN-teksten blijven twee varianten); S8-f dubbele tokens weg zonder hernoeming (consumenten mee); S8-g één
+  `components/Button.module.css` (varianten primary, secondary, danger, dangerOutlined, modifier small; geen `composes`; lokale modules enkel layout),
+  in twee delen (g1: module + ConfirmDialog/Pager/BatchActions/ActorBar; g2: overige modules), gevolgd door een visuele controle door de mens.
+- **V1 knopstijl (mens):** één opvulling per grootte, één stijl voor uitgeschakeld, donkere outlined-knoppen worden Prodis-outlined met grijze rand,
+  gevaar-rood **#B71D18** (contained-achtergrond 6,6:1; outlined: tekst #B71D18, rand #FF5630) — bewust afwijkend van Prodis' #FF5630 voor WCAG AA.
+- **Stap 9 (zonder gedragswijziging, tests enkel wiring):** S9-a `SetupService` → `RevisionFieldRules` + `SetupInput` (package-private, statisch);
+  S9-b `DeliveryScreeningService` → `ReferenceControlPass` + `PriceControlPass` (geen beans, geen transacties/claim in de passes; constructorsignatuur
+  DSS ongewijzigd; aantal `inClaim`/`transaction.` gelijk); S9-c `RevisionEditForm` → `revisionEditRequest.ts`; S9-d `DescriptionStep` →
+  `descriptionForm.ts`; S9-e `MutationList` → `mutationQuery.ts` + `cells.tsx`. Blijven: SftpConnector, TemplateMaterialisationService,
+  ImportMappingConfigFactory, TrialReadService, MaterialiseForm, UploadPage, TrialReadResultView, SetupOverviewPage, RevisionDetailSection.
+**Bron:** denker-zwaar + mens (V1) / analyse ImportService 2026-10-01
