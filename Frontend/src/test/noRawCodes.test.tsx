@@ -51,6 +51,7 @@ import { UploadPage } from '../features/upload/UploadPage';
 import { WorkQueuePage } from '../features/workqueue/WorkQueuePage';
 import { IssueCodeTerm } from '../terms/IssueCodeTerm';
 import { DICTIONARY } from '../terms/index';
+import { oldWordingIn, visibleTextOf } from './oldWording';
 import { TEST_IDENTITY } from './testIdentity';
 
 const RAW_WITH_UNDERSCORE = /\b[A-Z]+_[A-Z_]+\b/g;
@@ -63,35 +64,9 @@ const ENUM_WORDS: string[] = [
 ];
 const RAW_ENUM_WORD = new RegExp(`\\b(?:${ENUM_WORDS.join('|')})\\b`, 'g');
 
-/** De zichtbare tekst: alles behalve de inklapbare blokken ("Wat betekent dit?" en "Technische details"). */
-function visibleText(container: HTMLElement): string {
-  const clone = container.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll('details').forEach((element) => element.remove());
-  // Let op: `textContent` plakt de tekst van aangrenzende elementen zonder scheiding aan elkaar
-  // ("<p>SCREENED</p><p>x</p>" wordt "SCREENEDx"), waardoor `\b` een losse code niet meer ziet. Daarom worden de
-  // tekstknopen één voor één gelezen en met een spatie gescheiden.
-  const parts: string[] = [];
-  const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-    parts.push(node.textContent ?? '');
-  }
-  return parts.join(' ');
-}
-
 function rawCodesIn(container: HTMLElement): string[] {
-  const text = visibleText(container);
+  const text = visibleTextOf(container);
   return [...(text.match(RAW_WITH_UNDERSCORE) ?? []), ...(text.match(RAW_ENUM_WORD) ?? [])];
-}
-
-/**
- * NT-11d — woordkeuzes van de mens (beslissingslog 2026-10-01): in zichtbare tekst staat nooit meer "bookmark"
- * (het woord is "invulpunt"), "revisie" (is "versie"), "bronorganisatie" (is "leverancier of aankoopvereniging")
- * of "importdefinitie" (is "beschrijving van het bestand"). Tooltips en `<details>` tellen niet mee.
- */
-const OLD_WORDING = /bookmark|revisie|bronorganisatie|importdefinitie/gi;
-
-function oldWordingIn(container: HTMLElement): string[] {
-  return visibleText(container).match(OLD_WORDING) ?? [];
 }
 
 function expectNoRawCodes(container: HTMLElement, what: string) {

@@ -9,7 +9,7 @@ import { expect } from 'vitest';
 const OLD_WORDING = /bookmark|revisie|bronorganisatie|importdefinitie/gi;
 
 /** De zichtbare tekst zonder `<details>`; tekstknopen met een spatie gescheiden. */
-function visibleTextOf(container: HTMLElement): string {
+export function visibleTextOf(container: HTMLElement): string {
   const clone = container.cloneNode(true) as HTMLElement;
   clone.querySelectorAll('details').forEach((element) => element.remove());
   const parts: string[] = [];

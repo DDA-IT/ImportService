@@ -10,6 +10,7 @@ import * as importLinksApi from '../../../api/importLinks.ts';
 import * as setupApi from '../../../api/setup.ts';
 import type { DefinitionRow, ImportLinkRow, RevisionRow } from '../../../api/types.ts';
 import { DICTIONARY, type TermEntry } from '../../../terms/index.ts';
+import { issueBaseCode } from '../../../terms/IssueCodeTerm.tsx';
 import { loadAll, loadLinksOf, loadRevisionsOf, LOOKUP_PAGE_SIZE } from '../wizard/lookup.ts';
 
 /** Het adres van het scherm; `definitionId` versnelt het opzoeken, `revisionId` kiest de versie. */
@@ -86,12 +87,6 @@ export function chooseRevision(revisions: readonly RevisionRow[], requestedId: n
   return { chosen: fallback, choices, requestedNotFound: false };
 }
 
-/** Het deel van een code vóór de dubbele punt: `HEADER_FIELD_MISSING:Prijs` wordt `HEADER_FIELD_MISSING`. */
-export function baseCode(code: string): string {
-  const separator = code.indexOf(':');
-  return separator > 0 ? code.substring(0, separator) : code;
-}
-
 function lookup(domain: 'issueCode' | 'readinessCheck', code: string): TermEntry | null {
   const entries = DICTIONARY[domain];
   return Object.prototype.hasOwnProperty.call(entries, code) ? (entries[code] ?? null) : null;
@@ -110,7 +105,7 @@ export function describeIssueCode(code: string | null | undefined): TermEntry {
   if (code === null || code === undefined || code === '') {
     return UNKNOWN_FALLBACK;
   }
-  const base = baseCode(code);
+  const base = issueBaseCode(code);
   const known = lookup('issueCode', base);
   if (known !== null) {
     return known;

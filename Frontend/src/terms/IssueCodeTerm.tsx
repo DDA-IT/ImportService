@@ -6,13 +6,15 @@
  */
 
 import { Term } from './Term.tsx';
-import { term } from './index.ts';
+import { DICTIONARY, term } from './index.ts';
 
 const UNKNOWN_LABEL = 'Ander probleem';
 const UNKNOWN_UITLEG =
   'Voor deze vaststelling bestaat nog geen Nederlandse uitleg; de technische code staat in de tooltip of onder "Technische details".';
-const CONFIG_LABEL = 'Fout in de beschrijving van het bestand';
-const CONFIG_UITLEG = 'De beschrijving van het bestand is onvolledig of ongeldig.';
+/** Dé bron van de terugvaltekst voor een onbekende `CONFIG`-code: de dictionary-entry `readinessCheck.CONFIG_INVALID`. */
+const CONFIG_FALLBACK = DICTIONARY.readinessCheck.CONFIG_INVALID!;
+const CONFIG_LABEL = CONFIG_FALLBACK.label;
+const CONFIG_UITLEG = CONFIG_FALLBACK.uitleg;
 
 /** Het deel van een code vóór de dubbele punt. */
 export function issueBaseCode(code: string): string {

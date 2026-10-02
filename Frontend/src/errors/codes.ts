@@ -4,6 +4,7 @@
  */
 
 import type { ApiError } from '../api/http';
+import { DICTIONARY } from '../terms/index';
 
 export type CodeEntry = {
   title: string;
@@ -846,7 +847,7 @@ const FAMILY_FALLBACKS: FamilyFallback[] = [
   {
     match: (code) => code.startsWith('CONFIG_') || code.startsWith('CONFIG'),
     title: 'De beschrijving van het bestand klopt niet',
-    explanation: 'De beschrijving van het bestand is onvolledig of ongeldig.',
+    explanation: DICTIONARY.readinessCheck.CONFIG_INVALID!.uitleg,
   },
   {
     match: (code) => code.endsWith('_NOT_FOUND'),
