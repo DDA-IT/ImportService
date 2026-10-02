@@ -15,7 +15,9 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.UUID;
 
 /**
  * Eén screening van één {@link Delivery} onder één bevroren {@link ImportDefinitionRevision}.
@@ -281,6 +283,25 @@ public class ImportBatch {
     @Column(name = "baseline_accepted_by_subject", length = 255)
     private String baselineAcceptedBySubject;
 
+    /**
+     * Verwerkingsclaim (changeset 017): fencing-token van de screening/hervatting die deze batch nu verwerkt.
+     * {@code null} = geen claim. Altijd samen gezet of samen leeg met de drie velden hieronder
+     * ({@code ck_import_batch_claim_complete}).
+     */
+    @Column(name = "processing_claim_token")
+    private UUID processingClaimToken;
+
+    @Column(name = "processing_claimed_at")
+    private Instant processingClaimedAt;
+
+    /** Laatste levensteken van de claimhouder; de lease loopt af als dit te oud wordt. */
+    @Column(name = "processing_heartbeat_at")
+    private Instant processingHeartbeatAt;
+
+    /** Eigenaar van de claim, formaat {@code <instanceId>/<bootId>} (zie {@link #isProcessingClaimAlive}). */
+    @Column(name = "processing_claimed_by", length = 100)
+    private String processingClaimedBy;
+
     protected ImportBatch() {
         // JPA
     }
@@ -343,9 +364,96 @@ public class ImportBatch {
         return status;
     }
 
+    /**
+     * Zet de status en synchroniseert de open-marker. Geeft een eventuele verwerkingsclaim bewust
+     * <b>niet</b> vrij: dat gebeurt expliciet via {@link #releaseProcessing()} in dezelfde transactie als de
+     * overgang. Een terminale overgang met nog een gezette claim-token wordt door de database geweigerd
+     * ({@code ck_import_batch_claim_open}).
+     */
     public void setStatus(ImportBatchStatus status) {
         this.status = status;
         syncOpenMarker();
+    }
+
+    /**
+     * Neemt de verwerkingsclaim; claimed_at en heartbeat worden {@code now}. Enkel op een open batch.
+     * Of een bestaande claim nog levend is, beoordeelt de aanroeper vooraf
+     * ({@link #isProcessingClaimAlive}); deze methode overschrijft een bestaande claim.
+     *
+     * @throws IllegalStateException als de batch niet open (terminaal) is
+     */
+    public void claimProcessing(UUID token, String claimedBy, Instant now) {
+        if (token == null || claimedBy == null || now == null) {
+            throw new IllegalArgumentException("token, claimedBy en now zijn verplicht");
+        }
+        if (status.isTerminal()) {
+            throw new IllegalStateException("Een afgesloten batch (" + status + ") kan niet geclaimd worden.");
+        }
+        this.processingClaimToken = token;
+        this.processingClaimedBy = claimedBy;
+        this.processingClaimedAt = now;
+        this.processingHeartbeatAt = now;
+    }
+
+    /** Ververst het levensteken van de claim. */
+    public void touchProcessing(Instant now) {
+        if (processingClaimToken == null) {
+            throw new IllegalStateException("Er is geen verwerkingsclaim om te verversen.");
+        }
+        this.processingHeartbeatAt = now;
+    }
+
+    /** Wist alle vier claimvelden (no-op zonder claim). */
+    public void releaseProcessing() {
+        this.processingClaimToken = null;
+        this.processingClaimedAt = null;
+        this.processingHeartbeatAt = null;
+        this.processingClaimedBy = null;
+    }
+
+    /**
+     * Is de claim nog levend? Levend = token gezet, heartbeat niet ouder dan {@code now - lease} (de grens zelf is
+     * nog levend), en niet afkomstig van een vorige boot van <i>deze</i> instantie.
+     * <p>
+     * {@code processing_claimed_by} heeft het formaat {@code <instanceId>/<bootId>}; gesplitst wordt op de
+     * <b>laatste</b> {@code /}, zodat een instanceId zelf een {@code /} mag bevatten (een bootId niet). Zelfde
+     * instantie maar andere boot = het proces dat de claim nam is er niet meer, dus dood. Zonder {@code /} in de
+     * waarde is de boot onbekend en telt alleen de lease.
+     */
+    public boolean isProcessingClaimAlive(Instant now, Duration lease, String instanceId, String bootId) {
+        if (processingClaimToken == null || processingHeartbeatAt == null) {
+            return false;
+        }
+        if (processingHeartbeatAt.isBefore(now.minus(lease))) {
+            return false;
+        }
+        if (processingClaimedBy != null && instanceId != null && bootId != null) {
+            int slash = processingClaimedBy.lastIndexOf('/');
+            if (slash >= 0) {
+                String claimInstance = processingClaimedBy.substring(0, slash);
+                String claimBoot = processingClaimedBy.substring(slash + 1);
+                if (claimInstance.equals(instanceId) && !claimBoot.equals(bootId)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    public UUID getProcessingClaimToken() {
+        return processingClaimToken;
+    }
+
+    public Instant getProcessingClaimedAt() {
+        return processingClaimedAt;
+    }
+
+    public Instant getProcessingHeartbeatAt() {
+        return processingHeartbeatAt;
+    }
+
+    public String getProcessingClaimedBy() {
+        return processingClaimedBy;
     }
 
     public Boolean getOpenMarker() {
