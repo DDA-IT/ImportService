@@ -8,19 +8,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import be.dda.catalogimport.service.BadRequestException;
-import be.dda.catalogimport.service.ConflictException;
-import be.dda.catalogimport.service.NotFoundException;
+import be.dda.contracttest.ApiExceptionHandlerThrowingController;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 /**
  * Legt het foutcontract van {@link ApiExceptionHandler} vast (status + JSON {@code error} en {@code code}),
@@ -30,93 +23,11 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
  */
 class ApiExceptionHandlerContractTest {
 
-    private static final String INTERNAL_DETAIL = "credential of connection profile version 12 is missing";
-
-    /** Een eenvoudige requestbody; een onbekende enumwaarde of kapotte JSON maakt hem onleesbaar. */
-    record Payload(String name, Kind kind) {
-    }
-
-    enum Kind { ALPHA, BETA }
-
-    @RestController
-    static class ThrowingController {
-        @GetMapping("/bad-request")
-        String badRequest() {
-            throw new BadRequestException("SOME_BAD_REQUEST", "bad input");
-        }
-
-        @GetMapping("/not-found")
-        String notFound() {
-            throw new NotFoundException("SOME_NOT_FOUND", "nothing here");
-        }
-
-        @GetMapping("/conflict")
-        String conflict() {
-            throw new ConflictException("SOME_CONFLICT", "clash");
-        }
-
-        @GetMapping("/forbidden")
-        String forbidden() {
-            throw new ActorNotAllowedException("SYSTEM_ACTOR_FORBIDDEN", "not allowed");
-        }
-
-        @GetMapping("/permission-source")
-        String permissionSource() {
-            throw new PermissionSourceUnavailableException("secret internal detail about the source");
-        }
-
-        @GetMapping("/illegal-state")
-        String illegalState() {
-            throw new IllegalStateException(INTERNAL_DETAIL);
-        }
-
-        @GetMapping("/illegal-state-null")
-        String illegalStateWithoutMessage() {
-            throw new IllegalStateException();
-        }
-
-        @GetMapping("/illegal-argument")
-        String illegalArgument() {
-            throw new IllegalArgumentException("Missing decidedBy");
-        }
-
-        @GetMapping("/illegal-argument-null")
-        String illegalArgumentWithoutMessage() {
-            throw new IllegalArgumentException();
-        }
-
-        @GetMapping("/number-format")
-        String numberFormat() {
-            // Subklasse van IllegalArgumentException: blijft 400 zonder code.
-            throw new NumberFormatException("For input string: \"x\"");
-        }
-
-        @GetMapping("/bad-request-null")
-        String badRequestWithoutMessageOrCode() {
-            throw new BadRequestException(null, null);
-        }
-
-        @GetMapping("/conflict-null-message")
-        String conflictWithoutMessage() {
-            throw new ConflictException("SOME_CONFLICT", null);
-        }
-
-        @GetMapping("/upload-too-large")
-        String uploadTooLarge() {
-            throw new MaxUploadSizeExceededException(1024L);
-        }
-
-        @PostMapping("/payload")
-        String payload(@RequestBody Payload payload) {
-            return payload.name();
-        }
-    }
-
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
-        mvc = MockMvcBuilders.standaloneSetup(new ThrowingController())
+        mvc = MockMvcBuilders.standaloneSetup(new ApiExceptionHandlerThrowingController())
                 .setControllerAdvice(new ApiExceptionHandler()).build();
     }
 
