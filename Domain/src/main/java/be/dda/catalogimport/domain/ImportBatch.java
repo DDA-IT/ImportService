@@ -302,6 +302,16 @@ public class ImportBatch {
     @Column(name = "processing_claimed_by", length = 100)
     private String processingClaimedBy;
 
+    /**
+     * Opruiming van de kandidaatstaging (stap 7, changeset 019): het tijdstip waarop de geplande opruimtaak de
+     * staging ({@code import_candidate_stage/price/reference}) van deze batch volledig verwijderd heeft. {@code null}
+     * = de staging is (nog) niet opgeruimd. Enkel op een {@link ImportBatchStatus#BASELINE_ACCEPTED}-batch
+     * ({@code ck_import_batch_staging_purged}); eenmaal gezet nooit overschreven. {@link #getStagedRowCount()} blijft
+     * daarna het aantal regels dat ooit gestaged werd.
+     */
+    @Column(name = "staging_purged_at")
+    private Instant stagingPurgedAt;
+
     protected ImportBatch() {
         // JPA
     }
@@ -454,6 +464,33 @@ public class ImportBatch {
 
     public String getProcessingClaimedBy() {
         return processingClaimedBy;
+    }
+
+    /**
+     * Markeert de kandidaatstaging van deze batch als opgeruimd (stap 7). Enkel op een
+     * {@link ImportBatchStatus#BASELINE_ACCEPTED}-batch en hoogstens één keer: het tijdstip is een auditgegeven en
+     * wordt nooit overschreven.
+     *
+     * @throws IllegalArgumentException als {@code purgedAt} ontbreekt
+     * @throws IllegalStateException    als de batch niet {@code BASELINE_ACCEPTED} is of al als opgeruimd gemarkeerd
+     */
+    public void markStagingPurged(Instant purgedAt) {
+        if (purgedAt == null) {
+            throw new IllegalArgumentException("purgedAt is verplicht");
+        }
+        if (status != ImportBatchStatus.BASELINE_ACCEPTED) {
+            throw new IllegalStateException(
+                    "Enkel de staging van een BASELINE_ACCEPTED-batch kan opgeruimd worden (status " + status + ").");
+        }
+        if (stagingPurgedAt != null) {
+            throw new IllegalStateException("De staging van deze batch is al opgeruimd op " + stagingPurgedAt + ".");
+        }
+        this.stagingPurgedAt = purgedAt;
+    }
+
+    /** @return het tijdstip waarop de staging opgeruimd is, of {@code null} als dat (nog) niet gebeurde */
+    public Instant getStagingPurgedAt() {
+        return stagingPurgedAt;
     }
 
     public Boolean getOpenMarker() {
