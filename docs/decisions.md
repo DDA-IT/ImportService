@@ -2542,3 +2542,11 @@ zichtbaarheid); `cells.tsx` met bestandsbrede `only-export-components`-onderdruk
 codewijziging; de herhaling was groen. Waarschijnlijke oorzaak: IntelliJ bouwt mee in `target/classes` — niet bewezen.
 **Nog open bij de mens:** visuele controle van de knoppen; push + PR van deze branch; stap 7 (operationeel).
 **Bron:** hoofdsessie na verificatie
+
+## 2026-10-02 — Stap 7 gestart (operationeel)
+**Vraag:** Wordt stap 7 opgepakt?
+**Beslissing:** Ja (mens: "ga verder met stap 7"), op branch `verbeteringen-stap-7` (vertakt van `verbeteringen-stap-6-8-9`, gepusht). Inhoud uit de
+analyse: actuator/health toevoegen (config en security veronderstellen `/actuator/health` al), H2 en het default DB-wachtwoord uit het
+productie-artefact, een retentie-/purgeontwerp voor staging en row-issues, en een asynchrone screening agenderen (enkel ontwerp/planning).
+Invulling door een denker-subagent; keuzes over bewaartermijnen en blootgestelde endpoints gaan naar de mens.
+**Bron:** mens / analyse ImportService 2026-10-01
