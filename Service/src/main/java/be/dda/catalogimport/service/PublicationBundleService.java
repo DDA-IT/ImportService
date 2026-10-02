@@ -56,6 +56,8 @@ public class PublicationBundleService {
     public static final String CODE_BATCH_NOT_IN_BUNDLE = "BATCH_NOT_IN_BUNDLE";
     /** De batch heeft al besliste mutaties en kan daarom niet meer uit de bundel verwijderd worden. */
     public static final String CODE_BATCH_HAS_DECIDED_MUTATIONS = "BATCH_HAS_DECIDED_MUTATIONS";
+    /** Het rijslot van de batch is bezet: ze wordt op dit moment verwerkt; meteen weigeren, niet wachten. */
+    public static final String CODE_BATCH_BEING_PROCESSED = BatchProcessingClaims.CODE_BATCH_BEING_PROCESSED;
 
     /** {@code publication_bundle.bundle_reference}: varchar(100). */
     static final int MAX_REFERENCE_LENGTH = 100;
@@ -206,11 +208,19 @@ public class PublicationBundleService {
      * Voegt batches in één transactie toe aan een bundel, alles-of-niets: faalt één batch, dan wordt
      * er niets toegevoegd. Volgorde van de controles per batch: bestaat de batch, actief lidmaatschap
      * elders, {@code SCREENED}, vastgesteld {@code validationResult} dat geen {@code BLOCKING} is.
+     * <p>
+     * <b>Vergrendeling (S5-b).</b> Slotvolgorde bundel, koppeling, batch: eerst het bundelslot, daarna per batch, in
+     * <b>oplopend id</b> (twee aanvragen met dezelfde batches vergrendelen dan in dezelfde volgorde, geen deadlock),
+     * het batchslot met {@code NOWAIT}. Status en actief lidmaatschap worden pas <b>onder dat slot</b> gecontroleerd.
+     * Is het slot bezet, dan volgt meteen 409 {@link #CODE_BATCH_BEING_PROCESSED}. PostgreSQL breekt de transactie
+     * bij die fout af, dus de vertaling gebeurt in {@link LockFailures#translate} rond de volledige
+     * transactie-aanroep, niet in de callback. Het resultaat staat in oplopende batch-id-volgorde. De bij de
+     * batch horende koppeling wordt hier niet apart vergrendeld: deze aanroep wijzigt geen koppelingsgegevens.
      *
      * @throws NotFoundException        {@link #CODE_BUNDLE_NOT_FOUND}, {@link #CODE_BATCH_NOT_FOUND}
      * @throws ConflictException        {@link #CODE_BUNDLE_NOT_ASSEMBLING}, {@link #CODE_BATCH_ALREADY_IN_BUNDLE},
      *                                  {@link #CODE_BATCH_NOT_BUNDLEABLE}, {@link #CODE_BATCH_VALIDATION_NOT_ESTABLISHED},
-     *                                  {@link #CODE_BATCH_VALIDATION_BLOCKING}
+     *                                  {@link #CODE_BATCH_VALIDATION_BLOCKING}, {@link #CODE_BATCH_BEING_PROCESSED}
      * @throws IllegalArgumentException lege batchlijst, ongeldige {@code addedBy}
      */
     public List<Membership> addBatches(long bundleId, List<Long> batchIds, String addedBy) {
@@ -230,20 +240,23 @@ public class PublicationBundleService {
         if (batchIds == null || batchIds.isEmpty()) {
             throw new IllegalArgumentException("batchIds must not be empty");
         }
-        return transaction.execute(status -> {
+        List<Long> ascending = batchIds.stream().sorted().toList();
+        return LockFailures.translate(() -> transaction.execute(status -> {
             PublicationBundle bundle = requireBundleForUpdate(bundleId);
             requireAssembling(bundle);
-            List<Membership> memberships = new ArrayList<>(batchIds.size());
-            for (Long batchId : batchIds) {
+            List<Membership> memberships = new ArrayList<>(ascending.size());
+            for (Long batchId : ascending) {
                 memberships.add(Membership.of(addOneBatch(bundle, batchId, adder, adderSubject)));
             }
             return memberships;
-        });
+        }), CODE_BATCH_BEING_PROCESSED, "One of the batches " + ascending
+                + " is being processed right now; try again when that processing has finished");
     }
 
     private PublicationBundleBatch addOneBatch(PublicationBundle bundle, long batchId, String addedBy,
                                                String addedBySubject) {
-        ImportBatch batch = batches.findById(batchId)
+        // Slot eerst (NOWAIT), controles daarna: status en lidmaatschap kunnen sinds een eerdere leesactie gewijzigd zijn.
+        ImportBatch batch = batches.findByIdForUpdateNowait(batchId)
                 .orElseThrow(() -> new NotFoundException(CODE_BATCH_NOT_FOUND, "Batch " + batchId + " not found"));
         if (bundleBatches.findByBatchIdAndActiveMarkerIsNotNull(batchId).isPresent()) {
             throw new ConflictException(CODE_BATCH_ALREADY_IN_BUNDLE,
