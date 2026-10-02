@@ -640,7 +640,7 @@ describe('S1-F4 — schrijfdeel van scherm 1a (opvolgrevisie / DRAFT bewerken / 
   // --- E4: mapping/filter verwijderen -----------------------------------------------------------
 
   it('S1-F4.19: een mapping verwijderen slaagt en herlaadt het detail', async () => {
-    const fetchMock = mockFetch((url, init) => {
+    const fetchMock = mockFetch((_url, init) => {
       if ((init?.method ?? 'GET') === 'DELETE') {
         return noContentResponse();
       }
@@ -661,7 +661,7 @@ describe('S1-F4 — schrijfdeel van scherm 1a (opvolgrevisie / DRAFT bewerken / 
   });
 
   it('S1-F4.20: een filter verwijderen gebruikt het filterpad', async () => {
-    const fetchMock = mockFetch((url, init) => {
+    const fetchMock = mockFetch((_url, init) => {
       if ((init?.method ?? 'GET') === 'DELETE') {
         return noContentResponse();
       }
@@ -679,7 +679,7 @@ describe('S1-F4 — schrijfdeel van scherm 1a (opvolgrevisie / DRAFT bewerken / 
   });
 
   it('S1-F4.21: 409 van een bookmarkdeclaratie blijft in de dialoog staan; er is niets verwijderd', async () => {
-    mockFetch((url, init) => {
+    mockFetch((_url, init) => {
       if ((init?.method ?? 'GET') === 'DELETE') {
         return jsonResponse(
           {
@@ -806,7 +806,7 @@ describe('S1-F4 — schrijfdeel van scherm 1a (opvolgrevisie / DRAFT bewerken / 
   });
 
   it('S1-F4.28: met de setup-API-vlag uit (404 zonder code) volgt de eigen melding, niet de generieke', async () => {
-    mockFetch((url, init) => {
+    mockFetch((_url, init) => {
       if ((init?.method ?? 'GET') === 'POST') {
         return new Response(null, { status: 404 });
       }

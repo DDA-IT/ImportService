@@ -22,7 +22,7 @@ describe('Pager', () => {
       </>,
     );
 
-    const selects = screen.getAllByLabelText('Per pagina') as HTMLSelectElement[];
+    const selects = screen.getAllByLabelText('Per pagina') as [HTMLSelectElement, HTMLSelectElement];
     expect(selects).toHaveLength(2);
     expect(selects[0].id).not.toBe(selects[1].id);
     expect(selects[0].value).toBe('25');

@@ -7,7 +7,7 @@
  * eigen flag-uit-melding verschijnt bij een 404-zonder-code in plaats van de generieke foutmelding.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';

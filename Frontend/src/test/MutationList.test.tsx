@@ -303,7 +303,7 @@ describe('MutationList', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Afkeuren' }));
 
     await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
-    expect(run.mock.calls[0]?.[1]).toEqual({ actor: 'An Beslisser', reason: 'prijs klopt niet' });
+    expect((run.mock.calls[0] as unknown[] | undefined)?.[1]).toEqual({ actor: 'An Beslisser', reason: 'prijs klopt niet' });
     await waitFor(() => expect(onAfterAction).toHaveBeenCalledTimes(1));
     // De huidige pagina wordt opnieuw geladen: het antwoord van de server is de enige bron (§5).
     await waitFor(() => expect(calls.length).toBeGreaterThan(callsBefore));

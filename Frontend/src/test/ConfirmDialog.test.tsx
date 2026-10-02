@@ -58,7 +58,7 @@ describe('ConfirmDialog', () => {
   });
 
   it('T4.3: zonder weergavenaam toont de dialoog enkel de gebruikersnaam', () => {
-    renderDialog({ reasonRequirement: 'none' }, { username: 'jan.peeters', subject: 's', displayName: null });
+    renderDialog({ reasonRequirement: 'none' }, { username: 'jan.peeters', subject: 's', displayName: null, permissions: [] });
 
     expect(screen.getByTestId('confirm-dialog-actor')).toHaveTextContent('U tekent als jan.peeters');
     expect(screen.getByTestId('confirm-dialog-actor')).not.toHaveTextContent('(');

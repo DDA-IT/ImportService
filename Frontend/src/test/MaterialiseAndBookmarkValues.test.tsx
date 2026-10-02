@@ -425,7 +425,7 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
   });
 
   it('S1-F3.9: "expliciet leegmaken" verstuurt een lege waarde en schakelt het tekstveld uit', async () => {
-    const fetchMock = mockFetch((url, init) => {
+    const fetchMock = mockFetch((_url, init) => {
       if ((init?.method ?? 'GET') === 'PUT') {
         return jsonResponse({ ...LINK_BOOKMARK_VALUES.values[0], valueText: '', filled: false });
       }
@@ -448,7 +448,7 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
   });
 
   it('S1-F3.10: 409 LINK_BOOKMARK_LOCKED_BY_OPEN_BATCH staat bij de actie zelf, met de specifieke melding', async () => {
-    mockFetch((url, init) => {
+    mockFetch((_url, init) => {
       if ((init?.method ?? 'GET') === 'PUT') {
         return jsonResponse(
           {

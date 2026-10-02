@@ -1,4 +1,4 @@
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 
 // jsdom implementeert <dialog>.showModal()/close() niet (of onvolledig). Minimale polyfill: showModal
 // zet het `open`-attribuut (zodat de dialoog toegankelijk/zichtbaar is voor Testing Library), close

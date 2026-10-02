@@ -178,7 +178,7 @@ describe('UploadPage', () => {
     const label = screen.getByText('Dubbele artikelen');
     expect(label.closest('div')).toHaveTextContent('—');
 
-    const [[url, init]] = posts();
+    const [[url, init]] = posts() as [[string, RequestInit]];
     expect(url).toContain('/tasks/5/deliveries');
     expect(init.method).toBe('POST');
     const body = init.body as FormData;
@@ -471,7 +471,7 @@ describe('UploadPage', () => {
       expect(result).toHaveTextContent('Levering aangemaakt en gecontroleerd');
       expect(screen.getByTestId('upload-result-reference')).toHaveTextContent('ABP4-2026.csv#deadbeef0001');
 
-      const [[url, init]] = localSourcePosts();
+      const [[url, init]] = localSourcePosts() as [[string, RequestInit]];
       expect(url).toContain('/tasks/5/deliveries/local-source');
       expect(init.method).toBe('POST');
       expect(new Headers(init.headers).get('Content-Type')).toBe('application/json');

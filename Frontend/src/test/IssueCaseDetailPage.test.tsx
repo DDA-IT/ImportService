@@ -182,12 +182,12 @@ describe('IssueCaseDetailPage', () => {
     const events = await screen.findByTestId('issue-case-events');
     const rows = within(events).getAllByRole('row');
     // rows[0] is de header
-    expect(within(rows[1]).getByText('Aangemaakt')).toBeInTheDocument();
-    expect(within(rows[1]).getByText('Het systeem')).toBeInTheDocument();
-    expect(within(rows[2]).getByText('Status gewijzigd')).toBeInTheDocument();
-    expect(within(rows[2]).getByText('Wacht op beoordeling')).toBeInTheDocument();
-    expect(within(rows[2]).getByText('Afgewezen')).toBeInTheDocument();
-    expect(within(rows[2]).getByText('Een mens')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('Aangemaakt')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('Het systeem')).toBeInTheDocument();
+    expect(within(rows[2]!).getByText('Status gewijzigd')).toBeInTheDocument();
+    expect(within(rows[2]!).getByText('Wacht op beoordeling')).toBeInTheDocument();
+    expect(within(rows[2]!).getByText('Afgewezen')).toBeInTheDocument();
+    expect(within(rows[2]!).getByText('Een mens')).toBeInTheDocument();
   });
 
   it('S2-F1.9: onbekend geval toont ISSUE_CASE_NOT_FOUND leesbaar', async () => {

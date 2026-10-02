@@ -537,7 +537,7 @@ describe('NT-10 — scherm "Controleren"', () => {
     expect(result).toHaveTextContent('Er is niets opgeslagen of gepubliceerd');
 
     // Het verzoek: multipart met het bestand en de koppeling, naar de gekozen conceptversie.
-    const [[url, init]] = calls('/revisions/100/trial-reads', 'POST');
+    const [[url, init]] = calls('/revisions/100/trial-reads', 'POST') as [[string, RequestInit | undefined]];
     expect(url).toContain('/revisions/100/trial-reads');
     const body = init!.body as FormData;
     expect((body.get('file') as File).name).toBe('prijzen.csv');
@@ -806,7 +806,7 @@ describe('NT-10 — scherm "Controleren"', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'In gebruik nemen' }));
 
     await waitFor(() => expect(screen.getByTestId('readiness-summary')).toHaveTextContent('Klaar voor leveringen'));
-    const [[, init]] = calls('/setup/revisions/100/activate', 'POST');
+    const [[, init]] = calls('/setup/revisions/100/activate', 'POST') as [[string, RequestInit | undefined]];
     expect(JSON.parse(String(init!.body))).toEqual({ approvedBy: 'An Beslisser' });
     expect(calls('/import-links/501/readiness')).toHaveLength(2);
     expect(screen.getByTestId('check-activated')).toBeInTheDocument();

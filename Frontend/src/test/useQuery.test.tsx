@@ -24,12 +24,12 @@ function deferred(): Deferred {
 describe('useQuery', () => {
   it('sleutelwissel: data is null tot het antwoord voor de nieuwe sleutel binnen is', async () => {
     const pending: Record<string, Deferred> = { a: deferred(), b: deferred() };
-    const { result, rerender } = renderHook(({ k }) => useQuery(k, () => pending[k].promise), {
+    const { result, rerender } = renderHook(({ k }) => useQuery(k, () => pending[k]!.promise), {
       initialProps: { k: 'a' },
     });
 
     await act(async () => {
-      pending.a.resolve('antwoord-a');
+      pending.a!.resolve('antwoord-a');
     });
     await waitFor(() => expect(result.current.data).toBe('antwoord-a'));
 
@@ -38,7 +38,7 @@ describe('useQuery', () => {
     expect(result.current.data).toBeNull();
 
     await act(async () => {
-      pending.b.resolve('antwoord-b');
+      pending.b!.resolve('antwoord-b');
     });
     await waitFor(() => expect(result.current.data).toBe('antwoord-b'));
   });
@@ -77,7 +77,7 @@ describe('useQuery', () => {
       }), { initialProps: { k: 'a' } });
 
     await act(async () => {
-      calls[0].resolve('a1');
+      calls[0]!.resolve('a1');
     });
     await waitFor(() => expect(result.current.data).toBe('a1'));
 
