@@ -2530,3 +2530,15 @@ drop-in en tests zoeken op `getByRole('status')`). De backdrop in `App.tsx` krij
 sluitlaag; het toetsenbord sluit het menu via de focusbare menuknop en de navigatielinks. Geen Escape-handler — kandidaat voor later.
 exhaustive-deps: 0 vondsten. oxlint: 0 fouten, 14 bestaande waarschuwingen.
 **Bron:** hoofdsessie (technische lintkeuze, geen §6) / bouwer-voorstel
+
+## 2026-10-02 — Stap 6, 8 en 9 uitgevoerd
+**Vraag:** Zijn de DB-checks, de frontend-opruiming en de opsplitsingen afgerond en geverifieerd?
+**Beslissing:** Ja, op branch `verbeteringen-stap-6-8-9`, één commit per story (S8-c en S8-d samen: zelfde bestanden). Volledige ronde
+`run-full-tests.ps1 -Module Web`: **162 klassen, 2012 tests, 0 gefaald**. Frontend: `tsc -b` schoon (incl. tests), oxlint 0 fouten, vitest 644/644.
+Aanvaarde invullingen: Button-modifier `selected`; hash-knop niet meer monospace; in BatchActions is "Opnemen in bundel" primair en
+"Aanvaarden als nulmeting" secundair (visueel na te kijken door de mens); `PriceControl` en `Context.mutationContext()` package-private (enkel
+zichtbaarheid); `cells.tsx` met bestandsbrede `only-export-components`-onderdrukking met reden.
+**Incident:** een eerste volledige ronde gaf 109 fouten (`NoClassDefFoundError` op Domain-klassen, Mockito "Could not modify all classes") zonder
+codewijziging; de herhaling was groen. Waarschijnlijke oorzaak: IntelliJ bouwt mee in `target/classes` — niet bewezen.
+**Nog open bij de mens:** visuele controle van de knoppen; push + PR van deze branch; stap 7 (operationeel).
+**Bron:** hoofdsessie na verificatie
