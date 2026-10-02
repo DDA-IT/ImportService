@@ -31,6 +31,7 @@ import { INVULPUNT, INVULPUNT_CAP, INVULPUNTEN, INVULPUNTEN_CAP } from '../../te
 import { FlagOffNotice } from '../setup/FlagOffNotice.tsx';
 import { isSetupApiDisabledError, SETUP_API_DISABLED_MESSAGE } from './setupApiFlag.ts';
 import styles from './LinkBookmarkValuesSection.module.css';
+import { formatDateTime } from '../../format.ts';
 
 /** NT-11c: gewoon Nederlands i.p.v. "wees"; de waarde blijft enkel bewaard als historiek en wordt nooit toegepast. */
 const ORPHAN_REASON =
@@ -245,7 +246,7 @@ export function LinkBookmarkValuesSection({ linkId, linkCode }: LinkBookmarkValu
                   {row.updatedBy !== null && (
                     <p className={styles.previous}>
                       Laatst gewijzigd door {row.updatedBy}
-                      {row.updatedAt !== null ? ` op ${new Date(row.updatedAt).toLocaleString('nl-BE')}` : ''}.
+                      {row.updatedAt !== null ? ` op ${formatDateTime(row.updatedAt)}` : ''}.
                     </p>
                   )}
                   <BookmarkValueEditor linkId={linkId} row={row} onSaved={query.reload} />

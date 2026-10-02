@@ -23,10 +23,7 @@ import type { TermDomain } from '../../terms/index.ts';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
 import styles from './BundleDecisionsTab.module.css';
-
-function formatDateTime(iso: string | null): string {
-  return iso === null ? '—' : new Date(iso).toLocaleString('nl-BE');
-}
+import { formatDateTime } from '../../format.ts';
 
 /**
  * Bevriezen en annuleren gaan over de status van de bundel; alle andere beslissingen (ook de automatische

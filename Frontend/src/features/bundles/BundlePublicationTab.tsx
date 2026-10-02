@@ -26,9 +26,11 @@ import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
 import { term } from '../../terms/index.ts';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
-import { abortRunGate, gateTitle, publicationRunGate } from './bundlePolicy.ts';
+import { gateTitle } from '../../actor/gate.ts';
+import { abortRunGate, publicationRunGate } from './bundlePolicy.ts';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
 import styles from './BundlePublicationTab.module.css';
+import { formatDateTime } from '../../format.ts';
 
 /** "—" met een tooltip voor een niet-vastgestelde teller (`null`), nooit `0`. */
 function Count({ value }: { value: number | null }) {
@@ -40,10 +42,6 @@ function Count({ value }: { value: number | null }) {
     );
   }
   return <>{value}</>;
-}
-
-function formatDateTime(iso: string | null): string {
-  return iso === null ? '—' : new Date(iso).toLocaleString('nl-BE');
 }
 
 export function BundlePublicationTab() {

@@ -25,7 +25,7 @@ import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
-import { gateTitle } from '../../terms/gateTitle.ts';
+import { gateTitle } from '../../actor/gate.ts';
 import { term } from '../../terms/index.ts';
 import {
   issueCaseActionGate,

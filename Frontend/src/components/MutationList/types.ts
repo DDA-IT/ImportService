@@ -14,6 +14,7 @@
  */
 
 import type { ReactNode } from 'react';
+import type { Gate } from '../../actor/gate.ts';
 import type { MutationActionType, MutationRow, MutationStatus, PageResult } from '../../api/types.ts';
 
 /**
@@ -73,13 +74,6 @@ export type MutationSource = {
   fetchPage: (query: MutationQuery, signal: AbortSignal) => Promise<PageResult<MutationRow>>;
   supportedFilters: ReadonlyArray<MutationFilterName>;
 };
-
-/**
- * Mag deze actie op deze rij? Structureel gelijk aan `features/bundles/bundlePolicy.ts`, met opzet:
- * `components/` mag niet uit `features/` importeren (§2 regel 1), maar een poort uit `bundlePolicy`
- * past hier zonder omzetting in.
- */
-export type Gate = { allowed: true } | { allowed: false; reason: string; code?: string };
 
 /** Eén actie per rij. Het component weet niet wat de actie doet, alleen hoe ze bevestigd wordt. */
 export type MutationRowAction = {

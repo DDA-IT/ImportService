@@ -22,11 +22,13 @@ import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { Term } from '../../terms/Term.tsx';
 import { term } from '../../terms/index.ts';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
-import { bundleActionGate, gateTitle } from './bundlePolicy.ts';
+import { gateTitle } from '../../actor/gate.ts';
+import { bundleActionGate } from './bundlePolicy.ts';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
 import { CancelDialog } from './CancelDialog.tsx';
 import { FreezeDialog } from './FreezeDialog.tsx';
 import styles from './BundleOverviewTab.module.css';
+import { formatDateTime } from '../../format.ts';
 
 /** "—" met een tooltip voor een niet-vastgestelde teller (`null`), nooit `0` (§9.3). */
 function Count({ value }: { value: number | null }) {
@@ -38,10 +40,6 @@ function Count({ value }: { value: number | null }) {
     );
   }
   return <>{value}</>;
-}
-
-function formatDateTime(iso: string | null): string {
-  return iso === null ? '—' : new Date(iso).toLocaleString('nl-BE');
 }
 
 type OpenDialog = 'freeze' | 'cancel' | null;

@@ -36,7 +36,8 @@ import { useAction } from '../../hooks/useAction.ts';
 import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
 import { Term } from '../../terms/Term.tsx';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
-import { gateTitle, groupDecisionGate } from './bundlePolicy.ts';
+import { gateTitle } from '../../actor/gate.ts';
+import { groupDecisionGate } from './bundlePolicy.ts';
 import { toDecisionFilter } from './groupDecisionFilter.ts';
 import styles from './GroupDecisionDialog.module.css';
 

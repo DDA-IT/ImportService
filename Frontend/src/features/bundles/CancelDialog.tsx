@@ -23,6 +23,7 @@ import { term } from '../../terms/index.ts';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { cancelGate } from './bundlePolicy.ts';
 import styles from './ClosingDialogs.module.css';
+import { formatDateTime } from '../../format.ts';
 
 export type CancelDialogProps = {
   bundle: BundleDetail;
@@ -34,10 +35,6 @@ export type CancelDialogProps = {
 
 function mutations(count: number): string {
   return `${count} ${count === 1 ? 'mutatie' : 'mutaties'}`;
-}
-
-function formatDateTime(iso: string | null): string {
-  return iso === null ? '—' : new Date(iso).toLocaleString('nl-BE');
 }
 
 function resultMessage(result: BundleDetail): string {

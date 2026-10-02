@@ -10,6 +10,7 @@
 
 import { PERMISSION_APPROVE, PERMISSION_MANAGE, PERMISSION_READ, type Permission } from '../api/types';
 import { useActor } from './ActorContext';
+import { ALLOWED, denied, type Gate } from './gate';
 
 const LABELS: Record<Permission, string> = {
   [PERMISSION_READ]: 'Lezen',
@@ -22,18 +23,16 @@ export function missingPermissionReason(permission: Permission): string {
   return `U heeft het recht '${LABELS[permission]}' (${permission}) niet.`;
 }
 
-export type PermissionGate = { allowed: true } | { allowed: false; reason: string };
-
 /**
- * Poort voor één recht. Structureel gelijk aan `Gate` uit `bundlePolicy.ts`, zodat ze samengesteld kan worden:
+ * Poort voor één recht. Dezelfde `Gate` als de toestandspoorten, zodat ze samengesteld kan worden:
  * de rechtcheck komt eerst (zoals de server: recht vóór toestand).
  */
-export function usePermissionGate(permission: Permission): PermissionGate {
+export function usePermissionGate(permission: Permission): Gate {
   const { can } = useActor();
-  return can(permission) ? { allowed: true } : { allowed: false, reason: missingPermissionReason(permission) };
+  return can(permission) ? ALLOWED : denied(missingPermissionReason(permission));
 }
 
 /** Een ontbrekend recht wint van de toestandspoort (recht eerst); heeft de gebruiker het recht, dan geldt `gate`. */
-export function withPermission<G extends PermissionGate>(permission: PermissionGate, gate: G): PermissionGate | G {
+export function withPermission<G extends Gate>(permission: Gate, gate: G): Gate | G {
   return permission.allowed ? gate : permission;
 }

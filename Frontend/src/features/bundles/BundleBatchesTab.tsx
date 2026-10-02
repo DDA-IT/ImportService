@@ -22,13 +22,11 @@ import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
-import { bundleActionGate, gateTitle } from './bundlePolicy.ts';
+import { gateTitle } from '../../actor/gate.ts';
+import { bundleActionGate } from './bundlePolicy.ts';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
 import styles from './BundleBatchesTab.module.css';
-
-function formatDateTime(iso: string | null): string {
-  return iso === null ? '—' : new Date(iso).toLocaleString('nl-BE');
-}
+import { formatDateTime } from '../../format.ts';
 
 function Count({ value }: { value: number | null }) {
   if (value === null) {

@@ -24,8 +24,9 @@ import { BatchActions } from './BatchActions.tsx';
 import { BatchDeliverySection } from './BatchDeliverySection.tsx';
 import { BatchIssueGroupsSection } from './BatchIssueGroupsSection.tsx';
 import { BatchIssuesSection } from './BatchIssuesSection.tsx';
-import { CounterLabel, Count, formatDateTime } from './format.tsx';
+import { CounterLabel, Count } from './format.tsx';
 import styles from './BatchDetailPage.module.css';
+import { formatDateTime } from '../../format.ts';
 
 function Fact({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (

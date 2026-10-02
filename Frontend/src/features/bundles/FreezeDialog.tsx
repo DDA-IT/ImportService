@@ -38,6 +38,7 @@ import { term } from '../../terms/index.ts';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { freezeBlockers, freezeGate } from './bundlePolicy.ts';
 import styles from './ClosingDialogs.module.css';
+import { formatDateTime } from '../../format.ts';
 
 export type FreezeDialogProps = {
   bundle: BundleDetail;
@@ -52,10 +53,6 @@ export type FreezeDialogProps = {
 
 function mutations(count: number): string {
   return `${count} ${count === 1 ? 'mutatie' : 'mutaties'}`;
-}
-
-function formatDateTime(iso: string | null): string {
-  return iso === null ? '—' : new Date(iso).toLocaleString('nl-BE');
 }
 
 /** Wat de gebruiker na het antwoord te zien krijgt; nooit "gelukt" als de server iets anders toont. */

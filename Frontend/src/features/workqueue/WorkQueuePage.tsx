@@ -26,6 +26,7 @@ import { Term } from '../../terms/Term.tsx';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { term } from '../../terms/index.ts';
 import styles from './WorkQueuePage.module.css';
+import { formatDateTime } from '../../format.ts';
 
 const NO_STATUS_FILTER = '';
 const NO_VALIDATION_FILTER = '';
@@ -47,10 +48,6 @@ function Count({ value }: { value: number | null }) {
     );
   }
   return <>{value}</>;
-}
-
-function formatDateTime(iso: string | null): string {
-  return iso === null ? '—' : new Date(iso).toLocaleString('nl-BE');
 }
 
 /** "YYYY-MM-DD" (uit een `<input type="date">`) naar het begin van die dag in UTC. */

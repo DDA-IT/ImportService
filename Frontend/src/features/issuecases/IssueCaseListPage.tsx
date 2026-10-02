@@ -24,6 +24,7 @@ import { Term } from '../../terms/Term.tsx';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { DICTIONARY, term } from '../../terms/index.ts';
 import styles from './IssueCaseListPage.module.css';
+import { formatDateTime } from '../../format.ts';
 
 /**
  * De keuzelijst "Soort vaststelling" (NT-11c): de Nederlandse woorden uit het woordenboek, alfabetisch; de waarde
@@ -40,10 +41,6 @@ const NO_IMPORT_LINK_FILTER = '';
 type StatusFilter = IssueCaseStatus | typeof NO_STATUS_FILTER;
 type SeverityFilter = RowIssueSeverity | typeof NO_SEVERITY_FILTER;
 type ImportLinkFilter = number | typeof NO_IMPORT_LINK_FILTER;
-
-function formatDateTime(iso: string | null): string {
-  return iso === null ? '—' : new Date(iso).toLocaleString('nl-BE');
-}
 
 /** "YYYY-MM-DD" (uit een `<input type="date">`) naar het begin van die dag in UTC. */
 function dateInputToInstantStart(value: string): string | undefined {

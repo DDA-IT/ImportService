@@ -25,15 +25,8 @@
  */
 
 import type { RevisionStatus } from '../../api/types.ts';
+import { ALLOWED, denied, type Gate } from '../../actor/gate.ts';
 import { term } from '../../terms/index.ts';
-
-export type Gate = { allowed: true } | { allowed: false; reason: string; code?: string };
-
-const ALLOWED: Gate = { allowed: true };
-
-function denied(reason: string, code?: string): Gate {
-  return code === undefined ? { allowed: false, reason } : { allowed: false, reason, code };
-}
 
 function statusWord(status: RevisionStatus): string {
   return term('revisionStatus', status).label;

@@ -42,6 +42,7 @@ import { Term } from '../../terms/Term.tsx';
 import { DICTIONARY, term } from '../../terms/index.ts';
 import type { MutationFilter, MutationListProps, MutationQuery, MutationRowAction } from './types.ts';
 import styles from './MutationList.module.css';
+import { formatDateTime } from '../../format.ts';
 
 /** De redenen uit het woordenboek, in de volgorde daarvan: de keuzelijst van het filter "Statusreden" (NT-11b). */
 const STATUS_REASON_CODES: readonly string[] = Object.keys(DICTIONARY.mutationStatusReason);
@@ -67,7 +68,7 @@ function count(value: number | null) {
 }
 
 function dateTime(value: string | null) {
-  return value === null ? <Dash /> : <>{new Date(value).toLocaleString('nl-BE')}</>;
+  return value === null ? <Dash /> : <>{formatDateTime(value)}</>;
 }
 
 /**

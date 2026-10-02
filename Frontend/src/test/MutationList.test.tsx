@@ -7,13 +7,14 @@
  * Gedekt: normaal scenario, `null` wordt "—" en nooit 0, paginering, filters belanden in de juiste
  * `MutationQuery`-velden, een niet-ondersteund filter wordt niet getoond én niet meegestuurd
  * (bundelbron vs. batchbron), klikken op `identityHash` zet het filter, een poort met
- * `allowed: false` levert een uitgeschakelde knop mét reden, een actie krijgt actor + reden en daarna
+ * een geweigerde poort levert een uitgeschakelde knop mét reden, een actie krijgt actor + reden en daarna
  * volgt `onAfterAction`, een dubbele bevestiging vuurt niet twee keer, en een foutcode blijft zichtbaar
  * via de bestaande errors-laag.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { denied } from '../actor/gate';
 import { ActorProvider } from '../actor/ActorContext';
 import { TEST_IDENTITY } from './testIdentity';
 import { ApiError } from '../api/http';
@@ -265,7 +266,7 @@ describe('MutationList', () => {
       label: 'Goedkeuren',
       variant: 'primary',
       reasonRequirement: () => 'optional',
-      gate: () => ({ allowed: false, reason: 'Geblokkeerd door een kritiek identiteitsincident.' }),
+      gate: () => denied('Geblokkeerd door een kritiek identiteitsincident.'),
       run: () => Promise.resolve(),
     };
     const { source } = fakeSource(page([mutation({ status: 'BLOCKED' })]));

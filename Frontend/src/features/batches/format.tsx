@@ -21,7 +21,3 @@ export function Count({ value }: { value: number | null }) {
 export function CounterLabel({ counter }: { counter: string }) {
   return <Term domain="batchCounter" code={counter} />;
 }
-
-export function formatDateTime(iso: string | null): string {
-  return iso === null ? '—' : new Date(iso).toLocaleString('nl-BE');
-}

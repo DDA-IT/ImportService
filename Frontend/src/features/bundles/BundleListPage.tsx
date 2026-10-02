@@ -22,6 +22,7 @@ import { term } from '../../terms/index.ts';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { CreateBundleForm } from './CreateBundleForm.tsx';
 import styles from './BundleListPage.module.css';
+import { formatDateTime } from '../../format.ts';
 
 const NO_STATUS_FILTER = '';
 type StatusFilter = PublicationBundleStatus | typeof NO_STATUS_FILTER;
@@ -39,10 +40,6 @@ function Count({ value }: { value: number | null }) {
     );
   }
   return <>{value}</>;
-}
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('nl-BE');
 }
 
 const COLUMNS: readonly DataTableColumn<BundleSummary>[] = [

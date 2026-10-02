@@ -22,6 +22,7 @@ import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { IssueCaseActions } from './IssueCaseActions.tsx';
 import styles from './IssueCaseDetailPage.module.css';
+import { formatDateTime } from '../../format.ts';
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -30,10 +31,6 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
       <dd>{children}</dd>
     </div>
   );
-}
-
-function formatDateTime(iso: string | null): string {
-  return iso === null ? '—' : new Date(iso).toLocaleString('nl-BE');
 }
 
 function CaseOverview({ issueCase }: { issueCase: IssueCaseRow }) {

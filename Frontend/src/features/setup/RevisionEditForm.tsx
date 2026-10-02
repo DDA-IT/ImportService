@@ -53,7 +53,7 @@ import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { Field } from '../../components/Field.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
-import { gateTitle } from '../../terms/gateTitle.ts';
+import { gateTitle } from '../../actor/gate.ts';
 import { term, termLabel } from '../../terms/index.ts';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { FlagOffNotice } from './FlagOffNotice.tsx';

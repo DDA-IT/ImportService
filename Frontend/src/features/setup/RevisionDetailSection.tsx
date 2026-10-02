@@ -35,7 +35,7 @@ import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
-import { gateTitle } from '../../terms/gateTitle.ts';
+import { gateTitle } from '../../actor/gate.ts';
 import { termLabel } from '../../terms/index.ts';
 import { INVULPUNT, INVULPUNT_CAP, INVULPUNTEN } from '../../terms/wording.ts';
 import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
@@ -46,6 +46,7 @@ import { RevisionEditForm } from './RevisionEditForm.tsx';
 import { editGate } from './revisionPolicy.ts';
 import { isSetupApiDisabledError, SETUP_WRITE_API_DISABLED_MESSAGE } from './setupWriteFlag.ts';
 import styles from './RevisionDetailSection.module.css';
+import { formatDateTime } from '../../format.ts';
 
 const BOOKMARK_BOUNDARY_TEXT =
   `Gedeclareerde ${INVULPUNTEN} zijn hier bewust alleen-lezen: dit scherm voegt er geen toe, wijzigt en ` +
@@ -65,10 +66,6 @@ function show(value: string | number | null): string {
 
 function bool(value: boolean): string {
   return value ? 'ja' : 'nee';
-}
-
-function dateTime(iso: string | null): string {
-  return iso === null ? '—' : new Date(iso).toLocaleString('nl-BE');
 }
 
 /** Eén regel van het overzicht: het Nederlandse woord (met uitleg in de tooltip) en de waarde. */
@@ -333,10 +330,10 @@ function RevisionSummary({ revision }: { revision: RevisionDetail }) {
 
       <h5 className={styles.groupTitle}>Herkomst en goedkeuring</h5>
       <dl className={styles.figures}>
-        <Row label="Aangemaakt op" value={dateTime(revision.createdAt)} />
+        <Row label="Aangemaakt op" value={formatDateTime(revision.createdAt)} />
         <Row label="Aangemaakt door" value={show(revision.createdBy)} />
-        <Row label="Laatst gewijzigd op" value={dateTime(revision.updatedAt)} />
-        <Row label="Goedgekeurd op" value={dateTime(revision.approvedAt)} />
+        <Row label="Laatst gewijzigd op" value={formatDateTime(revision.updatedAt)} />
+        <Row label="Goedgekeurd op" value={formatDateTime(revision.approvedAt)} />
         <Row label="Goedgekeurd door" value={show(revision.approvedBy)} />
       </dl>
 
@@ -503,7 +500,7 @@ function ChildRows({ revision, onChanged }: { revision: RevisionDetail; onChange
                   <Term domain="bookmarkDataType" code={value.dataType} unknownLabel="Ander soort waarde" />
                 </span>
                 <span>
-                  ingevuld door {show(value.filledBy)} op {dateTime(value.filledAt)}
+                  ingevuld door {show(value.filledBy)} op {formatDateTime(value.filledAt)}
                 </span>
               </li>
             ))}

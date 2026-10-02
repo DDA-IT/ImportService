@@ -13,8 +13,9 @@ import type { DeliveryFileView } from '../../api/types.ts';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
-import { Count, formatDateTime } from './format.tsx';
+import { Count } from './format.tsx';
 import styles from './BatchDetailPage.module.css';
+import { formatDateTime } from '../../format.ts';
 
 const FILE_COLUMNS: readonly DataTableColumn<DeliveryFileView>[] = [
   { key: 'sequenceNumber', header: '#', render: (f) => f.sequenceNumber, align: 'right' },

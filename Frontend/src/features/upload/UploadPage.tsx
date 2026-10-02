@@ -38,6 +38,7 @@ import { Count, CounterLabel } from '../batches/format.tsx';
 import { linkCheckHref } from '../setup/check/linkCheck.ts';
 import { deriveDeliveryReference, MAX_DELIVERY_REFERENCE_LENGTH } from './deliveryReference.ts';
 import styles from './UploadPage.module.css';
+import { formatDateTime } from '../../format.ts';
 
 const MAX_FILE_NAME_LENGTH = 500;
 const NO_TASK = '';
@@ -394,7 +395,7 @@ export function UploadPage() {
                 {localSourceFiles.data.files.map((entry) => (
                   <option key={entry.fileName} value={entry.fileName}>
                     {entry.fileName} — {formatByteSize(entry.byteSize)} —{' '}
-                    {new Date(entry.lastModifiedAt).toLocaleString()}
+                    {formatDateTime(entry.lastModifiedAt)}
                   </option>
                 ))}
               </select>

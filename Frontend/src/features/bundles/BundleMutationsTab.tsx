@@ -30,6 +30,7 @@ import { mutationDecisionGate } from './bundlePolicy.ts';
 import { GroupDecisionDialog } from './GroupDecisionDialog.tsx';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
 import styles from './BundleMutationsTab.module.css';
+import { formatDateTime } from '../../format.ts';
 
 function formatAmount(value: number | null, currency: string | null): string {
   if (value === null) {
@@ -54,7 +55,7 @@ function DecisionBody({ row, revision }: { row: MutationRow; revision: boolean }
       {revision && (
         <p className={styles.warning}>
           U keert een eerdere beslissing van {row.decidedBy ?? 'onbekend'} van{' '}
-          {row.decidedAt === null ? 'onbekend tijdstip' : new Date(row.decidedAt).toLocaleString('nl-BE')} om.
+          {row.decidedAt === null ? 'onbekend tijdstip' : formatDateTime(row.decidedAt)} om.
           Beide beslissingen blijven in het register staan. Een reden is daarom verplicht.
         </p>
       )}

@@ -26,6 +26,7 @@ import { Field } from '../../components/Field.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { term } from '../../terms/index.ts';
 import styles from './CreateBundleForm.module.css';
+import { formatDateTime } from '../../format.ts';
 
 export type CreateBundleFormProps = {
   /** Aangeroepen na een geslaagde `POST /bundles` (ook bij de idempotente hervinding van een bestaande
@@ -202,7 +203,7 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
         <p className={`${styles.notice} ${styles.reused}`} role="status">
           Deze bundelreferentie bestond al: <strong>{outcome.bundle.bundleReference}</strong>{' '}
           (aangemaakt door {outcome.bundle.createdBy} op{' '}
-          {new Date(outcome.bundle.createdAt).toLocaleString('nl-BE')}). Er is geen nieuwe bundel
+          {formatDateTime(outcome.bundle.createdAt)}). Er is geen nieuwe bundel
           aangemaakt.
         </p>
       )}

@@ -31,7 +31,7 @@ import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
-import { gateTitle } from '../../terms/gateTitle.ts';
+import { gateTitle } from '../../actor/gate.ts';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
 import { activateGate } from './revisionPolicy.ts';
 import { isSetupApiDisabledError, SETUP_WRITE_API_DISABLED_MESSAGE } from './setupWriteFlag.ts';

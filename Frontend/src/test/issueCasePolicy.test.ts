@@ -11,7 +11,7 @@ import {
   issueCaseTargetStatus,
 } from '../features/issuecases/issueCasePolicy.ts';
 import { ISSUE_CASE_STATUSES, type IssueCaseStatus } from '../api/types.ts';
-import { gateTitle } from '../terms/gateTitle.ts';
+import { gateTitle } from '../actor/gate.ts';
 import { term } from '../terms/index.ts';
 
 describe('issueCaseActionGate — §4 statusmatrix', () => {

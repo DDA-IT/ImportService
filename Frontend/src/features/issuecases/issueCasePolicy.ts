@@ -11,22 +11,11 @@
  */
 
 import type { IssueCaseStatus } from '../../api/types.ts';
+import { ALLOWED, denied, type Gate } from '../../actor/gate.ts';
 import { term } from '../../terms/index.ts';
-
-/**
- * `code` is de stabiele technische code van de weigering (V7, NT-11c: altijd opvraagbaar, nooit in `reason`); de
- * knop toont hem klein in de tooltip via `gateTitle` uit `terms/gateTitle.ts`.
- */
-export type Gate = { allowed: true } | { allowed: false; reason: string; code?: string };
-
-const ALLOWED: Gate = { allowed: true };
 
 /** De technische code van de server bij een niet-toegestane statusovergang van een behandelgeval. */
 export const TRANSITION_NOT_ALLOWED_CODE = 'ISSUE_CASE_TRANSITION_NOT_ALLOWED';
-
-function denied(reason: string, code?: string): Gate {
-  return code === undefined ? { allowed: false, reason } : { allowed: false, reason, code };
-}
 
 /** De drie menselijke acties uit §4; "Heropenen" dekt alle drie de heropeningsovergangen met één knop. */
 export const ISSUE_CASE_ACTIONS = ['CORRECT', 'REJECT', 'REOPEN'] as const;
