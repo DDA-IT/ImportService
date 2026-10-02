@@ -163,7 +163,7 @@ export function ActorProvider({ children, identity, onRestorePath }: ActorProvid
         setState({ status: 'error', error: apiError });
       });
     return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- enkel bij opstart (en "Opnieuw proberen") laden
+    // oxlint-disable-next-line react/exhaustive-deps -- enkel bij opstart (en "Opnieuw proberen") laden; `identity` en `onRestorePath` ontbreken bewust
   }, [attempt]);
 
   const reauthenticate = useCallback(() => {

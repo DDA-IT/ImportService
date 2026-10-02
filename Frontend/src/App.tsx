@@ -24,6 +24,7 @@ function App() {
 
   return (
     <div className={styles.shell}>
+      {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- muis-only sluitlaag; het toetsenbord sluit het menu via de focusbare knop "Menu openen of sluiten" (aria-expanded) en via de navigatielinks */}
       {menuOpen && <div className={styles.backdrop} data-testid="nav-backdrop" onClick={() => setMenuOpen(false)} />}
       <aside className={`${styles.sidebar} ${menuOpen ? styles.sidebarOpen : ''}`}>
         <h1 className={styles.title}>CatalogImport</h1>

@@ -2522,3 +2522,11 @@ corrigeren naar `is true`. Stap 8 en 9: invulling door een denker-subagent, apar
   `descriptionForm.ts`; S9-e `MutationList` → `mutationQuery.ts` + `cells.tsx`. Blijven: SftpConnector, TemplateMaterialisationService,
   ImportMappingConfigFactory, TrialReadService, MaterialiseForm, UploadPage, TrialReadResultView, SetupOverviewPage, RevisionDetailSection.
 **Bron:** denker-zwaar + mens (V1) / analyse ImportService 2026-10-01
+
+## 2026-10-02 — S8-b: lintbeslissingen
+**Vraag:** Hoe omgaan met de 30 nieuwe jsx-a11y-vondsten?
+**Beslissing:** `jsx-a11y/prefer-tag-over-role` uit (`role="status"`/`role="group"` op een div is geldige ARIA; `<output>`/`<fieldset>` zijn geen
+drop-in en tests zoeken op `getByRole('status')`). De backdrop in `App.tsx` krijgt een onderdrukking met reden: het is een extra muis-only
+sluitlaag; het toetsenbord sluit het menu via de focusbare menuknop en de navigatielinks. Geen Escape-handler — kandidaat voor later.
+exhaustive-deps: 0 vondsten. oxlint: 0 fouten, 14 bestaande waarschuwingen.
+**Bron:** hoofdsessie (technische lintkeuze, geen §6) / bouwer-voorstel

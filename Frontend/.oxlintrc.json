@@ -1,8 +1,11 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
+  "plugins": ["react", "typescript", "oxc", "jsx-a11y"],
   "rules": {
     "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "error",
+    // role="status"/"group" op een div is geldige ARIA; <output>/<fieldset> zijn geen drop-in (andere stijl/semantiek)
+    "jsx-a11y/prefer-tag-over-role": "off",
     "react/only-export-components": ["warn", { "allowConstantExport": true }]
   }
 }
