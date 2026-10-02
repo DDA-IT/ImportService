@@ -1,5 +1,8 @@
 package be.dda.catalogimport.dao;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -49,10 +52,11 @@ import org.springframework.stereotype.Repository;
  * across all past and present bundle memberships are complete and recorded.
  *
  * <h2>Read-only, no service coupling</h2>
- * This DAO is a query-only guard for staging cleanup. There is <b>no delete</b> here, no scheduler,
- * no @Scheduled task, no coupling to existing business flows. It is the <b>only permitted</b> check
- * to determine eligibility for a future delete operation. The only current permitted use of this DAO
- * is to query purgeable batches for audit and monitoring purposes.
+ * This DAO is a query-only guard for staging cleanup. There is <b>no delete</b> here. It is the <b>only
+ * permitted</b> check to determine eligibility for a delete operation. Since stap 7 (docs/decisions.md 2026-10-02
+ * "Stap 7 uitgewerkt", S7-P2) its only deleting consumer is {@code StagingPurgeService}, which selects candidates
+ * with {@link #findStagingPurgeCandidates(Instant)} (the guard narrowed to the purge policy) and rechecks
+ * {@link #isPurgeable(long)} under the batch row lock; the delete itself lives in {@link StagingPurgeDao}.
  *
  * <h2>Scope and performance</h2>
  * Results are sorted by batch ID (ascending). No pagination is provided: the result set should be
@@ -76,6 +80,23 @@ public class StagingRetentionDao {
      * coupling from the Dao layer to the service/domain layer.
      */
     private static final String TERMINAL_STATUSES = "'FAILED', 'BASELINE_ACCEPTED'";
+
+    /**
+     * Conditions 1 to 3 on alias {@code b} (import_batch). Shared by every query of this guard, so the purge policy
+     * can only narrow it, never widen it.
+     */
+    private static final String GUARD_CONDITIONS = "b.status in (" + TERMINAL_STATUSES + ") "
+            + "  and not exists ("
+            + "    select 1 from publication_bundle_batch pbb "
+            + "    join publication_bundle pb on pb.id = pbb.bundle_id "
+            + "    where pbb.batch_id = b.id "
+            + "      and pbb.active_marker is not null "
+            + "      and pb.status <> 'CANCELLED') "
+            + "  and not exists ("
+            + "    select 1 from publication_bundle_batch pbb2 "
+            + "    join publication_bundle pb2 on pb2.id = pbb2.bundle_id "
+            + "    where pbb2.batch_id = b.id "
+            + "      and pb2.snapshot_hash is null) ";
 
     private final JdbcTemplate jdbc;
 
@@ -104,18 +125,7 @@ public class StagingRetentionDao {
     public List<Long> findPurgeableBatches() {
         return jdbc.queryForList(
                 "select distinct b.id from import_batch b "
-                        + "where b.status in (" + TERMINAL_STATUSES + ") "
-                        + "  and not exists ("
-                        + "    select 1 from publication_bundle_batch pbb "
-                        + "    join publication_bundle pb on pb.id = pbb.bundle_id "
-                        + "    where pbb.batch_id = b.id "
-                        + "      and pbb.active_marker is not null "
-                        + "      and pb.status <> 'CANCELLED') "
-                        + "  and not exists ("
-                        + "    select 1 from publication_bundle_batch pbb2 "
-                        + "    join publication_bundle pb2 on pb2.id = pbb2.bundle_id "
-                        + "    where pbb2.batch_id = b.id "
-                        + "      and pb2.snapshot_hash is null) "
+                        + "where " + GUARD_CONDITIONS
                         + "order by b.id asc",
                 Long.class);
     }
@@ -133,21 +143,39 @@ public class StagingRetentionDao {
                 "select count(*) > 0 from ("
                         + "select 1 from import_batch b "
                         + "where b.id = ? "
-                        + "  and b.status in (" + TERMINAL_STATUSES + ") "
-                        + "  and not exists ("
-                        + "    select 1 from publication_bundle_batch pbb "
-                        + "    join publication_bundle pb on pb.id = pbb.bundle_id "
-                        + "    where pbb.batch_id = b.id "
-                        + "      and pbb.active_marker is not null "
-                        + "      and pb.status <> 'CANCELLED') "
-                        + "  and not exists ("
-                        + "    select 1 from publication_bundle_batch pbb2 "
-                        + "    join publication_bundle pb2 on pb2.id = pbb2.bundle_id "
-                        + "    where pbb2.batch_id = b.id "
-                        + "      and pb2.snapshot_hash is null) "
+                        + "  and " + GUARD_CONDITIONS
                         + ") t",
                 Boolean.class,
                 batchId);
         return exists != null && exists;
+    }
+
+    /**
+     * Candidates of the staging purge (stap 7, S7-P2): the guard above, narrowed to the purge policy decided by the
+     * mens (docs/decisions.md 2026-10-02 "Stap 7 uitgewerkt"):
+     * <ul>
+     *   <li>status {@code BASELINE_ACCEPTED} only ({@code FAILED} passes the guard but is not purged in stap 7);</li>
+     *   <li>{@code baseline_accepted_at} strictly before {@code acceptedBefore} (now minus the retention period); a
+     *       batch without an acceptance timestamp is never a candidate;</li>
+     *   <li>{@code staging_purged_at is null} (changeset 019): an already purged batch is never selected again.</li>
+     * </ul>
+     * Read-only and without locks: the caller must lock the batch row and recheck before deleting anything.
+     *
+     * @return candidate batch IDs, ascending (the lock order for batches)
+     */
+    public List<Long> findStagingPurgeCandidates(Instant acceptedBefore) {
+        if (acceptedBefore == null) {
+            throw new IllegalArgumentException("acceptedBefore is required");
+        }
+        return jdbc.queryForList(
+                "select b.id from import_batch b "
+                        + "where b.status = 'BASELINE_ACCEPTED' "
+                        + "  and b.staging_purged_at is null "
+                        + "  and b.baseline_accepted_at is not null "
+                        + "  and b.baseline_accepted_at < ? "
+                        + "  and " + GUARD_CONDITIONS
+                        + "order by b.id asc",
+                Long.class,
+                OffsetDateTime.ofInstant(acceptedBefore, ZoneOffset.UTC));
     }
 }
