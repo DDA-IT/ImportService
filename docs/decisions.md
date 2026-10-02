@@ -2550,3 +2550,26 @@ analyse: actuator/health toevoegen (config en security veronderstellen `/actuato
 productie-artefact, een retentie-/purgeontwerp voor staging en row-issues, en een asynchrone screening agenderen (enkel ontwerp/planning).
 Invulling door een denker-subagent; keuzes over bewaartermijnen en blootgestelde endpoints gaan naar de mens.
 **Bron:** mens / analyse ImportService 2026-10-01
+
+## 2026-10-02 — Stap 7 uitgewerkt
+**Vraag:** Hoe worden actuator, H2, het default DB-wachtwoord en de staging-opruiming aangepakt?
+**Beslissing:**
+- **S7-a H2:** `com.h2database:h2` volledig uit `Web/pom.xml` (niets gebruikt het); H2-changesets (`dbms:h2`) blijven ongemoeid.
+- **S7-b wachtwoord:** default in `application.yml` geschrapt (`${CATALOG_DB_PASSWORD}`); profielen local/demo/ewoutdev en de Dao-test-config houden
+  hun waarde; opstartcontrole op een onopgeloste placeholder (patroon OIDC-secret), een expliciet leeg wachtwoord blijft toegelaten.
+  URL/gebruikersnaam houden hun default (V3, aanname hoofdsessie volgens aanbeveling).
+- **S7-c actuator (mens: enkel health):** `spring-boot-starter-actuator`; enkel `health` (+ `liveness`/`readiness`-probes), `show-details`/
+  `show-components: never`, alle andere endpoints niet beschikbaar (`access.default: none`), zelfde poort; `/actuator/info` valt weg uit de
+  permitAll; probepaden expliciet in de permitAll (geen `/actuator/health/**`); diskSpace op `catalogimport.archive.root` (drempel 2GB), readiness
+  = `readinessState,db`; geen Keycloak/SFTP-indicator.
+- **S7-d:** handleiding met read-only SQL om de groei te meten.
+- **Opruiming (mens):** enkel kandidaatstaging van `BASELINE_ACCEPTED`-batches, 7 dagen na aanvaarding (`catalogimport.staging-retention.after`
+  default P7D), via een `@Scheduled`-taak die standaard UIT staat (eigen cron, per omgeving aan te zetten). Per batch batchslot NOWAIT (bezet →
+  overslaan), guard opnieuw onder slot, chunked delete, `import_batch.staging_purged_at` (changeset 019), idempotent. **Row-issues blijven** (BA:
+  issues 7 jaar). Nooit weg: mutaties, bundels/snapshots/runs/artefacten, bronstaat, prijsobservaties, batch/levering/archief, issue cases/groepen,
+  audit-events. SCREENED/BLOCKED niet (later, na meting). Prijshistoriek en archief buiten stap 7 (V7, aanname volgens aanbeveling).
+- **Asynchrone screening:** enkel geagendeerd (202 + polling, opt-in `Prefer: respond-async`), niet gebouwd — wacht op de 1M-prestatietest en
+  productiehosting.
+- Stories: S7-a, S7-b, S7-c, S7-d, S7-P1 (019 + domeinveld), S7-P2 (Dao + `StagingPurgeService`), S7-P3 (geplande taak), S7-P4 (`stagingPurgedAt`
+  additief op het batch-detail + frontend). Eén commit per story.
+**Bron:** denker-zwaar + mens (actuator, retentie, trigger, row-issues) / BA §16.7, analyse 2026-10-01
