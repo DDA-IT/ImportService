@@ -1,18 +1,33 @@
 package be.dda.catalogimport.dao;
 
 import be.dda.catalogimport.domain.ImportLink;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 
 public interface ImportLinkRepository extends JpaRepository<ImportLink, Long> {
 
     Optional<ImportLink> findByCode(String code);
+
+    /**
+     * De koppeling met een schrijfslot tot het einde van de transactie, zonder te wachten (S5-a): bezet slot geeft
+     * meteen een lock-fout ({@code FOR UPDATE NOWAIT}, hint {@code jakarta.persistence.lock.timeout = 0}). Zie
+     * {@link ImportBatchRepository#findByIdForUpdateNowait} voor de afhandeling van die fout en de slotvolgorde
+     * (koppeling vóór batch).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "0"))
+    @Query("select l from ImportLink l where l.id = :id")
+    Optional<ImportLink> findByIdForUpdateNowait(@Param("id") Long id);
 
     List<ImportLink> findByImportDefinitionId(Long importDefinitionId);
 

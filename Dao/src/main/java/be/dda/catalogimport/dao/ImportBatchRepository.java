@@ -4,6 +4,7 @@ import be.dda.catalogimport.domain.ImportBatch;
 import be.dda.catalogimport.domain.ImportBatchStatus;
 import be.dda.catalogimport.domain.ValidationResult;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -14,6 +15,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 
 public interface ImportBatchRepository extends JpaRepository<ImportBatch, Long> {
@@ -59,6 +61,19 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select b from ImportBatch b where b.id = :id")
     Optional<ImportBatch> findByIdForUpdate(@Param("id") Long id);
+
+    /**
+     * Zoals {@link #findByIdForUpdate}, maar zonder te wachten (S5-a): is het rijslot bezet, dan volgt meteen een
+     * lock-fout in plaats van een blokkade. De hint {@code jakarta.persistence.lock.timeout = 0} maakt er voor
+     * PostgreSQL {@code FOR UPDATE NOWAIT} van (SQLState 55P03, in Spring vertaald naar een
+     * {@code PessimisticLockingFailureException}/{@code CannotAcquireLockException}). PostgreSQL breekt de lopende
+     * transactie daarna af: de aanroeper moet de fout buiten de transactie vertalen
+     * ({@code LockFailures} in de servicelaag). Slotvolgorde: bundel, run, koppeling(en), batch(es) op oplopend id.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "0"))
+    @Query("select b from ImportBatch b where b.id = :id")
+    Optional<ImportBatch> findByIdForUpdateNowait(@Param("id") Long id);
 
     /**
      * Fencing van de verwerkingsclaim (stap 4, changeset 017): ververst het levensteken enkel als de batch nog
