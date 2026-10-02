@@ -24,9 +24,7 @@ import * as setupCreateApi from '../../../api/setupCreate.ts';
 import {
   IDENTITY_PROFILE_KINDS,
   PERMISSION_MANAGE,
-  type CreateRevisionRequest,
   type DefinitionRow,
-  type IdentityProfileKind,
   type RevisionRow,
 } from '../../../api/types.ts';
 import { Field } from '../../../components/Field.tsx';
@@ -34,109 +32,30 @@ import { Term } from '../../../terms/Term.tsx';
 import { term } from '../../../terms/index.ts';
 import { findDefinitionByCode, findLatestRevision, loadRevisionsOf, latestRevision } from './lookup.ts';
 import { ExistingChoice, StepError } from './StepFeedback.tsx';
-import { fieldMessage, fieldOfError, optional, toApiError, useStepSubmit } from './stepSubmit.ts';
+import { fieldMessage, fieldOfError, toApiError, useStepSubmit } from './stepSubmit.ts';
+import {
+  CHARSET_OPTIONS,
+  DEFAULT_THRESHOLDS,
+  DELIMITER_OPTIONS,
+  INITIAL,
+  MAX_CHARSET,
+  MAX_CODE,
+  MAX_FIELD_REFERENCE,
+  MAX_NAME,
+  OTHER,
+  QUOTE_OPTIONS,
+  revisionBody,
+  validateDescription,
+  type ColumnKey,
+  type Errors,
+  type FormKey,
+  type FormState,
+  type TextKey,
+} from './descriptionForm.ts';
 import { toWizardRevision } from './wizardMappers.ts';
 import type { WizardDefinition, WizardOrganisation, WizardRevision } from './wizardTypes.ts';
 import button from '../../../components/Button.module.css';
 import styles from './Wizard.module.css';
-
-const MAX_CODE = 50;
-const MAX_NAME = 200;
-const MAX_FIELD_REFERENCE = 200;
-const MAX_CHARSET = 40;
-const OTHER = 'OTHER';
-const NO_QUOTE = 'NONE';
-
-/** Herkenningsversie standaard 2 (aanname A3, `docs/decisions.md` 2026-09-30). */
-export const DEFAULT_CANONICALISATION_VERSION = '2';
-
-/**
- * Tab staat hier bewust niet tussen: de server trimt het scheidingsteken (`SetupService.requireText`) en
- * leest een tab daardoor als "leeg" (400). Zie de ontdekking in het rapport van NT-6.
- */
-const DELIMITER_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: ';', label: '; (puntkomma)' },
-  { value: ',', label: ', (komma)' },
-  { value: '|', label: '| (verticale streep)' },
-  { value: OTHER, label: 'Ander teken…' },
-];
-
-const QUOTE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: '"', label: '" (dubbel aanhalingsteken)' },
-  { value: "'", label: "' (enkel aanhalingsteken)" },
-  { value: NO_QUOTE, label: 'Geen aanhalingsteken' },
-];
-
-const CHARSET_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: 'UTF-8', label: 'UTF-8 (meest gebruikt)' },
-  { value: 'windows-1252', label: 'Windows (westers)' },
-  { value: 'ISO-8859-1', label: 'Latin-1' },
-  { value: 'ISO-8859-15', label: 'Latin-9 (met euroteken)' },
-  { value: OTHER, label: 'Andere…' },
-];
-
-/**
- * De standaarddrempels van een nieuwe versie, ter info (bron: `ImportDefinitionRevision`, beslissingslog
- * 20/09 "drempels zijn altijd een percentage"). Ze worden **niet** verstuurd; de slotstap toont de werkelijk
- * bewaarde waarden uit de server.
- */
-const DEFAULT_THRESHOLDS: ReadonlyArray<{ key: string; value: string }> = [
-  { key: 'creationThresholdSharePercent', value: '1 %' },
-  { key: 'maxCriticalSharePercent', value: '1 %' },
-  { key: 'maxRejectedSharePercent', value: 'niet ingesteld' },
-  { key: 'bulkIncidentSharePercent', value: '1 %' },
-];
-
-type ColumnKey =
-  | 'supplierField'
-  | 'supplierGroupField'
-  | 'supplierReferenceField'
-  | 'discountCodeField'
-  | 'basePriceField'
-  | 'descriptionField'
-  | 'currencyField';
-
-type FormState = {
-  definitionCode: string;
-  definitionName: string;
-  delimiterChoice: string;
-  delimiterOther: string;
-  quoteChoice: string;
-  charsetChoice: string;
-  charsetOther: string;
-  hasHeader: boolean;
-  headerLineNumber: string;
-  fieldReferenceKind: 'HEADER_NAME' | 'COLUMN_INDEX';
-  identityProfileKind: IdentityProfileKind | '';
-  canonicalisationVersion: string;
-} & Record<ColumnKey, string>;
-
-type FormKey = keyof FormState;
-/** De velden met vrije tekst (geen keuzelijst met vaste waarden en geen vinkje). */
-type TextKey = { [K in FormKey]: string extends FormState[K] ? K : never }[FormKey];
-type Errors = Partial<Record<FormKey, string>>;
-
-const INITIAL: FormState = {
-  definitionCode: '',
-  definitionName: '',
-  delimiterChoice: '',
-  delimiterOther: '',
-  quoteChoice: '"',
-  charsetChoice: 'UTF-8',
-  charsetOther: '',
-  hasHeader: true,
-  headerLineNumber: '1',
-  fieldReferenceKind: 'HEADER_NAME',
-  identityProfileKind: '',
-  canonicalisationVersion: DEFAULT_CANONICALISATION_VERSION,
-  supplierField: '',
-  supplierGroupField: '',
-  supplierReferenceField: '',
-  discountCodeField: '',
-  basePriceField: '',
-  descriptionField: '',
-  currencyField: '',
-};
 
 /** Serverveld (voorvoegsel van de NT-3-code) → formulierveld. */
 const DEFINITION_PREFIXES = { CODE: 'definitionCode', NAME: 'definitionName' } as const;
@@ -165,10 +84,6 @@ export type DescriptionStepProps = {
   onDefinition: (definition: WizardDefinition, notice: string | null) => void;
   onRevision: (revision: WizardRevision, notice: string | null) => void;
 };
-
-function isColumnIndex(value: string): boolean {
-  return /^\d+$/.test(value) && Number(value) >= 1;
-}
 
 export function DescriptionStep({ organisation, definition, onDefinition, onRevision }: DescriptionStepProps) {
   const { actor } = useActor();
@@ -213,116 +128,19 @@ export function DescriptionStep({ organisation, definition, onDefinition, onRevi
     submit.clearError();
   }
 
-  function delimiterValue(): string {
-    return form.delimiterChoice === OTHER ? form.delimiterOther : form.delimiterChoice;
-  }
-
-  function charsetValue(): string {
-    return (form.charsetChoice === OTHER ? form.charsetOther : form.charsetChoice).trim();
-  }
-
-  function quoteValue(): string {
-    return form.quoteChoice === NO_QUOTE ? '' : form.quoteChoice;
-  }
-
-  function validate(): Errors {
-    const problems: Errors = {};
-    if (definition === null) {
-      const code = form.definitionCode.trim();
-      const name = form.definitionName.trim();
-      if (code === '') problems.definitionCode = 'Vul een code in.';
-      else if (code.length > MAX_CODE) problems.definitionCode = `Een code heeft hoogstens ${MAX_CODE} tekens.`;
-      if (name === '') problems.definitionName = 'Vul een naam in.';
-      else if (name.length > MAX_NAME) problems.definitionName = `Een naam heeft hoogstens ${MAX_NAME} tekens.`;
-    }
-
-    const delimiter = delimiterValue();
-    if (form.delimiterChoice === '') {
-      problems.delimiterChoice = 'Kies het teken tussen de kolommen.';
-    } else if (delimiter.trim().length !== 1 || delimiter.length !== 1) {
-      problems.delimiterChoice = 'Een scheidingsteken is precies één zichtbaar teken.';
-    }
-    const quote = quoteValue();
-    if (quote !== '' && quote === delimiter) {
-      problems.quoteChoice = 'Het aanhalingsteken moet verschillen van het scheidingsteken.';
-    }
-    const charset = charsetValue();
-    if (charset === '') problems.charsetChoice = 'Kies een tekenset.';
-    else if (charset.length > MAX_CHARSET) problems.charsetChoice = `Hoogstens ${MAX_CHARSET} tekens.`;
-
-    if (form.hasHeader) {
-      const line = form.headerLineNumber.trim();
-      if (!/^\d+$/.test(line) || Number(line) < 1) {
-        problems.headerLineNumber = 'Vul een geheel getal van 1 of meer in. Er wordt niets op 1 gezet.';
-      }
-    } else if (form.fieldReferenceKind === 'HEADER_NAME') {
-      problems.fieldReferenceKind = 'Zonder kopregel kunnen kolommen enkel op positie herkend worden.';
-    }
-
-    if (form.identityProfileKind === '') {
-      problems.identityProfileKind = 'Kies hoe een artikel herkend wordt; deze keuze heeft bewust geen standaard.';
-    }
-
-    const required: ColumnKey[] = ['supplierField', 'supplierGroupField', 'supplierReferenceField', 'basePriceField'];
-    if (fourPart) required.push('discountCodeField');
-    const optionalColumns: ColumnKey[] = ['descriptionField', 'currencyField'];
-    for (const key of [...required, ...optionalColumns]) {
-      const value = form[key].trim();
-      if (value === '') {
-        if (required.includes(key)) problems[key] = 'Deze kolom is verplicht.';
-        continue;
-      }
-      if (value.length > MAX_FIELD_REFERENCE) {
-        problems[key] = `Hoogstens ${MAX_FIELD_REFERENCE} tekens.`;
-      } else if (byPosition && !isColumnIndex(value)) {
-        problems[key] = 'Vul het volgnummer van de kolom in (1 = de eerste kolom).';
-      }
-    }
-
-    if (!/^[12]$/.test(form.canonicalisationVersion)) {
-      problems.canonicalisationVersion = 'Kies versie 1 of 2.';
-    }
-    return problems;
-  }
-
-  function revisionBody(): CreateRevisionRequest {
-    return {
-      delimiter: delimiterValue(),
-      quoteChar: quoteValue(),
-      charset: charsetValue(),
-      hasHeader: form.hasHeader,
-      // Zonder kopregel gaat er geen regelnummer mee: de server laat dan zijn eigen waarde staan.
-      headerLineNumber: form.hasHeader ? Number(form.headerLineNumber.trim()) : null,
-      fieldReferenceKind: form.fieldReferenceKind,
-      expectedColumnCount: null,
-      identityProfileKind: form.identityProfileKind as IdentityProfileKind,
-      supplierField: form.supplierField.trim(),
-      supplierGroupField: form.supplierGroupField.trim(),
-      supplierReferenceField: form.supplierReferenceField.trim(),
-      // Driedelig = de kortingscode is niet gemapt (`null`), nooit een lege tekst (§14.23.3).
-      discountCodeField: fourPart ? form.discountCodeField.trim() : null,
-      basePriceField: form.basePriceField.trim(),
-      descriptionField: optional(form.descriptionField),
-      currencyField: optional(form.currencyField),
-      canonicalisationVersion: Number(form.canonicalisationVersion),
-      changeReason: null,
-      createdBy: actor,
-    };
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!manageGate.allowed || submit.pending) {
       return;
     }
-    const problems = validate();
+    const problems = validateDescription(form, definition !== null);
     setErrors(problems);
     if (Object.keys(problems).length > 0) {
       return;
     }
     setCandidate(null);
     let recheck = submit.recheckFirst;
-    const body = revisionBody();
+    const body = revisionBody(form, actor);
     await submit.run(async () => {
       let current = definition;
       if (current === null) {
