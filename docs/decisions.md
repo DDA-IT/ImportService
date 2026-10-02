@@ -2573,3 +2573,14 @@ Invulling door een denker-subagent; keuzes over bewaartermijnen en blootgestelde
 - Stories: S7-a, S7-b, S7-c, S7-d, S7-P1 (019 + domeinveld), S7-P2 (Dao + `StagingPurgeService`), S7-P3 (geplande taak), S7-P4 (`stagingPurgedAt`
   additief op het batch-detail + frontend). Eén commit per story.
 **Bron:** denker-zwaar + mens (actuator, retentie, trigger, row-issues) / BA §16.7, analyse 2026-10-01
+
+## 2026-10-02 — Stap 7 uitgevoerd
+**Vraag:** Zijn H2, het default-wachtwoord, de actuator en de staging-opruiming afgerond en geverifieerd?
+**Beslissing:** Ja, op branch `verbeteringen-stap-7` (S7-a+b+c samen: zelfde pom/yml/README; S7-d; S7-P1..P4 elk apart). Volledige ronde
+`run-full-tests.ps1 -Module Web`: **170 klassen, 2061 tests, 0 gefaald**. Aanvaarde invullingen: `/actuator/health` toont naast `status` ook de
+groepsnamen (geen inhoud); `ck_import_batch_staging_purged` laat de marker enkel toe bij BASELINE_ACCEPTED (strenger dan de guard, die ook
+FAILED toelaat); `@EnableScheduling` staat op de conditionele `StagingPurgeSchedule`-configuratie (een tweede geplande taak vraagt een verplaatsing).
+**Ontdekt:** er bestaat geen uitvoerbaar deploy-artefact (geen fat jar; de app draait via `spring-boot:run`).
+**Nog open bij de mens:** push + PR; opruimtaak per omgeving bewust aanzetten; asynchrone screening (na 1M-prestatietest en productiehosting);
+deploy-artefact (repackage) als aparte keuze.
+**Bron:** hoofdsessie na verificatie
