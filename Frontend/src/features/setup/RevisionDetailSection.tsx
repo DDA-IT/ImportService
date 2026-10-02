@@ -45,6 +45,7 @@ import { FlagOffNotice } from './FlagOffNotice.tsx';
 import { RevisionEditForm } from './RevisionEditForm.tsx';
 import { editGate } from './revisionPolicy.ts';
 import { isSetupApiDisabledError, SETUP_WRITE_API_DISABLED_MESSAGE } from './setupWriteFlag.ts';
+import button from '../../components/Button.module.css';
 import styles from './RevisionDetailSection.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -141,7 +142,7 @@ function DeleteChildRowAction({
     <>
       <button
         type="button"
-        className={styles.deleteButton}
+        className={`${button.dangerOutlined} ${button.small} ${styles.deleteButton}`}
         disabled={!gate.allowed}
         title={gateTitle(gate)}
         data-testid={testId}

@@ -14,6 +14,7 @@ import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { loadAllTemplates } from '../setup/wizard/lookup.ts';
 import { wizardHref } from '../setup/wizard/wizardTypes.ts';
+import button from '../../components/Button.module.css';
 import styles from './MaterialiseForm.module.css';
 
 export type AddTaskAfterMaterialiseProps = {
@@ -43,19 +44,19 @@ export function AddTaskAfterMaterialise({ templateId, definitionId, linkId, link
         </p>
       )}
       {!manageGate.allowed ? (
-        <button type="button" className={styles.submit} disabled title={manageGate.reason} data-testid="add-task-button">
+        <button type="button" className={button.primary} disabled title={manageGate.reason} data-testid="add-task-button">
           Taak toevoegen
         </button>
       ) : organisationId !== null ? (
         <Link
-          className={styles.submit}
+          className={button.primary}
           to={wizardHref({ organisationId, definitionId, linkId })}
           data-testid="add-task-button"
         >
           Taak toevoegen
         </Link>
       ) : (
-        <button type="button" className={styles.submit} disabled data-testid="add-task-button">
+        <button type="button" className={button.primary} disabled data-testid="add-task-button">
           Taak toevoegen
         </button>
       )}

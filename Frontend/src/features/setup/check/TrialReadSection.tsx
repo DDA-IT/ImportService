@@ -18,6 +18,7 @@ import { useAction } from '../../../hooks/useAction.ts';
 import { Term } from '../../../terms/Term.tsx';
 import { ElapsedTimer } from '../../upload/UploadPage.tsx';
 import { TrialReadResultView } from './TrialReadResultView.tsx';
+import button from '../../../components/Button.module.css';
 import styles from './LinkCheckPage.module.css';
 
 export type TrialReadSectionProps = {
@@ -106,7 +107,7 @@ export function TrialReadSection({ linkId, revision, result, onResult }: TrialRe
         <div className={styles.actions}>
           <button
             type="submit"
-            className={styles.submit}
+            className={button.primary}
             disabled={runner.pending || blockedReason !== null}
             title={blockedReason ?? undefined}
             aria-describedby={blockedReason === null ? undefined : 'trial-blocked-reason'}

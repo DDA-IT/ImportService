@@ -37,6 +37,7 @@ import { IssueCodeTerm } from '../../terms/IssueCodeTerm.tsx';
 import { Count, CounterLabel } from '../batches/format.tsx';
 import { linkCheckHref } from '../setup/check/linkCheck.ts';
 import { deriveDeliveryReference, MAX_DELIVERY_REFERENCE_LENGTH } from './deliveryReference.ts';
+import button from '../../components/Button.module.css';
 import styles from './UploadPage.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -500,7 +501,7 @@ export function UploadPage() {
         )}
         <button
           type="submit"
-          className={styles.submit}
+          className={button.primary}
           disabled={pending || deriving || !manageGate.allowed}
           title={manageGate.allowed ? undefined : manageGate.reason}
           aria-describedby={manageGate.allowed ? undefined : 'upload-permission-reason'}

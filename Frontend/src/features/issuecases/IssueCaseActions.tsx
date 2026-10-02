@@ -34,6 +34,7 @@ import {
   issueCaseTargetStatus,
   type IssueCaseAction,
 } from './issueCasePolicy.ts';
+import button from '../../components/Button.module.css';
 import styles from './IssueCaseActions.module.css';
 
 /**
@@ -143,6 +144,7 @@ export function IssueCaseActions({ issueCase, onChanged }: IssueCaseActionsProps
             <button
               key={action}
               type="button"
+              className={button.secondary}
               disabled={!gate.allowed}
               title={gateTitle(gate)}
               onClick={() => setOpenAction(action)}

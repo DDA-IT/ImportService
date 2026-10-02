@@ -25,6 +25,7 @@ import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { gateTitle } from '../../actor/gate.ts';
 import { bundleActionGate } from './bundlePolicy.ts';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
+import button from '../../components/Button.module.css';
 import styles from './BundleBatchesTab.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -167,7 +168,7 @@ export function BundleBatchesTab() {
         row.active ? (
           <button
             type="button"
-            className={styles.rowButton}
+            className={`${button.dangerOutlined} ${button.small}`}
             disabled={!removeGate.allowed}
             title={gateTitle(removeGate)}
             onClick={() => setRemoveTarget(row)}
@@ -283,7 +284,7 @@ export function BundleBatchesTab() {
           {addAction.error !== null && <ErrorBanner error={addAction.error} />}
           <button
             type="button"
-            className={styles.addButton}
+            className={`${button.primary} ${styles.addButton}`}
             disabled={!addGate.allowed || selected.size === 0 || addAction.pending}
             title={gateTitle(addGate)}
             onClick={handleAdd}

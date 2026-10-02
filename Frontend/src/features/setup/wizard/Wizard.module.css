@@ -196,37 +196,6 @@
   align-items: center;
 }
 
-.submit {
-  padding: var(--spacing-2) var(--spacing-4);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: white;
-  font-size: 0.875rem;
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.submit:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.secondary {
-  padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  font: inherit;
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-
-.secondary:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
 .loading {
   color: var(--color-text-secondary);
 }

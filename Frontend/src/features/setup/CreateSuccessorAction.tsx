@@ -33,6 +33,7 @@ import { term } from '../../terms/index.ts';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
 import { successorGate } from './revisionPolicy.ts';
 import { isSetupApiDisabledError, SETUP_WRITE_API_DISABLED_MESSAGE } from './setupWriteFlag.ts';
+import button from '../../components/Button.module.css';
 import styles from './RevisionActions.module.css';
 
 export type CreateSuccessorActionProps = {
@@ -69,7 +70,7 @@ export function CreateSuccessorAction({ revision, onCreated }: CreateSuccessorAc
     <>
       <button
         type="button"
-        className={styles.actionButton}
+        className={`${button.secondary} ${button.small}`}
         disabled={!gate.allowed}
         title={gateTitle(gate)}
         data-testid={`create-successor-${revision.id}`}

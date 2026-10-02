@@ -41,6 +41,7 @@ import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
 import { Term } from '../../terms/Term.tsx';
 import { DICTIONARY, term } from '../../terms/index.ts';
 import type { MutationFilter, MutationListProps, MutationQuery, MutationRowAction } from './types.ts';
+import button from '../Button.module.css';
 import styles from './MutationList.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -333,7 +334,7 @@ export function MutationList({
           return (
             <button
               type="button"
-              className={styles.hashButton}
+              className={`${button.secondary} ${button.small}`}
               title={`Toon alle wijzigingen van dit artikel in één lijst (technische sleutel: ${hash.slice(0, HASH_PREVIEW_LENGTH)}…)`}
               aria-label={`Toon de hele wijzigingsgroep ${hash}`}
               onClick={() => showChangeGroup(hash)}
@@ -383,13 +384,7 @@ export function MutationList({
                 <button
                   key={action.id}
                   type="button"
-                  className={
-                    action.variant === 'danger'
-                      ? styles.dangerButton
-                      : action.variant === 'primary'
-                        ? styles.primaryButton
-                        : styles.neutralButton
-                  }
+                  className={action.variant === 'danger' ? `${button.dangerOutlined} ${button.small}` : `${button.secondary} ${button.small}`}
                   disabled={!gate.allowed}
                   // Een verboden actie wordt uitgeschakeld getoond MET de reden, niet verborgen (§9.1).
                   title={
@@ -512,12 +507,12 @@ export function MutationList({
           </label>
         )}
 
-        <button type="submit" className={styles.filterButton}>
+        <button type="submit" className={button.secondary}>
           Filteren
         </button>
         <button
           type="button"
-          className={styles.filterButton}
+          className={button.secondary}
           onClick={() => applyFilters(EMPTY_FILTERS)}
         >
           Filters wissen

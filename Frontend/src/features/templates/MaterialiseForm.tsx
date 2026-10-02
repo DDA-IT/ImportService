@@ -44,6 +44,7 @@ import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { term, termLabel } from '../../terms/index.ts';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { INVULPUNT, INVULPUNTEN, INVULPUNTEN_CAP } from '../../terms/wording.ts';
+import button from '../../components/Button.module.css';
 import styles from './MaterialiseForm.module.css';
 
 const NO_MODE = '';
@@ -621,7 +622,7 @@ export function MaterialiseForm({
       )}
       <button
         type="submit"
-        className={styles.submit}
+        className={button.primary}
         disabled={pending || !manageGate.allowed}
         title={manageGate.allowed ? undefined : manageGate.reason}
         aria-describedby={manageGate.allowed ? undefined : 'materialise-permission-reason'}

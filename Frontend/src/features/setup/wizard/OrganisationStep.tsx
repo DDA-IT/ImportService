@@ -22,6 +22,7 @@ import { ExistingChoice, StepError } from './StepFeedback.tsx';
 import { fieldMessage, fieldOfError, toApiError, useStepSubmit } from './stepSubmit.ts';
 import { organisationLabel, toWizardOrganisation } from './wizardMappers.ts';
 import type { WizardOrganisation } from './wizardTypes.ts';
+import button from '../../../components/Button.module.css';
 import styles from './Wizard.module.css';
 
 const MAX_CODE = 50;
@@ -190,7 +191,7 @@ export function OrganisationCreateSection({
       <div className={styles.actions}>
         <button
           type="button"
-          className={styles.submit}
+          className={button.primary}
           disabled={submit.pending || !manageGate.allowed}
           title={manageGate.allowed ? undefined : manageGate.reason}
           onClick={() => void handleCreate()}
@@ -284,7 +285,7 @@ export function OrganisationStep({
                 </select>
               </Field>
               <div className={styles.actions}>
-                <button type="button" className={styles.submit} onClick={continueWithExisting}>
+                <button type="button" className={button.primary} onClick={continueWithExisting}>
                   Verder
                 </button>
               </div>

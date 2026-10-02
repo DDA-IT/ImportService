@@ -39,6 +39,7 @@ import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { gateTitle } from '../../actor/gate.ts';
 import { groupDecisionGate } from './bundlePolicy.ts';
 import { toDecisionFilter } from './groupDecisionFilter.ts';
+import button from '../../components/Button.module.css';
 import styles from './GroupDecisionDialog.module.css';
 
 type GroupDecisionKind = 'APPROVE' | 'REJECT';
@@ -191,7 +192,7 @@ export function GroupDecisionDialog({ bundleId, bundleStatus, filter, listedCoun
       <div className={styles.actions}>
         <button
           type="button"
-          className={styles.primaryButton}
+          className={button.secondary}
           disabled={!gate.allowed}
           title={gateTitle(gate)}
           onClick={() => open('APPROVE')}
@@ -200,7 +201,7 @@ export function GroupDecisionDialog({ bundleId, bundleStatus, filter, listedCoun
         </button>
         <button
           type="button"
-          className={styles.dangerButton}
+          className={button.dangerOutlined}
           disabled={!gate.allowed}
           title={gateTitle(gate)}
           onClick={() => open('REJECT')}

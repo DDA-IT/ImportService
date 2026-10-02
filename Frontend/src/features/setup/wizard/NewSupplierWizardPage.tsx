@@ -50,6 +50,7 @@ import {
   type WizardData,
   type WizardStep,
 } from './wizardTypes.ts';
+import button from '../../../components/Button.module.css';
 import styles from './Wizard.module.css';
 
 const ALL_STEPS: WizardStep[] = [1, 2, 3, 4, 5, 6];
@@ -217,7 +218,7 @@ function StartStep({ onOwnDescription, onTemplate }: { onOwnDescription: () => v
             U vult zelf in hoe het bestand eruitziet: scheidingsteken, kolommen en hoe een artikel herkend wordt.
             Geschikt voor een leverancier die rechtstreeks zijn eigen bestand levert.
           </p>
-          <button type="button" className={styles.submit} onClick={onOwnDescription}>
+          <button type="button" className={button.primary} onClick={onOwnDescription}>
             Zelf beschrijven
           </button>
         </div>
@@ -227,7 +228,7 @@ function StartStep({ onOwnDescription, onTemplate }: { onOwnDescription: () => v
             Vertrek van een bestaande, herbruikbare beschrijving van deze organisatie, bijvoorbeeld van een
             aankoopvereniging. De beschrijving, een conceptversie en de koppeling worden in één keer aangemaakt.
           </p>
-          <button type="button" className={styles.submit} onClick={onTemplate}>
+          <button type="button" className={button.primary} onClick={onTemplate}>
             Vanuit een sjabloon van deze leverancier of aankoopvereniging
           </button>
         </div>

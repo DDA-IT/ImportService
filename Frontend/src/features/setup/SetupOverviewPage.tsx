@@ -56,6 +56,7 @@ import { linkCheckHref } from './check/linkCheck.ts';
 import { CreateSuccessorAction } from './CreateSuccessorAction.tsx';
 import { RevisionDetailSection } from './RevisionDetailSection.tsx';
 import { wizardHref } from './wizard/wizardTypes.ts';
+import button from '../../components/Button.module.css';
 import styles from './SetupOverviewPage.module.css';
 
 /** Het servermaximum per pagina voor de takenlijst van één koppeling (een koppeling heeft er maar enkele). */
@@ -63,7 +64,7 @@ const TASKS_PAGE_SIZE = 200;
 
 function ExpandButton({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
   return (
-    <button type="button" className={styles.expandButton} aria-expanded={expanded} onClick={onToggle}>
+    <button type="button" className={`${button.secondary} ${button.small}`} aria-expanded={expanded} onClick={onToggle}>
       {expanded ? '▾ Inklappen' : '▸ Uitklappen'}
     </button>
   );
@@ -86,13 +87,13 @@ function ContinueSetupAction({ href, testId }: { href: string; testId: string })
   const manageGate = usePermissionGate(PERMISSION_MANAGE);
   if (!manageGate.allowed) {
     return (
-      <button type="button" className={styles.expandButton} disabled title={manageGate.reason} data-testid={testId}>
+      <button type="button" className={`${button.secondary} ${button.small}`} disabled title={manageGate.reason} data-testid={testId}>
         Verder inrichten
       </button>
     );
   }
   return (
-    <Link className={styles.expandButton} to={href} data-testid={testId}>
+    <Link className={`${button.secondary} ${button.small}`} to={href} data-testid={testId}>
       Verder inrichten
     </Link>
   );
@@ -106,13 +107,13 @@ function AddTaskAction({ href, testId }: { href: string; testId: string }) {
   const manageGate = usePermissionGate(PERMISSION_MANAGE);
   if (!manageGate.allowed) {
     return (
-      <button type="button" className={styles.expandButton} disabled title={manageGate.reason} data-testid={testId}>
+      <button type="button" className={`${button.secondary} ${button.small}`} disabled title={manageGate.reason} data-testid={testId}>
         Taak toevoegen
       </button>
     );
   }
   return (
-    <Link className={styles.expandButton} to={href} data-testid={testId}>
+    <Link className={`${button.secondary} ${button.small}`} to={href} data-testid={testId}>
       Taak toevoegen
     </Link>
   );
@@ -223,7 +224,7 @@ function ImportLinksList({
                     </span>
                     <span>{link.active ? 'actief' : 'inactief'}</span>
                     <Link
-                      className={styles.expandButton}
+                      className={`${button.secondary} ${button.small}`}
                       to={linkCheckHref({ linkId: link.id, definitionId: link.importDefinitionId })}
                       title="Is deze koppeling klaar? Checklist, proefinlezing en activeren."
                       data-testid={`check-link-${link.id}`}
@@ -292,7 +293,7 @@ function RevisionsList({
                     <StatusBadge status={revision.status} domain="revisionStatus" />
                     <button
                       type="button"
-                      className={styles.expandButton}
+                      className={`${button.secondary} ${button.small}`}
                       aria-expanded={openRevisionId === revision.id}
                       data-testid={`open-revision-${revision.id}`}
                       onClick={() =>
@@ -463,7 +464,7 @@ function NewSupplierButton() {
       <p className={styles.intro}>
         <button
           type="button"
-          className={styles.expandButton}
+          className={`${button.secondary} ${button.small}`}
           disabled
           title={manageGate.reason}
           aria-describedby="new-supplier-blocked"
@@ -479,7 +480,7 @@ function NewSupplierButton() {
   }
   return (
     <p className={styles.intro}>
-      <Link className={styles.expandButton} to="/setup/new" data-testid="new-supplier-button">
+      <Link className={`${button.secondary} ${button.small}`} to="/setup/new" data-testid="new-supplier-button">
         Nieuwe leverancier en taak
       </Link>
     </p>
@@ -512,7 +513,7 @@ function OpenedRevision() {
       <p className={styles.intro}>
         Controleer de versie hieronder en activeer ze met &laquo;Versie activeren&raquo;. Pas daarna kan er op
         de taak een levering opgeladen worden.{' '}
-        <button type="button" className={styles.expandButton} onClick={() => setParams({})}>
+        <button type="button" className={`${button.secondary} ${button.small}`} onClick={() => setParams({})}>
           Sluiten
         </button>
       </p>

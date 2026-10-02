@@ -25,6 +25,7 @@ import { loadAllOrganisations, loadTemplatesOf, LOOKUP_PAGE_SIZE } from './looku
 import { OrganisationCreateSection } from './OrganisationStep.tsx';
 import { organisationLabel } from './wizardMappers.ts';
 import type { WizardOrganisation } from './wizardTypes.ts';
+import button from '../../../components/Button.module.css';
 import styles from './Wizard.module.css';
 
 export type TemplateStepProps = {
@@ -72,7 +73,7 @@ function SupplierChoice({ value, onChange }: { value: string; onChange: (supplie
       {organisations.error !== null && <ErrorBanner error={organisations.error} />}
       {!creating ? (
         <p className={styles.note}>
-          <button type="button" className={styles.secondary} onClick={() => setCreating(true)}>
+          <button type="button" className={button.secondary} onClick={() => setCreating(true)}>
             Nieuwe leverancier aanmaken
           </button>
         </p>
@@ -272,10 +273,10 @@ export function TemplateStep({ organisation, onBack, onOwnDescription, onMateria
       )}
 
       <div className={styles.actions}>
-        <button type="button" className={styles.secondary} onClick={onBack}>
+        <button type="button" className={button.secondary} onClick={onBack}>
           Terug naar het startpunt
         </button>
-        <button type="button" className={styles.secondary} onClick={onOwnDescription}>
+        <button type="button" className={button.secondary} onClick={onOwnDescription}>
           Zelf beschrijven
         </button>
       </div>

@@ -22,6 +22,7 @@ import { ExistingChoice, StepError } from './StepFeedback.tsx';
 import { fieldMessage, fieldOfError, optional, toApiError, useStepSubmit } from './stepSubmit.ts';
 import { organisationLabel, toWizardLink } from './wizardMappers.ts';
 import type { WizardDefinition, WizardLink, WizardOrganisation } from './wizardTypes.ts';
+import button from '../../../components/Button.module.css';
 import styles from './Wizard.module.css';
 
 const MAX_CODE = 50;
@@ -239,7 +240,7 @@ export function LinkStep({ organisation, definition, onLink }: LinkStepProps) {
       {organisations.error !== null && <ErrorBanner error={organisations.error} />}
       {!creatingSupplier ? (
         <p className={styles.note}>
-          <button type="button" className={styles.secondary} onClick={() => setCreatingSupplier(true)}>
+          <button type="button" className={button.secondary} onClick={() => setCreatingSupplier(true)}>
             Nieuwe leverancier aanmaken
           </button>
         </p>
@@ -327,7 +328,7 @@ export function LinkStep({ organisation, definition, onLink }: LinkStepProps) {
       <div className={styles.actions}>
         <button
           type="submit"
-          className={styles.submit}
+          className={button.primary}
           disabled={submit.pending || !manageGate.allowed}
           title={manageGate.allowed ? undefined : manageGate.reason}
         >

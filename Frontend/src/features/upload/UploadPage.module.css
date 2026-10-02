@@ -49,21 +49,6 @@
   font-size: 0.875rem;
 }
 
-.submit {
-  padding: var(--spacing-2) var(--spacing-4);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: white;
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-
-.submit:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
 .progress {
   margin: 0 0 var(--spacing-3) 0;
   padding: var(--spacing-3);

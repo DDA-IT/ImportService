@@ -31,6 +31,7 @@ import { ActivateRevisionAction } from '../ActivateRevisionAction.tsx';
 import { chooseRevision, loadCheckContext } from './linkCheck.ts';
 import { ANCHOR_ACTIVATE, ANCHOR_LINK_VALUES, ReadinessChecklist } from './ReadinessChecklist.tsx';
 import { TrialReadSection } from './TrialReadSection.tsx';
+import button from '../../../components/Button.module.css';
 import styles from './LinkCheckPage.module.css';
 
 function parseId(value: string | null | undefined): number | null {
@@ -147,7 +148,7 @@ function WhatNowSection({ hasActiveRevision }: { hasActiveRevision: boolean }) {
       </p>
       {hasActiveRevision ? (
         <div className={styles.actions}>
-          <Link className={styles.submit} to="/upload" data-testid="what-now-upload">
+          <Link className={button.primary} to="/upload" data-testid="what-now-upload">
             Naar Levering uploaden
           </Link>
         </div>

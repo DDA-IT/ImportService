@@ -37,6 +37,7 @@ import { ExistingChoice, StepError } from './StepFeedback.tsx';
 import { fieldMessage, fieldOfError, optional, toApiError, useStepSubmit } from './stepSubmit.ts';
 import { toWizardRevision } from './wizardMappers.ts';
 import type { WizardDefinition, WizardOrganisation, WizardRevision } from './wizardTypes.ts';
+import button from '../../../components/Button.module.css';
 import styles from './Wizard.module.css';
 
 const MAX_CODE = 50;
@@ -698,7 +699,7 @@ export function DescriptionStep({ organisation, definition, onDefinition, onRevi
       <div className={styles.actions}>
         <button
           type="submit"
-          className={styles.submit}
+          className={button.primary}
           disabled={submit.pending || !manageGate.allowed}
           title={manageGate.allowed ? undefined : manageGate.reason}
         >

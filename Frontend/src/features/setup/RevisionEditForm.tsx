@@ -59,6 +59,7 @@ import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
 import { editGate } from './revisionPolicy.ts';
 import { isSetupApiDisabledError, SETUP_WRITE_API_DISABLED_MESSAGE } from './setupWriteFlag.ts';
+import button from '../../components/Button.module.css';
 import styles from './RevisionEditForm.module.css';
 
 const CANONICALISATION_CODE = 'REVISION_CANONICALISATION_CHANGE_BLOCKED';
@@ -643,7 +644,7 @@ export function RevisionEditForm({ revision, onUpdated }: RevisionEditFormProps)
       )}
       <button
         type="submit"
-        className={styles.submit}
+        className={button.primary}
         disabled={runner.pending || !gate.allowed}
         title={gateTitle(gate)}
         aria-describedby={gate.allowed ? undefined : 'revision-edit-blocked'}

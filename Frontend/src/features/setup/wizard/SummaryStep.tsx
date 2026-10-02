@@ -16,6 +16,7 @@ import { Term } from '../../../terms/Term.tsx';
 import { term } from '../../../terms/index.ts';
 import { linkCheckHref } from '../check/linkCheck.ts';
 import { revisionDetailHref, type WizardData } from './wizardTypes.ts';
+import button from '../../../components/Button.module.css';
 import styles from './Wizard.module.css';
 
 const THRESHOLD_KEYS = [
@@ -108,7 +109,7 @@ export function SummaryStep({ data }: { data: WizardData }) {
           </p>
           <div className={styles.actions}>
             <Link
-              className={styles.submit}
+              className={button.primary}
               to={linkCheckHref({ linkId: link.id, definitionId: definition.id, revisionId: revision.id })}
               data-testid="wizard-next-step"
             >
@@ -122,7 +123,7 @@ export function SummaryStep({ data }: { data: WizardData }) {
             Versie {revision.revisionNumber} is <Term domain="revisionStatus" code={revision.status} />.
           </p>
           <div className={styles.actions}>
-            <Link className={styles.submit} to={revisionDetailHref(definition.id, revision.id)} data-testid="wizard-next-step">
+            <Link className={button.primary} to={revisionDetailHref(definition.id, revision.id)} data-testid="wizard-next-step">
               Bekijk de versie bij Inrichting
             </Link>
             {revision.status === 'ACTIVE' && <Link to="/upload">Naar Levering uploaden</Link>}

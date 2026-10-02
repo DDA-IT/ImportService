@@ -19,6 +19,7 @@ import { TechnicalDetails } from '../../../terms/TechnicalDetails.tsx';
 import { revisionDetailHref, wizardHref } from '../wizard/wizardTypes.ts';
 import { describeFindingField, getSkippedCodes, SKIPPED_CODE, SkippedCauses } from './configFindings.tsx';
 import { describeReadinessCheck } from './linkCheck.ts';
+import button from '../../../components/Button.module.css';
 import styles from './LinkCheckPage.module.css';
 
 /** Ankers op dezelfde pagina waar de oplossing staat. */
@@ -221,7 +222,7 @@ export function ReadinessChecklist({ readiness, context }: ReadinessChecklistPro
       <div className={styles.actions}>
         <button
           type="button"
-          className={styles.secondary}
+          className={`${button.secondary} ${button.small}`}
           onClick={readiness.reload}
           disabled={readiness.loading}
           data-testid="readiness-reload"

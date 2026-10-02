@@ -29,6 +29,7 @@ import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { gateTitle } from '../../actor/gate.ts';
 import { abortRunGate, publicationRunGate } from './bundlePolicy.ts';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
+import button from '../../components/Button.module.css';
 import styles from './BundlePublicationTab.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -165,7 +166,7 @@ export function BundlePublicationTab() {
         <div className={styles.actionRow}>
           <button
             type="button"
-            className={styles.actionButton}
+            className={button.secondary}
             disabled={!startGate.allowed || starting}
             title={gateTitle(startGate)}
             onClick={handleStart}
@@ -211,7 +212,7 @@ export function BundlePublicationTab() {
                   <div className={styles.actionRow}>
                     <button
                       type="button"
-                      className={styles.actionButton}
+                      className={button.secondary}
                       disabled={!abortGate.allowed || abortingRunId === run.id}
                       title={gateTitle(abortGate)}
                       onClick={() => handleAbort(run)}
@@ -247,7 +248,7 @@ export function BundlePublicationTab() {
                   <div className={styles.artifact}>
                     <p>
                       Vingerafdruk van het bestand (SHA-256): <code>{run.artifactSha256}</code>{' '}
-                      <button type="button" className={styles.copyButton} onClick={() => handleCopyHash(run)}>
+                      <button type="button" className={`${button.secondary} ${button.small}`} onClick={() => handleCopyHash(run)}>
                         {copiedRunId === run.id ? 'Gekopieerd' : 'Kopieer de vingerafdruk'}
                       </button>
                     </p>

@@ -41,6 +41,7 @@ import { AddTaskAfterMaterialise } from './AddTaskAfterMaterialise.tsx';
 import { LinkBookmarkValuesSection } from './LinkBookmarkValuesSection.tsx';
 import { MaterialiseForm } from './MaterialiseForm.tsx';
 import { isSetupApiDisabledError, SETUP_API_DISABLED_MESSAGE } from './setupApiFlag.ts';
+import button from '../../components/Button.module.css';
 import styles from './TemplateDetailPage.module.css';
 
 /** Waarom een conceptversie van een sjabloon niet te kiezen is (V7: gewoon Nederlands, geen statuscode). */
@@ -208,7 +209,7 @@ function MaterialisationHistorySection({
                   </span>
                   <button
                     type="button"
-                    className={styles.revisionButton}
+                    className={`${button.secondary} ${button.small}`}
                     data-testid={`show-links-${row.definitionId}`}
                     onClick={() => onShowLinks(row.definitionId)}
                   >
@@ -266,8 +267,8 @@ function DefinitionLinksSection({
                   type="button"
                   className={
                     selectedLinkId === row.id
-                      ? `${styles.revisionButton} ${styles.revisionSelected}`
-                      : styles.revisionButton
+                      ? `${button.secondary} ${button.small} ${button.selected}`
+                      : `${button.secondary} ${button.small}`
                   }
                   data-testid={`select-link-${row.id}`}
                   onClick={() => onSelect({ linkId: row.id, linkCode: row.code })}
@@ -341,8 +342,8 @@ export function TemplateDetailPage() {
                         type="button"
                         className={
                           selectedRevision?.id === revision.id
-                            ? `${styles.revisionButton} ${styles.revisionSelected}`
-                            : styles.revisionButton
+                            ? `${button.secondary} ${button.small} ${button.selected}`
+                            : `${button.secondary} ${button.small}`
                         }
                         disabled={isDraft}
                         title={isDraft ? DRAFT_REASON : undefined}

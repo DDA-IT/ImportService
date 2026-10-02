@@ -30,6 +30,7 @@ import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { INVULPUNT, INVULPUNT_CAP, INVULPUNTEN, INVULPUNTEN_CAP } from '../../terms/wording.ts';
 import { FlagOffNotice } from '../setup/FlagOffNotice.tsx';
 import { isSetupApiDisabledError, SETUP_API_DISABLED_MESSAGE } from './setupApiFlag.ts';
+import button from '../../components/Button.module.css';
 import styles from './LinkBookmarkValuesSection.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -83,7 +84,7 @@ function BookmarkValueEditor({
       <div className={styles.editorRow}>
         <button
           type="button"
-          className={styles.secondaryButton}
+          className={`${button.secondary} ${button.small}`}
           disabled={blockedReason !== null}
           title={blockedReason ?? undefined}
           data-testid={`edit-${row.bookmarkName}`}
@@ -146,7 +147,7 @@ function BookmarkValueEditor({
       <div className={styles.editorActions}>
         <button
           type="button"
-          className={styles.primaryButton}
+          className={`${button.primary} ${button.small}`}
           disabled={pending || permissionReason !== null}
           title={permissionReason ?? undefined}
           data-testid={`save-${row.bookmarkName}`}
@@ -169,7 +170,7 @@ function BookmarkValueEditor({
         </button>
         <button
           type="button"
-          className={styles.secondaryButton}
+          className={`${button.secondary} ${button.small}`}
           onClick={() => {
             reset();
             setOpen(false);

@@ -25,6 +25,7 @@ import { useAction } from '../../hooks/useAction.ts';
 import { Field } from '../../components/Field.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { term } from '../../terms/index.ts';
+import button from '../../components/Button.module.css';
 import styles from './CreateBundleForm.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -220,7 +221,7 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
       )}
       <button
         type="submit"
-        className={styles.submit}
+        className={button.primary}
         disabled={pending || !manageGate.allowed}
         title={manageGate.allowed ? undefined : manageGate.reason}
         aria-describedby={manageGate.allowed ? undefined : 'create-bundle-permission-reason'}

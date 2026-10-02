@@ -13,6 +13,7 @@ import { ExistingChoice, StepError } from './StepFeedback.tsx';
 import { fieldMessage, fieldOfError, toApiError, useStepSubmit } from './stepSubmit.ts';
 import { suggestedTaskName } from './wizardMappers.ts';
 import type { WizardLink, WizardTask } from './wizardTypes.ts';
+import button from '../../../components/Button.module.css';
 import styles from './Wizard.module.css';
 
 const MAX_NAME = 200;
@@ -138,7 +139,7 @@ export function TaskStep({ link, onTask }: TaskStepProps) {
       <div className={styles.actions}>
         <button
           type="submit"
-          className={styles.submit}
+          className={button.primary}
           disabled={submit.pending || !manageGate.allowed}
           title={manageGate.allowed ? undefined : manageGate.reason}
         >

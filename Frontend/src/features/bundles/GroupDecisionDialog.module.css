@@ -59,32 +59,6 @@
   gap: var(--spacing-2);
 }
 
-.primaryButton,
-.dangerButton {
-  padding: var(--spacing-2) var(--spacing-3);
-  border-radius: var(--radius-sm);
-  background: var(--color-background);
-  cursor: pointer;
-}
-
-.primaryButton {
-  border: 1px solid var(--color-primary);
-  color: var(--color-primary);
-}
-
-.dangerButton {
-  border: 1px solid var(--color-danger);
-  color: var(--color-danger);
-}
-
-.primaryButton:disabled,
-.dangerButton:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-  border-color: var(--color-border-dark);
-  color: var(--color-text-secondary);
-}
-
 .dialogBody {
   display: flex;
   flex-direction: column;

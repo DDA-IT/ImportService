@@ -27,6 +27,7 @@ import { bundleActionGate } from './bundlePolicy.ts';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
 import { CancelDialog } from './CancelDialog.tsx';
 import { FreezeDialog } from './FreezeDialog.tsx';
+import button from '../../components/Button.module.css';
 import styles from './BundleOverviewTab.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -168,7 +169,7 @@ export function BundleOverviewTab() {
         {bundle.contentHash !== null && (
           <p className={styles.hash}>
             Vingerafdruk van de bundel: <code>{bundle.contentHash.slice(0, 16)}…</code>{' '}
-            <button type="button" className={styles.copyButton} onClick={handleCopyHash}>
+            <button type="button" className={`${button.secondary} ${button.small}`} onClick={handleCopyHash}>
               {copied ? 'Gekopieerd' : 'Kopieer de volledige vingerafdruk'}
             </button>
           </p>
@@ -211,7 +212,7 @@ export function BundleOverviewTab() {
           <div className={styles.actionRow}>
             <button
               type="button"
-              className={styles.actionButton}
+              className={button.secondary}
               disabled={!freezeGate.allowed}
               title={gateTitle(freezeGate)}
               onClick={() => openDialogFor('freeze')}
@@ -223,7 +224,7 @@ export function BundleOverviewTab() {
           <div className={styles.actionRow}>
             <button
               type="button"
-              className={styles.actionButton}
+              className={button.secondary}
               disabled={!cancelGate.allowed}
               title={gateTitle(cancelGate)}
               onClick={() => openDialogFor('cancel')}

@@ -35,6 +35,7 @@ import { gateTitle } from '../../actor/gate.ts';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
 import { activateGate } from './revisionPolicy.ts';
 import { isSetupApiDisabledError, SETUP_WRITE_API_DISABLED_MESSAGE } from './setupWriteFlag.ts';
+import button from '../../components/Button.module.css';
 import styles from './RevisionActions.module.css';
 
 /**
@@ -99,7 +100,7 @@ export function ActivateRevisionAction({ revision, onActivated, wording, extraWa
     <div className={styles.actionRow}>
       <button
         type="button"
-        className={styles.primaryButton}
+        className={button.primary}
         disabled={!gate.allowed}
         title={gateTitle(gate)}
         data-testid="activate-revision"

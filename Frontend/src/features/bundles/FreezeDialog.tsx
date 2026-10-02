@@ -37,6 +37,7 @@ import { Term } from '../../terms/Term.tsx';
 import { term } from '../../terms/index.ts';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { freezeBlockers, freezeGate } from './bundlePolicy.ts';
+import button from '../../components/Button.module.css';
 import styles from './ClosingDialogs.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -200,7 +201,7 @@ export function FreezeDialog({ bundle, onClose, onFrozen }: FreezeDialogProps) {
           </p>
           <button
             type="button"
-            className={styles.recheckButton}
+            className={`${button.secondary} ${button.small} ${styles.recheckButton}`}
             onClick={preflight.reload}
             disabled={preflight.loading || runner.pending}
           >

@@ -19,6 +19,7 @@ import { ApiError, setPermissionDeniedHandler, setUnauthenticatedHandler } from 
 import * as meApi from '../api/me';
 import type { Permission } from '../api/types';
 import { ErrorBanner } from '../errors/ErrorBanner';
+import button from '../components/Button.module.css';
 
 const OLD_ACTOR_KEY = 'catalogimport.actor';
 const RETURN_TO_KEY = 'catalogimport.returnTo';
@@ -204,6 +205,7 @@ export function ActorProvider({ children, identity, onRestorePath }: ActorProvid
           <ErrorBanner error={state.error} />
           <button
             type="button"
+            className={button.secondary}
             onClick={() => {
               setState({ status: 'loading' });
               setAttempt((n) => n + 1);
@@ -219,6 +221,7 @@ export function ActorProvider({ children, identity, onRestorePath }: ActorProvid
         <ErrorBanner error={state.error} />
         <button
           type="button"
+          className={button.secondary}
           onClick={() => {
             safeStorage(() => sessionStorage.removeItem(LOGIN_ATTEMPT_KEY), undefined);
             goToLogin();

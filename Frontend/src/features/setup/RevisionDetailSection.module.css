@@ -118,23 +118,6 @@
   font-weight: 600;
 }
 
-.deleteButton {
-  margin-left: auto;
-  padding: var(--spacing-1) var(--spacing-2);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-background);
-  color: var(--status-rejected-text);
-  font: inherit;
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-
-.deleteButton:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
 .dialogBody {
   display: flex;
   flex-direction: column;
@@ -157,4 +140,8 @@
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   font-size: 0.875rem;
+}
+
+.deleteButton {
+  margin-left: auto;
 }

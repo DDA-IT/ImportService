@@ -15,6 +15,7 @@ import { describe } from '../../../errors/codes.ts';
 import { ErrorBanner } from '../../../errors/ErrorBanner.tsx';
 import { TechnicalDetails } from '../../../terms/TechnicalDetails.tsx';
 import { isNoAnswer } from './stepSubmit.ts';
+import button from '../../../components/Button.module.css';
 import styles from './Wizard.module.css';
 
 export function StepError({ error, fieldName }: { error: ApiError | null; fieldName: string | null }) {
@@ -55,7 +56,7 @@ export function ExistingChoice({
   return (
     <div className={styles.existing} role="status" data-testid="wizard-existing">
       <div>{children}</div>
-      <button type="button" className={styles.secondary} disabled={disabled} onClick={onContinue}>
+      <button type="button" className={button.secondary} disabled={disabled} onClick={onContinue}>
         Doorgaan met de bestaande
       </button>
     </div>

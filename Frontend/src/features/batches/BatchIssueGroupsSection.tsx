@@ -15,6 +15,7 @@ import { IssueCodeTerm } from '../../terms/IssueCodeTerm.tsx';
 import { Term } from '../../terms/Term.tsx';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { Count } from './format.tsx';
+import button from '../../components/Button.module.css';
 import styles from './BatchDetailPage.module.css';
 
 export function BatchIssueGroupsSection({
@@ -79,6 +80,7 @@ export function BatchIssueGroupsSection({
       render: (row) => (
         <button
           type="button"
+          className={`${button.secondary} ${button.small}`}
           aria-pressed={selectedGroupId === row.id}
           onClick={() => onSelectGroup(selectedGroupId === row.id ? null : row.id)}
         >
