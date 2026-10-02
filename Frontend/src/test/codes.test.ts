@@ -56,6 +56,8 @@ describe('describe(error) — errors/codes.ts', () => {
         'BUNDLE_CONTENT_CHANGED_DURING_FREEZE',
         'BUNDLE_NOT_CANCELLABLE',
         'BUNDLE_CONTENT_CHANGED_DURING_CANCEL',
+        'BATCH_BEING_PROCESSED',
+        'BASELINE_ACCEPTANCE_IN_PROGRESS',
       ];
 
       for (const code of codesFromDesignDoc) {

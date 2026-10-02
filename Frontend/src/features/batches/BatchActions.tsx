@@ -163,12 +163,28 @@ function AddToBundleDialog({
  * heeft GEEN actorveld en wordt dus niet op naam vastgelegd. Implementatie: geen `ConfirmDialog` (die vraagt
  * een naam die nergens heen gaat) maar een inline bevestiging met die vermelding; pending state (plus ref)
  * voorkomt een dubbele klik; een fout blijft staan en er is geen automatische retry.
+ *
+ * S4-e (`docs/decisions.md` 2026-10-01): processingActive bepaalt de knopstatus:
+ * - true: knop uit + "loopt nog" tekst
+ * - false: normaal gedrag (hervatbaar)
+ * - undefined: neutrale tekst, knop aan
  */
-function ContinueSection({ batchId, onDone }: { batchId: number; onDone: (message: ReactNode) => void }) {
+function ContinueSection({
+  batchId,
+  processingActive,
+  onDone,
+}: {
+  batchId: number;
+  processingActive?: boolean;
+  onDone: (message: ReactNode) => void;
+}) {
   const manageGate = usePermissionGate(PERMISSION_MANAGE);
   const [confirming, setConfirming] = useState(false);
   const inFlight = useRef(false);
   const runner = useAction(() => batchesApi.continueBatch(batchId));
+
+  const isProcessing = processingActive === true;
+  const buttonDisabled = !manageGate.allowed || isProcessing;
 
   async function handleContinue() {
     if (inFlight.current) {
@@ -191,20 +207,41 @@ function ContinueSection({ batchId, onDone }: { batchId: number; onDone: (messag
     }
   }
 
-  return (
-    <>
-      <h2 className={styles.title}>Deze batch is onderbroken</h2>
-      <p>
+  let titleText: string;
+  let explanationText: ReactNode;
+  let buttonTitle: string | undefined;
+
+  if (isProcessing) {
+    titleText = 'Deze batch wordt nog verwerkt';
+    explanationText = 'De controle loopt nog. Hervatten kan pas als ze stopt; vernieuw de pagina later.';
+    buttonTitle = 'De batch wordt nog verwerkt';
+  } else if (processingActive === false) {
+    titleText = 'Deze batch is onderbroken';
+    explanationText = (
+      <>
         De batch heeft de status <Term domain="batchStatus" code="MUTATING" />: de controle stopte halverwege het
         bepalen van de wijzigingen. Hervatten gaat verder waar ze stopte.
-      </p>
+      </>
+    );
+    buttonTitle = manageGate.allowed ? undefined : manageGate.reason;
+  } else {
+    // processingActive === undefined (oudere server)
+    titleText = 'Deze batch is onderbroken';
+    explanationText = 'De controle is niet afgerond. Loopt ze nog, dan weigert de server het hervatten.';
+    buttonTitle = manageGate.allowed ? undefined : manageGate.reason;
+  }
+
+  return (
+    <>
+      <h2 className={styles.title}>{titleText}</h2>
+      <p>{explanationText}</p>
       {!confirming ? (
         <>
           <div className={styles.buttons}>
             <button
               type="button"
-              disabled={!manageGate.allowed}
-              title={manageGate.allowed ? undefined : manageGate.reason}
+              disabled={buttonDisabled}
+              title={buttonTitle}
               onClick={() => setConfirming(true)}
             >
               Batch hervatten
@@ -278,7 +315,9 @@ export function BatchActions({ batch, onChanged }: Props) {
           {!manageGate.allowed && <p data-testid="permission-reason-manage">{manageGate.reason}</p>}
         </>
       )}
-      {batch.status === 'MUTATING' && <ContinueSection batchId={batch.batchId} onDone={done} />}
+      {batch.status === 'MUTATING' && (
+        <ContinueSection batchId={batch.batchId} processingActive={batch.processingActive} onDone={done} />
+      )}
       {dialog === 'baseline' && (
         <AcceptBaselineDialog batchId={batch.batchId} onClose={() => setDialog(null)} onDone={done} />
       )}

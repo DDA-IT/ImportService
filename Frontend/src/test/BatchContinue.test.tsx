@@ -10,8 +10,8 @@ import { TEST_IDENTITY } from './testIdentity';
 import type { BatchDetail } from '../api/types';
 import { BatchActions } from '../features/batches/BatchActions';
 
-function batch(status: string): BatchDetail {
-  return { batchId: 101, status } as unknown as BatchDetail;
+function batch(status: string, processingActive?: boolean): BatchDetail {
+  return { batchId: 101, status, processingActive } as unknown as BatchDetail;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -102,5 +102,69 @@ describe('BatchActions continue (B-F3)', () => {
     release(jsonResponse({ batchId: 101, status: 'SCREENED' }));
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
     expect(posts()).toHaveLength(1);
+  });
+
+  describe('S4-e: processingActive states', () => {
+    it('processingActive=true: knop uit met "loopt nog" melding', () => {
+      const onChanged = vi.fn();
+      render(
+        <ActorProvider identity={TEST_IDENTITY}>
+          <MemoryRouter>
+            <BatchActions batch={batch('MUTATING', true)} onChanged={onChanged} />
+          </MemoryRouter>
+        </ActorProvider>,
+      );
+
+      expect(screen.getByRole('heading', { name: 'Deze batch wordt nog verwerkt' })).toBeInTheDocument();
+      expect(
+        screen.getByText('De controle loopt nog. Hervatten kan pas als ze stopt; vernieuw de pagina later.')
+      ).toBeInTheDocument();
+
+      const button = screen.getByRole('button', { name: 'Batch hervatten' });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute('title', 'De batch wordt nog verwerkt');
+    });
+
+    it('processingActive=false: normaal gedrag (hervatbaar)', async () => {
+      const onChanged = vi.fn();
+      render(
+        <ActorProvider identity={TEST_IDENTITY}>
+          <MemoryRouter>
+            <BatchActions batch={batch('MUTATING', false)} onChanged={onChanged} />
+          </MemoryRouter>
+        </ActorProvider>,
+      );
+
+      expect(screen.getByRole('heading', { name: 'Deze batch is onderbroken' })).toBeInTheDocument();
+      expect(screen.getByText(/bepalen van de wijzigingen/)).toBeInTheDocument();
+
+      const button = screen.getByRole('button', { name: 'Batch hervatten' });
+      expect(button).toBeEnabled();
+
+      fireEvent.click(button);
+      expect(screen.getByText(/niet op naam vastgelegd/)).toBeInTheDocument();
+    });
+
+    it('processingActive=undefined (oudere server): neutrale tekst, knop aan', async () => {
+      const onChanged = vi.fn();
+      render(
+        <ActorProvider identity={TEST_IDENTITY}>
+          <MemoryRouter>
+            <BatchActions batch={batch('MUTATING', undefined)} onChanged={onChanged} />
+          </MemoryRouter>
+        </ActorProvider>,
+      );
+
+      expect(screen.getByRole('heading', { name: 'Deze batch is onderbroken' })).toBeInTheDocument();
+      expect(
+        screen.getByText('De controle is niet afgerond. Loopt ze nog, dan weigert de server het hervatten.')
+      ).toBeInTheDocument();
+
+      const button = screen.getByRole('button', { name: 'Batch hervatten' });
+      expect(button).toBeEnabled();
+
+      fireEvent.click(button);
+      expect(screen.getByText(/niet op naam vastgelegd/)).toBeInTheDocument();
+    });
   });
 });

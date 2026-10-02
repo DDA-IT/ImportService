@@ -825,6 +825,14 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
       'Er is niets opgeslagen. Dit zou via dit scherm niet mogen gebeuren.',
     whatNow: 'Herlaad de pagina en probeer het opnieuw; blijft het gebeuren, verwittig dan de beheerder.',
   },
+  BATCH_BEING_PROCESSED: {
+    title: 'Deze batch wordt al verwerkt',
+    explanation: 'Deze batch wordt op dit moment al verwerkt. Probeer het later opnieuw.',
+  },
+  BASELINE_ACCEPTANCE_IN_PROGRESS: {
+    title: 'Aanvaarding loopt nog',
+    explanation: 'Er loopt al een aanvaarding als nulmeting voor deze koppeling. Probeer het later opnieuw.',
+  },
 };
 
 type FamilyFallback = { match: (code: string) => boolean; title: string; explanation: string };

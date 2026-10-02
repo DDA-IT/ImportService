@@ -434,6 +434,8 @@ export type BatchDetail = {
   baselineAcceptedBy: string | null;
   baselineAcceptedAt: string | null;
   baselineAcceptReason: string | null;
+  /** S4-d: additief veld dat aangeeft of de batch nog actief wordt verwerkt. `undefined` = oudere server. */
+  processingActive?: boolean;
   createdAt: string;
   createdBy: string | null;
 };
