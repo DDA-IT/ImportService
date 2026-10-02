@@ -42,3 +42,5 @@ databaseChangeLog:
       file: db/changelog/016-revision-draft-marker.sql
   - include:
       file: db/changelog/017-batch-processing-claim.sql
+  - include:
+      file: db/changelog/018-status-check-constraints.sql
