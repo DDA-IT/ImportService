@@ -204,6 +204,26 @@ describe('BatchDetailPage', () => {
     expect(screen.getByText('Nog niet bepaald')).toBeInTheDocument();
   });
 
+  it('S7-P4: toont de opruimdatum van de staging alleen als ze gezet is', async () => {
+    stubFetch({ batch: json({ ...BATCH, stagingPurgedAt: '2026-10-01T08:30:00Z' }) });
+    renderAt('/batches/101');
+    const note = await screen.findByTestId('batch-staging-purged');
+    expect(note).toHaveTextContent(/De tussentijdse gegevens van deze controle zijn op .+ opgeruimd\./);
+    expect(note).toHaveTextContent('De tellers, meldingen en mutaties blijven bewaard.');
+    cleanup();
+
+    stubFetch({ batch: json({ ...BATCH, stagingPurgedAt: null }) });
+    renderAt('/batches/101');
+    await screen.findByRole('heading', { name: 'Batch 101' });
+    expect(screen.queryByTestId('batch-staging-purged')).toBeNull();
+    cleanup();
+
+    stubFetch();
+    renderAt('/batches/101');
+    await screen.findByRole('heading', { name: 'Batch 101' });
+    expect(screen.queryByTestId('batch-staging-purged')).toBeNull();
+  });
+
   it('A-F1.3: zonder blokkade en nulmeting verschijnen die blokken niet', async () => {
     renderAt('/batches/101');
     await screen.findByRole('heading', { name: 'Batch 101' });

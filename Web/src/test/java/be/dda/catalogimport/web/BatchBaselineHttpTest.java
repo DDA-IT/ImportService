@@ -593,6 +593,8 @@ class BatchBaselineHttpTest {
                 .andExpect(jsonPath("$.contentMutationCount").value(5))
                 .andExpect(jsonPath("$.stagedRowCount").value(5))
                 .andExpect(jsonPath("$.processingActive").value(false))
+                .andExpect(jsonPath("$.stagingPurgedAt").hasJsonPath())
+                .andExpect(jsonPath("$.stagingPurgedAt").isEmpty())
                 .andExpect(jsonPath("$.blockedCode").doesNotExist())
                 .andExpect(jsonPath("$.baselineAcceptedBy").doesNotExist());
 

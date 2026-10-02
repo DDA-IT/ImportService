@@ -438,9 +438,11 @@ export type BatchDetail = {
   processingActive?: boolean;
   createdAt: string;
   createdBy: string | null;
+  /** S7-P4: tijdstip waarop de tussentijdse (staging)gegevens zijn opgeruimd; `null`/afwezig = niet opgeruimd. */
+  stagingPurgedAt?: string | null;
 };
 
-// be.dda.catalogimport.service.BatchQueryService.BatchRow (Scherm 0, D14, bouwstap S0-B1)
+// be.dda.catalogimport.service.BatchQueryService.BatchRow(Scherm 0, D14, bouwstap S0-B1)
 export type BatchRow = {
   batchId: number;
   deliveryId: number;

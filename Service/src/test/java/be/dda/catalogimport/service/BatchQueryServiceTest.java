@@ -8,6 +8,7 @@ import be.dda.catalogimport.dao.ImportBatchRepository;
 import be.dda.catalogimport.dao.IssueGroupDao;
 import be.dda.catalogimport.dao.MutationDao;
 import be.dda.catalogimport.domain.ImportBatch;
+import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -147,5 +148,30 @@ class BatchQueryServiceTest {
         BatchQueryService.BatchDetail detail = service.getBatch(2L);
 
         assertThat(detail.processingActive()).isFalse();
+        assertThat(detail.stagingPurgedAt()).isNull();
+    }
+
+    @Test
+    void stagingPurgedAtIsExposedWhenSet() {
+        Instant purgedAt = Instant.parse("2026-10-01T08:30:00Z");
+        ImportBatch batch = mock(ImportBatch.class);
+        when(batch.getId()).thenReturn(3L);
+        when(batch.getDelivery()).thenReturn(mock());
+        when(batch.getDelivery().getId()).thenReturn(30L);
+        when(batch.getImportLink()).thenReturn(mock());
+        when(batch.getImportLink().getId()).thenReturn(300L);
+        when(batch.getImportLink().getCode()).thenReturn("LINK-003");
+        when(batch.getImportLink().getSupplierOrganisation()).thenReturn(mock());
+        when(batch.getImportLink().getSupplierOrganisation().getCode()).thenReturn("SUPPLIER3");
+        when(batch.getImportLink().getLibraryCode()).thenReturn("LIB-003");
+        when(batch.getDefinitionRevision()).thenReturn(mock());
+        when(batch.getDefinitionRevision().getId()).thenReturn(3000L);
+        when(batch.getStatus()).thenReturn(mock());
+        when(batch.getStatus().name()).thenReturn("SCREENED");
+        when(batch.getStagingPurgedAt()).thenReturn(purgedAt);
+
+        when(batches.findDetailById(3L)).thenReturn(Optional.of(batch));
+
+        assertThat(service.getBatch(3L).stagingPurgedAt()).isEqualTo(purgedAt);
     }
 }

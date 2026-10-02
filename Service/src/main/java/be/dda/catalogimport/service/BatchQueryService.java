@@ -97,7 +97,7 @@ public class BatchQueryService {
                               String blockedCode,
                               String blockedReason, String baselineAcceptedBy, Instant baselineAcceptedAt,
                               String baselineAcceptReason, Instant createdAt, String createdBy,
-                              boolean processingActive) {
+                              boolean processingActive, Instant stagingPurgedAt) {
     }
 
     /**
@@ -353,7 +353,7 @@ public class BatchQueryService {
                 batch.getBlockedCode(),
                 batch.getBlockedReason(), batch.getBaselineAcceptedBy(), batch.getBaselineAcceptedAt(),
                 batch.getBaselineAcceptReason(), batch.getCreatedAt(), batch.getCreatedBy(),
-                processingClaims.isAlive(batch));
+                processingClaims.isAlive(batch), batch.getStagingPurgedAt());
     }
 
     /** @throws NotFoundException onbekende batch ({@code BATCH_NOT_FOUND}) */

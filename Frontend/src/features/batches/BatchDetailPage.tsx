@@ -130,6 +130,13 @@ function BatchOverview({ batch }: { batch: BatchDetail }) {
         ))}
       </dl>
 
+      {batch.stagingPurgedAt != null && (
+        <p className={styles.secondary} data-testid="batch-staging-purged">
+          De tussentijdse gegevens van deze controle zijn op {formatDateTime(batch.stagingPurgedAt)}{' '}
+          opgeruimd. De tellers, meldingen en mutaties blijven bewaard.
+        </p>
+      )}
+
       {batch.baselineAcceptedAt !== null && (
         <p className={styles.baseline} data-testid="batch-baseline">
           Nulmeting aanvaard door {batch.baselineAcceptedBy ?? 'onbekend'} op{' '}

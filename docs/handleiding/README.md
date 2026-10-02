@@ -918,7 +918,9 @@ en het archief van het bronbestand. Batches in `SCREENED`, `BLOCKED` of `FAILED`
 
 **Gevolg voor wie de batch daarna bekijkt.** De mutaties, issues en tellers van een opgeruimde batch blijven
 leesbaar. Wat enkel in de staging stond (de genormaliseerde kandidaatregels zelf), is weg; het bronbestand blijft
-in het archief.
+in het archief. Het batchdetail toont daarbij de opruimdatum: "De tussentijdse gegevens van deze controle zijn op
+<datum> opgeruimd. De tellers, meldingen en mutaties blijven bewaard." Bij een batch die nog niet opgeruimd is,
+ontbreekt die regel.
 
 **Hoe het werkt.** Per batch wordt het rijslot genomen zonder te wachten (`NOWAIT`): is de batch bezet, dan
 slaat de taak ze over en probeert de volgende run opnieuw. Onder het slot worden alle voorwaarden opnieuw
