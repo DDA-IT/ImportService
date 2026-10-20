@@ -18,6 +18,8 @@ import { IMPORT_BATCH_STATUSES, VALIDATION_RESULTS } from '../../api/types.ts';
 import type { BatchRow, ImportBatchStatus, ValidationResult } from '../../api/types.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { DataTable, type DataTableColumn } from '../../components/DataTable.tsx';
+import { Field } from '../../components/Field.tsx';
+import { UploadIcon } from '../../components/icons.tsx';
 import { Pager } from '../../components/Pager.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
@@ -25,6 +27,8 @@ import { IssueCodeTerm } from '../../terms/IssueCodeTerm.tsx';
 import { Term } from '../../terms/Term.tsx';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { term } from '../../terms/index.ts';
+import button from '../../components/Button.module.css';
+import pageCss from '../../components/Page.module.css';
 import styles from './WorkQueuePage.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -174,7 +178,24 @@ export function WorkQueuePage() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>Werkvoorraad</h1>
+      <header className={pageCss.pageHead}>
+        <div className={pageCss.pageHeadText}>
+          <h1 className={pageCss.title}>Werkvoorraad</h1>
+          <ol className={pageCss.crumbs}>
+            <li>
+              <span>CatalogImport</span>
+            </li>
+            <li>
+              <span aria-current="page">Werkvoorraad</span>
+            </li>
+          </ol>
+        </div>
+        {/* Navigatie, geen schrijfactie: de uploadpagina zelf poort de actie met het recht Beheren. */}
+        <Link className={button.primary} to="/upload">
+          <UploadIcon />
+          Levering uploaden
+        </Link>
+      </header>
       <WhatIsThis>
         <p>
           Een batch is de controle van één aangeleverde levering. De tegels tellen de batches per status en per
@@ -184,124 +205,134 @@ export function WorkQueuePage() {
       </WhatIsThis>
 
       {summary.error !== null && <ErrorBanner error={summary.error} />}
-      {summary.data !== null && (
-        <div className={styles.tiles} data-testid="summary-tiles">
-          <div className={styles.tile}>
-            <span className={styles.tileLabel}>Totaal</span>
-            <span className={styles.tileValue}>{summary.data.total}</span>
-          </div>
-          {summary.data.byStatus.map((entry) => (
-            <div className={styles.tile} key={`status-${entry.status}`}>
-              <span className={styles.tileLabel}>
-                <Term domain="batchStatus" code={entry.status} />
-              </span>
-              <span className={styles.tileValue}>{entry.count}</span>
-            </div>
-          ))}
-          {summary.data.byValidationResult.map((entry) => (
-            <div className={styles.tile} key={`validation-${entry.validationResult ?? 'NONE'}`}>
-              <span className={styles.tileLabel}>
-                <Term domain="validationResult" code={entry.validationResult} />
-              </span>
-              <span className={styles.tileValue}>{entry.count}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
       {issueCaseSummary.error !== null && <ErrorBanner error={issueCaseSummary.error} />}
-      {issueCaseSummary.data !== null && (
-        <div className={styles.tiles} data-testid="issue-case-summary-tiles">
-          <Link to="/issue-cases" className={styles.tile}>
-            <span className={styles.tileLabel}>Open behandelgevallen</span>
-            <span className={styles.tileValue}>{openIssueCaseCount}</span>
-          </Link>
+      {(summary.data !== null || issueCaseSummary.data !== null) && (
+        <div className={`${pageCss.card} ${styles.kpis}`} aria-label="Tellers">
+          {summary.data !== null && (
+            <div className={styles.group} data-testid="summary-tiles">
+              <div className={styles.tile}>
+                <span className={styles.tileLabel}>Totaal</span>
+                <span className={styles.tileValue}>{summary.data.total}</span>
+              </div>
+              {summary.data.byStatus.map((entry) => (
+                <div className={styles.tile} key={`status-${entry.status}`}>
+                  <span className={styles.tileLabel}>
+                    <Term domain="batchStatus" code={entry.status} />
+                  </span>
+                  <span className={styles.tileValue}>{entry.count}</span>
+                </div>
+              ))}
+              {summary.data.byValidationResult.map((entry) => (
+                <div className={styles.tile} key={`validation-${entry.validationResult ?? 'NONE'}`}>
+                  <span className={styles.tileLabel}>
+                    <Term domain="validationResult" code={entry.validationResult} />
+                  </span>
+                  <span className={styles.tileValue}>{entry.count}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {issueCaseSummary.data !== null && (
+            <div className={styles.group} data-testid="issue-case-summary-tiles">
+              <Link to="/issue-cases" className={`${styles.tile} ${styles.tileLink}`}>
+                <span className={styles.tileLabel}>Open behandelgevallen</span>
+                <span className={styles.tileValue}>{openIssueCaseCount}</span>
+              </Link>
+            </div>
+          )}
         </div>
       )}
 
-      <div className={styles.filters}>
-        <label htmlFor="workqueue-status-filter">Status</label>
-        <select
-          id="workqueue-status-filter"
-          value={status}
-          onChange={(event) => handleStatusChange(event.target.value as StatusFilter)}
-        >
-          <option value={NO_STATUS_FILTER}>Alle</option>
-          {IMPORT_BATCH_STATUSES.map((option) => (
-            <option key={option} value={option}>
-              {term('batchStatus', option).label}
-            </option>
-          ))}
-        </select>
+      <div className={pageCss.card}>
+        <div className={`${pageCss.toolbar} ${styles.toolbar}`} role="search">
+          <Field label="Status" htmlFor="workqueue-status-filter">
+            <select
+              id="workqueue-status-filter"
+              value={status}
+              onChange={(event) => handleStatusChange(event.target.value as StatusFilter)}
+            >
+              <option value={NO_STATUS_FILTER}>Alle</option>
+              {IMPORT_BATCH_STATUSES.map((option) => (
+                <option key={option} value={option}>
+                  {term('batchStatus', option).label}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-        <label htmlFor="workqueue-validation-filter">Eindoordeel</label>
-        <select
-          id="workqueue-validation-filter"
-          value={validationResult}
-          onChange={(event) => handleValidationChange(event.target.value as ValidationFilter)}
-        >
-          <option value={NO_VALIDATION_FILTER}>Alle</option>
-          {VALIDATION_RESULTS.map((option) => (
-            <option key={option} value={option}>
-              {term('validationResult', option).label}
-            </option>
-          ))}
-        </select>
+          <Field label="Eindoordeel" htmlFor="workqueue-validation-filter">
+            <select
+              id="workqueue-validation-filter"
+              value={validationResult}
+              onChange={(event) => handleValidationChange(event.target.value as ValidationFilter)}
+            >
+              <option value={NO_VALIDATION_FILTER}>Alle</option>
+              {VALIDATION_RESULTS.map((option) => (
+                <option key={option} value={option}>
+                  {term('validationResult', option).label}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-        <label htmlFor="workqueue-link-filter">Koppeling</label>
-        <select
-          id="workqueue-link-filter"
-          value={importLinkId}
-          onChange={(event) =>
-            handleImportLinkChange(event.target.value === NO_IMPORT_LINK_FILTER ? '' : Number(event.target.value))
-          }
-        >
-          <option value={NO_IMPORT_LINK_FILTER}>Alle</option>
-          {links.data?.content.map((link) => (
-            <option key={link.id} value={link.id}>
-              {link.code} — {link.name}
-            </option>
-          ))}
-        </select>
+          <Field label="Koppeling" htmlFor="workqueue-link-filter">
+            <select
+              id="workqueue-link-filter"
+              value={importLinkId}
+              onChange={(event) =>
+                handleImportLinkChange(event.target.value === NO_IMPORT_LINK_FILTER ? '' : Number(event.target.value))
+              }
+            >
+              <option value={NO_IMPORT_LINK_FILTER}>Alle</option>
+              {links.data?.content.map((link) => (
+                <option key={link.id} value={link.id}>
+                  {link.code} — {link.name}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-        <label htmlFor="workqueue-created-from">Aangemaakt vanaf</label>
-        <input
-          id="workqueue-created-from"
-          type="date"
-          value={createdFrom}
-          onChange={(event) => handleCreatedFromChange(event.target.value)}
-        />
+          <Field label="Aangemaakt vanaf" htmlFor="workqueue-created-from">
+            <input
+              id="workqueue-created-from"
+              type="date"
+              value={createdFrom}
+              onChange={(event) => handleCreatedFromChange(event.target.value)}
+            />
+          </Field>
 
-        <label htmlFor="workqueue-created-to">Aangemaakt tot en met</label>
-        <input
-          id="workqueue-created-to"
-          type="date"
-          value={createdTo}
-          onChange={(event) => handleCreatedToChange(event.target.value)}
-        />
+          <Field label="Aangemaakt tot en met" htmlFor="workqueue-created-to">
+            <input
+              id="workqueue-created-to"
+              type="date"
+              value={createdTo}
+              onChange={(event) => handleCreatedToChange(event.target.value)}
+            />
+          </Field>
+        </div>
+
+        {links.error !== null && <ErrorBanner error={links.error} />}
+        {list.error !== null && <ErrorBanner error={list.error} />}
+        {list.loading && list.data === null && <p className={styles.loading}>Bezig met laden…</p>}
+
+        {list.data !== null && (
+          <>
+            <DataTable
+              columns={COLUMNS}
+              rows={list.data.content}
+              rowKey={(row) => row.batchId}
+              emptyMessage="Geen batches gevonden."
+            />
+            <Pager
+              page={list.data.page}
+              size={list.data.size}
+              totalElements={list.data.totalElements}
+              onPageChange={setPage}
+              onSizeChange={handleSizeChange}
+            />
+          </>
+        )}
       </div>
-
-      {links.error !== null && <ErrorBanner error={links.error} />}
-      {list.error !== null && <ErrorBanner error={list.error} />}
-      {list.loading && list.data === null && <p className={styles.loading}>Bezig met laden…</p>}
-
-      {list.data !== null && (
-        <>
-          <DataTable
-            columns={COLUMNS}
-            rows={list.data.content}
-            rowKey={(row) => row.batchId}
-            emptyMessage="Geen batches gevonden."
-          />
-          <Pager
-            page={list.data.page}
-            size={list.data.size}
-            totalElements={list.data.totalElements}
-            onPageChange={setPage}
-            onSizeChange={handleSizeChange}
-          />
-        </>
-      )}
     </div>
   );
 }

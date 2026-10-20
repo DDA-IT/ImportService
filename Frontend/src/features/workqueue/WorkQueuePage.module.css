@@ -2,59 +2,54 @@
   padding: var(--spacing-4) 0 var(--spacing-8) 0;
 }
 
-.title {
-  margin: 0 0 var(--spacing-4) 0;
+/* KPI-kaart (mock .kpis): de twee testbare groepen lopen als een raster door (display: contents). */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  margin-bottom: 24px;
 }
 
-.tiles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-3);
-  margin-bottom: var(--spacing-4);
+.group {
+  display: contents;
 }
 
 .tile {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-1);
-  padding: var(--spacing-3) var(--spacing-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  min-width: 8rem;
+  min-width: 0;
+  padding: 16px 20px;
+  border-right: 1px dashed var(--divider);
+  color: inherit;
+  text-decoration: none;
+}
+
+.tileLink:hover {
+  background: var(--action-hover);
+  text-decoration: none;
 }
 
 .tileLabel {
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .tileValue {
-  font-size: 1.5rem;
-  font-weight: 600;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
 
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-2);
-  margin-bottom: var(--spacing-4);
-  font-size: 0.875rem;
-}
-
-.filters select,
-.filters input {
-  padding: var(--spacing-1) var(--spacing-2);
-  border: 1px solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
-  font: inherit;
+/* Field heeft een eigen onderrand voor formulieren; in de werkbalk niet. */
+.toolbar > div {
+  flex: 0 1 200px;
+  margin-bottom: 0;
 }
 
 .loading {
-  color: var(--color-text-secondary);
+  padding: 0 20px 12px;
+  color: var(--text-secondary);
 }
 
 .count {
@@ -63,6 +58,17 @@
 }
 
 .notEstablished {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font-style: italic;
+}
+
+@media (max-width: 899px) {
+  .tile {
+    border-right: 0;
+    border-bottom: 1px dashed var(--divider);
+  }
+
+  .toolbar > div {
+    flex: 1 1 100%;
+  }
 }
