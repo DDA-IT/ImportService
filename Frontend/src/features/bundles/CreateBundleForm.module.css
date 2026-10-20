@@ -1,31 +1,25 @@
+/* De formulierkaart (Page.module.css `card`) staat in de pagina; hier enkel de binnenopmaak. */
 .form {
-  max-width: 32rem;
-  padding: var(--spacing-4);
-  margin-bottom: var(--spacing-6);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
+  max-width: 36rem;
 }
 
 .title {
   margin: 0 0 var(--spacing-4) 0;
   font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.5556;
 }
 
+/* Invoerstijl komt van <Field>; deze klassen blijven als haakjes. */
 .input,
 .select {
   width: 100%;
-  padding: var(--spacing-2);
-  border: 1px solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
-  font: inherit;
-  box-sizing: border-box;
 }
 
 .actorRow {
   margin-bottom: var(--spacing-4);
   font-size: 0.875rem;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .warning {
@@ -33,7 +27,7 @@
   padding: var(--spacing-2) var(--spacing-3);
   border: 1px solid var(--color-warning);
   border-radius: var(--radius-sm);
-  background: #fff8e1;
+  background: var(--status-awaiting-bg);
   color: var(--color-warning-hover);
   font-size: 0.875rem;
 }

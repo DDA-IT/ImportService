@@ -7,16 +7,16 @@
 .explanation {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .loading {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .filter {
   font-size: 0.875rem;
-  background: var(--color-surface);
+  background: var(--bg-neutral);
   padding: var(--spacing-1) var(--spacing-2);
   border-radius: var(--radius-sm);
   white-space: pre-wrap;

@@ -14,6 +14,7 @@ import { PUBLICATION_BUNDLE_STATUSES } from '../../api/types.ts';
 import type { BundleSummary, PublicationBundleStatus } from '../../api/types.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { DataTable, type DataTableColumn } from '../../components/DataTable.tsx';
+import { Field } from '../../components/Field.tsx';
 import { Pager } from '../../components/Pager.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
@@ -21,6 +22,7 @@ import { Term } from '../../terms/Term.tsx';
 import { term } from '../../terms/index.ts';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { CreateBundleForm } from './CreateBundleForm.tsx';
+import pageCss from '../../components/Page.module.css';
 import styles from './BundleListPage.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -93,7 +95,22 @@ export function BundleListPage() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>Publicatiebundels</h1>
+      <header className={pageCss.pageHead}>
+        <div className={pageCss.pageHeadText}>
+          <h1 className={pageCss.title}>Publicatiebundels</h1>
+          <ol className={pageCss.crumbs}>
+            <li>
+              <span>CatalogImport</span>
+            </li>
+            <li>
+              <span>Leveringen</span>
+            </li>
+            <li>
+              <span aria-current="page">Publicatiebundels</span>
+            </li>
+          </ol>
+        </div>
+      </header>
 
       <WhatIsThis>
         <p>
@@ -107,44 +124,49 @@ export function BundleListPage() {
         </p>
       </WhatIsThis>
 
-      <CreateBundleForm onCreated={reload} />
-
-      <div className={styles.filters}>
-        <label htmlFor="bundle-status-filter">Status</label>
-        <select
-          id="bundle-status-filter"
-          value={status}
-          onChange={(event) => handleStatusChange(event.target.value as StatusFilter)}
-        >
-          <option value={NO_STATUS_FILTER}>Alle</option>
-          {PUBLICATION_BUNDLE_STATUSES.map((option) => (
-            <option key={option} value={option}>
-              {term('bundleStatus', option).label}
-            </option>
-          ))}
-        </select>
+      <div className={`${pageCss.card} ${pageCss.cardPad} ${styles.formCard}`}>
+        <CreateBundleForm onCreated={reload} />
       </div>
 
-      {error !== null && <ErrorBanner error={error} />}
-      {loading && data === null && <p className={styles.loading}>Bezig met laden…</p>}
+      <div className={pageCss.card}>
+        <div className={`${pageCss.toolbar} ${styles.toolbar}`} role="search">
+          <Field label="Status" htmlFor="bundle-status-filter">
+            <select
+              id="bundle-status-filter"
+              value={status}
+              onChange={(event) => handleStatusChange(event.target.value as StatusFilter)}
+            >
+              <option value={NO_STATUS_FILTER}>Alle</option>
+              {PUBLICATION_BUNDLE_STATUSES.map((option) => (
+                <option key={option} value={option}>
+                  {term('bundleStatus', option).label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
 
-      {data !== null && (
-        <>
-          <DataTable
-            columns={COLUMNS}
-            rows={data.content}
-            rowKey={(row) => row.id}
-            emptyMessage="Geen publicatiebundels gevonden."
-          />
-          <Pager
-            page={data.page}
-            size={data.size}
-            totalElements={data.totalElements}
-            onPageChange={setPage}
-            onSizeChange={handleSizeChange}
-          />
-        </>
-      )}
+        {error !== null && <ErrorBanner error={error} />}
+        {loading && data === null && <p className={styles.loading}>Bezig met laden…</p>}
+
+        {data !== null && (
+          <>
+            <DataTable
+              columns={COLUMNS}
+              rows={data.content}
+              rowKey={(row) => row.id}
+              emptyMessage="Geen publicatiebundels gevonden."
+            />
+            <Pager
+              page={data.page}
+              size={data.size}
+              totalElements={data.totalElements}
+              onPageChange={setPage}
+              onSizeChange={handleSizeChange}
+            />
+          </>
+        )}
+      </div>
     </div>
   );
 }

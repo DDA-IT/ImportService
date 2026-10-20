@@ -7,12 +7,14 @@
  * bundelstatus (de bron van alle actiebeslissingen, §9) staat zo op één plek.
  */
 
-import { NavLink, Outlet, useOutletContext, useParams } from 'react-router-dom';
+import { Link, NavLink, Outlet, useOutletContext, useParams } from 'react-router-dom';
 import * as bundlesApi from '../../api/bundles.ts';
 import type { BundleDetail } from '../../api/types.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
+import { BackIcon } from '../../components/icons.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import pageCss from '../../components/Page.module.css';
 import styles from './BundleDetailPage.module.css';
 
 export type BundleDetailContext = {
@@ -36,50 +38,55 @@ export function BundleDetailPage() {
 
   return (
     <div className={styles.page}>
-      <p className={styles.breadcrumb}>
-        <NavLink to="/bundles">Publicatiebundels</NavLink>
-      </p>
+      {data === null && (
+        <p className={styles.breadcrumb}>
+          <NavLink to="/bundles">Publicatiebundels</NavLink>
+        </p>
+      )}
 
       {error !== null && <ErrorBanner error={error} />}
       {loading && data === null && <p className={styles.loading}>Bezig met laden…</p>}
 
       {data !== null && (
         <>
-          <div className={styles.header}>
-            <h1 className={styles.title}>{data.bundleReference}</h1>
-            <StatusBadge status={data.status} domain="bundleStatus" />
+          <header className={`${pageCss.pageHead} ${styles.crumbHead}`}>
+            <div className={pageCss.pageHeadText}>
+              <ol className={pageCss.crumbs}>
+                <li>
+                  <Link to="/bundles">Publicatiebundels</Link>
+                </li>
+                <li>
+                  <span aria-current="page">{data.bundleReference}</span>
+                </li>
+              </ol>
+            </div>
+          </header>
+          <div className={styles.detailHead}>
+            <Link to="/bundles" className={styles.backButton} aria-label="Terug naar de publicatiebundels">
+              <BackIcon />
+            </Link>
+            <div className={styles.detailId}>
+              <h1 className={pageCss.title}>{data.bundleReference}</h1>
+              <div className={styles.chips}>
+                <StatusBadge status={data.status} domain="bundleStatus" />
+              </div>
+            </div>
           </div>
 
-          <nav className={styles.tabs}>
-            <NavLink
-              to={`/bundles/${bundleId}`}
-              end
-              className={({ isActive }) => (isActive ? styles.tabActive : styles.tab)}
-            >
+          <nav className={pageCss.tabs} aria-label="Onderdelen van de bundel">
+            <NavLink to={`/bundles/${bundleId}`} end className={pageCss.tab}>
               Overzicht
             </NavLink>
-            <NavLink
-              to={`/bundles/${bundleId}/batches`}
-              className={({ isActive }) => (isActive ? styles.tabActive : styles.tab)}
-            >
+            <NavLink to={`/bundles/${bundleId}/batches`} className={pageCss.tab}>
               Leden
             </NavLink>
-            <NavLink
-              to={`/bundles/${bundleId}/mutations`}
-              className={({ isActive }) => (isActive ? styles.tabActive : styles.tab)}
-            >
+            <NavLink to={`/bundles/${bundleId}/mutations`} className={pageCss.tab}>
               Mutaties
             </NavLink>
-            <NavLink
-              to={`/bundles/${bundleId}/decisions`}
-              className={({ isActive }) => (isActive ? styles.tabActive : styles.tab)}
-            >
+            <NavLink to={`/bundles/${bundleId}/decisions`} className={pageCss.tab}>
               Beslissingen
             </NavLink>
-            <NavLink
-              to={`/bundles/${bundleId}/publication`}
-              className={({ isActive }) => (isActive ? styles.tabActive : styles.tab)}
-            >
+            <NavLink to={`/bundles/${bundleId}/publication`} className={pageCss.tab}>
               Publicatie
             </NavLink>
           </nav>

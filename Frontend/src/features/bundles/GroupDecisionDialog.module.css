@@ -3,9 +3,9 @@
   flex-direction: column;
   gap: var(--spacing-2);
   padding: var(--spacing-3);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-md);
-  background: var(--color-surface);
+  background: var(--bg-neutral);
 }
 
 .header {
@@ -24,7 +24,7 @@
 .filterEmpty {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .filterList {
@@ -41,7 +41,7 @@
 }
 
 .filterEntry dt {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .filterEntry dt::after {
@@ -75,5 +75,5 @@
 }
 
 .warning {
-  color: var(--color-warning);
+  color: var(--soft-warning-text);
 }

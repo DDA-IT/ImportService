@@ -33,7 +33,7 @@
 }
 
 .figure dt {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .figure dd {
@@ -68,7 +68,7 @@
 }
 
 .muted {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .recheckButton {

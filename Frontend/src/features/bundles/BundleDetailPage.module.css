@@ -7,38 +7,54 @@
   font-size: 0.875rem;
 }
 
-.header {
+.crumbHead {
+  margin-bottom: 24px;
+}
+
+/* Detailkop (zelfde patroon als het batchdetail): terugknop, titel + labels */
+.detailHead {
   display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 32px;
+}
+
+.backButton {
+  display: inline-flex;
   align-items: center;
-  gap: var(--spacing-3);
-  margin-bottom: var(--spacing-4);
-}
-
-.title {
-  margin: 0;
-}
-
-.tabs {
-  display: flex;
-  gap: var(--spacing-2);
-  margin-bottom: var(--spacing-4);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.tab,
-.tabActive {
-  padding: var(--spacing-2) var(--spacing-3);
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: var(--text-secondary);
   text-decoration: none;
-  color: var(--color-text);
-  border-bottom: 2px solid transparent;
+  flex-shrink: 0;
 }
 
-.tabActive {
-  color: var(--color-primary);
-  border-bottom-color: var(--color-primary);
-  font-weight: 600;
+.backButton:hover {
+  background: var(--action-hover);
+  text-decoration: none;
+}
+
+.backButton svg {
+  width: 20px;
+  height: 20px;
+}
+
+.detailId {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
 }
 
 .loading {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }

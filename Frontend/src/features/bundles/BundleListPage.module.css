@@ -2,30 +2,28 @@
   padding: var(--spacing-4) 0 var(--spacing-8) 0;
 }
 
-.title {
-  margin: 0 0 var(--spacing-4) 0;
+.formCard {
+  margin-bottom: 24px;
 }
 
-.filters {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  margin-bottom: var(--spacing-4);
-  font-size: 0.875rem;
-}
-
-.filters select {
-  padding: var(--spacing-1) var(--spacing-2);
-  border: 1px solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
-  font: inherit;
+/* Field heeft een eigen onderrand voor formulieren; in de werkbalk niet. */
+.toolbar > div {
+  flex: 0 1 200px;
+  margin-bottom: 0;
 }
 
 .loading {
-  color: var(--color-text-secondary);
+  padding: 0 20px 12px;
+  color: var(--text-secondary);
 }
 
 .count {
   text-decoration: underline dotted;
   cursor: help;
+}
+
+@media (max-width: 899px) {
+  .toolbar > div {
+    flex: 1 1 100%;
+  }
 }
