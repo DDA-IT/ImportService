@@ -61,6 +61,27 @@ PSIMPORT-werkfilekolommen — géén CatalogImport-ticketnummers. Programma 1179
 bibliotheek in wacht", leest uit de `252 IMPORT`/PSIMPORT-werkfile. De gezaghebbende beschrijving
 staat in de Legacy-vault (Obsidian), niet in de Prodis-repo.
 
+**Grotendeels beantwoord vanuit de Legacy-vault (2026-10-20, uit legacy-code, nog niet door Prodis bevestigd):**
+
+- *Naamgeving:* "252 IMPORT" = datasource 252 `IMPORT` (`PSIMPORT`) in **PRODIS_SEG**. In **PRODIS** is
+  dezelfde tabel DS 251 en is DS 252 juist `PSIMPDEF` (importdefinitie). Vermeld voortaan het project.
+- *Keten (PRODIS):* `1223`/`1232` (auto) of `1177` (manueel) → `1170` bestand + definitie → `PSIMP<bib>`
+  → `1171` controle → `1179` naar `%BIB%PSARF<nnn>` (type B) of `1172` naar `ARTICLES`/`PSARFLEV`/… (type A).
+  Bron: vault `Prg_1223` r.163–190, `wiki/concepts/prodis-artikelimport-stock-prg1232.md`.
+- *Leeg veld:* **behoud bestaande waarde** (leeg of 0), `Prg_1179` r.402–512; idem `1172`. Uitzonderingen:
+  genre 1–8 en leverancierssleutels worden altijd overschreven; lege wijzigingsdatum → `Date()`; lege
+  prijs-% → groeppercentages.
+- *`ARIMP_DELETE`:* enkel `Y`/`N`; `Y` uitsluitend via CALCULATION `8` in `PSIMPDEF` (kolomwaarde =
+  `CALCULATION_VALUE`). Wist het bib-artikel; `PSARFLER` enkel bij `MS_Delete` en niet-voorkeurleverancier.
+- *Terugmelding:* **"OUT02" bestaat niet in de vault.** Legacy meldt via `V_ImportResultaat`/
+  `V_ControleResultaat`, foutmail (`Prg 487`), memo op `PSBIB`, controle-pdf's en logbestand.
+  De Java-kant van ProDisWebbase slikt fouten in en antwoordt `200`.
+- *"In wacht":* vermoedelijk geen aparte bibliotheek maar een gevulde staging die klaarstaat voor `1179`;
+  geen proef- vs. productiebibliotheek gevonden (inferentie).
+
+**Nog bij Prodis te bevestigen:** wat zij met "OUT02" bedoelen, of het voorgaande ook voor de
+WebBase-variant geldt, en of SEG-`PSIMPORT` (`Prg_728`) dezelfde regels volgt.
+
 **Aanbod (niet aanvaard):** Prodis heeft aangeboden hun (herroepen) publicatie-API test-first te
 bouwen bij akkoord. Dat aanbod staat los van deze blokkade en wordt hier niet aanvaard — de
 bindende beslissing van 2026-09-18 (zie `docs/decisions.md`, blok "Fase 0: publicatiedoel") blijft

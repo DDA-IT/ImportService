@@ -56,6 +56,14 @@
 >
 > Een werkvoorraad-/dashboardteller mag "niet vastgesteld" nooit als 0 tonen. Het datamodel onderscheidt beide consequent — `ImportBatch.validationResult`, `criticalLineCount`, `bulkIncidentCount`, `awaitingApprovalCount`, `creationOutcome` zijn allemaal nullable met de expliciete javadoc "`null` betekent niet vastgesteld, nooit stil 0" — maar dat moet ook in elke aggregatie/weergave zo blijven. Een tegel "0 kritieke lijnen" over batches waarvan `criticalLineCount` null is (technisch mislukte of lopende screening) is een onware geruststelling. Elke aggregatie over nullable tellers toont "niet vastgesteld" als een eigen, zichtbare categorie naast het getal.
 
+> Important business rule discovered
+>
+> Legacy-gedrag van het wegschrijven naar een bibliotheek (`Prg 1179`, idem `1172` voor ARTICLES; bron: Legacy-vault, 2026-10-20): een leeg veld (of 0) betekent **bestaande waarde behouden**, niet wissen. Uitzonderingen: genre 1–8 en de leverancierssleutels worden altijd overschreven (leeg maakt leeg), een lege wijzigingsdatum wordt de verwerkingsdatum, lege prijspercentages nemen de groeppercentages over. Verwijderen gebeurt langs twee wegen: (1) per regel via `ARIMP_DELETE='Y'`, dat alleen ontstaat via berekeningscode 8 in de importdefinitie (kolomwaarde gelijk aan de ingestelde waarde); (2) met de interfaceparameter `BIB_Delete` (`P_BIB_DELETE_NOT_UPDATED`) wist `Prg 1179` élke regel van `PSARF<bib>` die in deze run niet bijgewerkt werd, zonder afbakening per leverancier (subtask `Delete Bib/MS Ref not Found`, `Prg_1179` r.2427-2436). Het leveranciersartikel (`PSARFLER`) wordt enkel gewist bij `MS_Delete` en als het niet de voorkeurleverancier is. (Gecorrigeerd 2026-10-20 na het ontwerp `docs/design/legacy-config-migratie-design.md`.) Nog door Prodis te bevestigen voor de WebBase-variant (zie `docs/openstaande-externe-punten.md` punt 3).
+
+> Important business rule discovered
+>
+> Legacy bewaart interfacewachtwoorden (`INDET`, o.a. `FTP_password`) in plain text en toont ze op het scherm. Bij het overnemen van legacy-interface-instellingen mogen geheimen nooit 1-op-1 gekopieerd of getoond worden; ze gaan uitsluitend versleuteld onze credentialopslag in.
+
 ## Open uitzonderingen die nog een businesskeuze vragen
 
 - De proefversie bewaart enkel een issueaantal; zij bewaart reden en bronregel niet voor ongeldige regels. Support kan de originele CSV raadplegen, maar geen foutdetail opvragen.

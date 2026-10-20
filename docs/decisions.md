@@ -2618,3 +2618,12 @@ Prodis en CatalogImport?
 - Bouwvolgorde: tokens/iconen → app-shell → accountmenu → gedeelde componenten → schermen → donker thema → cookies → wisselaar (backend,
   frontend, Prodis). Eén commit per story (groep).
 **Bron:** mens + denker-zwaar / mock, prodis `product-switcher.tsx`, `ProdevLinkService`, `AccountResource`
+
+## 2026-10-20 — Scope: legacy-importdefinities en interface-instellingen overnemen
+**Vraag:** Nemen we de bestaande legacy-sjablonen (importdefinities) en interface-instellingen (API, FTP/SFTP, wachtwoorden,
+mapping, ...) over, of starten leveranciers in CatalogImport van nul?
+**Beslissing:** Richting: **overnemen**. Dit heropent de afbakening in `docs/requirements/catalog-import.md` r.59 ("configurabele
+transformaties, filters en formules uit de legacy-importdefinities" buiten scope). Hoe (eenmalige migratie vs. terugkerende inlezing,
+mapping naar onze sjablonen/profielen/credentials, welke CALCULATION-codes) wordt eerst door een denker-zwaar uitgewerkt en ligt dus
+nog niet vast. Harde randvoorwaarde: legacy-wachtwoorden (plain text in `INDET`) gaan enkel versleuteld de credentialopslag in.
+**Bron:** mens / Legacy-vault (`Prg_1170`, `Prg_1176`, `Prg_1472`, DS 252–257, DS 270–273)
