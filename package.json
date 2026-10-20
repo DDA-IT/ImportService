@@ -1,0 +1,8 @@
+{
+  "name": "catalog-import",
+  "private": true,
+  "scripts": {
+    "start": "npm --prefix Frontend start",
+    "dev": "npm --prefix Frontend run dev"
+  }
+}
