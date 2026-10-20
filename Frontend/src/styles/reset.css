@@ -7,16 +7,17 @@
 
 html {
   font-size: 16px;
-  color: var(--color-text, #1c252e);
-  background-color: #ffffff;
+  color: var(--text-primary);
+  background-color: var(--bg-default);
 }
 
 body {
   font-family: var(--font-sans, system-ui, sans-serif);
   font-size: 14px;
-  line-height: 1.57;
-  color: var(--color-text, #1c252e);
-  background-color: #ffffff;
+  line-height: 1.5714; /* body2 22/14 */
+  color: var(--text-primary);
+  background-color: var(--bg-default);
+  -webkit-font-smoothing: antialiased;
 }
 
 #root {
@@ -44,9 +45,9 @@ h1, h2, h3 {
 h1 { font-size: 2rem; }
 h2 { font-size: 1.5rem; }
 h3 { font-size: 1.25rem; }
-h4 { font-size: 20px; font-weight: 700; }
+h4 { font-size: 24px; font-weight: 700; }
 h5 { font-size: 18px; font-weight: 700; }
-h6 { font-size: 17px; font-weight: 600; }
+h6 { font-size: 18px; font-weight: 600; }
 
 p {
   margin-bottom: var(--spacing-2, 0.5rem);

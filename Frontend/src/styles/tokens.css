@@ -1,4 +1,103 @@
-/* Design Tokens — Prodis look & feel (docs/decisions.md, 2026-09-30) */
+/* Design Tokens — Prodis-mock (docs/decisions.md, 2026-10-20; herroept deel van 2026-09-30) */
+
+/* ---- Mock-tokens (licht + donker), 1-op-1 uit catalogimport-mock ---- */
+:root {
+  color-scheme: light;
+  /* palette.primary (themeConfig; themeOverrides.ts (#6950E8) wordt NIET toegepast in app.tsx) */
+  --primary-lighter: #CAFDF5; --primary-light: #61F3F3; --primary-main: #00B8D9; --primary-dark: #006C9C; --primary-darker: #003768; --primary-contrast: #FFFFFF;
+  --primary-ch: 0 184 217;
+  --success-main: #22C55E; --success-dark: #118D57; --success-light: #77ED8B; --success-ch: 34 197 94;
+  --warning-main: #FFAB00; --warning-dark: #B76E00; --warning-light: #FFD666; --warning-ch: 255 171 0;
+  --error-main: #FF5630;   --error-dark: #B71D18;   --error-light: #FFAC82;   --error-ch: 255 86 48;
+  --info-main: #00A76F;    --info-dark: #007867;    --info-light: #5BE49B;    --info-ch: 0 167 111;
+  --secondary-main: #8E33FF; --secondary-dark: #5119B7; --secondary-light: #C684FF; --secondary-ch: 142 51 255;
+  --grey-ch: 145 158 171; /* grey.500 #919EAB */
+  --black-ch: 0 0 0;
+
+  /* text (palette.ts text.light) */
+  --text-primary: #1C252E; --text-secondary: #637381; --text-disabled: #919EAB;
+  /* background (palette.ts background.light) */
+  --bg-default: #FFFFFF; --bg-paper: #FFFFFF; --bg-neutral: #F4F6F8;
+  --bg-default-ch: 255 255 255; --bg-paper-ch: 255 255 255;
+  /* action (palette.ts action()) */
+  --action-active: #637381;
+  --action-hover: rgb(var(--grey-ch) / 0.08);
+  --action-selected: rgb(var(--grey-ch) / 0.16);
+  --divider: rgb(var(--grey-ch) / 0.2);
+  --input-outlined: rgb(var(--grey-ch) / 0.2);
+  --button-outlined: rgb(var(--grey-ch) / 0.32);
+  --nav-border: rgb(var(--grey-ch) / 0.12);
+
+  /* "inherit" filled (knop contained color=inherit, mixins filledStyles) */
+  --inherit-bg: #1C252E; --inherit-text: #FFFFFF; --inherit-hover: #454F5B;
+  /* Label soft "default" (softStyles 'inherit') */
+  --soft-default-bg: rgb(var(--grey-ch) / 0.16); --soft-default-text: #1C252E;
+
+  /* soft-label tekstkleur: .dark in licht, .light in donker (global-styles-components.ts softStyles) */
+  --soft-primary-text: var(--primary-dark);
+  --soft-success-text: var(--success-dark);
+  --soft-warning-text: var(--warning-dark);
+  --soft-error-text: var(--error-dark);
+  --soft-info-text: var(--info-dark);
+  --nav-active-color: var(--primary-main); /* --nav-item-root-active-color */
+
+  /* customShadows (licht: grey 500-kanaal) */
+  --shadow-ch: var(--grey-ch);
+  --shadow-card: 0 0 2px 0 rgb(var(--shadow-ch) / 0.2), 0 12px 24px -4px rgb(var(--shadow-ch) / 0.12);
+  --shadow-dropdown: 0 0 2px 0 rgb(var(--shadow-ch) / 0.24), -20px 20px 40px -4px rgb(var(--shadow-ch) / 0.24);
+  --shadow-dialog: -40px 40px 80px -8px rgb(var(--black-ch) / 0.24);
+  --shadow-z8: 0 8px 16px 0 rgb(var(--shadow-ch) / 0.16);
+  --shadow-primary: 0 8px 16px 0 rgb(var(--primary-ch) / 0.24);
+  --backdrop: rgb(28 37 46 / 0.48);
+  --focus-ring: rgb(var(--primary-ch) / 0.48);
+
+  /* vorm & maten */
+  --radius: 8px;            /* create-theme.ts shape.borderRadius */
+  --radius-card: 16px;      /* card.tsx: radius*2 */
+  --radius-label: 6px;      /* label/styles.tsx: radius*0.75 */
+  --radius-dropdown: 10px;  /* paperStyles dropdown: radius*1.25 */
+  --nav-w: 300px;           /* --layout-nav-vertical-width */
+  --nav-mini-w: 88px;       /* --layout-nav-mini-width */
+  --nav-mobile-w: 288px;    /* --layout-nav-mobile-width */
+  --header-h: 64px;         /* --layout-header-mobile-height */
+  }
+@media (min-width: 1200px) { :root { --header-h: 72px; } } /* --layout-header-desktop-height */
+
+/* Donker thema — palette.ts text.dark / background.dark, customShadows.dark (zwart kanaal) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --text-primary: #FFFFFF; --text-secondary: #919EAB; --text-disabled: #637381;
+    --bg-default: #141A21; --bg-paper: #1C252E; --bg-neutral: #28323D;
+    --bg-default-ch: 20 26 33; --bg-paper-ch: 28 37 46;
+    --action-active: #919EAB;
+    --nav-border: rgb(var(--grey-ch) / 0.08);
+    --inherit-bg: #FFFFFF; --inherit-text: #1C252E; --inherit-hover: #C4CDD5;
+    --soft-default-text: #FFFFFF;
+    --soft-primary-text: var(--primary-light); --soft-success-text: var(--success-light);
+    --soft-warning-text: var(--warning-light); --soft-error-text: var(--error-light); --soft-info-text: var(--info-light);
+    --nav-active-color: var(--primary-light);
+    --shadow-ch: var(--black-ch);
+    --backdrop: rgb(0 0 0 / 0.6);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --text-primary: #FFFFFF; --text-secondary: #919EAB; --text-disabled: #637381;
+  --bg-default: #141A21; --bg-paper: #1C252E; --bg-neutral: #28323D;
+  --bg-default-ch: 20 26 33; --bg-paper-ch: 28 37 46;
+  --action-active: #919EAB;
+  --nav-border: rgb(var(--grey-ch) / 0.08);
+  --inherit-bg: #FFFFFF; --inherit-text: #1C252E; --inherit-hover: #C4CDD5;
+  --soft-default-text: #FFFFFF;
+  --soft-primary-text: var(--primary-light); --soft-success-text: var(--success-light);
+  --soft-warning-text: var(--warning-light); --soft-error-text: var(--error-light); --soft-info-text: var(--info-light);
+  --nav-active-color: var(--primary-light);
+  --shadow-ch: var(--black-ch);
+  --backdrop: rgb(0 0 0 / 0.6);
+}
+
+/* ---- Bestaande tokennamen (niet hernoemd); wijzen naar de mock-waarden ---- */
 
 :root {
   /* Fonts */
@@ -22,43 +121,43 @@
   --spacing-12: 3rem;
 
   /* Colors: primary action (buttons) is dark grey in Prodis */
-  --color-primary: #1c252e;
-  --color-primary-hover: #454f5b;
-  --color-primary-contrast: #ffffff;
-  --color-accent: #00b8d9;
-  --color-accent-soft-bg: rgba(0, 184, 217, 0.16);
-  --color-accent-soft-text: #006c9c;
-  --color-link: #006c9c;
+  --color-primary: var(--primary-main);
+  --color-primary-hover: var(--primary-dark);
+  --color-primary-contrast: var(--primary-contrast);
+  --color-accent: var(--primary-main);
+  --color-accent-soft-bg: rgb(var(--primary-ch) / 0.16);
+  --color-accent-soft-text: var(--soft-primary-text);
+  --color-link: var(--soft-primary-text);
 
-  --color-danger: #ff5630;
-  --color-danger-hover: #b71d18;
+  --color-danger: var(--error-main);
+  --color-danger-hover: var(--error-dark);
   --color-danger-lighter: #ffe9d5;
   --color-danger-darker: #7a0916;
-  --color-success: #22c55e;
-  --color-success-hover: #118d57;
+  --color-success: var(--success-main);
+  --color-success-hover: var(--success-dark);
   --color-success-lighter: #d3fcd2;
   --color-success-darker: #065e49;
-  --color-warning: #ffab00;
-  --color-warning-hover: #b76e00;
+  --color-warning: var(--warning-main);
+  --color-warning-hover: var(--warning-dark);
   --color-warning-lighter: #fff5cc;
   --color-warning-darker: #7a4100;
-  --color-info: #00a76f;
-  --color-info-hover: #007867;
+  --color-info: var(--info-main);
+  --color-info-hover: var(--info-dark);
   --color-info-lighter: #c8fad6;
   --color-info-darker: #004b50;
 
   /* Text colors */
-  --color-text: #1c252e;
-  --color-text-secondary: #637381;
-  --color-text-tertiary: #919eab;
+  --color-text: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-disabled);
 
   /* Surface colors */
-  --color-background: #ffffff;
-  --color-surface: #f4f6f8;
-  --color-surface-variant: #dfe3e8;
-  --color-border: rgba(145, 158, 171, 0.2);
-  --color-border-dark: rgba(145, 158, 171, 0.32);
-  --color-hover-bg: rgba(145, 158, 171, 0.08);
+  --color-background: var(--bg-paper);
+  --color-surface: var(--bg-neutral);
+  --color-surface-variant: var(--bg-neutral);
+  --color-border: var(--divider);
+  --color-border-dark: var(--button-outlined);
+  --color-hover-bg: var(--action-hover);
 
   /* Status colors (soft: colour at 16% alpha, text in darker tint) */
   --status-planned-text: #004b50;
@@ -78,14 +177,11 @@
   --status-expired-bg: rgba(145, 158, 171, 0.16);
   --status-neutral-bg: #dfe3e8;
 
-  /* Shadow */
-  --shadow-md: 0 8px 16px 0 rgba(145, 158, 171, 0.16);
-  --shadow-card: 0 0 2px 0 rgba(145, 158, 171, 0.2), 0 12px 24px -4px rgba(145, 158, 171, 0.12);
-  --shadow-dialog: -40px 40px 80px -8px rgba(0, 0, 0, 0.24);
-  --shadow-dropdown: 0 0 2px 0 rgba(145, 158, 171, 0.24), -20px 20px 40px -4px rgba(145, 158, 171, 0.24);
+  /* Shadow: --shadow-card/-dropdown/-dialog komen uit de mock-tokens */
+  --shadow-md: var(--shadow-z8);
 
   /* Border radius */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 16px;
+  --radius-sm: var(--radius-label);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius-card);
 }

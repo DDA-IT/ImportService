@@ -4,6 +4,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import '@fontsource-variable/public-sans';
 import '@fontsource/barlow/600.css';
 import '@fontsource/barlow/700.css';
+import '@fontsource/barlow/800.css';
 import './styles/tokens.css';
 import './styles/reset.css';
 import App from './App.tsx';
