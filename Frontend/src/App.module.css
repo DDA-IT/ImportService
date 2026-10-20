@@ -1,62 +1,218 @@
+/* App-shell volgens de Prodis-mock (docs/decisions.md 2026-10-20): zijbalk 300px, mini 88px, drawer 288px. */
 .shell {
+  --current-nav-w: var(--nav-w);
   min-height: 100vh;
-  background: var(--color-background);
+  background: var(--bg-default);
   font-family: var(--font-sans);
 }
 
-/* Zijbalk (Prodis nav-vertical: 300px breed in Prodis, hier 280px) */
+.shellMini {
+  --current-nav-w: var(--nav-mini-w);
+}
+
 .sidebar {
   position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  z-index: var(--z-drawer);
-  width: 280px;
+  inset: 0 auto 0 0;
+  z-index: 1201;
+  width: var(--current-nav-w);
   display: flex;
   flex-direction: column;
+  background: var(--bg-default);
+  border-right: 1px solid var(--nav-border);
+  transition: width 120ms linear, transform 200ms ease;
+}
+
+.navTop {
+  padding: 16px 16px 8px;
+}
+
+.navScroll {
+  flex: 1 1 auto;
   overflow-y: auto;
-  background: var(--color-background);
-  border-right: 1px dashed rgba(145, 158, 171, 0.12);
+  padding: 0 16px 16px;
 }
 
-.title {
-  margin: 0;
-  padding: 24px 20px;
-  font-family: var(--font-heading);
-  font-size: 20px;
+.navGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.navSub {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  position: relative;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 8px 8px 12px;
+  font-size: 11px;
   font-weight: 700;
-  line-height: 1.2;
-  color: var(--color-text);
+  line-height: 1.5;
+  text-transform: uppercase;
+  color: var(--text-disabled);
+  transition: color 300ms, padding-left 300ms;
 }
 
-.nav {
+.navSubIcon {
+  position: absolute;
+  left: -4px;
+  width: 16px;
+  height: 16px;
+  opacity: 0;
+  transition: opacity 300ms;
+}
+
+.navSub:hover,
+.navSub:focus-visible {
+  padding-left: 16px;
+  color: var(--text-primary);
+}
+
+.navSub:hover .navSubIcon,
+.navSub:focus-visible .navSubIcon {
+  opacity: 1;
+}
+
+.navSub:focus-visible {
+  outline: 2px solid var(--primary-main);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.navList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 0 16px 16px;
+}
+
+.navGroupCollapsed .navList {
+  display: none;
 }
 
 .navItem {
   display: flex;
   align-items: center;
+  box-sizing: border-box;
+  width: 100%;
   min-height: 44px;
   padding: 4px 8px 4px 12px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  text-decoration: none;
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text-secondary);
-  text-decoration: none;
+  line-height: 22px;
+}
+
+.navIcon {
+  width: 24px;
+  height: 24px;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.navText {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .navItem:hover {
-  background: var(--color-hover-bg);
+  background: var(--action-hover);
 }
 
-.navItemActive,
-.navItemActive:hover {
-  background: var(--color-accent-soft-bg);
-  color: var(--color-accent-soft-text);
+.navItem[aria-current='page'] {
+  color: var(--nav-active-color);
+  background: rgb(var(--primary-ch) / 0.08);
   font-weight: 600;
+}
+
+.navItem[aria-current='page']:hover {
+  background: rgb(var(--primary-ch) / 0.16);
+}
+
+.navItem:focus-visible {
+  outline: 2px solid var(--primary-main);
+  outline-offset: 2px;
+}
+
+/* Mini-modus (item 56 hoog, icoon 22 boven, titel 10px) */
+.sidebarMini .navScroll {
+  padding: 0 4px 16px;
+}
+
+.sidebarMini .navSub {
+  display: none;
+}
+
+.sidebarMini .navGroupCollapsed .navList {
+  display: flex;
+}
+
+.sidebarMini .navList {
+  margin-top: 4px;
+}
+
+.sidebarMini .navItem {
+  flex-direction: column;
+  justify-content: center;
+  min-height: 56px;
+  padding: 8px 4px 6px;
+  text-align: center;
+}
+
+.sidebarMini .navIcon {
+  width: 22px;
+  height: 22px;
+  margin: 0 0 6px;
+}
+
+.sidebarMini .navText {
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 600;
+  white-space: normal;
+}
+
+/* Ronde toggle op de menurand */
+.navToggle {
+  position: fixed;
+  z-index: 1202;
+  top: calc(var(--header-h) / 2);
+  left: var(--current-nav-w);
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 4px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1px solid var(--nav-border);
+  background: var(--bg-default);
+  color: var(--action-active);
+  cursor: pointer;
+  transition: left 120ms linear;
+}
+
+.navToggle:hover {
+  color: var(--text-primary);
+  background: var(--bg-neutral);
+}
+
+.navToggleIcon {
+  width: 16px;
+  height: 16px;
+}
+
+.shellMini .navToggleIcon {
+  transform: scaleX(-1);
 }
 
 .backdrop {
@@ -68,40 +224,45 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  margin-left: 280px;
+  padding-left: var(--current-nav-w);
+  transition: padding-left 120ms linear;
 }
 
 .header {
   position: sticky;
-  top: 0;
-  z-index: var(--z-app-bar);
+  top: env(safe-area-inset-top, 0px);
+  z-index: 1101;
   display: flex;
   align-items: center;
-  gap: 16px;
-  min-height: 72px;
+  gap: 8px;
+  height: var(--header-h);
+  box-sizing: border-box;
   padding: 0 40px;
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(6px);
+  background: transparent;
+  transition: background 200ms;
+}
+
+.headerScrolled {
+  background: rgb(var(--bg-default-ch) / 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .menuButton {
   display: none;
-  align-items: center;
-  justify-content: center;
+  place-items: center;
   width: 40px;
   height: 40px;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-md);
+  border-radius: 50%;
   background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 22px;
-  line-height: 1;
+  color: var(--action-active);
   cursor: pointer;
 }
 
 .menuButton:hover {
-  background: var(--color-hover-bg);
+  background: var(--action-hover);
 }
 
 .headerActor {
@@ -110,52 +271,111 @@
 
 .main {
   width: 100%;
+  box-sizing: border-box;
   max-width: 1400px;
   margin: 0 auto;
   padding: 8px 40px 64px;
-  background: var(--color-background);
+  background: var(--bg-default);
 }
 
 .noPermissions {
   padding: 24px;
-  background: var(--color-background);
-  border-radius: var(--radius-lg);
+  background: var(--bg-paper);
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
 }
 
-/* Onder 1200px (Prodis breakpoint lg): zijbalk als overlay */
-@media (max-width: 1199px) {
-  .sidebar {
+/* Onder 1200px: drawer van 288px met backdrop; mini heeft hier geen betekenis */
+@media (max-width: 1199.98px) {
+  .sidebar,
+  .sidebarMini {
+    width: var(--nav-mobile-w);
     transform: translateX(-100%);
-    transition: transform 0.2s ease;
   }
 
   .sidebarOpen {
-    transform: translateX(0);
-    box-shadow: var(--shadow-dialog);
+    transform: none;
+    box-shadow: var(--shadow-dropdown);
   }
 
   .backdrop {
     display: block;
     position: fixed;
     inset: 0;
-    z-index: calc(var(--z-app-bar) + 50); /* tussen app-bar en drawer */
-    background: rgba(28, 37, 46, 0.48);
+    z-index: 1200;
+    background: var(--backdrop);
   }
 
-  .content {
-    margin-left: 0;
+  .navToggle {
+    display: none;
   }
 
+  .menuButton {
+    display: inline-grid;
+  }
+
+  .content,
+  .shellMini .content {
+    padding-left: 0;
+  }
+
+  .header {
+    padding: 0 24px;
+  }
+
+  .main {
+    padding: 8px 24px 64px;
+  }
+
+  .sidebarMini .navSub {
+    display: inline-flex;
+  }
+
+  .sidebarMini .navScroll {
+    padding: 0 16px 16px;
+  }
+
+  .sidebarMini .navGroupCollapsed .navList {
+    display: none;
+  }
+
+  .sidebarMini .navItem {
+    flex-direction: row;
+    justify-content: flex-start;
+    min-height: 44px;
+    padding: 4px 8px 4px 12px;
+    text-align: left;
+  }
+
+  .sidebarMini .navIcon {
+    width: 24px;
+    height: 24px;
+    margin: 0 12px 0 0;
+  }
+
+  .sidebarMini .navText {
+    font-size: 14px;
+    line-height: 22px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 599.98px) {
   .header {
     padding: 0 16px;
   }
 
-  .menuButton {
-    display: inline-flex;
-  }
-
   .main {
-    padding: 8px 16px 64px;
+    padding: 8px 16px 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .navToggle,
+  .content,
+  .header {
+    transition: none;
   }
 }
