@@ -2644,3 +2644,40 @@ denker-zwaar uitgewerkt; tot dan bouwt niemand verder aan 5-PUB-b/c richting 252
 versleuteld in de credentialopslag, nooit gelogd of getoond. Te onderzoeken: of dat een job in `ProdisDatasyncEngine` wordt
 die uit legacy leest en importeert.
 **Bron:** mens
+
+## 2026-10-20 — Legacy-config-migratie: focus, bron, secrets, definities
+**Vraag:** Hoe krijgen we de legacy-importdefinities (`PSIMDHFD`/`PSIMPDEF`/`PSIMPDEFMAP`/`PSIMPEXCL`) en interface-instellingen
+(`INHEAD`/`INDET`) in CatalogImport (design `legacy-config-migratie-design.md`, `prodis-db-publicatie-en-datasync-design.md`)?
+**Beslissing:**
+- **Focus:** enkel importdefinities + interface-instellingen overnemen. Publicatie, referentiedata en `legacy_master`-samenloop
+  (V1–V4, Q5–Q8) schuiven naar een volgende fase.
+- **Bron:** een job in `ProdisDatasyncEngine` leest legacy uit en levert per interface een bundel; CatalogImport leest die in
+  (V5 optie c).
+- **Secrets:** leesbaar over TLS naar een beveiligd CatalogImport-endpoint (geen envelopversleuteling). Gevolg: transport is een
+  push van de job naar dat endpoint, niet een bestand. Randvoorwaarden: geen secret in jobparameters, execution context, logs of
+  foutbestanden van de datasync; in CatalogImport meteen versleuteld in de credentialopslag.
+- **Definities (Q11):** per interface een eigen definitie mag, maar dupliceren/hergebruiken moet eenvoudig zijn — vele legacy-
+  definities zijn identiek. Uitwerking (bv. `REUSABLE_TEMPLATE` voor gedeelde of inhoudelijk identieke definities, of kopie met
+  "gebaseerd op") volgt in het bundelontwerp.
+**Bron:** mens
+
+## 2026-10-20 — Legacy-config-migratie: datasync-aanpak, Prodis-DB lezen, sjablonen
+**Vraag:** Technische aanpak van de legacy-config-overname, toegang tot de Prodis-DB, en hergebruik van identieke definities.
+**Beslissing:**
+- **Datasync-aanpak aanvaard:** eenmalige (`once`) job in `ProdisDatasyncEngine`, enkel in `legacy_master = PRODIS`, leest via
+  `pervasive-dao` `INHEAD`/`INDET`/`PSIMDHFD`/`PSIMPDEF`/`PSIMPDEFMAP`/`PSIMPEXCL` (DDF per tabel eerst verifiëren), bouwt per
+  interface een JSON-bundel "legacy-config-bundle v1" en pusht die over TLS met een eigen technische client naar CatalogImport.
+  Enkel interfacecode, hash en resultaat loggen, nooit de body. CatalogImport versleutelt het secret meteen, bewaart de bundel
+  zonder secret als ontvangst (herkomstsleutel + hash), PREVIEW (rapport, niets geschreven) → APPLY (DRAFT-definitie + koppeling +
+  MANUAL-taak). Zelfde hash = no-op; gewijzigd = nieuwe DRAFT; ACTIVE nooit overschreven. Herziet externe punt 1 ("geen
+  service-account") voor deze technische client.
+- **Prodis-DB:** nu een tweede, **alleen-lezen** datasource naar de Prodis-PostgreSQL (eigen DB-rol) voor leveranciers, groepen en
+  bibliotheken (validatie en keuze van vaste leverancier/groep). Bewaren als businesscode, geen cross-DB-FK. **Schrijven** naar de
+  Prodis-DB volgt in de publicatiefase. De overschrijving door `CatalogArticleJob` in modus PRODIS is aanvaard als tijdelijk: na dit
+  project is er geen grote reden meer om bij legacy te blijven (richting `legacy_master = NONE`).
+- **Sjablonen:** legacy-definities waarnaar meerdere interfaces verwijzen, of met identieke inhoud (hash), worden één
+  `REUSABLE_TEMPLATE` met per interface een koppeling; een definitie van één interface wordt `OWN_DEFINITION`. In de preview
+  zichtbaar welke interfaces een sjabloon delen; loskoppelen tot eigen kopie ("gebaseerd op") moet eenvoudig zijn.
+- **Identiteit (optie iii):** migratie en de uitbreidingen vaste leverancier/groep (gekozen uit de Prodis-DB) + hoofdletters
+  worden direct na elkaar gebouwd.
+**Bron:** mens / `prodis-db-publicatie-en-datasync-design.md` §4
