@@ -4,14 +4,15 @@ spring:
     username: catalog_import
     password: catalog_import
     driver-class-name: org.postgresql.Driver
-  # Lokaal draait altijd de Prodis-Keycloak (:9080, realm prodis) met client catalog-import (5-AUTH, V1 = A1).
-  # Het secret krijgt ook hier GEEN default: zet CATALOG_OIDC_CLIENT_SECRET in je omgeving.
+  # Lokaal draait de Prodis-Keycloak (:9080, realm prodis) met dezelfde client als Prodis: web_app,
+  # met het vaste dev-secret uit de Prodis realm-export. Overschrijfbaar via de omgeving (zie docs/decisions.md 2026-10-20).
   security:
     oauth2:
       client:
         registration:
           keycloak:
-            client-id: ${CATALOG_OIDC_CLIENT_ID:catalog-import}
+            client-id: ${CATALOG_OIDC_CLIENT_ID:web_app}
+            client-secret: ${CATALOG_OIDC_CLIENT_SECRET:web_app}
         provider:
           keycloak:
             issuer-uri: ${CATALOG_OIDC_ISSUER_URI:http://localhost:9080/realms/prodis}

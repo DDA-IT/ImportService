@@ -2584,3 +2584,14 @@ FAILED toelaat); `@EnableScheduling` staat op de conditionele `StagingPurgeSched
 **Nog open bij de mens:** push + PR; opruimtaak per omgeving bewust aanzetten; asynchrone screening (na 1M-prestatietest en productiehosting);
 deploy-artefact (repackage) als aparte keuze.
 **Bron:** hoofdsessie na verificatie
+
+## 2026-10-20 — Lokale OIDC-client zoals Prodis (gedeeltelijke herroeping V6 / 5-AUTH V1)
+**Vraag:** Moet lokaal ontwikkelen een client-secret uit de omgeving vragen, of werkt het zoals in Prodis zonder extra instelling?
+**Beslissing:** Zoals Prodis. De lokale profielen `ewoutdev` en `local` gebruiken als default de Prodis-client `web_app` met secret `web_app`
+(die client zit in de realm-export `prodis/Web/src/main/docker/realm-config/prodis-realm.json` en laat `http://localhost:*` als redirect toe),
+als default achter de bestaande omgevingsplaceholders (`${CATALOG_OIDC_CLIENT_ID:web_app}`, `${CATALOG_OIDC_CLIENT_SECRET:web_app}`, issuer
+`http://localhost:9080/realms/prodis`). Zonder omgevingsvariabelen is het resultaat gelijk aan Prodis; de letterlijke variant zonder
+placeholders en de extra scope `offline_access` werden niet doorgevoerd (schrijfactie geweigerd door de sessiebeveiliging). De registratie-id blijft `keycloak` (callback-URL en frontend). `application.yml` en het profiel `demo` blijven
+zonder default: buiten lokaal blijft de fail-fast van `SecurityConfiguration` gelden. Dit herroept V6 (geen secret in de repo) en de
+eigen client `catalog-import` uit 5-AUTH V1 enkel voor deze twee lokale profielen.
+**Bron:** mens / Prodis `Web/src/main/resources/config/application.yml`

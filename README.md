@@ -123,12 +123,12 @@ drie rechten in Prodis. Tot dan is de lokale YAML-bron de enige bron.
 
 ### Lokaal aanmelden
 
-- Lokaal draait altijd de **Prodis-Keycloak** op `http://localhost:9080` (realm `prodis`, client
-  `catalog-import`). De client moet de redirect-URI's `http://localhost:8081/login/oauth2/code/keycloak` en
-  `http://localhost:5173/login/oauth2/code/keycloak` toelaten.
-- Zet `CATALOG_OIDC_CLIENT_SECRET` in de omgeving; het secret heeft **geen default** en de backend start niet
-  zonder (`CATALOG_OIDC_CLIENT_ID` en `CATALOG_OIDC_ISSUER_URI` hebben lokaal wel defaults, zie
-  `application-local.yml`/`application-demo.yml`).
+- Lokaal draait altijd de **Prodis-Keycloak** op `http://localhost:9080` (realm `prodis`). De profielen `local` en
+  `ewoutdev` gebruiken, net als Prodis, de client `web_app` met het vaste dev-secret uit de Prodis realm-export; die
+  client laat `http://localhost:*` als redirect toe. Overschrijven kan met `CATALOG_OIDC_CLIENT_ID` /
+  `CATALOG_OIDC_CLIENT_SECRET` / `CATALOG_OIDC_ISSUER_URI` (docs/decisions.md 2026-10-20).
+- Buiten die lokale profielen (`application.yml`, `demo`) heeft het secret **geen default** en start de backend niet
+  zonder `CATALOG_OIDC_CLIENT_SECRET`.
 - Werk via de Frontend: open `http://localhost:5173`; u wordt naar Keycloak gestuurd en na de login terug. De
   Vite-proxy stuurt `/api`, `/oauth2` en `/login` door naar :8081.
 - De geautomatiseerde tests draaien **zonder** Keycloak (`TestSecurityConfiguration`, niet in het artefact).
