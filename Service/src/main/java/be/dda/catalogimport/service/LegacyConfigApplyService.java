@@ -10,6 +10,7 @@ import static be.dda.catalogimport.service.LegacyConfigReport.MIGRATED;
 import static be.dda.catalogimport.service.LegacyConfigReport.WARNING;
 
 import be.dda.catalogimport.dao.CatalogImportTaskRepository;
+import be.dda.catalogimport.dao.ExternalCredentialRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.ImportFieldCatalogRepository;
@@ -24,6 +25,7 @@ import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import be.dda.catalogimport.domain.CatalogImportTask;
 import be.dda.catalogimport.domain.Criticality;
 import be.dda.catalogimport.domain.DefinitionUsageType;
+import be.dda.catalogimport.domain.ExternalCredential;
 import be.dda.catalogimport.domain.ImportDefinition;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldMapping;
@@ -39,6 +41,7 @@ import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.domain.SourceOrganisationType;
 import be.dda.catalogimport.service.LegacyConfigReport.Item;
 import be.dda.catalogimport.service.LegacyConfigReport.Planned;
+import be.dda.catalogimport.service.LegacyConfigReport.PlannedCredential;
 import be.dda.catalogimport.service.LegacyConfigReport.PlannedDefinition;
 import be.dda.catalogimport.service.LegacyConfigReport.PlannedLink;
 import be.dda.catalogimport.service.LegacyConfigReport.PlannedOrganisation;
@@ -69,6 +72,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -90,6 +94,10 @@ import org.springframework.transaction.annotation.Transactional;
  *       een geblokkeerd rapport wordt nooit toegepast ({@value #CODE_BLOCKED}). Dan: bronorganisatie find-or-create →
  *       eigen definitie (nieuw, opvolgende DRAFT of ongewijzigd) → koppeling → MANUAL-taak → herkomstrijen (020-2,
  *       020-3, 020-4) → ontvangst {@code APPLIED}. <b>APPLY activeert nooit.</b></li>
+ *   <li><b>Credential (S4):</b> {@code planned.credential} toont de {@code credentialRef} van de herkomst en de
+ *       {@code secretOutcome} van deze ontvangst, nooit een waarde. APPLY koppelt geen verbindingsprofiel of
+ *       leveringsconfiguratie (L5: hostsleutel verplicht); het item {@code CONNECTION_NOT_MIGRATED} geeft het voorstel
+ *       (host, poort, map, login, {@code credentialRef}).</li>
  *   <li><b>Nieuwe interface:</b> {@code OWN_DEFINITION} met de legacy-code (of {@code definitionCodeOverride}),
  *       revisie 1 (DRAFT, canonicalisatieversie 2), koppeling {@code LEGACY-<interface>} met de door de mens
  *       gegeven {@code libraryCode} (nooit het ruwe {@code ArtImp_BibNr}; zonder: {@code LIBRARY_CODE_NOT_RESOLVED}),
@@ -199,6 +207,7 @@ public class LegacyConfigApplyService {
     private final ImportFieldCatalogRepository fieldCatalog;
     private final ImportLinkRepository links;
     private final CatalogImportTaskRepository tasks;
+    private final ExternalCredentialRepository credentials;
     private final SetupService setup;
     private final RevisionSuccessorService successors;
     private final ChainConfigurationChecks checks;
@@ -218,9 +227,9 @@ public class LegacyConfigApplyService {
                                     ImportFieldMappingRepository fieldMappings,
                                     ImportRecordFilterRepository recordFilters,
                                     ImportFieldCatalogRepository fieldCatalog, ImportLinkRepository links,
-                                    CatalogImportTaskRepository tasks, SetupService setup,
-                                    RevisionSuccessorService successors, ChainConfigurationChecks checks,
-                                    Clock clock) {
+                                    CatalogImportTaskRepository tasks, ExternalCredentialRepository credentials,
+                                    SetupService setup, RevisionSuccessorService successors,
+                                    ChainConfigurationChecks checks, Clock clock) {
         this.receipts = receipts;
         this.origins = origins;
         this.definitionOrigins = definitionOrigins;
@@ -233,6 +242,7 @@ public class LegacyConfigApplyService {
         this.fieldCatalog = fieldCatalog;
         this.links = links;
         this.tasks = tasks;
+        this.credentials = credentials;
         this.setup = setup;
         this.successors = successors;
         this.checks = checks;
@@ -309,20 +319,27 @@ public class LegacyConfigApplyService {
 
     private Plan plan(LegacyConfigReceipt receipt, ApplyOptions options) {
         JsonNode bundle = readBundle(receipt);
-        Translation translation = LegacyConfigTranslator.translate(bundle, options.charsetWhenUndeclared());
-        List<Item> items = new ArrayList<>(translation.items());
-        List<String> rows = new ArrayList<>();
         String environment = receipt.getOriginEnvironment();
         String dossier = receipt.getOriginDossier();
         String interfaceCode = receipt.getInterfaceCode();
+        LegacyConfigOrigin origin = origins.findByOriginEnvironmentAndOriginDossierAndInterfaceCode(environment,
+                dossier, interfaceCode).orElse(null);
+        // S4: de credential van de herkomst (nooit een waarde); APPLY koppelt ze nergens aan (L5: hostsleutel).
+        UUID credentialRef = origin == null || origin.getCredentialId() == null ? null
+                : credentials.findById(origin.getCredentialId()).map(ExternalCredential::getCredentialRef).orElse(null);
+        PlannedCredential plannedCredential = credentialRef == null && receipt.getSecretOutcome() == null ? null
+                : new PlannedCredential(credentialRef,
+                receipt.getSecretOutcome() == null ? null : receipt.getSecretOutcome().name());
+        Translation translation = LegacyConfigTranslator.translate(bundle, options.charsetWhenUndeclared(),
+                credentialRef);
+        List<Item> items = new ArrayList<>(translation.items());
+        List<String> rows = new ArrayList<>();
         String supplierCode = translation.supplierCode();
         String definitionHash = translation.definitionContentHash();
         PlannedRevision planned = translation.revision();
         String plannedHash = planned == null ? null
                 : LegacyRevisionContent.ofPlanned(planned, "CSV", this::defaultCriticality);
 
-        LegacyConfigOrigin origin = origins.findByOriginEnvironmentAndOriginDossierAndInterfaceCode(environment,
-                dossier, interfaceCode).orElse(null);
         rows.add("origin:" + (origin == null ? "none" : origin.getId() + ":" + origin.getUpdatedAt()));
         ImportLink link = origin == null || origin.getImportLinkId() == null ? null
                 : links.findById(origin.getImportLinkId()).orElse(null);
@@ -482,7 +499,7 @@ public class LegacyConfigApplyService {
                         definition == null ? translation.definitionName() : definition.getDescription(),
                         revisionAction, basedOn == null ? null : basedOn.getId(), null),
                 new PlannedLink(linkAction, link == null ? null : link.getId(), linkCode, libraryCode),
-                new PlannedTask(taskAction, taskId, taskName), null);
+                new PlannedTask(taskAction, taskId, taskName), plannedCredential);
         LegacyConfigReport report = new LegacyConfigReport(receipt.getId(), receipt.getContentHash(),
                 receipt.getStatus().name(), blocked ? LegacyConfigReport.OUTCOME_BLOCKED
                 : LegacyConfigReport.OUTCOME_APPLICABLE, plannedSection, List.of(), items);
@@ -754,7 +771,7 @@ public class LegacyConfigApplyService {
                         planned.definition().name(), planned.definition().revisionAction(),
                         planned.definition().basedOnRevision(), revisionId),
                 new PlannedLink(planned.link().action(), linkId, planned.link().code(), planned.link().libraryCode()),
-                new PlannedTask(planned.task().action(), taskId, planned.task().name()), null);
+                new PlannedTask(planned.task().action(), taskId, planned.task().name()), planned.credential());
         return new LegacyConfigReport(report.receiptId(), report.contentHash(), report.receiptStatus(),
                 report.outcome(), withIds, report.sharedWith(), report.items());
     }

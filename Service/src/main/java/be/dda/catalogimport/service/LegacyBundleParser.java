@@ -45,7 +45,8 @@ import java.util.regex.Pattern;
  *       Onbekende sleutelnamen verschijnen in het pad enkel als ze er uitzien als een veldnaam.</li>
  *   <li>De gedecodeerde tekens worden na het parsen overschreven; de aanroeper overschrijft de bytes.</li>
  *   <li>Het secret komt in een {@link LegacySecret} (zonder waarde in {@code toString}) en wordt uit de bewaarbare boom
- *       gehaald ({@code "secret": null}).</li>
+ *       gehaald ({@code "secret": null}). Enkel label {@code FTP_password} is toegelaten; de waarde is niet blanco en
+ *       hoogstens {@link CredentialService#MAX_SECRET_LENGTH} tekens (contract par. 1, S4).</li>
  * </ul>
  * Deze klasse logt niets.
  */
@@ -397,6 +398,11 @@ public final class LegacyBundleParser {
             throw invalid("$.secret.label", PATTERN);
         }
         String value = text(object, "value", "$.secret", 1, MAX_TEXT);
+        // Contract par. 1 (S4): hoogstens de grens van de credentialopslag, in UTF-16-tekens zoals
+        // CredentialService. Altijd hier getoetst, zodat de uitkomst niet afhangt van of er een credential gemaakt wordt.
+        if (value.length() > CredentialService.MAX_SECRET_LENGTH) {
+            throw invalid("$.secret.value", LENGTH);
+        }
         return new LegacySecret(label, value);
     }
 

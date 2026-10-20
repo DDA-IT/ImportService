@@ -93,6 +93,20 @@ public class LegacyConfigOrigin {
         this.updatedAt = requiredValue(at, "updatedAt");
     }
 
+    /**
+     * Legt de credential vast die uit een overgenomen legacy-wachtwoord ontstond (slice S4, aanname A1). Een al
+     * vastgelegde credential wordt nooit vervangen: vervangen is een menselijke actie op de credential zelf.
+     *
+     * @throws IllegalStateException er is al een credential vastgelegd
+     */
+    public void attachCredential(Long credentialId, Instant at) {
+        if (this.credentialId != null) {
+            throw new IllegalStateException("Origin " + id + " already has credential " + this.credentialId);
+        }
+        this.credentialId = requiredValue(credentialId, "credentialId");
+        this.updatedAt = requiredValue(at, "updatedAt");
+    }
+
     /** De ontvangst die als laatste werd toegepast. */
     public void recordApplied(Long receiptId, Instant at) {
         this.lastAppliedReceiptId = requiredValue(receiptId, "lastAppliedReceiptId");

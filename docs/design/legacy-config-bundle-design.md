@@ -98,7 +98,8 @@ Niet achter `catalogimport.setup-api.enabled` (precedent L7a). 403 vóór 400/40
 - 400 `LEGACY_BUNDLE_INVALID` (JSON-paden, nooit waarden), `LEGACY_BUNDLE_VERSION_UNSUPPORTED`, `LEGACY_BUNDLE_HASH_MISMATCH`, `LEGACY_APPLY_REASON_REQUIRED`, `LEGACY_APPLY_REASON_TOO_LONG` (S2, > 500 tekens)
 - 413 `LEGACY_BUNDLE_TOO_LARGE` (`catalogimport.legacy-config.max-bundle-bytes`, default 2 MB)
 - 404 `LEGACY_RECEIPT_NOT_FOUND`
-- 409 `SECRETS_NOT_CONFIGURED` (bundel met secret zonder sleutelring: hele push geweigerd), `LEGACY_RECEIPT_NOT_APPLICABLE`, `LEGACY_PREVIEW_STALE`, `LEGACY_APPLY_BLOCKED` (met blokkerende codes), `PRODIS_DB_NOT_CONFIGURED`
+- 409 `SECRETS_NOT_CONFIGURED` (bundel met secret zonder sleutelring: hele push geweigerd; sinds S4, vervangt de S1-code 400
+  `LEGACY_BUNDLE_SECRET_NOT_SUPPORTED`), `LEGACY_RECEIPT_NOT_APPLICABLE`, `LEGACY_PREVIEW_STALE`, `LEGACY_APPLY_BLOCKED` (met blokkerende codes), `PRODIS_DB_NOT_CONFIGURED`
 - 503 `PRODIS_DB_UNAVAILABLE`
 
 **Idempotentie (beslissingslog 2026-10-20 "Legacy-config S1: idempotentie tegenover de laatste ontvangst"):** een push wordt enkel
@@ -120,6 +121,22 @@ open ontvangst met rijslot lezen, dan de laatste ontvangst; een race op de open-
   nieuwe additieve overload met eventbron SYSTEM (`changed_by` null), `created_by = svc:<azp>` → `secretOutcome=STORED`.
 - Credential bestaat al → `DISCARDED_ALREADY_PRESENT` (niets ontsleutelen of vergelijken; vervangen = menselijke PUT).
 - FTP/onbekend protocol → `DISCARDED_PROTOCOL_UNSUPPORTED`; geen/ongeldige host → `DISCARDED_NO_HOST`; UNCHANGED → weggegooid.
+
+**Uitwerking S4 (gebouwd 2026-10-20):**
+- Volgorde: (1) bundel met secret en geen sleutelring → 409 `SECRETS_NOT_CONFIGURED`, niets bewaard (ook bij `UNCHANGED`);
+  (2) `UNCHANGED` → secret weggegooid, niets geschreven; (3) herkomst (`legacy_config_origin`, rijslot) heeft al een credential,
+  ongeacht status (ook `REVOKED`) → `DISCARDED_ALREADY_PRESENT`; (4) `FTP`+`FTP2` leeg → `DISCARDED_NO_HOST`; (5) URL-schema niet
+  `sftp` (ook geen schema) → `DISCARDED_PROTOCOL_UNSUPPORTED`; (6) geen geldige host → `DISCARDED_NO_HOST`; anders `STORED`.
+- Bestemming = `Trim(FTP) & Trim(FTP2)` (`Prg_1232` r.300), ontleed door `service.support.LegacyFtpLocation`: host zonder poort,
+  genormaliseerd met `HostNames`; ongeldig bij lege authority, `@`, poort buiten 1-65535, haken die geen IPv6-literal zijn
+  (bv. `[YYYY]`), meer dan één `:` buiten haken, of een dubbel `FTP`/`FTP2`-label. Het `SFTP`-label wordt niet gelezen (A7).
+- `credential_id` staat enkel bij `STORED` op de ontvangst (de credential die uit díe ontvangst ontstond) en altijd op de herkomst;
+  de herkomstrij ontstaat hier als ze nog niet bestond. Ontvangst, credential, event en herkomst zitten in één transactie; een
+  gelijktijdige eerste insert van de herkomst (`uk_legacy_config_origin`) wordt net als `uk_legacy_config_receipt_open` herhaald.
+- `secret.value` hoogstens 1024 tekens (grens van `CredentialService`), al bij het parsen getoetst (contract §1).
+- PREVIEW/APPLY: `planned.credential = {credentialRef (herkomst), secretOutcome (deze ontvangst)}` of `null`; APPLY koppelt geen
+  profiel (L5); het item `CONNECTION_NOT_MIGRATED` toont protocol/host/poort/map/`FTP_directory`/login + `credentialRef`
+  (`target = external_credential.credentialRef=<uuid>`). Geen Liquibase nodig (020 had alle kolommen en checks al).
 
 ## 3. Authenticatie technische client
 
@@ -273,6 +290,12 @@ sync.jobs.LegacyConfigExportJob: { enabled: false, frequency: once, priority: 20
 Fout → `SyncErrorWriter(jobId, interfaceCode, "LEGACY_CONFIG_PUSH", code, recoverable, "HTTP <status> <code>")`, nooit body of
 value; door naar de volgende interface. Op het einde bij fouten: `LegacyConfigExportIncompleteException` met enkel aantallen.
 Body-`byte[]` na verzending wissen.
+
+**Secret (S4, gebouwd 2026-10-20):** de mapper zet de getrimde `FTP_password`-waarde in `LegacyConfigBundle.secret`
+(`LegacySecretValue`, `toString` → `[REDACTED]`; leeg → `null`); de JSON-boom (`document`) houdt `"secret": null` en blijft dus
+veilig om te printen, de hashes blijven ongewijzigd. Pas `LegacyConfigBundleBody` schrijft het secret op `$.secret` in de
+request-body (streaming, tussenbuffer gewist). Meerdere `FTP_password`-regels met verschillende waarden → bundel niet gebouwd
+(`SECRET_AMBIGUOUS`, sync-error zonder waarde). Een 409 `SECRETS_NOT_CONFIGURED` is een niet-herstelbare sync-error; de run gaat door.
 
 **Logging:** enkel interfacecode, `contentHash`, uitkomst, aantallen — ook op DEBUG (productie: `be.dda.prodis: DEBUG`); geen
 wire-logging; eigen exceptions zonder body.

@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import be.dda.catalogimport.dao.ConnectionProfileVersionRepository;
 import be.dda.catalogimport.dao.ExternalCredentialEventRepository;
 import be.dda.catalogimport.dao.ExternalCredentialRepository;
+import be.dda.catalogimport.domain.ExternalCredentialEventSource;
 import be.dda.catalogimport.service.ActorIdentity;
 import be.dda.catalogimport.service.ConflictException;
 import be.dda.catalogimport.service.CredentialService;
@@ -208,6 +209,54 @@ class CredentialHttpTest {
 
         assertThat(first).isNotEqualTo(second);
         assertThat(row(first).get("ciphertext")).isNotEqualTo(row(second).get("ciphertext"));
+    }
+
+    /**
+     * Additieve overload (legacy-config S4, aanname A2): eventbron SYSTEM. De credential draagt de technische client als
+     * aanmaker; het {@code CREATED}-event heeft geen {@code changed_by}/subject (check
+     * {@code ck_external_credential_event_source}). De gewone aanmaak blijft HUMAN.
+     */
+    @Test
+    void theSystemOverloadWritesASystemEventWithoutActorAndKeepsTheClientAsCreator() throws Exception {
+        String plain = secretValue("system");
+        ActorIdentity client = new ActorIdentity("svc:prodis-datasync-catalogimport", "service-account-sub");
+
+        CredentialService.CredentialView view = credentialService.create("Legacy TEST/IFACE", "SFTP_PASSWORD",
+                " SFTP.System.TEST. ", plain, "Overgenomen uit legacy INDET IFACE (ontvangst 1)", client,
+                ExternalCredentialEventSource.SYSTEM);
+
+        Map<String, Object> credential = row(view.credentialRef());
+        assertThat(credential.get("bound_host")).isEqualTo("sftp.system.test");
+        assertThat(credential.get("created_by")).isEqualTo("svc:prodis-datasync-catalogimport");
+        assertThat(credential.get("created_by_subject")).isEqualTo("service-account-sub");
+        assertThat(credential.get("secret_updated_by")).isEqualTo("svc:prodis-datasync-catalogimport");
+        assertThat(secrets.decrypt((String) credential.get("ciphertext"), view.credentialRef(), "SFTP_PASSWORD"))
+                .isEqualTo(plain);
+        assertThat(eventRows(view.credentialRef())).singleElement().satisfies(event -> {
+            assertThat(event.get("event_kind")).isEqualTo("CREATED");
+            assertThat(event.get("source")).isEqualTo("SYSTEM");
+            assertThat(event.get("changed_by")).isNull();
+            assertThat(event.get("changed_by_subject")).isNull();
+        });
+        read(get(API + "/{ref}/events", view.credentialRef())).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].source").value("SYSTEM"))
+                .andExpect(jsonPath("$[0].changedBy").value(org.hamcrest.Matchers.nullValue()));
+
+        // De gewone aanmaak blijft HUMAN met de actor in het event.
+        UUID human = refOf(create("sftp.human.test", secretValue("human"), "Mens").andExpect(status().isCreated()));
+        assertThat(eventRows(human)).singleElement().satisfies(event -> {
+            assertThat(event.get("source")).isEqualTo("HUMAN");
+            assertThat(event.get("changed_by")).isEqualTo(USER);
+        });
+        // Zonder bron: weigering vóór er iets gebeurt; "system" blijft als actornaam verboden.
+        long before = credentialCount();
+        assertThatThrownBy(() -> credentialService.create("L", "SFTP_PASSWORD", "sftp.test", plain, "R", client, null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> credentialService.create("L", "SFTP_PASSWORD", "sftp.test", plain, "R",
+                ActorIdentity.unverified("system"), ExternalCredentialEventSource.SYSTEM))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(credentialCount()).isEqualTo(before);
+        assertLogsDoNotContain(plain);
     }
 
     // --- Validatie: 400 zonder echo van de waarde -----------------------------------------------------------------

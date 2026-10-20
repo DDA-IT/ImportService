@@ -53,6 +53,27 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
     @Autowired
     private LegacyConfigApplyService applyService;
 
+    /**
+     * S4: zonder secret en zonder credential op de herkomst blijft {@code planned.credential} {@code null}; het
+     * verbindingsvoorstel staat in het rapport, er wordt geen profiel aangemaakt (L5). Met credential:
+     * {@code LegacyConfigSecretLeakTest}.
+     */
+    @Test
+    void withoutASecretThereIsNoPlannedCredentialButAConnectionProposal() throws Exception {
+        ObjectNode bundle = applicable();
+        long id = receive(bundle);
+        long profilesBefore = count("select count(*) from connection_profile");
+
+        String body = previewAndApply(id, "libraryCode", "LIB-S4").andExpect(status().isOk())
+                .andExpect(jsonPath("$.report.planned.credential").value(org.hamcrest.Matchers.nullValue()))
+                .andReturn().getResponse().getContentAsString();
+
+        List<String> connection = JsonPath.read(body, "$.report.items[?(@.code == 'CONNECTION_NOT_MIGRATED')].message");
+        assertThat(connection).singleElement().asString().contains("protocol=SFTP", "host=sftp.example.test",
+                "port=22 (default)", "directory=/exports/", "login=fixture-user", "credentialRef=(none)");
+        assertThat(count("select count(*) from connection_profile")).isEqualTo(profilesBefore);
+    }
+
     @Test
     void theDerivedGoldenBecomesADraftDefinitionWithLinkAndManualTask() throws Exception {
         ObjectNode bundle = applicable();

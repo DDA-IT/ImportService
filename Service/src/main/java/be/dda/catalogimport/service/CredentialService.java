@@ -146,6 +146,32 @@ public class CredentialService {
      */
     public CredentialView create(String label, String secretKind, String boundHost, String secret, String reason,
                                  ActorIdentity actor) {
+        return create(label, secretKind, boundHost, secret, reason, actor, ExternalCredentialEventSource.HUMAN);
+    }
+
+    /**
+     * Maakt een credential aan met een expliciete eventbron (additieve overload, slice S4 van
+     * {@code docs/design/legacy-config-bundle-design.md} par. 2 "Credential bij ontvangst"; aanname A2).
+     * <ul>
+     *   <li>{@link ExternalCredentialEventSource#HUMAN}: zoals {@link #create(String, String, String, String, String,
+     *       ActorIdentity)}; het {@code CREATED}-event draagt de actor.</li>
+     *   <li>{@link ExternalCredentialEventSource#SYSTEM}: een automatische overname (de legacy-config-push). Het
+     *       {@code CREATED}-event heeft {@code changed_by}/{@code changed_by_subject} {@code null} (check
+     *       {@code ck_external_credential_event_source}); de credential zelf draagt de technische client als
+     *       {@code created_by}/{@code secret_updated_by} (bv. {@code svc:<azp>}) met diens subject.</li>
+     * </ul>
+     * Zelfde validatie, versleuteling en foutcodes als de gewone aanmaak. De transactie sluit aan bij een lopende
+     * transactie van de aanroeper (standaardpropagatie): een fout daarna rolt de credential mee terug.
+     *
+     * @throws BadRequestException           400 label, soort, host, waarde of reden ongeldig
+     * @throws IllegalArgumentException      400 te lange label/reden, ongeldige actor of geen bron
+     * @throws SecretsNotConfiguredException 409 geen sleutelring
+     */
+    public CredentialView create(String label, String secretKind, String boundHost, String secret, String reason,
+                                 ActorIdentity actor, ExternalCredentialEventSource source) {
+        if (source == null) {
+            throw new IllegalArgumentException("Missing event source");
+        }
         String by = requireActor(actor);
         String name = requireLabel(label);
         ExternalCredentialSecretKind kind = requireKind(secretKind);
@@ -161,9 +187,10 @@ public class CredentialService {
             Instant now = now();
             ExternalCredential saved = credentials.saveAndFlush(new ExternalCredential(ref, name, kind, host,
                     ciphertext, keyId, by, actor.subject(), now));
+            boolean human = source == ExternalCredentialEventSource.HUMAN;
             events.saveAndFlush(new ExternalCredentialEvent(saved, ExternalCredentialEventKind.CREATED, motivation,
-                    ExternalCredentialEventSource.HUMAN, by, actor.subject(), now, null, keyId));
-            LOG.info("Credential {} ({}) created by {}", ref, kind, by);
+                    source, human ? by : null, human ? actor.subject() : null, now, null, keyId));
+            LOG.info("Credential {} ({}) created by {}{}", ref, kind, by, human ? "" : " (source SYSTEM)");
             return CredentialView.of(saved, 0);
         });
     }
@@ -236,6 +263,11 @@ public class CredentialService {
     }
 
     // --- Lezen (werkt ook zonder sleutelconfiguratie) --------------------------------------------------------
+
+    /** Is er een sleutelring (V7)? Zonder kan niets aangemaakt of vervangen worden. */
+    public boolean configured() {
+        return secrets.configured();
+    }
 
     /** Het gebruik van alle credentials in één query (geen query per rij). */
     public List<CredentialView> list() {

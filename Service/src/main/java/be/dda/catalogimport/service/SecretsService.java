@@ -223,11 +223,14 @@ public class SecretsService {
     private String seal(String keyId, String plaintext, byte[] aad) {
         byte[] nonce = new byte[NONCE_BYTES];
         random.nextBytes(nonce);
+        // De UTF-8-kopie van de waarde wordt na het versleutelen overschreven (legacy-config S4: geen extra kopie van een
+        // secret in het geheugen laten rondslingeren; de String zelf is onveranderlijk).
+        byte[] plain = plaintext.getBytes(StandardCharsets.UTF_8);
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.ENCRYPT_MODE, keyRing.get(keyId), new GCMParameterSpec(TAG_BITS, nonce));
             cipher.updateAAD(aad);
-            byte[] sealed = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+            byte[] sealed = cipher.doFinal(plain);
             byte[] payload = new byte[NONCE_BYTES + sealed.length];
             System.arraycopy(nonce, 0, payload, 0, NONCE_BYTES);
             System.arraycopy(sealed, 0, payload, NONCE_BYTES, sealed.length);
@@ -235,6 +238,8 @@ public class SecretsService {
         } catch (GeneralSecurityException failure) {
             // Bewust zonder oorzaak-keten met data: de JCE-meldingen bevatten geen plaintext, maar we houden het schoon.
             throw new IllegalStateException("Encryption failed (" + failure.getClass().getSimpleName() + ")");
+        } finally {
+            java.util.Arrays.fill(plain, (byte) 0);
         }
     }
 

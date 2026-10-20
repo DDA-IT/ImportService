@@ -6,6 +6,11 @@
 > `Web/src/test/resources/legacy-config/` (ImportService) en `sync-core/src/test/resources/legacy-config/` (ProdisDatasyncEngine),
 > byte-identiek in beide repo's.
 > Trefwoorden MOET/MAG NIET zijn normatief.
+>
+> **S4-aanvulling (2026-10-20):** een bundel met `secret` wordt aanvaard (de tijdelijke code `LEGACY_BUNDLE_SECRET_NOT_SUPPORTED`
+> vervalt); `secret.value` is hoogstens 1024 tekens (de grens van de credentialopslag); zonder sleutelring bij de ontvanger:
+> 409 `SECRETS_NOT_CONFIGURED`. Geen wijziging van formaat, canonicalisatie of hashes (golden hashes ongewijzigd), dus nog altijd
+> `version = 1`: tot S4 werd geen enkele bundel met secret aanvaard.
 
 ## 1. Envelop
 
@@ -27,7 +32,7 @@ staan als expliciete `null` waar vermeld. **Onbekende sleutels op elk niveau zij
 | `interface` | object | ja | zie §2 |
 | `definitionStatus` | string | ja | `PRESENT`, `NOT_REFERENCED`, `MISSING` of `TABLE_UNAVAILABLE` |
 | `definition` | object of `null` | ja | object (§3) als `PRESENT`, anders `null` |
-| `secret` | object of `null` | ja | `{ "label": "FTP_password", "value": <string, niet leeg> }` of `null`; geen andere label toegestaan |
+| `secret` | object of `null` | ja | `{ "label": "FTP_password", "value": <string, niet blanco, hoogstens 1024 UTF-16-tekens> }` of `null`; geen ander label en geen andere sleutel toegestaan (400 `LEGACY_BUNDLE_INVALID`, regel `PATTERN`, `LENGTH` of `UNKNOWN_FIELD`) |
 
 **Herkomstsleutel:** `(origin.environment, origin.dossier, interface.code)`.
 
@@ -74,7 +79,14 @@ Alle string-velden zijn korter dan 2000 tekens tenzij hierboven anders vermeld; 
    `ftpCredentialsRedacted = true`. De geredigeerde waarde staat in `details` en is wat gehasht wordt.
 4. De ontvanger MOET weigeren (400 `LEGACY_BUNDLE_INVALID`, regel `SECRET_IN_DETAILS`) als `details` een label bevat dat de
    redactieregex matcht, of een `FTP`/`FTP2`-waarde met userinfo.
-5. `secret.value` verschijnt nooit in logs, foutberichten, `toString`, het opgeslagen `bundle_json` of de hashes.
+5. `secret.value` verschijnt nooit in logs, foutberichten, `toString`, het opgeslagen `bundle_json` of de hashes. Aan de kant
+   van de verzender ook nooit in jobparameters, execution context of foutbestanden; enkel in de request-body over TLS.
+6. **Waarde (S4):** de verzender trimt Magic-padding (zoals elk tekstveld, §2); een lege waarde na trim = `secret = null`. Komt
+   `FTP_password` meer dan eens voor met verschillende niet-lege waarden, dan wordt de bundel niet gebouwd (de verzender kiest nooit).
+7. **Ontvanger (S4):** het secret wordt enkel bij een **nieuwe** ontvangst (`RECEIVED`) gebruikt en dan meteen versleuteld in de
+   credentialopslag bewaard (zie `legacy-config-bundle-design.md` §2 "Credential bij ontvangst"); bij `UNCHANGED` wordt het
+   weggegooid. Het secret telt niet mee in de hash: een secret dat later verschijnt of wijzigt zonder andere inhoudswijziging,
+   levert `UNCHANGED` en wordt dus niet overgenomen (aanname A1: vervangen is een menselijke actie).
 
 ## 3. `definition` (PSIMDHFD DS 253, PSIMPDEF 252, PSIMPDEFMAP 254, PSIMPEXCL 257)
 
@@ -97,7 +109,8 @@ Alle string-velden zijn korter dan 2000 tekens tenzij hierboven anders vermeld; 
 
 ## 4. Validatie en foutcodes
 
-Volgorde: (1) bodygrootte, (2) JSON-parse, (3) `schema`/`version`, (4) structuur/types/regels, (5) hashcontrole. Eerste fout wint.
+Volgorde: (1) bodygrootte, (2) JSON-parse, (3) `schema`/`version`, (4) structuur/types/regels, (5) hashcontrole, (6) secret
+zonder sleutelring. Eerste fout wint.
 
 | HTTP | Code | Wanneer |
 |---|---|---|
@@ -105,7 +118,7 @@ Volgorde: (1) bodygrootte, (2) JSON-parse, (3) `schema`/`version`, (4) structuur
 | 400 | `LEGACY_BUNDLE_INVALID` | ongeldige JSON, ontbrekende/onbekende sleutel, verkeerd type, niet-integer getal, patroon/lengte, `SECRET_IN_DETAILS`, `DUPLICATE`, statusregel (§1) geschonden, ongeldige UTF-8 of ongepaarde surrogate. De melding bevat enkel een JSON-pad (`$.interface.details[3].label`, met de index uit de ontvangen volgorde) en een regelcode (`REQUIRED`, `TYPE`, `UNKNOWN_FIELD`, `PATTERN`, `LENGTH`, `RANGE`, `DUPLICATE`, `SECRET_IN_DETAILS`, `STATUS_MISMATCH`, `SYNTAX`), **nooit een waarde**. `SYNTAX` (pad `$` of de parserpositie) = geen leesbare JSON: ongeldige UTF-8, een BOM, afsluitende tekens na het document of een syntaxfout |
 | 400 | `LEGACY_BUNDLE_VERSION_UNSUPPORTED` | `version != 1` |
 | 400 | `LEGACY_BUNDLE_HASH_MISMATCH` | herberekende `contentHash` of `definitionContentHash` wijkt af (melding: welk van de twee, geen hashes of waarden) |
-| 400 | `LEGACY_BUNDLE_SECRET_NOT_SUPPORTED` | **tijdelijk, tot slice S4:** de bundel is geldig maar `secret` is niet `null`; niets bewaard (§8) |
+| 409 | `SECRETS_NOT_CONFIGURED` | de bundel is geldig en draagt een `secret`, maar de ontvanger heeft geen sleutelring: de hele push wordt geweigerd (ook als hij `UNCHANGED` zou zijn), niets bewaard. (De S1-code `LEGACY_BUNDLE_SECRET_NOT_SUPPORTED` bestaat sinds S4 niet meer.) |
 
 ## 5. Versiebeleid
 
@@ -212,5 +225,9 @@ ontvangst is altijd de laatste. Gelijktijdige pushes van dezelfde herkomst lever
 **Fouten** hebben de vorm `{"error": <tekst zonder waarden>, "code": <code>}`:
 401 `AUTHENTICATION_REQUIRED` (geen of ongeldig token; ook een browsersessie), 403 `ACCESS_DENIED` (geldig token, maar `aud`, `azp` of
 client role klopt niet), 413 `LEGACY_BUNDLE_TOO_LARGE`, 400 `LEGACY_BUNDLE_INVALID` / `LEGACY_BUNDLE_VERSION_UNSUPPORTED` /
-`LEGACY_BUNDLE_HASH_MISMATCH` (§4), en tot S4 400 `LEGACY_BUNDLE_SECRET_NOT_SUPPORTED`. De verzender herhaalt een 4xx niet (behalve 401
-eenmaal met een nieuw token); 5xx en IO-fouten mag hij herhalen, een herhaling is veilig dankzij de idempotentie hierboven.
+`LEGACY_BUNDLE_HASH_MISMATCH` (§4), 409 `SECRETS_NOT_CONFIGURED` (§4; sinds S4, vervangt de S1-code 400
+`LEGACY_BUNDLE_SECRET_NOT_SUPPORTED`). De verzender herhaalt een 4xx niet (behalve 401 eenmaal met een nieuw token); 5xx en IO-fouten
+mag hij herhalen, een herhaling is veilig dankzij de idempotentie hierboven (een herhaalde push met secret is `UNCHANGED` en maakt
+nooit een tweede credential).
+
+Het antwoord bevat bewust geen `secretOutcome` (ongewijzigd contract); die staat op de ontvangst (`GET /receipts/{id}`, MANAGE).

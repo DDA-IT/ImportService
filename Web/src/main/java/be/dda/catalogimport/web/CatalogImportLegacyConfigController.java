@@ -49,13 +49,14 @@ import org.springframework.web.bind.annotation.RestController;
  * <h2>Statuscodes van de push</h2>
  * 201 {@code RECEIVED} of 200 {@code UNCHANGED} (dezelfde inhoud als de laatste ontvangst van de herkomst: id en status
  * van die rij; contract par. 8); 400 {@code LEGACY_BUNDLE_INVALID},
- * {@code LEGACY_BUNDLE_VERSION_UNSUPPORTED}, {@code LEGACY_BUNDLE_HASH_MISMATCH} en (enkel S1)
- * {@code LEGACY_BUNDLE_SECRET_NOT_SUPPORTED}; 413 {@value #CODE_TOO_LARGE}.
+ * {@code LEGACY_BUNDLE_VERSION_UNSUPPORTED}, {@code LEGACY_BUNDLE_HASH_MISMATCH}; 409 {@code SECRETS_NOT_CONFIGURED}
+ * (de bundel draagt een secret en er is geen sleutelring: niets bewaard, S4); 413 {@value #CODE_TOO_LARGE}.
  *
  * <h2>Lekpreventie (design par. 2, "Secret door de request")</h2>
  * De body wordt hier zelf gelezen als {@code byte[]} met een grens ({@code catalogimport.legacy-config.max-bundle-bytes},
  * default 2 MB), nooit via {@code @RequestBody} (Spring logt een Jackson-fout met een stuk invoer), en na verwerking
- * overschreven. Geen enkel antwoord bevat het secret.
+ * overschreven, ook bij een fout. Het secret gaat als {@code LegacySecret} enkel naar de credentialopslag (S4); geen
+ * enkel antwoord, geen logregel en geen {@code bundle_json} bevat het.
  */
 @RestController
 @RequestMapping("/api/catalog-import/legacy-config")

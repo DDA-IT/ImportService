@@ -11,6 +11,7 @@ import be.dda.catalogimport.domain.FilterOperator;
 import be.dda.catalogimport.domain.FilterOutcome;
 import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.service.LegacyConfigReport.Item;
+import be.dda.catalogimport.service.support.LegacyFtpLocation;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.nio.charset.Charset;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.UUID;
 
 /**
  * Vertaalt één gevalideerde legacy-config-bundel v1 naar een geplande revisie plus rapportitems, volgens de B-rijen van
@@ -204,13 +206,15 @@ final class LegacyConfigTranslator {
 
     private final JsonNode bundle;
     private final String charsetWhenUndeclared;
+    private final UUID credentialRef;
     private final List<Item> items = new ArrayList<>();
     private boolean revisionBlocked;
 
-    private LegacyConfigTranslator(JsonNode bundle, String charsetWhenUndeclared) {
+    private LegacyConfigTranslator(JsonNode bundle, String charsetWhenUndeclared, UUID credentialRef) {
         this.bundle = bundle;
         this.charsetWhenUndeclared = charsetWhenUndeclared == null || charsetWhenUndeclared.isBlank() ? null
                 : charsetWhenUndeclared.trim();
+        this.credentialRef = credentialRef;
     }
 
     /**
@@ -218,7 +222,15 @@ final class LegacyConfigTranslator {
      * @param charsetWhenUndeclared de door de mens gekozen tekenset als {@code FILE_ENCODING} leeg is, of null
      */
     static Translation translate(JsonNode bundle, String charsetWhenUndeclared) {
-        return new LegacyConfigTranslator(bundle, charsetWhenUndeclared).run();
+        return translate(bundle, charsetWhenUndeclared, null);
+    }
+
+    /**
+     * @param credentialRef de credential van de herkomst (slice S4), of null; enkel voor het verbindingsvoorstel in het
+     *                      rapport ({@value #CONNECTION_NOT_MIGRATED}), nooit een waarde
+     */
+    static Translation translate(JsonNode bundle, String charsetWhenUndeclared, UUID credentialRef) {
+        return new LegacyConfigTranslator(bundle, charsetWhenUndeclared, credentialRef).run();
     }
 
     private Translation run() {
@@ -474,13 +486,16 @@ final class LegacyConfigTranslator {
                 }
             }
         }
-        if (!connection.isEmpty()) {
+        if (!connection.isEmpty() || credentialRef != null) {
             boolean datePattern = connection.indexOf("[YYYY]") >= 0 || connection.indexOf("[YY]") >= 0
                     || connection.indexOf("[MM]") >= 0 || connection.indexOf("[DD]") >= 0;
-            add("INDET:FTP", NOT_MIGRATED, CONNECTION_NOT_MIGRATED, null, "no connection profile or delivery "
-                    + "configuration is created (a host key is required, L5); proposal: " + connection
-                    + (datePattern ? "; the file name contains a date pattern, to be expressed as a file condition"
-                    : ""));
+            add("INDET:FTP", NOT_MIGRATED, CONNECTION_NOT_MIGRATED,
+                    credentialRef == null ? null : "external_credential.credentialRef=" + credentialRef,
+                    "no connection profile or delivery configuration is created (a host key is required, L5); "
+                            + "proposal: " + connectionProposal(details) + " (legacy: "
+                            + (connection.isEmpty() ? "no FTP settings" : connection) + ")"
+                            + (datePattern ? "; the file name contains a date pattern, to be expressed as a file "
+                            + "condition" : ""));
         }
         for (Map.Entry<String, List<JsonNode>> entry : details.entrySet()) {
             String label = entry.getKey();
@@ -495,6 +510,45 @@ final class LegacyConfigTranslator {
             add("INDET:" + omitted.asText(), NOT_MIGRATED, SECRET_LABEL_OMITTED, null,
                     "a secret label is never exported; enter it by hand if it is needed");
         }
+    }
+
+    /**
+     * Het voorstel voor een verbindingsprofiel (S4): protocol, host, poort en map uit {@code FTP}+{@code FTP2}
+     * ({@link LegacyFtpLocation}, A7), login uit {@code FTP_login}, en de credential van de herkomst. Geen waarde van
+     * een secret: de bundel heeft er geen.
+     */
+    private String connectionProposal(Map<String, List<JsonNode>> details) {
+        LegacyFtpLocation location = LegacyFtpLocation.of(bundle);
+        StringBuilder proposal = new StringBuilder();
+        switch (location.protocol()) {
+            case SFTP -> {
+                if (location.hasValidHost()) {
+                    proposal.append("protocol=SFTP, host=").append(location.host()).append(", port=")
+                            .append(location.port() == null ? ConnectionProfileService.DEFAULT_PORT + " (default)"
+                                    : location.port())
+                            .append(", directory=").append(location.directory().isEmpty() ? "(none)"
+                                    : location.directory());
+                } else {
+                    proposal.append("protocol=SFTP, no valid host");
+                }
+            }
+            case FTP -> proposal.append("protocol=FTP is not supported (SFTP only)");
+            case UNKNOWN -> proposal.append("protocol unknown (FTP+FTP2 has no sftp:// scheme)");
+            case NONE -> proposal.append("no destination (FTP and FTP2 are empty)");
+        }
+        String directoryLabel = firstValue(details, "FTP_directory");
+        if (!directoryLabel.isEmpty()) {
+            proposal.append(", FTP_directory=").append(directoryLabel);
+        }
+        String login = firstValue(details, "FTP_login");
+        proposal.append(", login=").append(login.isEmpty() ? "(none)" : login);
+        proposal.append(", credentialRef=").append(credentialRef == null ? "(none)" : credentialRef);
+        return proposal.toString();
+    }
+
+    private static String firstValue(Map<String, List<JsonNode>> details, String label) {
+        List<JsonNode> rows = details.getOrDefault(label, List.of());
+        return rows.isEmpty() ? "" : rows.get(0).path("value").asText("");
     }
 
     private void schedule() {

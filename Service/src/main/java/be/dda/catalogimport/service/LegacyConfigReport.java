@@ -1,6 +1,7 @@
 package be.dda.catalogimport.service;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Het PREVIEW/APPLY-rapport van één legacy-config-ontvangst ({@code docs/design/legacy-config-bundle-design.md} par. 5,
@@ -67,10 +68,23 @@ public record LegacyConfigReport(long receiptId, String contentHash, String rece
      * @param definition         eigen definitie: nieuw, opvolgende DRAFT of ongewijzigd
      * @param link               koppeling (nieuw of hergebruikt, nooit gewijzigd)
      * @param task               MANUAL-taak (nieuw of hergebruikt, nooit gewijzigd)
-     * @param credential         altijd {@code null} in S2 (het secret volgt in S4)
+     * @param credential         de overgenomen credential (S4), of {@code null} als de herkomst er geen heeft en deze
+     *                           ontvangst geen secret droeg
      */
     public record Planned(PlannedOrganisation sourceOrganisation, PlannedDefinition definition, PlannedLink link,
-                          PlannedTask task, Object credential) {
+                          PlannedTask task, PlannedCredential credential) {
+    }
+
+    /**
+     * De credential van de herkomst (slice S4); nooit een waarde. APPLY koppelt ze aan niets: een verbindingsprofiel
+     * vraagt een hostsleutel (L5) en blijft een menselijke stap; het rapportitem {@code CONNECTION_NOT_MIGRATED} toont
+     * het voorstel met deze {@code credentialRef}.
+     *
+     * @param credentialRef de credential van de herkomst ({@code legacy_config_origin.credential_id}), of {@code null}
+     * @param secretOutcome wat er bij ontvangst met het secret van <b>deze</b> ontvangst gebeurde
+     *                      ({@code STORED}, {@code DISCARDED_*}), of {@code null} als er geen secret meekwam
+     */
+    public record PlannedCredential(UUID credentialRef, String secretOutcome) {
     }
 
     public record PlannedOrganisation(String action, Long id, String code, String name) {

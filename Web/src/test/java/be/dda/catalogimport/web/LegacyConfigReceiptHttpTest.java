@@ -96,9 +96,10 @@ import org.springframework.web.context.WebApplicationContext;
  *   <li><b>Regel:</b> de bundel moet exact het contract volgen; hash herberekend. <b>Implementatie:</b> 400 met
  *       {@code LEGACY_BUNDLE_INVALID} (pad + regelcode), {@code ..._VERSION_UNSUPPORTED}, {@code ..._HASH_MISMATCH};
  *       413 {@code LEGACY_BUNDLE_TOO_LARGE}.</li>
- *   <li><b>Regel (enkel S1):</b> een secret wordt nog niet aanvaard en lekt nergens. <b>Implementatie:</b> 400
- *       {@code LEGACY_BUNDLE_SECRET_NOT_SUPPORTED}; de canary {@value #CANARY} staat in geen antwoord, logregel of
- *       databaserij.</li>
+ *   <li><b>Regel (S4):</b> een secret zonder sleutelring weigert de hele push en lekt nergens. <b>Implementatie:</b>
+ *       409 {@code SECRETS_NOT_CONFIGURED} (deze context heeft bewust geen sleutelring), niets bewaard; de canary
+ *       {@value #CANARY} staat in geen antwoord, logregel of databaserij. Een ander label, een lege of te lange waarde:
+ *       400. De overname zelf: {@code LegacyConfigSecretLeakTest}.</li>
  *   <li><b>Regel:</b> inzage enkel met MANAGE (host/login, L7b). <b>Implementatie:</b> 403 vóór 404.</li>
  * </ul>
  * Elke test gebruikt een eigen dossier (herkomst): de database is gedeeld.
@@ -108,6 +109,8 @@ import org.springframework.web.context.WebApplicationContext;
         "catalogimport.technical-clients.legacy-config.audience=" + TestTechnicalClientJwt.AUDIENCE,
         "catalogimport.technical-clients.legacy-config.client-id=" + TestTechnicalClientJwt.CLIENT_ID,
         "catalogimport.technical-clients.legacy-config.required-role=" + TestTechnicalClientJwt.ROLE,
+        // Bewust zonder sleutelring (V7): een bundel met secret wordt hier geweigerd (409 SECRETS_NOT_CONFIGURED).
+        "catalogimport.secrets.keys=", "catalogimport.secrets.active-key-id=",
         // Eigen context (vaste clientwaarden): kleine pool, zodat samen met andere gecachte contexten de 50
         // verbindingen van de lokale PostgreSQL niet opraken. 5 volstaat voor de gelijktijdigheidstests (4 threads).
         "spring.datasource.hikari.maximum-pool-size=5"})
@@ -657,7 +660,15 @@ class LegacyConfigReceiptHttpTest {
                 invalid("secret with another label", b -> b.putObject("secret").put("label", "FTP")
                         .put("value", CANARY), "$.secret.label (PATTERN)"),
                 invalid("secret with empty value", b -> b.putObject("secret").put("label", "FTP_password")
-                        .put("value", ""), "$.secret.value (LENGTH)"));
+                        .put("value", ""), "$.secret.value (LENGTH)"),
+                invalid("secret with blank value", b -> b.putObject("secret").put("label", "FTP_password")
+                        .put("value", "   "), "$.secret.value (LENGTH)"),
+                invalid("secret longer than the credential store", b -> b.putObject("secret")
+                        .put("label", "FTP_password").put("value", CANARY + "x".repeat(1024)),
+                        "$.secret.value (LENGTH)"),
+                invalid("secret with an unknown field", b -> b.putObject("secret").put("label", "FTP_password")
+                        .put("value", CANARY).put("x", 1), "$.secret.x (UNKNOWN_FIELD)"),
+                invalid("secret as text", b -> b.put("secret", CANARY), "$.secret (TYPE)"));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -733,22 +744,36 @@ class LegacyConfigReceiptHttpTest {
         push(padded, TestTechnicalClientJwt.validToken()).andExpect(status().isCreated());
     }
 
-    // --- Secret (S1: geweigerd, nergens zichtbaar) -----------------------------------------------------------
+    // --- Secret zonder sleutelring (S4: 409, niets bewaard, nergens zichtbaar) ---------------------------------
 
     @Test
-    void aBundleWithASecretIs400AndTheCanaryAppearsNowhere() throws Exception {
+    void aBundleWithASecretWithoutAKeyRingIs409AndTheCanaryAppearsNowhere() throws Exception {
         ObjectNode golden = (ObjectNode) fixture("golden-bundle-v1.json");
         String dossier = uniqueDossier();
         ((ObjectNode) golden.get("origin")).put("dossier", dossier);
         assertThat(golden.get("secret").get("value").textValue()).isEqualTo(CANARY);
+        long credentialsBefore = jdbc.queryForObject("select count(*) from external_credential", Long.class);
 
         MvcResult result = push(golden, TestTechnicalClientJwt.validToken())
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("LEGACY_BUNDLE_SECRET_NOT_SUPPORTED"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SECRETS_NOT_CONFIGURED"))
                 .andReturn();
 
         assertThat(result.getResponse().getContentAsString(StandardCharsets.UTF_8)).doesNotContain(CANARY);
         assertThat(rows(golden)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from legacy_config_origin where origin_dossier = ?",
+                Long.class, dossier)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from external_credential", Long.class))
+                .isEqualTo(credentialsBefore);
+
+        // Ook wanneer de inhoud al eens (zonder secret) binnenkwam: de hele push wordt geweigerd, niet UNCHANGED.
+        ObjectNode withoutSecret = golden.deepCopy();
+        withoutSecret.putNull("secret");
+        long id = created(push(withoutSecret, TestTechnicalClientJwt.validToken()));
+        push(golden, TestTechnicalClientJwt.validToken()).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SECRETS_NOT_CONFIGURED"));
+        assertThat(rows(golden)).isEqualTo(1);
+        assertThat(row(id).get("secret_received")).isEqualTo(false);
         assertThat(jdbc.queryForObject("select count(*) from legacy_config_receipt where bundle_json like ? "
                 + "or apply_report_json like ?", Long.class, "%" + CANARY + "%", "%" + CANARY + "%")).isZero();
         assertThat(log.list).as("captured log lines").isNotEmpty();

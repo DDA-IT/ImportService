@@ -74,7 +74,7 @@ public class LegacyConfigReceipt {
     @Column(name = "secret_received", nullable = false, updatable = false)
     private boolean secretReceived;
 
-    /** {@code null} = geen secret ontvangen (S1: altijd). */
+    /** {@code null} = geen secret ontvangen; anders gezet vóór de insert ({@link #recordSecretOutcome}). */
     @Enumerated(EnumType.STRING)
     @Column(name = "secret_outcome", length = 40)
     private LegacyConfigSecretOutcome secretOutcome;
@@ -164,6 +164,39 @@ public class LegacyConfigReceipt {
         this.secretOutcome = null;
         this.status = LegacyConfigReceiptStatus.RECEIVED;
         this.openMarker = Boolean.TRUE;
+    }
+
+    /**
+     * Legt vast dat er een secret meekwam en wat ermee gebeurde (slice S4; design par. 2 "Credential bij ontvangst").
+     * Enkel vóór de eerste insert: {@code secret_received} is niet wijzigbaar en de check
+     * {@code ck_legacy_config_receipt_secret_outcome} eist dat een ontvangen secret meteen een uitkomst heeft. De waarde
+     * zelf komt nooit in deze klasse.
+     *
+     * @throws IllegalStateException    de ontvangst is al bewaard, of de uitkomst is al vastgelegd
+     * @throws IllegalArgumentException geen uitkomst
+     */
+    public void recordSecretOutcome(LegacyConfigSecretOutcome outcome) {
+        if (id != null || secretReceived) {
+            throw new IllegalStateException("The secret outcome of a legacy-config receipt is set once, before it is "
+                    + "stored");
+        }
+        this.secretOutcome = required(outcome, "secretOutcome");
+        this.secretReceived = true;
+    }
+
+    /**
+     * Verwijst naar de credential die uit het secret van deze ontvangst werd aangemaakt (uitkomst
+     * {@link LegacyConfigSecretOutcome#STORED}); de credential ontstaat pas na de insert, want haar reden noemt het id
+     * van de ontvangst.
+     *
+     * @throws IllegalStateException de uitkomst is niet {@code STORED} of er is al een credential vastgelegd
+     */
+    public void linkCredential(Long credentialId) {
+        if (secretOutcome != LegacyConfigSecretOutcome.STORED || this.credentialId != null) {
+            throw new IllegalStateException("Receipt " + id + " cannot be linked to a credential (secret outcome "
+                    + secretOutcome + ")");
+        }
+        this.credentialId = required(credentialId, "credentialId");
     }
 
     /**
