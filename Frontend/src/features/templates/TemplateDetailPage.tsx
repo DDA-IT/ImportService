@@ -30,6 +30,7 @@ import type { MaterialisedDefinitionView, PageResult, RevisionRow } from '../../
 import type { UseQueryResult } from '../../hooks/useQuery.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { Pager } from '../../components/Pager.tsx';
+import { BackIcon } from '../../components/icons.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { describeIssue } from '../../terms/IssueCodeTerm.tsx';
@@ -42,6 +43,7 @@ import { LinkBookmarkValuesSection } from './LinkBookmarkValuesSection.tsx';
 import { MaterialiseForm } from './MaterialiseForm.tsx';
 import { isSetupApiDisabledError, SETUP_API_DISABLED_MESSAGE } from './setupApiFlag.ts';
 import button from '../../components/Button.module.css';
+import pageCss from '../../components/Page.module.css';
 import styles from './TemplateDetailPage.module.css';
 
 /** Waarom een conceptversie van een sjabloon niet te kiezen is (V7: gewoon Nederlands, geen statuscode). */
@@ -70,8 +72,8 @@ function BookmarkSetSection({
   const bookmarkSet = useQuery(key, (signal) => templatesApi.getBookmarkSet(definitionId, revision.id, signal));
 
   return (
-    <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>
+    <section className={`${pageCss.card} ${pageCss.cardPad} ${styles.section}`}>
+      <h2 className={`${pageCss.subtitle} ${styles.sectionTitle}`}>
         {INVULPUNTEN_CAP} — versie {revision.revisionNumber}
       </h2>
       <WhatIsThis>
@@ -165,8 +167,8 @@ function MaterialisationHistorySection({
   onShowLinks: (definitionId: number) => void;
 }) {
   return (
-    <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>Materialisatiehistoriek</h2>
+    <section className={`${pageCss.card} ${pageCss.cardPad} ${styles.section}`}>
+      <h2 className={`${pageCss.subtitle} ${styles.sectionTitle}`}>Materialisatiehistoriek</h2>
 
       <WhatIsThis>
         Hier staan de beschrijvingen van bestanden die al uit dit sjabloon gemaakt zijn (gematerialiseerd). Een
@@ -252,8 +254,8 @@ function DefinitionLinksSection({
   );
 
   return (
-    <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>Koppelingen van beschrijving #{definitionId}</h2>
+    <section className={`${pageCss.card} ${pageCss.cardPad} ${styles.section}`}>
+      <h2 className={`${pageCss.subtitle} ${styles.sectionTitle}`}>Koppelingen van beschrijving #{definitionId}</h2>
       {links.error !== null && <ErrorBanner error={links.error} />}
       {links.loading && links.data === null && <p className={styles.loading}>Bezig met laden…</p>}
       {links.data !== null &&
@@ -319,13 +321,35 @@ export function TemplateDetailPage() {
 
   return (
     <div className={styles.page}>
-      <p className={styles.breadcrumb}>
-        <Link to="/templates">Sjablonen</Link>
-      </p>
-      <h1 className={styles.title}>Sjabloon #{definitionId}</h1>
+      <header className={`${pageCss.pageHead} ${styles.crumbHead}`}>
+        <div className={pageCss.pageHeadText}>
+          <ol className={pageCss.crumbs}>
+            <li>
+              <span>CatalogImport</span>
+            </li>
+            <li>
+              <span>Inrichting</span>
+            </li>
+            <li>
+              <Link to="/templates">Sjablonen</Link>
+            </li>
+            <li>
+              <span aria-current="page">Sjabloon #{definitionId}</span>
+            </li>
+          </ol>
+        </div>
+      </header>
+      <div className={styles.detailHead}>
+        <Link to="/templates" className={styles.backButton} aria-label="Terug naar de sjablonen">
+          <BackIcon />
+        </Link>
+        <div className={styles.detailId}>
+          <h1 className={pageCss.title}>Sjabloon #{definitionId}</h1>
+        </div>
+      </div>
 
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Versie kiezen</h2>
+      <section className={`${pageCss.card} ${pageCss.cardPad} ${styles.section}`}>
+        <h2 className={`${pageCss.subtitle} ${styles.sectionTitle}`}>Versie kiezen</h2>
         {revisions.error !== null && <ErrorBanner error={revisions.error} />}
         {revisions.loading && revisions.data === null && <p className={styles.loading}>Bezig met laden…</p>}
         {revisions.data !== null && (

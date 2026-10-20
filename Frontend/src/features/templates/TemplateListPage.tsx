@@ -13,16 +13,32 @@
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import * as templatesApi from '../../api/templates.ts';
-import { PERMISSION_READ } from '../../api/types.ts';
+import { PERMISSION_READ, type TemplateView } from '../../api/types.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { usePermissionGate } from '../../actor/permissions.ts';
+import { DataTable, type DataTableColumn } from '../../components/DataTable.tsx';
 import { Pager } from '../../components/Pager.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { INVULPUNTEN } from '../../terms/wording.ts';
 import { FlagOffNotice } from '../setup/FlagOffNotice.tsx';
 import { isSetupApiDisabledError, SETUP_API_DISABLED_MESSAGE } from './setupApiFlag.ts';
+import pageCss from '../../components/Page.module.css';
 import styles from './TemplateListPage.module.css';
+
+const COLUMNS: readonly DataTableColumn<TemplateView>[] = [
+  {
+    key: 'code',
+    header: 'Sjabloon',
+    render: (row) => (
+      <Link to={`/templates/${row.id}`} className={styles.code}>
+        {row.code}
+      </Link>
+    ),
+  },
+  { key: 'name', header: 'Naam', render: (row) => row.name },
+  { key: 'source', header: 'Bron', render: (row) => `bron ${row.sourceOrganisationCode}` },
+];
 
 export function TemplateListPage() {
   const readGate = usePermissionGate(PERMISSION_READ);
@@ -42,7 +58,22 @@ export function TemplateListPage() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>Sjablonen</h1>
+      <header className={pageCss.pageHead}>
+        <div className={pageCss.pageHeadText}>
+          <h1 className={pageCss.title}>Sjablonen</h1>
+          <ol className={pageCss.crumbs}>
+            <li>
+              <span>CatalogImport</span>
+            </li>
+            <li>
+              <span>Inrichting</span>
+            </li>
+            <li>
+              <span aria-current="page">Sjablonen</span>
+            </li>
+          </ol>
+        </div>
+      </header>
       <p className={styles.intro}>
         Alleen-lezen overzicht van herbruikbare sjablonen. Kies een sjabloon om de {INVULPUNTEN} van een
         versie te bekijken en te zien welke beschrijvingen van bestanden er al uit gemaakt zijn.
@@ -61,22 +92,15 @@ export function TemplateListPage() {
         ))}
       {templates.loading && templates.data === null && <p className={styles.loading}>Bezig met laden…</p>}
       {templates.data !== null && (
-        <>
-          {templates.data.content.length === 0 ? (
-            <p className={styles.empty}>Geen sjablonen gevonden.</p>
-          ) : (
-            <ul className={styles.list} data-testid="templates">
-              {templates.data.content.map((template) => (
-                <li key={template.id} className={styles.listItem}>
-                  <Link to={`/templates/${template.id}`} className={styles.code}>
-                    {template.code}
-                  </Link>
-                  <span>{template.name}</span>
-                  <span>bron {template.sourceOrganisationCode}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+        <div className={pageCss.card}>
+          <div data-testid="templates">
+            <DataTable
+              columns={COLUMNS}
+              rows={templates.data.content}
+              rowKey={(row) => row.id}
+              emptyMessage="Geen sjablonen gevonden."
+            />
+          </div>
           <Pager
             page={templates.data.page}
             size={templates.data.size}
@@ -87,7 +111,7 @@ export function TemplateListPage() {
               setPage(0);
             }}
           />
-        </>
+        </div>
       )}
     </div>
   );
