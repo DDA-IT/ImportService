@@ -16,6 +16,7 @@ import { ISSUE_CASE_STATUSES, ROW_ISSUE_SEVERITIES } from '../../api/types.ts';
 import type { IssueCaseRow, IssueCaseStatus, RowIssueSeverity } from '../../api/types.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { DataTable, type DataTableColumn } from '../../components/DataTable.tsx';
+import { Field } from '../../components/Field.tsx';
 import { Pager } from '../../components/Pager.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
@@ -23,6 +24,7 @@ import { IssueCodeTerm } from '../../terms/IssueCodeTerm.tsx';
 import { Term } from '../../terms/Term.tsx';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { DICTIONARY, term } from '../../terms/index.ts';
+import pageCss from '../../components/Page.module.css';
 import styles from './IssueCaseListPage.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -157,110 +159,133 @@ export function IssueCaseListPage() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>Behandelgevallen</h1>
+      <header className={pageCss.pageHead}>
+        <div className={pageCss.pageHeadText}>
+          <h1 className={pageCss.title}>Behandelgevallen</h1>
+          <ol className={pageCss.crumbs}>
+            <li>
+              <span>CatalogImport</span>
+            </li>
+            <li>
+              <span>Werk</span>
+            </li>
+            <li>
+              <span aria-current="page">Behandelgevallen</span>
+            </li>
+          </ol>
+        </div>
+      </header>
       <WhatIsThis>
         Een behandelgeval bundelt dezelfde vaststelling uit meerdere leveringen, zodat u ze één keer beoordeelt. Een
         afgewezen geval blijft onderdrukt zolang een identieke vaststelling terugkomt; een nieuwe waarneming na uw
         beslissing krijgt de aanduiding &laquo;Nieuwe waarneming&raquo;. Open een geval om het te beoordelen.
       </WhatIsThis>
 
-      <div className={styles.filters}>
-        <label htmlFor="issue-case-status-filter">Status</label>
-        <select
-          id="issue-case-status-filter"
-          value={status}
-          onChange={(event) => handleStatusChange(event.target.value as StatusFilter)}
-        >
-          <option value={NO_STATUS_FILTER}>Alle</option>
-          {ISSUE_CASE_STATUSES.map((option) => (
-            <option key={option} value={option}>
-              {term('issueCaseStatus', option).label}
-            </option>
-          ))}
-        </select>
+      <div className={pageCss.card}>
+        <div className={`${pageCss.toolbar} ${styles.toolbar}`} role="search">
+          <Field label="Status" htmlFor="issue-case-status-filter">
+            <select
+              id="issue-case-status-filter"
+              value={status}
+              onChange={(event) => handleStatusChange(event.target.value as StatusFilter)}
+            >
+              <option value={NO_STATUS_FILTER}>Alle</option>
+              {ISSUE_CASE_STATUSES.map((option) => (
+                <option key={option} value={option}>
+                  {term('issueCaseStatus', option).label}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-        <label htmlFor="issue-case-severity-filter">Ernst</label>
-        <select
-          id="issue-case-severity-filter"
-          value={severity}
-          onChange={(event) => handleSeverityChange(event.target.value as SeverityFilter)}
-        >
-          <option value={NO_SEVERITY_FILTER}>Alle</option>
-          {ROW_ISSUE_SEVERITIES.map((option) => (
-            <option key={option} value={option}>
-              {term('severity', option).label}
-            </option>
-          ))}
-        </select>
+          <Field label="Ernst" htmlFor="issue-case-severity-filter">
+            <select
+              id="issue-case-severity-filter"
+              value={severity}
+              onChange={(event) => handleSeverityChange(event.target.value as SeverityFilter)}
+            >
+              <option value={NO_SEVERITY_FILTER}>Alle</option>
+              {ROW_ISSUE_SEVERITIES.map((option) => (
+                <option key={option} value={option}>
+                  {term('severity', option).label}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-        <label htmlFor="issue-case-link-filter">Koppeling</label>
-        <select
-          id="issue-case-link-filter"
-          value={importLinkId}
-          onChange={(event) =>
-            handleImportLinkChange(event.target.value === NO_IMPORT_LINK_FILTER ? '' : Number(event.target.value))
-          }
-        >
-          <option value={NO_IMPORT_LINK_FILTER}>Alle</option>
-          {links.data?.content.map((link) => (
-            <option key={link.id} value={link.id}>
-              {link.code} — {link.name}
-            </option>
-          ))}
-        </select>
+          <Field label="Koppeling" htmlFor="issue-case-link-filter">
+            <select
+              id="issue-case-link-filter"
+              value={importLinkId}
+              onChange={(event) =>
+                handleImportLinkChange(event.target.value === NO_IMPORT_LINK_FILTER ? '' : Number(event.target.value))
+              }
+            >
+              <option value={NO_IMPORT_LINK_FILTER}>Alle</option>
+              {links.data?.content.map((link) => (
+                <option key={link.id} value={link.id}>
+                  {link.code} — {link.name}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-        <label htmlFor="issue-case-issuecode-filter">Soort vaststelling</label>
-        <select
-          id="issue-case-issuecode-filter"
-          value={issueCode}
-          onChange={(event) => handleIssueCodeChange(event.target.value)}
-        >
-          <option value="">Alle</option>
-          {ISSUE_CODE_OPTIONS.map((option) => (
-            <option key={option.code} value={option.code}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          <Field label="Soort vaststelling" htmlFor="issue-case-issuecode-filter">
+            <select
+              id="issue-case-issuecode-filter"
+              value={issueCode}
+              onChange={(event) => handleIssueCodeChange(event.target.value)}
+            >
+              <option value="">Alle</option>
+              {ISSUE_CODE_OPTIONS.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-        <label htmlFor="issue-case-last-seen-from">Laatst gezien vanaf</label>
-        <input
-          id="issue-case-last-seen-from"
-          type="date"
-          value={lastSeenFrom}
-          onChange={(event) => handleLastSeenFromChange(event.target.value)}
-        />
+          <Field label="Laatst gezien vanaf" htmlFor="issue-case-last-seen-from">
+            <input
+              id="issue-case-last-seen-from"
+              type="date"
+              value={lastSeenFrom}
+              onChange={(event) => handleLastSeenFromChange(event.target.value)}
+            />
+          </Field>
 
-        <label htmlFor="issue-case-last-seen-to">Laatst gezien tot en met</label>
-        <input
-          id="issue-case-last-seen-to"
-          type="date"
-          value={lastSeenTo}
-          onChange={(event) => handleLastSeenToChange(event.target.value)}
-        />
+          <Field label="Laatst gezien tot en met" htmlFor="issue-case-last-seen-to">
+            <input
+              id="issue-case-last-seen-to"
+              type="date"
+              value={lastSeenTo}
+              onChange={(event) => handleLastSeenToChange(event.target.value)}
+            />
+          </Field>
+        </div>
+
+        {links.error !== null && <ErrorBanner error={links.error} />}
+        {list.error !== null && <ErrorBanner error={list.error} />}
+        {list.loading && list.data === null && <p className={styles.loading}>Bezig met laden…</p>}
+
+        {list.data !== null && (
+          <>
+            <DataTable
+              columns={COLUMNS}
+              rows={list.data.content}
+              rowKey={(row) => row.id}
+              emptyMessage="Geen behandelgevallen gevonden."
+            />
+            <Pager
+              page={list.data.page}
+              size={list.data.size}
+              totalElements={list.data.totalElements}
+              onPageChange={setPage}
+              onSizeChange={handleSizeChange}
+            />
+          </>
+        )}
       </div>
-
-      {links.error !== null && <ErrorBanner error={links.error} />}
-      {list.error !== null && <ErrorBanner error={list.error} />}
-      {list.loading && list.data === null && <p className={styles.loading}>Bezig met laden…</p>}
-
-      {list.data !== null && (
-        <>
-          <DataTable
-            columns={COLUMNS}
-            rows={list.data.content}
-            rowKey={(row) => row.id}
-            emptyMessage="Geen behandelgevallen gevonden."
-          />
-          <Pager
-            page={list.data.page}
-            size={list.data.size}
-            totalElements={list.data.totalElements}
-            onPageChange={setPage}
-            onSizeChange={handleSizeChange}
-          />
-        </>
-      )}
     </div>
   );
 }

@@ -9,11 +9,12 @@
  * geslaagde actie herladen zowel het geval als de gebeurtenissengeschiedenis.
  */
 
-import { NavLink, useParams } from 'react-router-dom';
+import { Link, NavLink, useParams } from 'react-router-dom';
 import * as issueCasesApi from '../../api/issueCases.ts';
 import type { IssueCaseEventRow, IssueCaseObservationRow, IssueCaseRow } from '../../api/types.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { DataTable, type DataTableColumn } from '../../components/DataTable.tsx';
+import { BackIcon } from '../../components/icons.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { IssueCodeTerm } from '../../terms/IssueCodeTerm.tsx';
@@ -21,6 +22,7 @@ import { Term } from '../../terms/Term.tsx';
 import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { IssueCaseActions } from './IssueCaseActions.tsx';
+import pageCss from '../../components/Page.module.css';
 import styles from './IssueCaseDetailPage.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -36,14 +38,21 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 function CaseOverview({ issueCase }: { issueCase: IssueCaseRow }) {
   return (
     <>
-      <div className={styles.header}>
-        <h1 className={styles.title}>Behandelgeval #{issueCase.id}</h1>
-        <StatusBadge status={issueCase.status} domain="issueCaseStatus" />
-        {issueCase.hasUnreviewedRecurrence && (
-          <span className={styles.recurrenceBadge} data-testid="issue-case-recurrence">
-            Nieuwe waarneming
-          </span>
-        )}
+      <div className={styles.detailHead}>
+        <Link to="/issue-cases" className={styles.backButton} aria-label="Terug naar de behandelgevallen">
+          <BackIcon />
+        </Link>
+        <div className={styles.detailId}>
+          <h1 className={pageCss.title}>Behandelgeval #{issueCase.id}</h1>
+          <div className={styles.chips}>
+            <StatusBadge status={issueCase.status} domain="issueCaseStatus" />
+            {issueCase.hasUnreviewedRecurrence && (
+              <span className={styles.recurrenceBadge} data-testid="issue-case-recurrence">
+                Nieuwe waarneming
+              </span>
+            )}
+          </div>
+        </div>
       </div>
 
       <WhatIsThis>
@@ -52,68 +61,87 @@ function CaseOverview({ issueCase }: { issueCase: IssueCaseRow }) {
         na uw beslissing wordt zichtbaar gemaakt.
       </WhatIsThis>
 
-      <dl className={styles.facts} data-testid="issue-case-facts">
-        <Fact label="Koppeling">#{issueCase.importLinkId}</Fact>
-        <Fact label="Soort vaststelling">
-          <IssueCodeTerm code={issueCase.issueCode} />
-        </Fact>
-        <Fact label="Ernst">
-          <Term domain="severity" code={issueCase.severity} unknownLabel="Andere ernst" />
-        </Fact>
-        <Fact label="Onderwerp">
-          <Term domain="issueDomain" code={issueCase.issueDomain} unknownLabel="Ander onderwerp" />
-        </Fact>
-        <Fact label="Waar vastgesteld">
-          <Term domain="controlLevel" code={issueCase.controlLevel} unknownLabel="Ander niveau" />
-        </Fact>
-        <Fact label="Gevolg voor">
-          <Term domain="impactScope" code={issueCase.impactScope} unknownLabel="Andere reikwijdte" />
-        </Fact>
-        <Fact label="Soort samenvatting">
-          <Term domain="issueIncidentKind" code={issueCase.incidentKind} unknownLabel="Andere samenvatting" />
-        </Fact>
-        {issueCase.priceComponentCode !== null && (
-          <Fact label="Prijsonderdeel">
-            <Term domain="priceComponent" code={issueCase.priceComponentCode} unknownLabel="Ander prijsonderdeel" />
-          </Fact>
-        )}
-        {issueCase.referenceType !== null && (
-          <Fact label="Soort verwijzing">
-            <Term domain="referenceType" code={issueCase.referenceType} unknownLabel="Andere verwijzing" />
-          </Fact>
-        )}
-      </dl>
-      <TechnicalDetails
-        items={[
-          { name: 'Code van de vaststelling', value: issueCase.issueCode },
-          { name: 'Signatuur', value: issueCase.signature },
-          ...(issueCase.priceComponentCode === null
-            ? []
-            : [{ name: 'Code van het prijsonderdeel', value: issueCase.priceComponentCode }]),
-        ]}
-      />
+      <section className={pageCss.card} aria-label="Classificatie">
+        <div className={pageCss.cardHead}>
+          <h2 className={pageCss.subtitle}>Classificatie</h2>
+        </div>
+        <div className={pageCss.cardPad}>
+          <dl className={styles.facts} data-testid="issue-case-facts">
+            <Fact label="Koppeling">#{issueCase.importLinkId}</Fact>
+            <Fact label="Soort vaststelling">
+              <IssueCodeTerm code={issueCase.issueCode} />
+            </Fact>
+            <Fact label="Ernst">
+              <Term domain="severity" code={issueCase.severity} unknownLabel="Andere ernst" />
+            </Fact>
+            <Fact label="Onderwerp">
+              <Term domain="issueDomain" code={issueCase.issueDomain} unknownLabel="Ander onderwerp" />
+            </Fact>
+            <Fact label="Waar vastgesteld">
+              <Term domain="controlLevel" code={issueCase.controlLevel} unknownLabel="Ander niveau" />
+            </Fact>
+            <Fact label="Gevolg voor">
+              <Term domain="impactScope" code={issueCase.impactScope} unknownLabel="Andere reikwijdte" />
+            </Fact>
+            <Fact label="Soort samenvatting">
+              <Term domain="issueIncidentKind" code={issueCase.incidentKind} unknownLabel="Andere samenvatting" />
+            </Fact>
+            {issueCase.priceComponentCode !== null && (
+              <Fact label="Prijsonderdeel">
+                <Term domain="priceComponent" code={issueCase.priceComponentCode} unknownLabel="Ander prijsonderdeel" />
+              </Fact>
+            )}
+            {issueCase.referenceType !== null && (
+              <Fact label="Soort verwijzing">
+                <Term domain="referenceType" code={issueCase.referenceType} unknownLabel="Andere verwijzing" />
+              </Fact>
+            )}
+          </dl>
+          <TechnicalDetails
+            items={[
+              { name: 'Code van de vaststelling', value: issueCase.issueCode },
+              { name: 'Signatuur', value: issueCase.signature },
+              ...(issueCase.priceComponentCode === null
+                ? []
+                : [{ name: 'Code van het prijsonderdeel', value: issueCase.priceComponentCode }]),
+            ]}
+          />
+        </div>
+      </section>
 
-      <h2 className={styles.sectionTitle}>Tellers</h2>
-      <dl className={styles.facts} data-testid="issue-case-counters">
-        <Fact label="Waarnemingen">{issueCase.observationCount}</Fact>
-        <Fact label="Totaal aantal">{issueCase.totalOccurrenceCount}</Fact>
-        <Fact label="Heropend">{issueCase.reopenCount}</Fact>
-        <Fact label="Eerst gezien">{formatDateTime(issueCase.firstSeenAt)}</Fact>
-        <Fact label="Laatst gezien">{formatDateTime(issueCase.lastSeenAt)}</Fact>
-      </dl>
+      <section className={`${pageCss.card} ${styles.section}`} aria-label="Tellers">
+        <div className={pageCss.cardHead}>
+          <h2 className={pageCss.subtitle}>Tellers</h2>
+        </div>
+        <div className={pageCss.cardPad}>
+          <dl className={styles.facts} data-testid="issue-case-counters">
+            <Fact label="Waarnemingen">{issueCase.observationCount}</Fact>
+            <Fact label="Totaal aantal">{issueCase.totalOccurrenceCount}</Fact>
+            <Fact label="Heropend">{issueCase.reopenCount}</Fact>
+            <Fact label="Eerst gezien">{formatDateTime(issueCase.firstSeenAt)}</Fact>
+            <Fact label="Laatst gezien">{formatDateTime(issueCase.lastSeenAt)}</Fact>
+          </dl>
+        </div>
+      </section>
 
-      <h2 className={styles.sectionTitle}>Laatste beslissing</h2>
-      {issueCase.statusChangedAt === null ? (
-        <p className={styles.notEstablished} data-testid="issue-case-no-decision">
-          Nog geen beslissing genomen.
-        </p>
-      ) : (
-        <dl className={styles.facts} data-testid="issue-case-decision">
-          <Fact label="Gewijzigd op">{formatDateTime(issueCase.statusChangedAt)}</Fact>
-          <Fact label="Door">{issueCase.statusChangedBy ?? 'systeem'}</Fact>
-          <Fact label="Reden">{issueCase.statusReason ?? '—'}</Fact>
-        </dl>
-      )}
+      <section className={`${pageCss.card} ${styles.section}`} aria-label="Laatste beslissing">
+        <div className={pageCss.cardHead}>
+          <h2 className={pageCss.subtitle}>Laatste beslissing</h2>
+        </div>
+        <div className={pageCss.cardPad}>
+          {issueCase.statusChangedAt === null ? (
+            <p className={styles.notEstablished} data-testid="issue-case-no-decision">
+              Nog geen beslissing genomen.
+            </p>
+          ) : (
+            <dl className={styles.facts} data-testid="issue-case-decision">
+              <Fact label="Gewijzigd op">{formatDateTime(issueCase.statusChangedAt)}</Fact>
+              <Fact label="Door">{issueCase.statusChangedBy ?? 'systeem'}</Fact>
+              <Fact label="Reden">{issueCase.statusReason ?? '—'}</Fact>
+            </dl>
+          )}
+        </div>
+      </section>
     </>
   );
 }
@@ -196,9 +224,24 @@ export function IssueCaseDetailPage() {
 
   return (
     <div className={styles.page}>
-      <p className={styles.breadcrumb}>
-        <NavLink to="/issue-cases">Behandelgevallen</NavLink>
-      </p>
+      <header className={`${pageCss.pageHead} ${styles.crumbHead}`}>
+        <div className={pageCss.pageHeadText}>
+          <ol className={pageCss.crumbs}>
+            <li>
+              <span>CatalogImport</span>
+            </li>
+            <li>
+              <span>Werk</span>
+            </li>
+            <li>
+              <NavLink to="/issue-cases">Behandelgevallen</NavLink>
+            </li>
+            <li>
+              <span aria-current="page">Geval {validId ? `#${caseId}` : ''}</span>
+            </li>
+          </ol>
+        </div>
+      </header>
 
       {!validId && (
         <p role="alert" className={styles.notEstablished}>
@@ -213,31 +256,39 @@ export function IssueCaseDetailPage() {
           <CaseOverview issueCase={data} />
           <IssueCaseActions issueCase={data} onChanged={handleActionsChanged} />
 
-          <h2 className={styles.sectionTitle}>Waarnemingen</h2>
-          {observations.error !== null && <ErrorBanner error={observations.error} />}
-          {observations.data !== null && (
-            <div data-testid="issue-case-observations">
-              <DataTable
-                columns={OBSERVATION_COLUMNS}
-                rows={observations.data}
-                rowKey={(row) => row.issueGroupId}
-                emptyMessage="Geen waarnemingen (meer) gekoppeld aan dit geval."
-              />
+          <section className={`${pageCss.card} ${styles.section}`} aria-label="Waarnemingen">
+            <div className={pageCss.cardHead}>
+              <h2 className={pageCss.subtitle}>Waarnemingen</h2>
             </div>
-          )}
+            {observations.error !== null && <ErrorBanner error={observations.error} />}
+            {observations.data !== null && (
+              <div data-testid="issue-case-observations">
+                <DataTable
+                  columns={OBSERVATION_COLUMNS}
+                  rows={observations.data}
+                  rowKey={(row) => row.issueGroupId}
+                  emptyMessage="Geen waarnemingen (meer) gekoppeld aan dit geval."
+                />
+              </div>
+            )}
+          </section>
 
-          <h2 className={styles.sectionTitle}>Gebeurtenissen</h2>
-          {events.error !== null && <ErrorBanner error={events.error} />}
-          {events.data !== null && (
-            <div data-testid="issue-case-events">
-              <DataTable
-                columns={EVENT_COLUMNS}
-                rows={events.data}
-                rowKey={(row) => row.id}
-                emptyMessage="Geen gebeurtenissen."
-              />
+          <section className={`${pageCss.card} ${styles.section}`} aria-label="Gebeurtenissen">
+            <div className={pageCss.cardHead}>
+              <h2 className={pageCss.subtitle}>Gebeurtenissen</h2>
             </div>
-          )}
+            {events.error !== null && <ErrorBanner error={events.error} />}
+            {events.data !== null && (
+              <div data-testid="issue-case-events">
+                <DataTable
+                  columns={EVENT_COLUMNS}
+                  rows={events.data}
+                  rowKey={(row) => row.id}
+                  emptyMessage="Geen gebeurtenissen."
+                />
+              </div>
+            )}
+          </section>
         </>
       )}
     </div>
