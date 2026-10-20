@@ -16,6 +16,7 @@ import { Term } from '../../terms/Term.tsx';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { Count } from './format.tsx';
 import button from '../../components/Button.module.css';
+import pageCss from '../../components/Page.module.css';
 import styles from './BatchDetailPage.module.css';
 
 export function BatchIssueGroupsSection({
@@ -91,8 +92,14 @@ export function BatchIssueGroupsSection({
   ];
 
   return (
-    <section data-testid="batch-issue-groups">
-      <h2 className={styles.sectionTitle}>Foutgroepen</h2>
+    <section className={`${pageCss.card} ${styles.section}`} data-testid="batch-issue-groups">
+      <div className={pageCss.cardHead}>
+        <div>
+          <h2 className={pageCss.subtitle}>Foutgroepen</h2>
+          <p className={styles.secondary}>Gelijksoortige problemen samengevat, met het werkelijke aantal.</p>
+        </div>
+      </div>
+      <div className={pageCss.cardPad}>
       <WhatIsThis>
         <p>
           Een foutgroep vat gelijksoortige problemen samen, met het werkelijke aantal. Bij een grote groep wordt niet
@@ -122,6 +129,7 @@ export function BatchIssueGroupsSection({
           />
         </>
       )}
+      </div>
     </section>
   );
 }

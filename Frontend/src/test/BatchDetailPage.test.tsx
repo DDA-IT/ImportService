@@ -139,6 +139,11 @@ function stubFetch(overrides: Overrides = {}) {
   }) as unknown as typeof fetch;
 }
 
+/** UI-7: Problemen, Mutaties en Levering staan achter een tabblad. */
+function openTab(name: string) {
+  fireEvent.click(screen.getByRole('tab', { name }));
+}
+
 function renderAt(path: string) {
   return render(
     <ActorProvider identity={TEST_IDENTITY}>
@@ -233,6 +238,8 @@ describe('BatchDetailPage', () => {
 
   it('A-F1.4: de mutatielijst is een leeslijst en vraagt /batches/{id}/mutations op', async () => {
     renderAt('/batches/101');
+    await screen.findByRole('heading', { name: 'Batch 101' });
+    openTab('Mutaties');
     expect(await screen.findByText('Deze batch heeft (met deze filter) geen mutaties.')).toBeInTheDocument();
     const calls = vi.mocked(global.fetch).mock.calls.map((c) => c[0]?.toString() ?? '');
     expect(calls.some((u) => u.includes('/batches/101/mutations'))).toBe(true);
@@ -257,6 +264,8 @@ describe('BatchDetailPage', () => {
 
   it('A-F2.1: foutgroepen tonen het werkelijke aantal en filteren de problemen op groep', async () => {
     renderAt('/batches/101');
+    await screen.findByRole('heading', { name: 'Batch 101' });
+    openTab('Problemen');
 
     const groups = await screen.findByTestId('batch-issue-groups');
     await within(groups).findByText('Prijs onleesbaar');
@@ -274,6 +283,8 @@ describe('BatchDetailPage', () => {
 
   it('A-F2.2: problemen tonen de voorbeeldwaarschuwing en een leveringsprobleem zonder rij', async () => {
     renderAt('/batches/101');
+    await screen.findByRole('heading', { name: 'Batch 101' });
+    openTab('Problemen');
     const issues = await screen.findByTestId('batch-issues');
     expect(within(issues).getByRole('note')).toHaveTextContent('voorbeeldrijen');
     expect(await within(issues).findByText('Kop ontbreekt')).toBeInTheDocument();
@@ -283,12 +294,16 @@ describe('BatchDetailPage', () => {
   it('A-F2.3: lege foutgroepen en problemen tonen een lege melding', async () => {
     stubFetch({ groups: page([]), issues: page([]) });
     renderAt('/batches/101');
+    await screen.findByRole('heading', { name: 'Batch 101' });
+    openTab('Problemen');
     expect(await screen.findByText('Deze batch heeft geen foutgroepen.')).toBeInTheDocument();
     expect(await screen.findByText('Geen problemen vastgesteld.')).toBeInTheDocument();
   });
 
   it('A-F2.4: de levering toont bestanden, "—" voor onbekende verwachte waarden en niet-bewezen volledigheid', async () => {
     renderAt('/batches/101');
+    await screen.findByRole('heading', { name: 'Batch 101' });
+    openTab('Levering');
     const delivery = await screen.findByTestId('batch-delivery');
     expect(await within(delivery).findByText('prijzen.csv')).toBeInTheDocument();
     expect(within(delivery).getByText('Niet bewezen')).toBeInTheDocument();
@@ -299,9 +314,62 @@ describe('BatchDetailPage', () => {
   it('A-F2.5: een fout bij de levering (DELIVERY_NOT_FOUND) blijft beperkt tot die sectie', async () => {
     stubFetch({ delivery: json({ code: 'DELIVERY_NOT_FOUND', error: 'nope' }, 404) });
     renderAt('/batches/101');
+    await screen.findByRole('heading', { name: 'Batch 101' });
+    openTab('Levering');
     const delivery = await screen.findByTestId('batch-delivery');
     expect(await within(delivery).findByText('Levering niet gevonden')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Batch 101' })).toBeInTheDocument();
+  });
+
+  it('UI-7: tabbladen wisselen op klik; inhoud van een tabblad laadt pas bij het openen', async () => {
+    renderAt('/batches/101');
+    await screen.findByRole('heading', { name: 'Batch 101' });
+
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((t) => t.textContent)).toEqual(['Overzicht', 'Problemen', 'Mutaties', 'Levering']);
+    expect(screen.getByRole('tab', { name: 'Overzicht' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('batch-counters')).toBeVisible();
+    const urls = () => vi.mocked(global.fetch).mock.calls.map((c) => c[0]?.toString() ?? '');
+    expect(urls().some((u) => u.includes('/issue-groups') || u.includes('/deliveries/'))).toBe(false);
+
+    openTab('Levering');
+    expect(screen.getByRole('tab', { name: 'Levering' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Overzicht' })).toHaveAttribute('aria-selected', 'false');
+    expect(await screen.findByTestId('batch-delivery')).toBeInTheDocument();
+    expect(screen.getByTestId('batch-counters')).not.toBeVisible();
+
+    openTab('Overzicht');
+    expect(screen.getByTestId('batch-counters')).toBeVisible();
+    expect(screen.queryByTestId('batch-delivery')).toBeNull();
+  });
+
+  it('UI-7: pijltjestoetsen, Home en End verplaatsen focus en selectie (roving tabindex)', async () => {
+    renderAt('/batches/101');
+    await screen.findByRole('heading', { name: 'Batch 101' });
+
+    const tab = (name: string) => screen.getByRole('tab', { name });
+    tab('Overzicht').focus();
+    expect(tab('Overzicht')).toHaveAttribute('tabindex', '0');
+    expect(tab('Problemen')).toHaveAttribute('tabindex', '-1');
+
+    fireEvent.keyDown(tab('Overzicht'), { key: 'ArrowRight' });
+    expect(tab('Problemen')).toHaveAttribute('aria-selected', 'true');
+    expect(tab('Problemen')).toHaveFocus();
+    expect(tab('Problemen')).toHaveAttribute('tabindex', '0');
+
+    fireEvent.keyDown(tab('Problemen'), { key: 'End' });
+    expect(tab('Levering')).toHaveAttribute('aria-selected', 'true');
+    expect(tab('Levering')).toHaveFocus();
+
+    fireEvent.keyDown(tab('Levering'), { key: 'ArrowRight' });
+    expect(tab('Overzicht')).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.keyDown(tab('Overzicht'), { key: 'ArrowLeft' });
+    expect(tab('Levering')).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.keyDown(tab('Levering'), { key: 'Home' });
+    expect(tab('Overzicht')).toHaveAttribute('aria-selected', 'true');
+    expect(tab('Overzicht')).toHaveFocus();
   });
 
   it('A-F2.6: een 500 op de foutgroepen toont de technische regel zonder de pagina te breken', async () => {
@@ -314,6 +382,8 @@ describe('BatchDetailPage', () => {
       return Promise.resolve(json(BATCH));
     }) as unknown as typeof fetch;
     renderAt('/batches/101');
+    await screen.findByRole('heading', { name: 'Batch 101' });
+    openTab('Problemen');
     const groups = await screen.findByTestId('batch-issue-groups');
     expect(await within(groups).findByText('Onverwachte serverfout')).toBeInTheDocument();
   });

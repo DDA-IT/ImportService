@@ -23,6 +23,7 @@ import { useAction } from '../../hooks/useAction.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { Term } from '../../terms/Term.tsx';
 import button from '../../components/Button.module.css';
+import pageCss from '../../components/Page.module.css';
 import styles from './BatchActions.module.css';
 
 /**
@@ -284,8 +285,11 @@ export function BatchActions({ batch, onChanged }: Props) {
     onChanged();
   };
 
+  // De kaart ("Hoe verder"-kaart van de mock) verschijnt alleen als er iets te tonen is.
+  const visible = notice !== null || dialog !== null || batch.status === 'SCREENED' || batch.status === 'MUTATING';
+
   return (
-    <section className={styles.actions} aria-label="Acties">
+    <section className={visible ? `${pageCss.card} ${pageCss.cardPad} ${styles.actions}` : undefined} aria-label="Acties">
       {notice !== null && <p role="status">{notice}</p>}
       {batch.status === 'SCREENED' && (
         <>

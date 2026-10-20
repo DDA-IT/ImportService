@@ -13,6 +13,7 @@ import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { IssueCodeTerm } from '../../terms/IssueCodeTerm.tsx';
 import { Term } from '../../terms/Term.tsx';
+import pageCss from '../../components/Page.module.css';
 import styles from './BatchDetailPage.module.css';
 
 const COLUMNS: readonly DataTableColumn<IssueRow>[] = [
@@ -42,9 +43,14 @@ export function BatchIssuesSection({ batchId, issueGroupId }: { batchId: number;
   );
 
   return (
-    <section data-testid="batch-issues">
-      <h2 className={styles.sectionTitle}>Problemen (voorbeelden)</h2>
-      <p className={styles.warningNote} role="note">
+    <section className={`${pageCss.card} ${styles.section}`} data-testid="batch-issues">
+      <div className={pageCss.cardHead}>
+        <div>
+          <h2 className={pageCss.subtitle}>Problemen (voorbeelden)</h2>
+        </div>
+      </div>
+      <div className={pageCss.cardPad}>
+      <p className={styles.note} role="note">
         Dit zijn voorbeeldrijen: per soort probleem wordt slechts een beperkt aantal bewaard. Het werkelijke aantal
         staat in de foutgroepen hierboven; een telling over deze lijst is te laag.
       </p>
@@ -71,6 +77,7 @@ export function BatchIssuesSection({ batchId, issueGroupId }: { batchId: number;
           />
         </>
       )}
+      </div>
     </section>
   );
 }

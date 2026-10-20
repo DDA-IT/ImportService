@@ -14,6 +14,7 @@ import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
 import { Count } from './format.tsx';
+import pageCss from '../../components/Page.module.css';
 import styles from './BatchDetailPage.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -29,13 +30,19 @@ export function BatchDeliverySection({ deliveryId }: { deliveryId: number }) {
   );
 
   return (
-    <section data-testid="batch-delivery">
-      <h2 className={styles.sectionTitle}>Levering {deliveryId}</h2>
+    <section className={pageCss.card} data-testid="batch-delivery">
+      <div className={pageCss.cardHead}>
+        <div>
+          <h2 className={pageCss.subtitle}>Levering {deliveryId}</h2>
+          <p className={styles.secondary}>Ontvangen bestanden; het origineel wordt ongewijzigd bewaard.</p>
+        </div>
+      </div>
+      <div className={pageCss.cardPad}>
       {error !== null && <ErrorBanner error={error} />}
       {loading && data === null && error === null && <p className={styles.loading}>Bezig met laden…</p>}
       {data !== null && error === null && (
         <>
-          <dl className={styles.facts}>
+          <dl className={styles.deliveryFacts}>
             <div className={styles.fact}>
               <dt>Ontvangen</dt>
               <dd>{formatDateTime(data.receivedAt)}</dd>
@@ -95,6 +102,7 @@ export function BatchDeliverySection({ deliveryId }: { deliveryId: number }) {
           />
         </>
       )}
+      </div>
     </section>
   );
 }

@@ -387,16 +387,23 @@ describe('NT-11a — geen ruwe codes als zichtbare tekst', () => {
       </ActorProvider>,
     );
 
+    // UI-7: de inhoud staat achter tabbladen; elk tabblad wordt apart gecontroleerd.
     await screen.findByTestId('batch-blocked');
+    expectNoRawCodes(container, 'batchdetail (overzicht)');
+    fireEvent.click(screen.getByRole('tab', { name: 'Problemen' }));
     await screen.findByTestId('batch-issue-groups');
     await waitFor(() => expect(screen.getAllByText('Veel gelijke prijsafwijkingen').length).toBeGreaterThan(0));
-    await screen.findByText('prijzen.csv');
     await screen.findByText('Kop ontbreekt');
+    expectNoRawCodes(container, 'batchdetail (problemen)');
+    expect(screen.getAllByText('Ander probleem').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('tab', { name: 'Levering' }));
+    await screen.findByText('prijzen.csv');
+    expectNoRawCodes(container, 'batchdetail (levering)');
+    fireEvent.click(screen.getByRole('tab', { name: 'Mutaties' }));
     await screen.findByText('Overgeslagen door de nulmeting', { selector: 'span' });
-    expectNoRawCodes(container, 'batchdetail');
+    expectNoRawCodes(container, 'batchdetail (mutaties)');
     // Onbekende waarden van een latere backend tonen een neutraal woord.
     expect(screen.getAllByText('Andere reden').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Ander probleem').length).toBeGreaterThan(0);
   });
 
   it('acties op een batch: nulmeting/bundel en hervatten', () => {
