@@ -114,3 +114,16 @@ Volledige ronde via `scripts/test/run-full-tests.ps1` na 5P-4 en na 5P-8.
 > **Important technical constraint discovered**
 >
 > De testfixtures leveren mutaties zonder valuta (`base_price_currency = null`); zulke rijen zijn in de preview en in een run terecht onvolledig (`UNKNOWN`, nooit EUR aannemen). Tests die volledige rijen willen, zetten de valuta expliciet via JDBC vóór het bevriezen.
+## 8. Ontdekkingen 2026-10-20 (legacy-config-migratie)
+
+> **Important technical constraint discovered**
+>
+> CatalogImport publiceert per bundel (een deelverzameling). Een `Prg 1179`-aanroep met `P_BIB_DELETE_NOT_UPDATED=true`
+> (interfaceparameter `BIB_Delete`) of `P_MS_DELETE=true` (`MS_Delete`) zou elke regel van `PSARF<bib>` wissen die niet in
+> de bundel zat, zonder afbakening per leverancier (`Prg_1179` r.2427-2436, subtask `Delete Bib/MS Ref not Found`).
+> Elke publicatie via 1179 moet beide hard op `false` zetten.
+>
+> **Status:** de route via `252 IMPORT`/1179 is op 2026-10-20 herroepen (publicatiedoel = Prodis-PostgreSQL, zie
+> `docs/decisions.md`). Deze constraint geldt dus enkel als 1179 toch nog aangeroepen wordt; de onderliggende regel
+> (een publicatie van een deelverzameling mag nooit wat buiten de bundel valt wissen) geldt voor elke route.
+> Bron: `docs/design/legacy-config-migratie-design.md` §4.

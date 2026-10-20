@@ -64,6 +64,10 @@
 >
 > Legacy bewaart interfacewachtwoorden (`INDET`, o.a. `FTP_password`) in plain text en toont ze op het scherm. Bij het overnemen van legacy-interface-instellingen mogen geheimen nooit 1-op-1 gekopieerd of getoond worden; ze gaan uitsluitend versleuteld onze credentialopslag in.
 
+> Important business rule discovered
+>
+> Legacy zet leverancier, groep en referentie (veld 9-11) en nog een tiental andere velden (o.a. 1-3, 8, 13, 14) met `Upper()` in hoofdletters vóór ze in de staging komen (`Prg_1170` r.733-815). De identiteitscanonicalisatie van CatalogImport is hoofdlettergevoelig (`CandidateNormaliser` r.601). Een overgenomen legacy-definitie zonder expliciete hoofdletteromzetting geeft dus andere identiteiten dan in legacy/PSARF, met dubbels of gemiste matches als gevolg. Bron: `docs/design/legacy-config-migratie-design.md` §7 (Q4).
+
 ## Open uitzonderingen die nog een businesskeuze vragen
 
 - De proefversie bewaart enkel een issueaantal; zij bewaart reden en bronregel niet voor ongeldige regels. Support kan de originele CSV raadplegen, maar geen foutdetail opvragen.

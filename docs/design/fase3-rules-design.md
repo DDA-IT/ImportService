@@ -817,3 +817,27 @@ Buiten scope (mens): PostgreSQL en performance; risicoquery `domain_mask like '%
   active_marker)` (004-8b). 3h-8 vervalt (optie A zonder schakelaar).
 - **Bekende beperkingen:** `domain_mask like '%PRICE%'` scan binnen één batch; "≥1 issue met effect X" steunt op de
   voorbeeldcap (per code minstens één rij); `import_mutation.issue_group_id` wordt nog niet gevuld; alleen H2 getest.
+
+## 18. Ontdekkingen 2026-10-20 (legacy-config-migratie)
+
+> **Important technical constraint discovered**
+>
+> Leverancier, groep, referentie en basisprijs kunnen alleen een bronkolom zijn: geen vaste waarde en geen transformatie
+> (`SourceStructureConfigFactory` r.204-234, `RevisionOwnedField`). Legacy-definities met een vaste `Waarde` op veld 9/10,
+> een interface-`Supplier` of calc 7/13 op de identiteit zijn daardoor niet uit te drukken. Daarnaast is
+> `transform_config` een `varchar(1000)` (te klein voor grote mappingtabellen) en kent een mapping maar één
+> transformatie (geen keten prefix + suffix + berekening).
+> Bron: `docs/design/legacy-config-migratie-design.md` §1 (Q4, LM-2/LM-3).
+
+> **Important technical constraint discovered**
+>
+> Legacy rekent anders dan CatalogImport (`Prg_1170` r.771-789, r.1039-1115):
+> - `Val()` zet een lege of ongeldige waarde stil op 0 (CatalogImport blokkeert of meldt, nooit stil 0);
+> - een berekening rondt af op 3 decimalen (`'8.3'`) met een operand van 2 decimalen (`'8.2'`);
+> - in calc 11 wordt een lege kolom `'0'`;
+> - de wisselkoers (`ArtImp_Para_Koers`) vermenigvuldigt alleen bronwaarden (veld 26, 28-32, 39, 42, 44), niet een vaste `Waarde`;
+> - bij calc 7 (map) valt legacy bij een ontbrekende sleutel terug op de bronwaarde, CatalogImport niet.
+>
+> Bij een parallelrun of vergelijking met legacy zijn verschillen hierdoor te verwachten. Ze worden getoond als
+> verklaard verschil, nooit weggewerkt.
+> Bron: `docs/design/legacy-config-migratie-design.md` §1 en §7.

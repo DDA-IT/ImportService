@@ -2627,3 +2627,20 @@ transformaties, filters en formules uit de legacy-importdefinities" buiten scope
 mapping naar onze sjablonen/profielen/credentials, welke CALCULATION-codes) wordt eerst door een denker-zwaar uitgewerkt en ligt dus
 nog niet vast. Harde randvoorwaarde: legacy-wachtwoorden (plain text in `INDET`) gaan enkel versleuteld de credentialopslag in.
 **Bron:** mens / Legacy-vault (`Prg_1170`, `Prg_1176`, `Prg_1472`, DS 252–257, DS 270–273)
+
+## 2026-10-20 — Publicatiedoel herzien: Prodis-PostgreSQL, niet Zen
+**Vraag:** Waar schrijft CatalogImport uiteindelijk naartoe, en waar komen de sleutels voor Prodis-eigen waarden bij creatie
+(btw, grootboekrekeningen, ...) vandaan?
+**Beslissing:** CatalogImport is een verlengde van Prodis en **update uiteindelijk de Prodis-database (PostgreSQL), niet Zen/Pervasive**.
+Sleutels voor Prodis-eigen waarden (btw-codes, grootboekrekeningen, ...) komen uit de Prodis-DB. **Herroept** het blok
+"2026-09-18 — Fase 0: publicatiedoel" (ProDisWebbase/Pervasive via `252 IMPORT` als enige uitvoerder). De gevolgen voor 5-PUB-a/b/c,
+voor `fase5-pub-design.md`, voor de module-/databasegrens en voor de plaats van de legacy-logica (1170/1171/1179) worden door een
+denker-zwaar uitgewerkt; tot dan bouwt niemand verder aan 5-PUB-b/c richting 252 IMPORT.
+**Bron:** mens
+
+## 2026-10-20 — Legacy-config-migratie Q2: secrets via sync
+**Vraag:** Hoe komen legacy-interfacewachtwoorden (`INDET`) in CatalogImport (design `legacy-config-migratie-design.md` Q2)?
+**Beslissing:** **Niet** opnieuw intikken (optie P1 afgewezen). Ze worden **via sync overgenomen**. Randvoorwaarde blijft: enkel
+versleuteld in de credentialopslag, nooit gelogd of getoond. Te onderzoeken: of dat een job in `ProdisDatasyncEngine` wordt
+die uit legacy leest en importeert.
+**Bron:** mens

@@ -5,6 +5,10 @@
 > De §6-beslissingen Q1–Q12 (sectie 6) liggen bij de mens; pas na hun beantwoording (vastgelegd in
 > `docs/decisions.md`) start LM-1. Legacy-bron: Legacy-vault (`Prg_1170`, `Prg_1176`, `Prg_1179`, `Prg_1223`,
 > `Prg_1232`, DS 252–257, DS 270–273).
+>
+> **Deels herzien (2026-10-20):** na de herroeping van het publicatiedoel (Prodis-PostgreSQL, niet Zen) en Q2 (secrets via
+> sync) zijn Q1, Q2, Q6, Q8, Q10, de slices en alle verwijzingen naar 252 IMPORT/1179 als publicatiedoel herzien in
+> `docs/design/prodis-db-publicatie-en-datasync-design.md`. Bij tegenspraak geldt dat document.
 
 ## Kort
 
