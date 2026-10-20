@@ -9,6 +9,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -44,6 +45,9 @@ public class CurrentActor {
 
     /** Requestattribuut met de effectieve rechten van dit ene verzoek (ontwerp 5-PERM par. 3). */
     static final String PERMISSIONS_ATTRIBUTE = CurrentActor.class.getName() + ".EFFECTIVE_PERMISSIONS";
+
+    /** Prefix van de actornaam van een technische client (M2): {@code svc:<azp>}. */
+    static final String TECHNICAL_ACTOR_PREFIX = "svc:";
 
     /** Nooit een ondertekenaar, ook niet bij een geldige login (beslissingslog 2026-09-25). */
     private static final String SYSTEM_USER = "system";
@@ -188,6 +192,47 @@ public class CurrentActor {
             attributes.setAttribute(PERMISSIONS_ATTRIBUTE, effective, RequestAttributes.SCOPE_REQUEST);
         }
         return effective;
+    }
+
+    /**
+     * De identiteit van een <b>technische client</b> (beslissingslog 2026-10-20 M2;
+     * {@code docs/design/legacy-config-bundle-design.md} par. 3): {@code ActorIdentity("svc:" + azp, sub)}. Enkel voor
+     * handlers met {@link TechnicalClientOnly}; de aanmelding moet een JWT-aanmelding zijn met de bevoegdheid
+     * {@link TechnicalClientOnly#AUTHORITY_PREFIX}{@code + capability}, die enkel de JWT-keten toekent. Een
+     * BFF-aanmelding (ook met {@code MANAGE}) voldoet nooit. Geen {@link PermissionSource}, geen hiërarchie.
+     * <p>
+     * De naam begint altijd met {@code svc:} en kan dus nooit {@code system} zijn.
+     *
+     * @throws AuthenticationCredentialsNotFoundException zonder aanmelding (de keten laat dat niet eens door)
+     * @throws ActorNotAllowedException 403 {@link #PERMISSION_DENIED} (geen JWT-aanmelding of zonder bevoegdheid) of
+     *                                  {@link #ACTOR_IDENTITY_INVALID} ({@code azp}/{@code sub} ontbreekt, is te lang of
+     *                                  bevat stuurtekens)
+     */
+    public ActorIdentity technicalClient(String capability) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication instanceof AnonymousAuthenticationToken
+                || !authentication.isAuthenticated()) {
+            throw new AuthenticationCredentialsNotFoundException("Authentication required");
+        }
+        String authority = TechnicalClientOnly.AUTHORITY_PREFIX + capability;
+        if (!(authentication instanceof JwtAuthenticationToken jwt) || authentication.getAuthorities().stream()
+                .noneMatch(granted -> authority.equals(granted.getAuthority()))) {
+            throw new ActorNotAllowedException(PERMISSION_DENIED, "This action is reserved for a technical client");
+        }
+        String azp = jwt.getToken().getClaimAsString("azp");
+        String subject = jwt.getToken().getSubject();
+        if (azp == null || azp.isBlank() || hasControlCharacter(azp)
+                || TECHNICAL_ACTOR_PREFIX.length() + azp.length() > MAX_USERNAME_LENGTH) {
+            throw invalid("The token has no usable azp");
+        }
+        if (subject == null || subject.isBlank() || subject.length() > ActorIdentity.MAX_SUBJECT_LENGTH) {
+            throw invalid("The token has no usable subject");
+        }
+        return new ActorIdentity(TECHNICAL_ACTOR_PREFIX + azp, subject);
+    }
+
+    private static boolean hasControlCharacter(String value) {
+        return value.chars().anyMatch(c -> Character.isISOControl(c) || Character.isWhitespace(c));
     }
 
     /**

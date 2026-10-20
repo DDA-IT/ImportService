@@ -90,6 +90,23 @@ catalogimport:
   app-switcher:
     prodis-url: ${CATALOG_PRODIS_URL:}
     prodis-account-url: ${CATALOG_PRODIS_ACCOUNT_URL:}
+  # Legacy-config-migratie S1 (docs/decisions.md 2026-10-20 M2; docs/design/legacy-config-bundle-design.md par. 3): de
+  # technische client van de datasync (Keycloak client-credentials) die POST /api/catalog-import/legacy-config/receipts
+  # mag doen - het ENIGE pad met een bearer-token; de BFF-login blijft voor al de rest. Issuer = die van de bestaande realm
+  # (spring.security.oauth2.client.provider.keycloak.issuer-uri). BEWUST GEEN default buiten de lokale profielen:
+  #   CATALOG_LEGACY_PUSH_AUDIENCE   moet in "aud" staan, en is de client in resource_access.<audience>.roles
+  #   CATALOG_LEGACY_PUSH_CLIENT_ID  moet gelijk zijn aan "azp" (bv. prodis-datasync-catalogimport)
+  #   CATALOG_LEGACY_PUSH_ROLE       client role, default legacy-config-push
+  # Audience en client-id beide leeg = functie uit: de applicatie start en de push geeft altijd 401. Een van beide
+  # gezet, een lege rol of witruimte = de applicatie start niet.
+  technical-clients:
+    legacy-config:
+      audience: ${CATALOG_LEGACY_PUSH_AUDIENCE:}
+      client-id: ${CATALOG_LEGACY_PUSH_CLIENT_ID:}
+      required-role: ${CATALOG_LEGACY_PUSH_ROLE:legacy-config-push}
+  legacy-config:
+    # Grootste aanvaarde bundel in bytes (body van de push); groter = 413 LEGACY_BUNDLE_TOO_LARGE. Default 2 MB.
+    max-bundle-bytes: ${CATALOG_LEGACY_CONFIG_MAX_BUNDLE_BYTES:2097152}
   # catalogimport.fetch.* staat hier BEWUST NIET als waarde (K-4a; docs/decisions.md 2026-09-29 L4b, A12;
   # docs/design/leveringsconfiguratie-design.md par. 5 en 8). Enkel deze toelichting:
   #   fetch.allowed-hosts   (env CATALOGIMPORT_FETCH_ALLOWED_HOSTS) exacte hostnamen, komma-gescheiden in EEN string,

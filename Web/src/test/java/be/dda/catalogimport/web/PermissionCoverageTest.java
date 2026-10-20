@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
  *   <li><b>Regel:</b> een ontbrekende annotatie is dicht; elke handler draagt dus een expliciete keuze.
  *       <b>Implementatie:</b> reflectie over alle controllers in {@code be.dda.catalogimport.web}: elke
  *       {@code @*Mapping}-methode draagt precies één van {@code @RequiresPermission} of
- *       {@code @NoPermissionRequired}.</li>
+ *       {@code @NoPermissionRequired}, of (sinds legacy-config S1, M2) {@code @TechnicalClientOnly}.</li>
  *   <li><b>Regel:</b> de mapping uit ontwerp par. 1 klopt. <b>Implementatie:</b> de volledige tabel als
  *       verwachte map (pad-variabelenamen genormaliseerd); een nieuw of gewijzigd endpoint laat deze test
  *       falen tot het ontwerp en de test samen bijgewerkt zijn.</li>
@@ -33,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 class PermissionCoverageTest {
 
     private static final String NONE = "NONE";
+    private static final String TECHNICAL_CLIENT = "TECHNICAL_CLIENT:";
 
     @Test
     void everyMappingMethodCarriesExactlyOneOfTheTwoAnnotations() throws Exception {
@@ -44,11 +45,14 @@ class PermissionCoverageTest {
                     continue;
                 }
                 handlers++;
-                boolean requires = method.isAnnotationPresent(RequiresPermission.class);
-                boolean exempt = method.isAnnotationPresent(NoPermissionRequired.class);
-                if (requires == exempt) {
+                // Sinds legacy-config S1 (M2, 2026-10-20) is @TechnicalClientOnly de derde, exclusieve keuze.
+                int annotations = (method.isAnnotationPresent(RequiresPermission.class) ? 1 : 0)
+                        + (method.isAnnotationPresent(NoPermissionRequired.class) ? 1 : 0)
+                        + (method.isAnnotationPresent(TechnicalClientOnly.class) ? 1 : 0);
+                if (annotations != 1) {
                     violations.add(controller.getSimpleName() + "#" + method.getName()
-                            + (requires ? " has both annotations" : " has no permission annotation"));
+                            + (annotations > 1 ? " has more than one permission annotation"
+                            : " has no permission annotation"));
                 }
             }
         }
@@ -70,7 +74,9 @@ class PermissionCoverageTest {
                 String path = basePath + (mapping.path().length == 0 ? "" : mapping.path()[0]);
                 String key = mapping.method()[0].name() + " " + path.replaceAll("\\{[^}]+}", "{}");
                 RequiresPermission required = method.getAnnotation(RequiresPermission.class);
-                actual.put(key, required == null ? NONE : required.value().name());
+                TechnicalClientOnly technical = method.getAnnotation(TechnicalClientOnly.class);
+                actual.put(key, technical != null ? TECHNICAL_CLIENT + technical.value()
+                        : required == null ? NONE : required.value().name());
             }
         }
         assertThat(actual).isEqualTo(new TreeMap<>(expected()));
@@ -200,6 +206,12 @@ class PermissionCoverageTest {
         // Vastgelopen ophaalrun afbreken (K-4c, precedent publication-runs/{}/abort): MANAGE, net als "Nu ophalen";
         // bewust niet achter de allowlist, want herstel moet ook werken als het ophalen zelf uitgeschakeld werd.
         m.put("POST /api/catalog-import/task-runs/{}/abort", "MANAGE");
+        // Legacy-config-migratie S1 (legacy-config-bundle-design.md par. 2 en 3; beslissingslog 2026-10-20 M2): de push
+        // ENKEL voor de technische client (JWT, client role legacy-config-push), nooit voor een sessie; lijst en detail
+        // MANAGE (de bundel toont host/login, L7b). Niet achter de setup-vlag (L7a).
+        m.put("POST /api/catalog-import/legacy-config/receipts", TECHNICAL_CLIENT + "legacy-config-push");
+        m.put("GET /api/catalog-import/legacy-config/receipts", "MANAGE");
+        m.put("GET /api/catalog-import/legacy-config/receipts/{}", "MANAGE");
         // /me
         m.put("GET /api/catalog-import/me", NONE);
         return m;

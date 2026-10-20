@@ -102,9 +102,10 @@ Volgorde: (1) bodygrootte, (2) JSON-parse, (3) `schema`/`version`, (4) structuur
 | HTTP | Code | Wanneer |
 |---|---|---|
 | 413 | `LEGACY_BUNDLE_TOO_LARGE` | body > `catalogimport.legacy-config.max-bundle-bytes` (default 2 MB) |
-| 400 | `LEGACY_BUNDLE_INVALID` | ongeldige JSON, ontbrekende/onbekende sleutel, verkeerd type, niet-integer getal, patroon/lengte, `SECRET_IN_DETAILS`, `DUPLICATE`, statusregel (§1) geschonden, ongeldige UTF-8 of ongepaarde surrogate. De melding bevat enkel een JSON-pad (`$.interface.details[3].label`, met de index uit de ontvangen volgorde) en een regelcode (`REQUIRED`, `TYPE`, `UNKNOWN_FIELD`, `PATTERN`, `LENGTH`, `RANGE`, `DUPLICATE`, `SECRET_IN_DETAILS`, `STATUS_MISMATCH`), **nooit een waarde** |
+| 400 | `LEGACY_BUNDLE_INVALID` | ongeldige JSON, ontbrekende/onbekende sleutel, verkeerd type, niet-integer getal, patroon/lengte, `SECRET_IN_DETAILS`, `DUPLICATE`, statusregel (§1) geschonden, ongeldige UTF-8 of ongepaarde surrogate. De melding bevat enkel een JSON-pad (`$.interface.details[3].label`, met de index uit de ontvangen volgorde) en een regelcode (`REQUIRED`, `TYPE`, `UNKNOWN_FIELD`, `PATTERN`, `LENGTH`, `RANGE`, `DUPLICATE`, `SECRET_IN_DETAILS`, `STATUS_MISMATCH`, `SYNTAX`), **nooit een waarde**. `SYNTAX` (pad `$` of de parserpositie) = geen leesbare JSON: ongeldige UTF-8, een BOM, afsluitende tekens na het document of een syntaxfout |
 | 400 | `LEGACY_BUNDLE_VERSION_UNSUPPORTED` | `version != 1` |
 | 400 | `LEGACY_BUNDLE_HASH_MISMATCH` | herberekende `contentHash` of `definitionContentHash` wijkt af (melding: welk van de twee, geen hashes of waarden) |
+| 400 | `LEGACY_BUNDLE_SECRET_NOT_SUPPORTED` | **tijdelijk, tot slice S4:** de bundel is geldig maar `secret` is niet `null`; niets bewaard (§8) |
 
 ## 5. Versiebeleid
 
@@ -183,3 +184,33 @@ meerdere `maps` met hetzelfde `number`; een `includeExclude`-regel; een secret m
 
 Gedeelde definities worden enkel door CatalogImport herkend (zelfde `(environment, dossier)` en zelfde `definition.code` of
 `definitionContentHash`); zie `legacy-config-bundle-design.md` §5 en het M1-besluit in `docs/decisions.md`. De job herkent nooit zelf iets.
+
+## 8. Antwoord van de push
+
+`POST /api/catalog-import/legacy-config/receipts` (enkel de technische client, `legacy-config-bundle-design.md` §3) antwoordt bij
+succes met één JSON-object (beslissingslog 2026-10-20 "Legacy-config S1: idempotentie tegenover de laatste ontvangst"):
+
+| Veld | Type | Betekenis |
+|---|---|---|
+| `receiptId` | integer | id van de nieuwe ontvangst (`RECEIVED`) of van de laatste ontvangst waarmee de push gelijk is (`UNCHANGED`) |
+| `outcome` | string | `RECEIVED` of `UNCHANGED` |
+| `status` | string | huidige status van die ontvangst: `RECEIVED`, `APPLIED`, `SUPERSEDED` of `DISCARDED` (bij `UNCHANGED` nooit `SUPERSEDED`, want de laatste ontvangst is dat nooit) |
+| `contentHash` | string | de (herberekende) `contentHash` van die ontvangst |
+| `supersededReceiptId` | integer of `null` | enkel bij `RECEIVED`: de open ontvangst die hierdoor `SUPERSEDED` werd; anders `null` |
+
+**Idempotentie tegenover de laatste ontvangst.** Een push wordt enkel vergeleken met de **laatste** ontvangst (hoogste id) van dezelfde
+herkomst `(origin.environment, origin.dossier, interface.code)`, ongeacht haar status.
+
+| HTTP | `outcome` | Wanneer | Effect |
+|---|---|---|---|
+| 201 | `RECEIVED` | geen eerdere ontvangst, of de laatste heeft een andere `contentHash` | nieuwe ontvangst `RECEIVED`; een open ontvangst van de herkomst wordt `SUPERSEDED` (`supersededReceiptId` ingevuld); `APPLIED`/`DISCARDED` blijven ongemoeid (`supersededReceiptId = null`) |
+| 200 | `UNCHANGED` | de laatste ontvangst heeft dezelfde `contentHash` | niets geschreven; `receiptId` en `status` zijn die van de laatste ontvangst |
+
+Een terugkerende inhoud (A → B → A) is dus een nieuwe ontvangst A'. Invariant: de laatste ontvangst is nooit `SUPERSEDED`; een open
+ontvangst is altijd de laatste. Gelijktijdige pushes van dezelfde herkomst leveren hoogstens één nieuwe ontvangst per inhoud op.
+
+**Fouten** hebben de vorm `{"error": <tekst zonder waarden>, "code": <code>}`:
+401 `AUTHENTICATION_REQUIRED` (geen of ongeldig token; ook een browsersessie), 403 `ACCESS_DENIED` (geldig token, maar `aud`, `azp` of
+client role klopt niet), 413 `LEGACY_BUNDLE_TOO_LARGE`, 400 `LEGACY_BUNDLE_INVALID` / `LEGACY_BUNDLE_VERSION_UNSUPPORTED` /
+`LEGACY_BUNDLE_HASH_MISMATCH` (§4), en tot S4 400 `LEGACY_BUNDLE_SECRET_NOT_SUPPORTED`. De verzender herhaalt een 4xx niet (behalve 401
+eenmaal met een nieuw token); 5xx en IO-fouten mag hij herhalen, een herhaling is veilig dankzij de idempotentie hierboven.

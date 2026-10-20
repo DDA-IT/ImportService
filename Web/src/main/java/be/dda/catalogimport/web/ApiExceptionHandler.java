@@ -2,6 +2,7 @@ package be.dda.catalogimport.web;
 import be.dda.catalogimport.service.BadRequestException;
 import be.dda.catalogimport.service.ConflictException;
 import be.dda.catalogimport.service.NotFoundException;
+import be.dda.catalogimport.service.PayloadTooLargeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
@@ -44,6 +45,9 @@ import java.util.Map;
     // dus bestaande 400-antwoorden (zonder code) blijven exact zoals ze waren.
     @ExceptionHandler(BadRequestException.class) ResponseEntity<Map<String,String>> badRequest(BadRequestException error) { return ResponseEntity.badRequest().body(body(error.getMessage(), error.getCode())); }
     @ExceptionHandler(NotFoundException.class) ResponseEntity<Map<String,String>> notFound(NotFoundException error) { return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body(error.getMessage(), error.getCode())); }
+    // Legacy-config S1 (additief): de body is groter dan de grens van dat endpoint -> 413 met de eigen code (bv.
+    // LEGACY_BUNDLE_TOO_LARGE). Losstaand van de multipartlimiet (UPLOAD_TOO_LARGE hieronder).
+    @ExceptionHandler(PayloadTooLargeException.class) ResponseEntity<Map<String,String>> payloadTooLarge(PayloadTooLargeException error) { return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body(error.getMessage(), error.getCode())); }
     @ExceptionHandler(ConflictException.class) ResponseEntity<Map<String,String>> conflict(ConflictException error) { return ResponseEntity.status(HttpStatus.CONFLICT).body(body(error.getMessage(), error.getCode())); }
     // Fase 5-AUTH (additief): de aangemelde gebruiker mag dit niet -> 403 met ACTOR_IDENTITY_INVALID (5A-1)
     // of SYSTEM_ACTOR_FORBIDDEN (5A-2). ACTOR_FIELD_MISMATCH is bewust GEEN 403 maar een 400 en loopt via

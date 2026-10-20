@@ -2708,3 +2708,16 @@ MeAppSwitcherHttpTest) groen. Prodis-kant (seed `catalogImport.read/.manage/.app
 - **Aannames A1–A9** (design §9) gelden zoals beschreven.
 - **Bouw:** S0 t/m S9 strikt sequentieel, één commit per slice. ProdisDatasyncEngine op een eigen branch.
 **Bron:** mens / `docs/design/legacy-config-bundle-design.md`
+
+## 2026-10-20 — Legacy-config S1: idempotentie tegenover de laatste ontvangst (A→B→A)
+**Vraag:** Wat gebeurt er bij een push waarvan de `contentHash` al bestaat in een oudere, niet-open ontvangst (A→B→A)?
+**Beslissing:** Idempotentie geldt enkel tegenover de **laatste ontvangst van dezelfde herkomst** (`max(id)` per env+dossier+interface),
+ongeacht haar status. Zelfde hash → 200 `UNCHANGED` (status = die van die rij), niets geschreven. Andere hash → altijd een nieuwe
+rij `RECEIVED` (201); een open ontvangst wordt `SUPERSEDED` (`supersededReceiptId` ingevuld), `APPLIED`/`DISCARDED` blijven ongemoeid.
+Een terugkerende inhoud (A→B→A) is dus een nieuwe ontvangst A'. Invariant: de laatste ontvangst is nooit `SUPERSEDED`; een open
+ontvangst is altijd de laatste. Schema 020-1 (nog niet gecommit/uitgerold): `uk_legacy_config_receipt_content` vervalt, vervangen
+door een niet-unieke index `(origin_environment, origin_dossier, interface_code, id desc)`; `uk_legacy_config_receipt_open` blijft
+het serialisatiepunt. Push-antwoord `{receiptId, outcome (RECEIVED|UNCHANGED), status, contentHash, supersededReceiptId}` is contract.
+Voorstel voor S2: APPLY enkel op `RECEIVED`; gelijke `definitionContentHash` als de laatst gemigreerde revisie → geen nieuwe DRAFT,
+rapport `DEFINITION_UNCHANGED`, ontvangst wel `APPLIED`. Overstemt `legacy-config-bundle-design.md` §2 (POST, idempotentie) en §4 (uniek).
+**Bron:** denker-zwaar / S1-bouwerrapport

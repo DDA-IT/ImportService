@@ -5,6 +5,7 @@ import be.dda.catalogimport.web.CurrentActor;
 import be.dda.catalogimport.web.NoPermissionRequired;
 import be.dda.catalogimport.web.Permission;
 import be.dda.catalogimport.web.RequiresPermission;
+import be.dda.catalogimport.web.TechnicalClientOnly;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -21,6 +22,12 @@ import org.springframework.web.servlet.HandlerMapping;
  * <b>Geen tweede autorisatielaag:</b> geen method security, geen padregels in
  * {@code SecurityConfiguration}. Omdat deze interceptor in {@code config} leeft, blijft
  * {@code CurrentActor} buiten {@code config} de enige lezer van de {@code SecurityContext}.
+ *
+ * <h2>Technische client (M2, 2026-10-20)</h2>
+ * Een handler met {@link TechnicalClientOnly} vraagt geen catalogImport-recht maar een JWT-aanmelding met de
+ * bevoegdheid uit de annotatie ({@link CurrentActor#technicalClient(String)}); een BFF-sessie krijgt er 403
+ * {@code PERMISSION_DENIED}. In de praktijk bereikt een sessie zo'n handler niet eens: de JWT-keten
+ * ({@code LegacyConfigPushSecurityConfiguration}) bedient dat pad en geeft 401.
  *
  * <h2>Strikte modus (5B-3)</h2>
  * Een <b>niet-geannoteerde</b> handlermethode is dicht: 403 {@code PERMISSION_DENIED} plus een ERROR-log.
@@ -58,6 +65,19 @@ public class PermissionInterceptor implements HandlerInterceptor {
             return true;
         }
         if (handlerMethod.hasMethodAnnotation(NoPermissionRequired.class)) {
+            return true;
+        }
+        TechnicalClientOnly technical = handlerMethod.getMethodAnnotation(TechnicalClientOnly.class);
+        if (technical != null) {
+            // M2 (2026-10-20): enkel een JWT-aanmelding met deze bevoegdheid; een BFF-sessie nooit. Tweede
+            // verdedigingslijn naast de JWT-keten, die dit pad al afschermt.
+            try {
+                this.currentActor.technicalClient(technical.value());
+            } catch (ActorNotAllowedException denied) {
+                LOG.warn("TECHNICAL_CLIENT_DENIED required={} {} {}", technical.value(), request.getMethod(),
+                        pathTemplate(request));
+                throw denied;
+            }
             return true;
         }
         RequiresPermission required = handlerMethod.getMethodAnnotation(RequiresPermission.class);

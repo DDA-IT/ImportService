@@ -85,7 +85,7 @@ dezelfde `definition.code` of dezelfde `definitionContentHash`.
 
 | Methode | Pad | Wie | Gedrag |
 |---|---|---|---|
-| POST | `/receipts` | enkel technische client (§3) | 201 `RECEIVED`, of 200 `UNCHANGED` + bestaand id bij zelfde herkomst + `contentHash`; vorige open ontvangst van dezelfde herkomst → `SUPERSEDED` |
+| POST | `/receipts` | enkel technische client (§3) | vergeleken met de **laatste** ontvangst van dezelfde herkomst (ongeacht status): zelfde `contentHash` → 200 `UNCHANGED` met id en status van die rij, niets geschreven; anders 201 `RECEIVED` (nieuwe rij, ook bij A → B → A); een open ontvangst → `SUPERSEDED`, `APPLIED`/`DISCARDED` ongemoeid. Antwoord: contract §8 |
 | GET | `/receipts?status=&interface=&page=` | MANAGE | `PageResult`, zonder details |
 | GET | `/receipts/{id}` | MANAGE | Bundel zonder secret, met `secretOutcome` en `credentialRef` (MANAGE wegens host/login, L7b) |
 | GET | `/receipts/{id}/preview` | MANAGE | Rapport (§5) + `previewFingerprint`; schrijft niets |
@@ -101,8 +101,10 @@ Niet achter `catalogimport.setup-api.enabled` (precedent L7a). 403 vóór 400/40
 - 409 `SECRETS_NOT_CONFIGURED` (bundel met secret zonder sleutelring: hele push geweigerd), `LEGACY_RECEIPT_NOT_APPLICABLE`, `LEGACY_PREVIEW_STALE`, `LEGACY_APPLY_BLOCKED` (met blokkerende codes), `PRODIS_DB_NOT_CONFIGURED`
 - 503 `PRODIS_DB_UNAVAILABLE`
 
-**Idempotentie:** push via unieke constraint `(origin_environment, origin_dossier, interface_code, content_hash)`; race →
-`DataIntegrityViolation` → 200 `UNCHANGED`. APPLY: rijslot + statusguard; tweede APPLY 409; verouderde `previewFingerprint` → 409 `LEGACY_PREVIEW_STALE`.
+**Idempotentie (beslissingslog 2026-10-20 "Legacy-config S1: idempotentie tegenover de laatste ontvangst"):** een push wordt enkel
+vergeleken met de laatste ontvangst (`max(id)`) van dezelfde herkomst, ongeacht status; zelfde hash → 200 `UNCHANGED`, anders altijd een
+nieuwe rij. Invariant: de laatste ontvangst is nooit `SUPERSEDED`. Serialisatiepunt is enkel `uk_legacy_config_receipt_open`: eerst de
+open ontvangst met rijslot lezen, dan de laatste ontvangst; een race op de open-marker → hele transactie opnieuw (begrensd). APPLY: rijslot + statusguard; tweede APPLY 409; verouderde `previewFingerprint` → 409 `LEGACY_PREVIEW_STALE`.
 
 **Secret door de request (K-3-patroon, decisions 2026-09-29 afwijking 3):**
 1. Body zelf lezen (`HttpServletRequest` → `byte[]` met limiet), nooit `@RequestBody`.
@@ -142,7 +144,8 @@ Niet achter `catalogimport.setup-api.enabled` (precedent L7a). 403 vóór 400/40
   `bundle_json` text (zonder secret); `secret_received` bool; `secret_outcome` varchar 40 + check; `credential_id` FK null;
   `status` (RECEIVED | APPLIED | SUPERSEDED | DISCARDED) + check; `open_marker` (TRUE enkel bij RECEIVED); `exported_at`;
   `received_at/by/by_subject`; `superseded_by_receipt_id` FK; `applied_at/by/by_subject`; `apply_report_json` text; `discarded_*`.
-  Uniek: `(env, dossier, interface_code, content_hash)` en `(env, dossier, interface_code, open_marker)`.
+  Uniek: enkel `(env, dossier, interface_code, open_marker)`; `content_hash` is per herkomst bewust **niet** uniek (A → B → A = nieuwe
+  ontvangst). Niet-unieke index `(env, dossier, interface_code, id desc)` voor de laatste ontvangst.
 - **020-2 `legacy_config_origin`:** `(env, dossier, interface_code)` uniek; `import_link_id`, `catalog_import_task_id`,
   `credential_id`, `last_applied_receipt_id` (FK's, null).
 - **020-3 `legacy_config_definition_origin`:** env, dossier, `definition_content_hash`, `supplier_code`, `legacy_definition_codes`

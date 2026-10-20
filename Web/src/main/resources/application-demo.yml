@@ -46,6 +46,13 @@ catalogimport:
     grants:
       - username: Dda
         rights: read, manage, approve
+  # Legacy-config-push (docs/decisions.md 2026-10-20 M2): lokaal de Prodis-Keycloak (realm prodis) met audience web_app
+  # (design par. 3: lokale audience web_app) en de confidential client prodis-datasync-catalogimport (in prodis-realm.json
+  # van de Prodis-repo aan te maken, met client role legacy-config-push op web_app). Overschrijfbaar via de omgeving.
+  technical-clients:
+    legacy-config:
+      audience: ${CATALOG_LEGACY_PUSH_AUDIENCE:web_app}
+      client-id: ${CATALOG_LEGACY_PUSH_CLIENT_ID:prodis-datasync-catalogimport}
 server:
   servlet:
     session:

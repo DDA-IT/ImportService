@@ -10,6 +10,7 @@ import be.dda.catalogimport.web.Permission;
 import be.dda.catalogimport.web.PermissionSource;
 import be.dda.catalogimport.web.PermissionSourceUnavailableException;
 import be.dda.catalogimport.web.RequiresPermission;
+import be.dda.catalogimport.web.TechnicalClientOnly;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -30,6 +31,8 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.method.HandlerMethod;
@@ -220,7 +223,57 @@ class PermissionInterceptorTest {
         assertThat(messages()).isEmpty();
     }
 
+    // --- Technische client (legacy-config S1, M2): enkel een JWT met de bevoegdheid ---------------------------------
+
+    @Test
+    void aTechnicalClientHandlerPassesForAJwtWithTheAuthorityWithoutAskingThePermissionSource() {
+        signInTechnicalClient(TechnicalClientOnly.AUTHORITY_PREFIX + TechnicalClientOnly.LEGACY_CONFIG_PUSH);
+        AtomicInteger calls = new AtomicInteger();
+
+        assertThat(interceptor(calls).preHandle(request(), this.response, handler("technicalOnly"))).isTrue();
+
+        assertThat(calls).hasValue(0);
+        assertThat(messages()).isEmpty();
+    }
+
+    /** Een BFF-aanmelding met alle rechten voldoet nooit aan een technische-clienthandler. */
+    @Test
+    void aSessionLoginWithAllRightsIsRefusedOnATechnicalClientHandler() {
+        signIn(USER);
+        PermissionInterceptor interceptor = interceptor(Permission.APPROVE, Permission.MANAGE, Permission.READ);
+
+        assertThatThrownBy(() -> interceptor.preHandle(request(), this.response, handler("technicalOnly")))
+                .isInstanceOf(ActorNotAllowedException.class)
+                .hasFieldOrPropertyWithValue("code", CurrentActor.PERMISSION_DENIED);
+        assertThat(messages()).singleElement().asString()
+                .startsWith("TECHNICAL_CLIENT_DENIED required=legacy-config-push POST ").contains(TEMPLATE);
+    }
+
+    /** Een JWT zonder de bevoegdheid (rol/azp/aud faalde in de keten) voldoet niet; en een JWT nooit aan een recht. */
+    @Test
+    void aJwtWithoutTheAuthorityIsRefusedAndAJwtNeverSatisfiesAPermission() {
+        signInTechnicalClient("SCOPE_profile");
+        PermissionInterceptor interceptor = interceptor(Permission.APPROVE);
+
+        assertThatThrownBy(() -> interceptor.preHandle(request(), this.response, handler("technicalOnly")))
+                .isInstanceOf(ActorNotAllowedException.class)
+                .hasFieldOrPropertyWithValue("code", CurrentActor.PERMISSION_DENIED);
+
+        signInTechnicalClient(TechnicalClientOnly.AUTHORITY_PREFIX + TechnicalClientOnly.LEGACY_CONFIG_PUSH);
+        assertThatThrownBy(() -> interceptor.preHandle(request(), this.response, handler("needsManage")))
+                .isInstanceOf(ActorNotAllowedException.class)
+                .hasFieldOrPropertyWithValue("code", CurrentActor.ACTOR_IDENTITY_INVALID);
+    }
+
     // --- Helpers ----------------------------------------------------------------------------------------------------
+
+    private static void signInTechnicalClient(String authority) {
+        Jwt jwt = Jwt.withTokenValue("token").header("alg", "RS256").subject("service-account-sub")
+                .claim("azp", "prodis-datasync-catalogimport").build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt,
+                List.of(new SimpleGrantedAuthority(authority)), "prodis-datasync-catalogimport"));
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
+    }
 
     private PermissionInterceptor interceptor(Permission... granted) {
         return interceptor(new AtomicInteger(), granted);
@@ -280,6 +333,10 @@ class PermissionInterceptorTest {
 
         @NoPermissionRequired
         void exempted() {
+        }
+
+        @TechnicalClientOnly(TechnicalClientOnly.LEGACY_CONFIG_PUSH)
+        void technicalOnly() {
         }
 
         void unannotated() {
