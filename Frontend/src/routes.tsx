@@ -1,4 +1,7 @@
-import type { RouteObject } from 'react-router-dom';
+import { Link, type RouteObject } from 'react-router-dom';
+import button from './components/Button.module.css';
+import { FileIcon } from './components/icons.tsx';
+import pageCss from './components/Page.module.css';
 import { BundleListPage } from './features/bundles/BundleListPage.tsx';
 import { BundleDetailPage } from './features/bundles/BundleDetailPage.tsx';
 import { BundleOverviewTab } from './features/bundles/BundleOverviewTab.tsx';
@@ -17,12 +20,20 @@ import { TemplateDetailPage } from './features/templates/TemplateDetailPage.tsx'
 import { IssueCaseListPage } from './features/issuecases/IssueCaseListPage.tsx';
 import { IssueCaseDetailPage } from './features/issuecases/IssueCaseDetailPage.tsx';
 
-/* Placeholder pages for now */
-function NotFoundPage() {
+/** Lege staat (mock .empty) met een weg terug naar de werkvoorraad. */
+export function NotFoundPage() {
   return (
-    <div style={{ padding: '2rem', textAlign: 'center' }}>
-      <h1>404 — Pagina niet gevonden</h1>
-      <p>De pagina die u zoekt, bestaat niet.</p>
+    <div className={pageCss.card}>
+      <div className={pageCss.empty}>
+        <FileIcon aria-hidden="true" />
+        <h1 className={pageCss.subtitle}>404 — Pagina niet gevonden</h1>
+        <p>De pagina die u zoekt, bestaat niet.</p>
+        <p>
+          <Link to="/" className={button.primary}>
+            Naar de werkvoorraad
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }
