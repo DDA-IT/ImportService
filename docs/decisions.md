@@ -2595,3 +2595,26 @@ placeholders en de extra scope `offline_access` werden niet doorgevoerd (schrijf
 zonder default: buiten lokaal blijft de fail-fast van `SecurityConfiguration` gelden. Dit herroept V6 (geen secret in de repo) en de
 eigen client `catalog-import` uit 5-AUTH V1 enkel voor deze twee lokale profielen.
 **Bron:** mens / Prodis `Web/src/main/resources/config/application.yml`
+
+## 2026-10-20 — Frontend-ombouw volgens de Prodis-mock + productwisselaar
+**Vraag:** Hoe bouwen we de frontend om naar de goedgekeurde mock (Prodis-webapp-look), en hoe werkt de appwissel linksboven tussen
+Prodis en CatalogImport?
+**Beslissing:**
+- **Stijl:** de mock (`catalogimport-mock.html`, gepubliceerd als artifact) is de referentie. Herroept uit 2026-09-30: hoofdknop wordt
+  cyaan (Prodis primary), een klein "CI"-merkteken naast "CatalogImport" mag, er komt een donker thema met themaknop, en het batchdetail
+  krijgt tabbladen (Overzicht, Problemen, Mutaties, Levering). Blijft: geen MUI, geen icoonbibliotheek (inline SVG), CSS-modules + tokens,
+  schermteksten uit `terms/`.
+- **Wisselaar in CatalogImport = zoals Prodis:** Prodis altijd (URL per omgeving, `catalogimport.app-switcher.prodis-url`, lokaal
+  `http://localhost:9060`), ProFin bij `systemAdmin` of `profin.access`, ProDev als `prodevUrl` gevuld is. Die gegevens komen uit Prodis'
+  `GET /api/account` via token relay van de BFF-sessie, **fail-soft** (Prodis onbereikbaar → enkel de Prodis-link uit config). Contract:
+  additief veld `apps` op `/api/catalog-import/me` (`[{id, url}]`; naam/logo in de client). De rechtenbron van CatalogImport zelf blijft
+  de YAML (`ConfiguredPermissionSource`): deze relay leest enkel wisselaar-gegevens, 5B-7 blijft een aparte stap.
+- **Wisselaar in Prodis:** CatalogImport zichtbaar bij System Admin of een van `catalogImport.read/.manage/.approve` (geseed in Prodis),
+  naar het ProDev-model (`prodis.catalog-import.url`, `catalogImportUrl` op `/api/account`, eigen logo-asset wegens CSP). Wijziging in de
+  Prodis-repo wordt uitgewerkt maar niet door ons gecommit.
+- **Cookies:** CatalogImport krijgt eigen sessie- en CSRF-cookienamen (geen botsing met Prodis op dezelfde host).
+- **Aanvaard voorlopig:** afmelden werkt niet door naar de andere app (geen back-channel logout). System Admin → alle `catalogImport.*`
+  geldt pas na 5B-7 en wordt dan opnieuw bekeken.
+- Bouwvolgorde: tokens/iconen → app-shell → accountmenu → gedeelde componenten → schermen → donker thema → cookies → wisselaar (backend,
+  frontend, Prodis). Eén commit per story (groep).
+**Bron:** mens + denker-zwaar / mock, prodis `product-switcher.tsx`, `ProdevLinkService`, `AccountResource`
