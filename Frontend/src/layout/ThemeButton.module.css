@@ -1,0 +1,21 @@
+.themeButton {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--action-active);
+  cursor: pointer;
+}
+
+.themeButton:hover {
+  background: var(--action-hover);
+}
+
+.themeButton:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

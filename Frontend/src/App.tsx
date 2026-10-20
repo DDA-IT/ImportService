@@ -18,6 +18,7 @@ import {
   type IconProps,
 } from './components/icons.tsx';
 import { BrandBlock } from './layout/BrandBlock.tsx';
+import { ThemeButton } from './layout/ThemeButton.tsx';
 
 const NO_PERMISSIONS_MESSAGE = 'U heeft geen rechten voor CatalogImport.';
 const MINI_STORAGE_KEY = 'catalogimport.nav.mini';
@@ -187,6 +188,7 @@ function App() {
             <MenuIcon />
           </button>
           <div className={styles.headerActor}>
+            <ThemeButton />
             <ActorBar />
           </div>
         </header>

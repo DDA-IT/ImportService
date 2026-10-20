@@ -55,7 +55,7 @@ p {
 
 /* Links */
 a {
-  color: var(--color-link, #006c9c);
+  color: var(--color-link);
   text-decoration: none;
 }
 
@@ -82,7 +82,7 @@ table {
 th, td {
   text-align: left;
   padding: 16px;
-  border-bottom: 1px dashed var(--color-border, rgba(145, 158, 171, 0.2));
+  border-bottom: 1px dashed var(--color-border);
 }
 
 tbody tr:last-child td,
@@ -93,6 +93,6 @@ tbody tr:last-child th {
 th {
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-text-secondary, #637381);
-  background-color: var(--color-surface, #f4f6f8);
+  color: var(--color-text-secondary);
+  background-color: var(--color-surface);
 }

@@ -10,6 +10,9 @@ import './styles/reset.css';
 import App from './App.tsx';
 import { routes } from './routes.tsx';
 import { ActorProvider } from './actor/ActorContext.tsx';
+import { initTheme } from './theme/theme.ts';
+
+initTheme();
 
 const router = createBrowserRouter([
   {
