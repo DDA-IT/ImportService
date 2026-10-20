@@ -2,18 +2,18 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
-  padding: var(--spacing-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-md);
+  /* soft alert (mock .alert, variant error) */
+  padding: 12px 16px;
+  border-radius: var(--radius);
   background: var(--status-rejected-bg);
-  color: var(--color-text);
+  color: var(--soft-error-text);
 }
 
 .title {
   margin: 0;
   font-size: 1rem;
   font-weight: 600;
-  color: var(--status-rejected-text);
+  color: var(--soft-error-text);
 }
 
 .explanation {
@@ -29,7 +29,7 @@
 .technical {
   margin: 0;
   padding-top: var(--spacing-2);
-  border-top: 1px solid var(--color-border-dark);
+  border-top: 1px dashed var(--divider);
   font-family: monospace;
   font-size: 0.8125rem;
   color: var(--color-text-secondary);
@@ -52,9 +52,10 @@
 .detailText {
   margin: 0;
   padding: var(--spacing-2);
-  border: 1px solid var(--color-border-dark);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-sm);
-  background: var(--color-background);
+  background: var(--bg-paper);
+  color: var(--text-primary);
   font-family: monospace;
   font-size: 0.8125rem;
   white-space: pre-wrap;

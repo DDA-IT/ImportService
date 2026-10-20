@@ -1,9 +1,16 @@
 .pager {
   display: flex;
   align-items: center;
-  gap: var(--spacing-3);
-  padding: var(--spacing-2) 0;
+  /* mock .tbl-foot */
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: 8px 12px 8px 20px;
+  border-top: 1px dashed var(--divider);
   font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .summary {
@@ -14,6 +21,18 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-1);
-  margin-left: auto;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
+}
+
+.sizeLabel select {
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.sizeLabel select option {
+  background: var(--bg-paper);
+  color: var(--text-primary);
 }

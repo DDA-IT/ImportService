@@ -36,6 +36,7 @@ export function DataTable<T>({ columns, rows, rowKey, emptyMessage = 'Geen gegev
   }
 
   return (
+    <div className={styles.wrap}>
     <table className={styles.table}>
       <thead>
         <tr>
@@ -58,5 +59,6 @@ export function DataTable<T>({ columns, rows, rowKey, emptyMessage = 'Geen gegev
         ))}
       </tbody>
     </table>
+    </div>
   );
 }

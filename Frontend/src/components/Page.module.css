@@ -1,0 +1,195 @@
+/*
+ * Gedeelde pagina-bouwstenen uit de Prodis-mock (docs/decisions.md 2026-10-20). ENKEL CSS: nog niet toegepast
+ * in pagina's. Gebruik: `import page from '../components/Page.module.css'` en zet de klassen op gewone elementen.
+ * Alle kleuren via tokens, dus correct in licht en donker thema.
+ */
+
+/* Paginakop: <header class=pageHead><div class=pageHeadText><h1 class=title/><ol class=crumbs>…</ol></div>[acties]</header> */
+.pageHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: flex-end;
+  margin-bottom: 40px;
+}
+
+.pageHeadText {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* typography.h4 */
+.title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+/* typography.h6 (kaarttitel) */
+.subtitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.5556;
+}
+
+/* Kruimelpad met stippen als scheiding */
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.crumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 14px;
+}
+
+.crumbs li + li::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-disabled);
+}
+
+.crumbs a {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.crumbs a:hover {
+  text-decoration: underline;
+}
+
+.crumbs [aria-current] {
+  color: var(--text-disabled);
+}
+
+/* Kaart */
+.card {
+  position: relative;
+  background: var(--bg-paper);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.cardPad {
+  padding: 24px;
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 24px 0;
+}
+
+.cardHead p {
+  margin: 4px 0 0;
+}
+
+/* Werkbalk boven een tabel (filters) */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 20px;
+}
+
+/* Tabs (ook voor NavLink-tabs: actief via aria-selected, aria-current of de klasse `active`) */
+.tabs {
+  display: flex;
+  gap: 40px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--divider);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.tab[aria-selected='true'],
+.tab[aria-current='page'],
+.tab.active {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.tab[aria-selected='true']::after,
+.tab[aria-current='page']::after,
+.tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: currentColor;
+}
+
+/* Lege staat */
+.empty {
+  padding: 80px 24px;
+  text-align: center;
+}
+
+.empty svg {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+  color: var(--text-disabled);
+}
+
+.empty p {
+  max-width: 460px;
+  margin: 8px auto 0;
+}
+
+@media (max-width: 899px) {
+  .tabs {
+    gap: 24px;
+  }
+}

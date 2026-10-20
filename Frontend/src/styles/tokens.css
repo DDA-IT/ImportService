@@ -159,23 +159,26 @@
   --color-border-dark: var(--button-outlined);
   --color-hover-bg: var(--action-hover);
 
-  /* Status colors (soft: colour at 16% alpha, text in darker tint) */
-  --status-planned-text: #004b50;
-  --status-awaiting-text: #7a4100;
-  --status-ready-text: #065e49;
-  --status-rejected-text: #7a0916;
-  --status-blocked-text: #7a0916;
-  --status-expired-text: #637381;
-  --status-neutral-text: #1c252e;
+  /* Status colors (soft: kleur op 16% alpha, tekst via de soft-tokens: .dark in licht, .light in donker;
+     schakelen dus automatisch mee met het thema) */
+  --status-planned-text: var(--soft-info-text);
+  --status-awaiting-text: var(--soft-warning-text);
+  --status-ready-text: var(--soft-success-text);
+  --status-rejected-text: var(--soft-error-text);
+  --status-blocked-text: var(--soft-error-text);
+  --status-expired-text: var(--soft-default-text);
+  --status-neutral-text: var(--soft-default-text);
 
-  /* Status color shorthand for backgrounds */
-  --status-planned-bg: rgba(0, 167, 111, 0.16);
-  --status-awaiting-bg: rgba(255, 171, 0, 0.16);
-  --status-ready-bg: rgba(34, 197, 94, 0.16);
-  --status-rejected-bg: rgba(255, 86, 48, 0.16);
-  --status-blocked-bg: rgba(255, 86, 48, 0.16);
-  --status-expired-bg: rgba(145, 158, 171, 0.16);
-  --status-neutral-bg: #dfe3e8;
+  --status-planned-bg: rgb(var(--info-ch) / 0.16);
+  --status-awaiting-bg: rgb(var(--warning-ch) / 0.16);
+  --status-ready-bg: rgb(var(--success-ch) / 0.16);
+  --status-rejected-bg: rgb(var(--error-ch) / 0.16);
+  --status-blocked-bg: rgb(var(--error-ch) / 0.16);
+  --status-expired-bg: var(--soft-default-bg);
+  --status-neutral-bg: var(--soft-default-bg);
+
+  /* Soft alert-achtergronden (.alert in de mock: warning/error 16%, info = primary 12%) */
+  --alert-info-bg: rgb(var(--primary-ch) / 0.12);
 
   /* Shadow: --shadow-card/-dropdown/-dialog komen uit de mock-tokens */
   --shadow-md: var(--shadow-z8);

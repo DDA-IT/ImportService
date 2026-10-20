@@ -8,11 +8,11 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: var(--spacing-3);
-  padding: var(--spacing-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
+  gap: 16px;
+  padding: 16px 20px;
+  border: 1px dashed var(--divider);
+  border-radius: var(--radius);
+  background: var(--bg-neutral);
 }
 
 .filter {

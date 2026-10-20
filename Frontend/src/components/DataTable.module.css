@@ -1,21 +1,43 @@
+/* Mock .table-wrap + .tbl: kop op bg-neutral, rijen 52px, gestippelde lijnen, padding 16/20, tabular-nums. */
+.wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .table th,
 .table td {
-  padding: var(--spacing-2) var(--spacing-3);
-  border-bottom: 1px solid var(--color-border);
+  padding: 14px 16px;
+  border-bottom: 1px dashed var(--divider);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
+}
+
+.table td {
+  height: 52px;
 }
 
 .table th {
-  background: var(--color-surface);
+  padding: 16px;
+  background: var(--bg-neutral);
   font-weight: 600;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.table th:first-child,
+.table td:first-child {
+  padding-left: 20px;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .alignRight {
@@ -28,6 +50,6 @@
 
 .empty {
   padding: var(--spacing-4);
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font-style: italic;
 }
