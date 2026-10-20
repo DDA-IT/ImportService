@@ -32,6 +32,7 @@ import { chooseRevision, loadCheckContext } from './linkCheck.ts';
 import { ANCHOR_ACTIVATE, ANCHOR_LINK_VALUES, ReadinessChecklist } from './ReadinessChecklist.tsx';
 import { TrialReadSection } from './TrialReadSection.tsx';
 import button from '../../../components/Button.module.css';
+import pageCss from '../../../components/Page.module.css';
 import styles from './LinkCheckPage.module.css';
 
 function parseId(value: string | null | undefined): number | null {
@@ -213,10 +214,22 @@ export function LinkCheckPage() {
 
   return (
     <div className={styles.page}>
-      <p>
-        <Link to="/setup">← Inrichting</Link>
-      </p>
-      <h1 className={styles.title}>Controleren</h1>
+      <header className={pageCss.pageHead}>
+        <div className={pageCss.pageHeadText}>
+          <h1 className={pageCss.title}>Controleren</h1>
+          <ol className={pageCss.crumbs}>
+            <li>
+              <span>CatalogImport</span>
+            </li>
+            <li>
+              <Link to="/setup">Inrichting</Link>
+            </li>
+            <li>
+              <span aria-current="page">Controleren</span>
+            </li>
+          </ol>
+        </div>
+      </header>
       <p className={styles.intro}>
         Hier ziet u of deze koppeling klaar is om leveringen te ontvangen, test u een bestand zonder iets op te slaan,
         en neemt u de versie van de beschrijving in gebruik.

@@ -10,7 +10,7 @@
 
 /* Nooit een uitgeschakelde knop zonder uitleg: de reden staat er als tekst naast. */
 .reason {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font-size: 0.8125rem;
   font-style: italic;
 }
@@ -28,21 +28,19 @@
 
 .warning {
   padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--color-warning);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--status-awaiting-bg);
-  color: var(--status-awaiting-text);
+  color: var(--soft-warning-text);
 }
 
 .muted {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .flagOff {
   margin: 0;
   padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  border-radius: var(--radius);
+  background: var(--bg-neutral);
   font-size: 0.875rem;
 }

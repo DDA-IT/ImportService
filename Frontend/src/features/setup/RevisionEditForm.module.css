@@ -4,9 +4,8 @@
   max-width: 40rem;
   padding: var(--spacing-4);
   margin: 0 0 var(--spacing-6) 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
+  border-radius: var(--radius);
+  background: var(--bg-paper);
 }
 
 .title {
@@ -17,14 +16,14 @@
 .intro {
   margin: 0 0 var(--spacing-4) 0;
   font-size: 0.875rem;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .fieldset {
   margin: 0 0 var(--spacing-4) 0;
   padding: var(--spacing-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
 }
 
 .legend {
@@ -36,10 +35,6 @@
 .input,
 .select {
   width: 100%;
-  padding: var(--spacing-2);
-  border: 1px solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
-  font: inherit;
   box-sizing: border-box;
 }
 
@@ -47,22 +42,21 @@
   display: block;
   margin: 0 0 var(--spacing-3) 0;
   font-size: 0.8125rem;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .identityNote {
   margin: 0 0 var(--spacing-3) 0;
   font-size: 0.8125rem;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .warning {
   margin: 0 0 var(--spacing-3) 0;
   padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--color-warning);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--status-awaiting-bg);
-  color: var(--status-awaiting-text);
+  color: var(--soft-warning-text);
   font-size: 0.8125rem;
 }
 
@@ -70,10 +64,9 @@
 .blocked {
   margin: 0 0 var(--spacing-3) 0;
   padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--status-rejected-bg);
-  color: var(--status-rejected-text);
+  color: var(--soft-error-text);
   font-size: 0.8125rem;
 }
 
@@ -84,34 +77,31 @@
 .actorRow {
   margin: 0 0 var(--spacing-3) 0;
   font-size: 0.8125rem;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .validationError {
   margin: 0 0 var(--spacing-3) 0;
   padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--status-rejected-bg);
-  color: var(--status-rejected-text);
+  color: var(--soft-error-text);
   font-size: 0.875rem;
 }
 
 .saved {
   margin: 0 0 var(--spacing-3) 0;
   padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--status-ready-bg);
-  color: var(--status-ready-text);
+  color: var(--soft-success-text);
   font-size: 0.875rem;
 }
 
 .flagOff {
   margin: 0 0 var(--spacing-3) 0;
   padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  border-radius: var(--radius);
+  background: var(--bg-neutral);
   font-size: 0.875rem;
 }

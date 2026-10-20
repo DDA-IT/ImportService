@@ -1,25 +1,20 @@
-/* NT-10 — scherm "Controleren". Zelfde tokens en vormen als het stappenplan (Wizard.module.css). */
+/* NT-10 — scherm "Controleren" in de Prodis-stijl: paginakop, secties als kaarten, checklist-items als soft labels/alerts. */
 
 .page {
   padding: var(--spacing-4) 0 var(--spacing-8) 0;
   max-width: 64rem;
 }
 
-.title {
-  margin: 0 0 var(--spacing-2) 0;
-}
-
 .intro {
   margin: 0 0 var(--spacing-4) 0;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .context {
-  margin: 0 0 var(--spacing-4) 0;
-  padding: var(--spacing-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
+  margin: 0 0 var(--spacing-6) 0;
+  padding: var(--spacing-4) var(--spacing-6);
+  border-radius: var(--radius-card);
+  background: var(--bg-neutral);
   font-size: 0.875rem;
 }
 
@@ -31,49 +26,52 @@
   margin: 0 0 var(--spacing-2) 0;
 }
 
+/* Een sectie is een kaart (mock .card + .cardPad). */
 .section {
-  padding: var(--spacing-4);
+  position: relative;
+  padding: var(--spacing-6);
   margin: 0 0 var(--spacing-6) 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-background);
+  border-radius: var(--radius-card);
+  background: var(--bg-paper);
   box-shadow: var(--shadow-card);
 }
 
+/* typography.h6 */
 .sectionTitle {
   margin: 0 0 var(--spacing-1) 0;
-  font-size: 1.15rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.5556;
 }
 
 .subTitle {
   margin: var(--spacing-4) 0 var(--spacing-2) 0;
   font-size: 1rem;
+  font-weight: 600;
 }
 
 .sectionIntro {
   margin: 0 0 var(--spacing-3) 0;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font-size: 0.875rem;
 }
 
 .summaryReady,
 .summaryNotReady {
   margin: 0 0 var(--spacing-3) 0;
-  padding: var(--spacing-2) var(--spacing-3);
-  border-radius: var(--radius-sm);
+  padding: var(--spacing-3) var(--spacing-4);
+  border-radius: var(--radius);
   font-weight: 600;
 }
 
 .summaryReady {
   background: var(--status-ready-bg);
-  color: var(--status-ready-text);
-  border: 1px solid var(--color-success);
+  color: var(--soft-success-text);
 }
 
 .summaryNotReady {
   background: var(--status-rejected-bg);
-  color: var(--status-rejected-text);
-  border: 1px solid var(--color-danger);
+  color: var(--soft-error-text);
 }
 
 .checkList {
@@ -87,7 +85,7 @@
   grid-template-columns: 2rem 1fr;
   gap: var(--spacing-2) var(--spacing-3);
   padding: var(--spacing-3) 0;
-  border-bottom: 1px dashed var(--color-border-dark);
+  border-bottom: 1px dashed var(--divider);
 }
 
 .icon {
@@ -126,7 +124,7 @@
 .checkUitleg {
   margin: var(--spacing-1) 0 0 0;
   font-size: 0.875rem;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .whatToDo {
@@ -136,52 +134,56 @@
 
 .caveats {
   margin: 0 0 var(--spacing-3) 0;
-  padding: var(--spacing-2) var(--spacing-3) var(--spacing-2) var(--spacing-6);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  padding: var(--spacing-3) var(--spacing-4) var(--spacing-3) var(--spacing-8);
+  border-radius: var(--radius);
+  background: var(--bg-neutral);
   font-size: 0.8125rem;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
+}
+
+/* Soft-alerts (mock .alert): info, waarschuwing en fout. */
+.nothingStored,
+.warning,
+.validationError {
+  margin: 0 0 var(--spacing-3) 0;
+  padding: var(--spacing-3) var(--spacing-4);
+  border-radius: var(--radius);
+  font-size: 0.875rem;
 }
 
 .nothingStored {
-  margin: 0 0 var(--spacing-3) 0;
-  padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--color-info);
-  border-radius: var(--radius-sm);
   background: var(--status-planned-bg);
-  color: var(--status-planned-text);
-  font-size: 0.875rem;
+  color: var(--soft-info-text);
   font-weight: 600;
 }
 
 .warning {
-  margin: 0 0 var(--spacing-3) 0;
-  padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--color-warning);
-  border-radius: var(--radius-sm);
   background: var(--status-awaiting-bg);
-  color: var(--status-awaiting-text);
-  font-size: 0.875rem;
+  color: var(--soft-warning-text);
 }
 
 .validationError {
-  margin: 0 0 var(--spacing-3) 0;
-  padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
   background: var(--status-rejected-bg);
-  color: var(--status-rejected-text);
-  font-size: 0.875rem;
+  color: var(--soft-error-text);
 }
 
-.input,
-.select {
+/* De eigenlijke opmaak van invoervelden komt van <Field>; losse selects (versiekeuze) krijgen dezelfde vorm. */
+.input {
   width: 100%;
-  padding: var(--spacing-2);
-  border: 1px solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
-  font: inherit;
   box-sizing: border-box;
+}
+
+.select {
+  box-sizing: border-box;
+  max-width: 100%;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--input-outlined);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
 }
 
 .actions {
@@ -193,34 +195,32 @@
 }
 
 .reason {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font-size: 0.8125rem;
   font-style: italic;
 }
 
 .loading,
 .muted {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font-size: 0.875rem;
 }
 
 .verdictOk,
 .verdictBlock {
   margin: 0 0 var(--spacing-3) 0;
-  padding: var(--spacing-3);
-  border-radius: var(--radius-md);
+  padding: var(--spacing-3) var(--spacing-4);
+  border-radius: var(--radius);
 }
 
 .verdictOk {
-  border: 1px solid var(--color-success);
   background: var(--status-ready-bg);
-  color: var(--status-ready-text);
+  color: var(--soft-success-text);
 }
 
 .verdictBlock {
-  border: 1px solid var(--color-danger);
   background: var(--status-rejected-bg);
-  color: var(--status-rejected-text);
+  color: var(--soft-error-text);
 }
 
 .verdictTitle {
@@ -242,15 +242,14 @@
 
 .tile {
   padding: var(--spacing-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
+  border-radius: var(--radius);
+  background: var(--bg-neutral);
 }
 
 .tile dt {
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .tileValue {
@@ -262,7 +261,7 @@
 .tileUitleg {
   margin: 0;
   font-size: 0.75rem;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .tableWrap {
@@ -279,14 +278,14 @@
 .table th {
   text-align: left;
   padding: var(--spacing-2);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
+  background: var(--bg-neutral);
+  color: var(--text-secondary);
   font-weight: 600;
 }
 
 .table td {
   padding: var(--spacing-2);
-  border-bottom: 1px dashed var(--color-border-dark);
+  border-bottom: 1px dashed var(--divider);
   vertical-align: top;
 }
 

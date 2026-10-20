@@ -51,6 +51,7 @@ import {
   type WizardStep,
 } from './wizardTypes.ts';
 import button from '../../../components/Button.module.css';
+import pageCss from '../../../components/Page.module.css';
 import styles from './Wizard.module.css';
 
 const ALL_STEPS: WizardStep[] = [1, 2, 3, 4, 5, 6];
@@ -117,8 +118,10 @@ function Stepper({ step }: { step: WizardStep }) {
           className={`${styles.stepItem} ${item === step ? styles.stepCurrent : ''} ${item < step ? styles.stepDone : ''}`}
           aria-current={item === step ? 'step' : undefined}
         >
-          {item < step ? '✓ ' : `${item}. `}
-          {STEP_TITLES[item]}
+          <span className={styles.stepNumber} aria-hidden="true">
+            {item < step ? '✓' : item}
+          </span>
+          <span className={styles.stepLabel}>{STEP_TITLES[item]}</span>
         </li>
       ))}
     </ol>
@@ -317,10 +320,22 @@ export function NewSupplierWizardPage() {
 
   return (
     <div className={styles.page}>
-      <p>
-        <Link to="/setup">← Inrichting</Link>
-      </p>
-      <h1 className={styles.title}>Nieuwe leverancier en taak</h1>
+      <header className={pageCss.pageHead}>
+        <div className={pageCss.pageHeadText}>
+          <h1 className={pageCss.title}>Nieuwe leverancier en taak</h1>
+          <ol className={pageCss.crumbs}>
+            <li>
+              <span>CatalogImport</span>
+            </li>
+            <li>
+              <Link to="/setup">Inrichting</Link>
+            </li>
+            <li>
+              <span aria-current="page">Nieuwe leverancier en taak</span>
+            </li>
+          </ol>
+        </div>
+      </header>
       <p className={styles.intro}>
         In zes stappen van niets tot een taak waarop u leveringen kunt opladen. Elke stap wordt meteen bewaard:
         u kunt later verdergaan via &laquo;Verder inrichten&raquo; bij Inrichting.

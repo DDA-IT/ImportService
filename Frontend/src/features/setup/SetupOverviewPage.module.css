@@ -2,21 +2,45 @@
   padding: var(--spacing-4) 0 var(--spacing-8) 0;
 }
 
-.title {
-  margin: 0 0 var(--spacing-2) 0;
-}
-
 .intro {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   margin: 0 0 var(--spacing-4) 0;
 }
 
+/* Paginakop-actie: de knop (en bij een ontbrekend recht de reden ernaast). */
+.headActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.blockedReason {
+  max-width: 28rem;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+/* Zelfde soft-alert als elders (mock .alert, variant error). */
+.alert {
+  margin: 0;
+  padding: var(--spacing-3) var(--spacing-4);
+  border-radius: var(--radius);
+  background: var(--status-rejected-bg);
+  color: var(--soft-error-text);
+  font-size: 0.875rem;
+}
+
+.openedCard {
+  margin-bottom: var(--spacing-6);
+}
+
 .loading {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .empty {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font-style: italic;
 }
 
@@ -27,8 +51,12 @@
 }
 
 .listItem {
-  border-bottom: 1px solid var(--color-border);
-  padding: var(--spacing-2) 0;
+  border-bottom: 1px dashed var(--divider);
+  padding: var(--spacing-3) 0;
+}
+
+.listItem:last-child {
+  border-bottom: 0;
 }
 
 .nodeRow {
@@ -59,7 +87,7 @@
 }
 
 .noActiveRevision {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font-style: italic;
 }
 
@@ -67,7 +95,7 @@
   margin-left: var(--spacing-8);
   margin-top: var(--spacing-2);
   padding-left: var(--spacing-4);
-  border-left: 2px solid var(--color-border);
+  border-left: 2px solid var(--divider);
 }
 
 .childSection {
@@ -76,8 +104,9 @@
 
 .childTitle {
   margin: 0 0 var(--spacing-2) 0;
-  font-size: 0.95rem;
-  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 /* NT-7: de taken van een koppeling onder de koppelingsrij. */

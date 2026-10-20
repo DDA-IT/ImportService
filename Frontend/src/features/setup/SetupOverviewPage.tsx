@@ -57,6 +57,7 @@ import { CreateSuccessorAction } from './CreateSuccessorAction.tsx';
 import { RevisionDetailSection } from './RevisionDetailSection.tsx';
 import { wizardHref } from './wizard/wizardTypes.ts';
 import button from '../../components/Button.module.css';
+import pageCss from '../../components/Page.module.css';
 import styles from './SetupOverviewPage.module.css';
 
 /** Het servermaximum per pagina voor de takenlijst van één koppeling (een koppeling heeft er maar enkele). */
@@ -461,29 +462,29 @@ function NewSupplierButton() {
   const manageGate = usePermissionGate(PERMISSION_MANAGE);
   if (!manageGate.allowed) {
     return (
-      <p className={styles.intro}>
+      <div className={styles.headActions}>
         <button
           type="button"
-          className={`${button.secondary} ${button.small}`}
+          className={button.primary}
           disabled
           title={manageGate.reason}
           aria-describedby="new-supplier-blocked"
           data-testid="new-supplier-button"
         >
           Nieuwe leverancier en taak
-        </button>{' '}
-        <span id="new-supplier-blocked" data-testid="new-supplier-blocked">
+        </button>
+        <span id="new-supplier-blocked" className={styles.blockedReason} data-testid="new-supplier-blocked">
           {manageGate.reason}
         </span>
-      </p>
+      </div>
     );
   }
   return (
-    <p className={styles.intro}>
-      <Link className={`${button.secondary} ${button.small}`} to="/setup/new" data-testid="new-supplier-button">
+    <div className={styles.headActions}>
+      <Link className={button.primary} to="/setup/new" data-testid="new-supplier-button">
         Nieuwe leverancier en taak
       </Link>
-    </p>
+    </div>
   );
 }
 
@@ -508,8 +509,12 @@ function OpenedRevision() {
     return null;
   }
   return (
-    <section className={styles.childSection} aria-label="Geopende versie" data-testid="opened-revision">
-      <h2 className={styles.childTitle}>Geopende versie</h2>
+    <section
+      className={`${pageCss.card} ${pageCss.cardPad} ${styles.openedCard}`}
+      aria-label="Geopende versie"
+      data-testid="opened-revision"
+    >
+      <h2 className={pageCss.subtitle}>Geopende versie</h2>
       <p className={styles.intro}>
         Controleer de versie hieronder en activeer ze met &laquo;Versie activeren&raquo;. Pas daarna kan er op
         de taak een levering opgeladen worden.{' '}
@@ -536,14 +541,29 @@ export function SetupOverviewPage() {
   if (!readGate.allowed) {
     return (
       <div className={styles.page}>
-        <p role="alert">{readGate.reason}</p>
+        <p className={styles.alert} role="alert">
+          {readGate.reason}
+        </p>
       </div>
     );
   }
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>Inrichting</h1>
+      <header className={pageCss.pageHead}>
+        <div className={pageCss.pageHeadText}>
+          <h1 className={pageCss.title}>Inrichting</h1>
+          <ol className={pageCss.crumbs}>
+            <li>
+              <span>CatalogImport</span>
+            </li>
+            <li>
+              <span aria-current="page">Inrichting</span>
+            </li>
+          </ol>
+        </div>
+        <NewSupplierButton />
+      </header>
       <p className={styles.intro}>
         Overzicht van leveranciers en aankoopverenigingen, de beschrijvingen van hun bestanden,
         de versies daarvan, koppelingen en taken. Klik op &laquo;Uitklappen&raquo; om een niveau te
@@ -556,13 +576,12 @@ export function SetupOverviewPage() {
         beschrijving met één leverancier en één Prodis-bibliotheek, en een taak is de ingang waarop u leveringen
         oplaadt.
       </WhatIsThis>
-      <NewSupplierButton />
       <OpenedRevision />
 
       {organisations.error !== null && <ErrorBanner error={organisations.error} />}
       {organisations.loading && organisations.data === null && <p className={styles.loading}>Bezig met laden…</p>}
       {organisations.data !== null && (
-        <>
+        <div className={`${pageCss.card} ${pageCss.cardPad}`}>
           {organisations.data.content.length === 0 ? (
             <p className={styles.empty}>Geen leveranciers of aankoopverenigingen gevonden.</p>
           ) : (
@@ -582,7 +601,7 @@ export function SetupOverviewPage() {
               setPage(0);
             }}
           />
-        </>
+        </div>
       )}
     </div>
   );
