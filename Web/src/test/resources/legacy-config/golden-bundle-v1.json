@@ -1,0 +1,256 @@
+{
+  "schema": "legacy-config-bundle",
+  "version": 1,
+  "origin": {
+    "environment": "TEST",
+    "dossier": "FIXTURE01",
+    "legacyMaster": "PRODIS"
+  },
+  "exportedAt": "2026-10-21T10:15:00+02:00",
+  "exporter": {
+    "job": "LegacyConfigExportJob",
+    "appVersion": "0.0.0-golden"
+  },
+  "contentHash": "6b58fcab896f4ab04c04038af0ed26045d7bef084e0bfb0b67e979a2b672929a",
+  "definitionContentHash": "8135f92b005c05dfe3e233739f0fefbd99eef0a6ae39afcaf5f10e34b2c77b57",
+  "interface": {
+    "code": "GOLDEN_ART",
+    "header": {
+      "direction": "I",
+      "importExportType": "CSV",
+      "executeAutomatic": true,
+      "executeEvery": "D",
+      "executionTime": "060000",
+      "endTime": "000000",
+      "weekdays": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false
+      ],
+      "dayOfWeek": "",
+      "dayOfMonth": 0,
+      "monthOfYear": 0,
+      "specificUser": "",
+      "info": "Fictieve leverancier één – \"golden\" test\\fixture\tmet escapes"
+    },
+    "details": [
+      {
+        "sequence": 100,
+        "label": "ArtImp_Importsoort",
+        "value": "VROOAM2"
+      },
+      {
+        "sequence": 1,
+        "label": "FTP",
+        "value": "sftp://sftp.example.test/exports/"
+      },
+      {
+        "sequence": 2,
+        "label": "FTP_login",
+        "value": "fixture-user"
+      },
+      {
+        "sequence": 101,
+        "label": "Separator",
+        "value": "Semicolon"
+      },
+      {
+        "sequence": 102,
+        "label": "FILE_ENCODING",
+        "value": "UTF-8"
+      },
+      {
+        "sequence": 103,
+        "label": "SkipHeaderLines",
+        "value": "1"
+      },
+      {
+        "sequence": 104,
+        "label": "DecimalComma",
+        "value": "Y"
+      },
+      {
+        "sequence": 105,
+        "label": "ArtImp_BibNr",
+        "value": "12"
+      },
+      {
+        "sequence": 106,
+        "label": "Supplier",
+        "value": "9999"
+      }
+    ],
+    "omittedSecretLabels": [
+      "API_AUTH_PASSWORD"
+    ],
+    "ftpCredentialsRedacted": true
+  },
+  "definitionStatus": "PRESENT",
+  "definition": {
+    "code": "VROOAM2",
+    "description": "Golden fixture catalogus CSV",
+    "updateFile": "",
+    "replacementCode": "",
+    "deleteCode": "",
+    "lines": [
+      {
+        "number": 9,
+        "field": "Leverancier",
+        "column": 3,
+        "position": 0,
+        "length": 0,
+        "includeExclude": "0",
+        "includeExcludeData": "",
+        "prefix": "",
+        "suffix": "",
+        "value": "",
+        "fill": "",
+        "calculation": "",
+        "calculationValue": "",
+        "xmlElementPath": ""
+      },
+      {
+        "number": 10,
+        "field": "Leveranciersgroep",
+        "column": 0,
+        "position": 0,
+        "length": 0,
+        "includeExclude": "0",
+        "includeExcludeData": "",
+        "prefix": "",
+        "suffix": "",
+        "value": "GRP-A",
+        "fill": "",
+        "calculation": "",
+        "calculationValue": "",
+        "xmlElementPath": ""
+      },
+      {
+        "number": 11,
+        "field": "Artikelnummer",
+        "column": 1,
+        "position": 0,
+        "length": 0,
+        "includeExclude": "0",
+        "includeExcludeData": "",
+        "prefix": "X-",
+        "suffix": "",
+        "value": "",
+        "fill": "",
+        "calculation": "",
+        "calculationValue": "",
+        "xmlElementPath": ""
+      },
+      {
+        "number": 23,
+        "field": "Kortingscode",
+        "column": 5,
+        "position": 0,
+        "length": 0,
+        "includeExclude": "0",
+        "includeExcludeData": "",
+        "prefix": "",
+        "suffix": "",
+        "value": "",
+        "fill": "",
+        "calculation": "",
+        "calculationValue": "",
+        "xmlElementPath": ""
+      },
+      {
+        "number": 26,
+        "field": "Basisprijs",
+        "column": 7,
+        "position": 0,
+        "length": 0,
+        "includeExclude": "0",
+        "includeExcludeData": "",
+        "prefix": "",
+        "suffix": "",
+        "value": "",
+        "fill": "",
+        "calculation": "",
+        "calculationValue": "",
+        "xmlElementPath": ""
+      },
+      {
+        "number": 4,
+        "field": "Omschrijving",
+        "column": 2,
+        "position": 0,
+        "length": 0,
+        "includeExclude": "0",
+        "includeExcludeData": "",
+        "prefix": "",
+        "suffix": "",
+        "value": "",
+        "fill": "",
+        "calculation": "",
+        "calculationValue": "",
+        "xmlElementPath": ""
+      },
+      {
+        "number": 33,
+        "field": "Eenheid",
+        "column": 8,
+        "position": 0,
+        "length": 0,
+        "includeExclude": "0",
+        "includeExcludeData": "",
+        "prefix": "",
+        "suffix": "",
+        "value": "",
+        "fill": "",
+        "calculation": "7",
+        "calculationValue": "",
+        "xmlElementPath": ""
+      },
+      {
+        "number": 37,
+        "field": "Merkfilter",
+        "column": 9,
+        "position": 0,
+        "length": 0,
+        "includeExclude": "1",
+        "includeExcludeData": "ACME",
+        "prefix": "",
+        "suffix": "",
+        "value": "",
+        "fill": "",
+        "calculation": "",
+        "calculationValue": "",
+        "xmlElementPath": ""
+      }
+    ],
+    "maps": [
+      {
+        "number": 7,
+        "key": "STK",
+        "value": "PCE",
+        "reserveAlpha": ""
+      },
+      {
+        "number": 7,
+        "key": "DOOS",
+        "value": "BOX",
+        "reserveAlpha": ""
+      }
+    ],
+    "excludes": [
+      {
+        "supplier": "9999",
+        "supplierGroup": "",
+        "discountCode": "",
+        "supplierReference": "REF-1"
+      }
+    ]
+  },
+  "secret": {
+    "label": "FTP_password",
+    "value": "canary-golden-not-a-secret"
+  }
+}

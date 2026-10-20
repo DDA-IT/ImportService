@@ -1,0 +1,58 @@
+{
+  "schema": "legacy-config-bundle",
+  "version": 1,
+  "origin": {
+    "environment": "TEST",
+    "dossier": "FIXTURE01",
+    "legacyMaster": "PRODIS"
+  },
+  "exportedAt": "2026-10-21T10:15:00+02:00",
+  "exporter": {
+    "job": "LegacyConfigExportJob",
+    "appVersion": "0.0.0-golden"
+  },
+  "contentHash": "d8b6c6166e0416f888730d49342ae10811f68797bc0c3848efbb3ad885ada912",
+  "definitionContentHash": null,
+  "interface": {
+    "code": "GOLDEN_MISS",
+    "header": {
+      "direction": "I",
+      "importExportType": "CSV",
+      "executeAutomatic": false,
+      "executeEvery": "D",
+      "executionTime": "060000",
+      "endTime": "000000",
+      "weekdays": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "dayOfWeek": "",
+      "dayOfMonth": 0,
+      "monthOfYear": 0,
+      "specificUser": "",
+      "info": ""
+    },
+    "details": [
+      {
+        "sequence": 100,
+        "label": "ArtImp_Importsoort",
+        "value": "NOPE99"
+      },
+      {
+        "sequence": 106,
+        "label": "Supplier",
+        "value": "9999"
+      }
+    ],
+    "omittedSecretLabels": [],
+    "ftpCredentialsRedacted": false
+  },
+  "definitionStatus": "MISSING",
+  "definition": null,
+  "secret": null
+}

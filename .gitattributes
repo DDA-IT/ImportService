@@ -1,1 +1,3 @@
 scripts/**/*.sh text eol=lf
+
+Web/src/test/resources/legacy-config/*.json -text

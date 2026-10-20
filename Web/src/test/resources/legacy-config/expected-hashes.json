@@ -1,0 +1,10 @@
+{
+  "golden-bundle-v1.json": {
+    "contentHash": "6b58fcab896f4ab04c04038af0ed26045d7bef084e0bfb0b67e979a2b672929a",
+    "definitionContentHash": "8135f92b005c05dfe3e233739f0fefbd99eef0a6ae39afcaf5f10e34b2c77b57"
+  },
+  "golden-bundle-v1-missing-definition.json": {
+    "contentHash": "d8b6c6166e0416f888730d49342ae10811f68797bc0c3848efbb3ad885ada912",
+    "definitionContentHash": null
+  }
+}
