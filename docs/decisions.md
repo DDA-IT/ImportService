@@ -2692,3 +2692,19 @@ MeAppSwitcherHttpTest) groen. Prodis-kant (seed `catalogImport.read/.manage/.app
 **Nog open bij de mens:** visuele controle in de browser (licht/donker, mini, mobiel); Prodis-wijziging reviewen/committen en
 `PermissionRightCatalogIT` buiten de sandbox draaien; lokale `PRODIS_CATALOG_IMPORT_URL` voor andere Prodis-profielen dan `devjeff`.
 **Bron:** hoofdsessie na verificatie
+
+## 2026-10-20 — Legacy-config-migratie: M1–M3 en bouwopdracht S0–S9
+**Vraag:** Open punten M1–M3 uit `docs/design/legacy-config-bundle-design.md` §9, en bouwvolgorde.
+**Beslissing:**
+- **M1 — optie A:** per (omgeving, dossier, leverancier, `definitionContentHash`) één `REUSABLE_TEMPLATE` (DRAFT; de mens activeert)
+  plus één gedeelde `OWN_DEFINITION` `based_on` dat sjabloon, met per interface een eigen koppeling en taak op die gedeelde definitie.
+  Nooit delen over leveranciers heen. Vervangt de letterlijke formulering "één REUSABLE_TEMPLATE met per interface een koppeling"
+  (onuitvoerbaar wegens changeset 006-5).
+- **M2 — JWT via Keycloak:** client-credentials, resource-server enkel op `POST /api/catalog-import/legacy-config/receipts`,
+  client role `legacy-config-push`, controle op `azp`/`aud`; nieuwe dependency `spring-boot-starter-oauth2-resource-server`.
+- **M3 — nullable + check:** `identity_supplier_field` en `identity_supplier_group_field` worden nullable met een check "precies
+  één van kolom of vaste waarde"; API additief uitgebreid. Bewust gemelde wijziging van een bestaande constraint en van de
+  betekenis van API-veld `supplierField`.
+- **Aannames A1–A9** (design §9) gelden zoals beschreven.
+- **Bouw:** S0 t/m S9 strikt sequentieel, één commit per slice. ProdisDatasyncEngine op een eigen branch.
+**Bron:** mens / `docs/design/legacy-config-bundle-design.md`
