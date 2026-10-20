@@ -320,6 +320,7 @@ describe('ActorProvider (GET /me)', () => {
       </ActorProvider>,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: 'Jan Peeters (jan.peeters)' }));
     fireEvent.click(screen.getByRole('button', { name: 'Afmelden' }));
 
     await waitFor(() => expect(assign).toHaveBeenCalledWith('http://kc/logout?id_token_hint=abc'));

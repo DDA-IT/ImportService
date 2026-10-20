@@ -18,6 +18,11 @@ const LABELS: Record<Permission, string> = {
   [PERMISSION_APPROVE]: 'Goedkeuren',
 };
 
+/** Leesbaar label van een recht uit `/me.permissions`; een onbekende code toont nooit de ruwe code. */
+export function permissionLabel(code: string): string {
+  return (LABELS as Record<string, string>)[code] ?? 'Onbekend recht';
+}
+
 /** Vaste reden per recht, bv. "U heeft het recht 'Goedkeuren' (`catalogImport.approve`) niet." */
 export function missingPermissionReason(permission: Permission): string {
   return `U heeft het recht '${LABELS[permission]}' (${permission}) niet.`;
