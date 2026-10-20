@@ -47,4 +47,9 @@ public interface LegacyConfigReceiptRepository extends JpaRepository<LegacyConfi
                     + "and (:interfaceCode is null or r.interfaceCode = :interfaceCode)")
     Page<LegacyConfigReceipt> findRows(@Param("status") LegacyConfigReceiptStatus status,
                                        @Param("interfaceCode") String interfaceCode, Pageable pageable);
+
+    /** Rijslot voor APPLY (S2): statusguard onder gelijktijdigheid (tweede APPLY, gelijktijdige push). */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from LegacyConfigReceipt r where r.id = :id")
+    Optional<LegacyConfigReceipt> findByIdForUpdate(@Param("id") Long id);
 }

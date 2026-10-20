@@ -3,6 +3,11 @@ package be.dda.catalogimport.web;
 import be.dda.catalogimport.domain.LegacyConfigReceiptStatus;
 import be.dda.catalogimport.service.ActorIdentity;
 import be.dda.catalogimport.service.BadRequestException;
+import be.dda.catalogimport.service.LegacyConfigApplyService;
+import be.dda.catalogimport.service.LegacyConfigApplyService.ApplyCommand;
+import be.dda.catalogimport.service.LegacyConfigApplyService.ApplyOptions;
+import be.dda.catalogimport.service.LegacyConfigApplyService.ApplyResult;
+import be.dda.catalogimport.service.LegacyConfigApplyService.PreviewResult;
 import be.dda.catalogimport.service.LegacyBundleParser;
 import be.dda.catalogimport.service.LegacyConfigReceiptService;
 import be.dda.catalogimport.service.LegacyConfigReceiptService.PushResult;
@@ -20,6 +25,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,6 +40,8 @@ import org.springframework.web.bind.annotation.RestController;
  *       JWT-keten {@code LegacyConfigPushSecurityConfiguration} schermt het pad af). Een BFF-sessie: 401.</li>
  *   <li>{@code GET /receipts} en {@code GET /receipts/{id}}: {@code MANAGE} via de BFF-sessie — de bundel toont host
  *       en login (L7b). Een bearer-token werkt op deze paden niet.</li>
+ *   <li>{@code GET /receipts/{id}/preview} en {@code POST /receipts/{id}/apply} (slice S2, {@link LegacyConfigApplyService}):
+ *       {@code MANAGE}; 403 vóór 400/404/409.</li>
  * </ul>
  * Niet achter {@code catalogimport.setup-api.enabled} (precedent L7a). 401/403 komen uit de filterketen of de
  * interceptor, vóór het lezen van de body en dus vóór elke 400/404/409/413.
@@ -62,10 +70,12 @@ public class CatalogImportLegacyConfigController {
     private static final int INITIAL_BUFFER = 8 * 1024;
 
     private final LegacyConfigReceiptService receipts;
+    private final LegacyConfigApplyService applies;
     private final CurrentActor currentActor;
     private final int maxBundleBytes;
 
-    public CatalogImportLegacyConfigController(LegacyConfigReceiptService receipts, CurrentActor currentActor,
+    public CatalogImportLegacyConfigController(LegacyConfigReceiptService receipts, LegacyConfigApplyService applies,
+                                               CurrentActor currentActor,
                                                @Value("${catalogimport.legacy-config.max-bundle-bytes:"
                                                        + DEFAULT_MAX_BUNDLE_BYTES + "}") long maxBundleBytes) {
         if (maxBundleBytes < 1 || maxBundleBytes > Integer.MAX_VALUE - 1) {
@@ -73,6 +83,7 @@ public class CatalogImportLegacyConfigController {
                     + (Integer.MAX_VALUE - 1));
         }
         this.receipts = receipts;
+        this.applies = applies;
         this.currentActor = currentActor;
         this.maxBundleBytes = (int) maxBundleBytes;
     }
@@ -107,6 +118,32 @@ public class CatalogImportLegacyConfigController {
     @GetMapping("/receipts/{receiptId}")
     ReceiptDetail get(@PathVariable("receiptId") long receiptId) {
         return receipts.get(receiptId);
+    }
+
+    /**
+     * PREVIEW (S2): het rapport van wat APPLY nu zou doen, met dezelfde keuzes als de APPLY-body (als
+     * queryparameters), plus {@code previewFingerprint}. Schrijft niets.
+     */
+    @RequiresPermission(Permission.MANAGE)
+    @GetMapping("/receipts/{receiptId}/preview")
+    PreviewResult preview(@PathVariable("receiptId") long receiptId,
+                          @RequestParam(value = "definitionCodeOverride", required = false) String definitionCodeOverride,
+                          @RequestParam(value = "charsetWhenUndeclared", required = false) String charsetWhenUndeclared,
+                          @RequestParam(value = "libraryCode", required = false) String libraryCode) {
+        return applies.preview(receiptId, new ApplyOptions(definitionCodeOverride, charsetWhenUndeclared, libraryCode));
+    }
+
+    /**
+     * APPLY (S2): {@code {previewFingerprint, reason, definitionCodeOverride?, charsetWhenUndeclared?, libraryCode?}}
+     * → 200 + rapport. 400 {@code LEGACY_APPLY_REASON_REQUIRED}; 404 {@code LEGACY_RECEIPT_NOT_FOUND}; 409
+     * {@code LEGACY_RECEIPT_NOT_APPLICABLE}, {@code LEGACY_PREVIEW_STALE}, {@code LEGACY_APPLY_BLOCKED}. Activeert
+     * nooit.
+     */
+    @RequiresPermission(Permission.MANAGE)
+    @PostMapping("/receipts/{receiptId}/apply")
+    ApplyResult apply(@PathVariable("receiptId") long receiptId,
+                      @RequestBody(required = false) ApplyCommand request) {
+        return applies.apply(receiptId, request, currentActor.signer(null, "appliedBy"));
     }
 
     /**

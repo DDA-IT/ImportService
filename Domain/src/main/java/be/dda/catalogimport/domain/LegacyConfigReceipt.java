@@ -29,7 +29,7 @@ import java.time.Instant;
  *
  * <h2>Statusovergangen</h2>
  * Enkel via samengestelde methoden, zodat status, {@code open_marker} en de bijbehorende velden nooit los van elkaar
- * gezet worden (patroon {@code PublicationRun}). S1 kent enkel aanmaken ({@code RECEIVED}) en vervangen
+ * gezet worden (patroon {@code PublicationRun}): aanmaken ({@code RECEIVED}), toepassen ({@link #markApplied}, S2) en vervangen
  * ({@link #markSuperseded()} gevolgd door {@link #linkSuccessor(Long)}).
  */
 @Entity
@@ -118,6 +118,10 @@ public class LegacyConfigReceipt {
     @Column(name = "apply_report_json")
     private String applyReportJson;
 
+    /** De verplichte reden van de APPLY (changeset 021-1, vanaf S2). */
+    @Column(name = "applied_reason", length = 500)
+    private String appliedReason;
+
     @Column(name = "discarded_at")
     private Instant discardedAt;
 
@@ -188,6 +192,31 @@ public class LegacyConfigReceipt {
             throw new IllegalStateException("Receipt " + id + " cannot get a successor in status " + status);
         }
         this.supersededByReceiptId = required(successorId, "successorId");
+    }
+
+    /**
+     * {@code RECEIVED → APPLIED} (slice S2): de ontvangst werd toegepast. Sluit de open marker. De reden en het
+     * APPLY-rapport worden bewaard; het rapport bevat nooit een secret.
+     *
+     * @throws IllegalStateException    de ontvangst is niet {@code RECEIVED}
+     * @throws IllegalArgumentException tijdstip, actor, reden of rapport ontbreekt
+     */
+    public void markApplied(Instant at, String by, String bySubject, String reason, String reportJson) {
+        if (status != LegacyConfigReceiptStatus.RECEIVED) {
+            throw new IllegalStateException("Only a RECEIVED receipt can be applied; receipt " + id + " is "
+                    + status);
+        }
+        this.appliedAt = required(at, "appliedAt");
+        this.appliedBy = requiredText(by, "appliedBy");
+        this.appliedBySubject = bySubject;
+        this.appliedReason = requiredText(reason, "appliedReason");
+        this.applyReportJson = requiredText(reportJson, "applyReportJson");
+        this.status = LegacyConfigReceiptStatus.APPLIED;
+        this.openMarker = null;
+    }
+
+    public String getAppliedReason() {
+        return appliedReason;
     }
 
     public Long getId() {

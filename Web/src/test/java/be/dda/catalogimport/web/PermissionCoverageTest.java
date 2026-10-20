@@ -212,6 +212,9 @@ class PermissionCoverageTest {
         m.put("POST /api/catalog-import/legacy-config/receipts", TECHNICAL_CLIENT + "legacy-config-push");
         m.put("GET /api/catalog-import/legacy-config/receipts", "MANAGE");
         m.put("GET /api/catalog-import/legacy-config/receipts/{}", "MANAGE");
+        // S2: preview (schrijft niets) en apply, beide MANAGE (A9, L7b).
+        m.put("GET /api/catalog-import/legacy-config/receipts/{}/preview", "MANAGE");
+        m.put("POST /api/catalog-import/legacy-config/receipts/{}/apply", "MANAGE");
         // /me
         m.put("GET /api/catalog-import/me", NONE);
         return m;

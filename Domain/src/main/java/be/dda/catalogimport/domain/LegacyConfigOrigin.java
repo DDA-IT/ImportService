@@ -15,9 +15,11 @@ import java.time.Instant;
  * {@code originDossier}, {@code interfaceCode}).
  * <p>
  * Alle verwijzingen zijn nullable en worden stap voor stap aangevuld: de koppeling, de taak en de laatst toegepaste
- * ontvangst door APPLY (S2), het credential door een overgenomen secret (S4). <b>S1 maakt enkel het schema en deze
- * entiteit; er wordt nog geen rij geschreven.</b> {@code credentialId} is enkel een verwijzing naar de versleutelde
- * opslag, nooit een waarde.
+ * ontvangst door APPLY (S2), het credential door een overgenomen secret (S4). {@code credentialId} is enkel een
+ * verwijzing naar de versleutelde opslag, nooit een waarde.
+ * <p>
+ * Sinds S2 legt APPLY de koppeling en de taak vast ({@link #attachChain(Long, Long, Instant)}; een al vastgelegde
+ * verwijzing wordt nooit vervangen) en de laatst toegepaste ontvangst ({@link #recordApplied(Long, Instant)}).
  */
 @Entity
 @Table(name = "legacy_config_origin",
@@ -73,6 +75,30 @@ public class LegacyConfigOrigin {
         this.createdAt = createdAt;
     }
 
+    /**
+     * Legt de koppeling en de taak vast die APPLY aanmaakte. Een al vastgelegde verwijzing wordt nooit vervangen
+     * (design par. 5: een bestaande koppeling/taak wordt nooit gemuteerd).
+     *
+     * @throws IllegalStateException er is al een andere koppeling of taak vastgelegd
+     */
+    public void attachChain(Long linkId, Long taskId, Instant at) {
+        if (importLinkId != null && !importLinkId.equals(linkId)) {
+            throw new IllegalStateException("Origin " + id + " already has import link " + importLinkId);
+        }
+        if (catalogImportTaskId != null && !catalogImportTaskId.equals(taskId)) {
+            throw new IllegalStateException("Origin " + id + " already has task " + catalogImportTaskId);
+        }
+        this.importLinkId = requiredValue(linkId, "importLinkId");
+        this.catalogImportTaskId = requiredValue(taskId, "catalogImportTaskId");
+        this.updatedAt = requiredValue(at, "updatedAt");
+    }
+
+    /** De ontvangst die als laatste werd toegepast. */
+    public void recordApplied(Long receiptId, Instant at) {
+        this.lastAppliedReceiptId = requiredValue(receiptId, "lastAppliedReceiptId");
+        this.updatedAt = requiredValue(at, "updatedAt");
+    }
+
     public Long getId() {
         return id;
     }
@@ -117,6 +143,13 @@ public class LegacyConfigOrigin {
     public String toString() {
         return "LegacyConfigOrigin[id=" + id + ", origin=" + originEnvironment + "/" + originDossier + "/"
                 + interfaceCode + "]";
+    }
+
+    private static <T> T requiredValue(T value, String name) {
+        if (value == null) {
+            throw new IllegalArgumentException(name + " is required");
+        }
+        return value;
     }
 
     private static String requiredText(String value, String name) {

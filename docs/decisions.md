@@ -2721,3 +2721,27 @@ het serialisatiepunt. Push-antwoord `{receiptId, outcome (RECEIVED|UNCHANGED), s
 Voorstel voor S2: APPLY enkel op `RECEIVED`; gelijke `definitionContentHash` als de laatst gemigreerde revisie → geen nieuwe DRAFT,
 rapport `DEFINITION_UNCHANGED`, ontvangst wel `APPLIED`. Overstemt `legacy-config-bundle-design.md` §2 (POST, idempotentie) en §4 (uniek).
 **Bron:** denker-zwaar / S1-bouwerrapport
+
+## 2026-10-20 — Legacy-config S2: bibliotheekcode, opvolgende DRAFT, Separator, aannames
+**Vraag:** Open punten van de S2-bouwer (library_code zonder Prodis-bron, inhoud van de opvolgende DRAFT, ontbrekend
+`Separator`-label, bouweraannames).
+**Beslissing:**
+- **library_code (V1 = c):** optioneel veld `libraryCode` in de APPLY-body (zelfde patroon als `definitionCodeOverride`);
+  zonder dat veld blokkeert de preview met `LIBRARY_CODE_NOT_RESOLVED`. Vanaf S5 vult de Prodis-bron het automatisch in
+  (`supplier_catalog.scope_key` via `legacy_number`) en wordt het enkel nog gevraagd bij 0 of >1 match. Nooit het ruwe
+  `ArtImp_BibNr` als library_code. Additief API-veld.
+- **Opvolgende DRAFT (V2 = C):** letterlijke kopie van de laatste revisie via de bestaande opvolger-/`RevisionCopier`-route;
+  daarna overschrijft APPLY wat legacy bepaalt (structuur, identiteit, basisprijs, omschrijving, vertaalbare mappings op de
+  doelvelden, filters); drempels, kritiek-overrules en bookmarks blijven uit de kopie. BLOCKING
+  `MANUAL_CHANGES_SINCE_MIGRATION` als de laatste revisie inhoudelijk (velden, mappings, filters) afwijkt van de laatst
+  gemigreerde revisie (020-4). APPLY geldt als R-REV-X3-bevestiging van een identiteitswijziging, met WARNING
+  `IDENTITY_CHANGE` in de preview.
+- **Separator:** ontbreekt het label, dan `;` zoals `Prg_1232` r.1194 ("Niet gevonden => Semicolon"), met WARNING.
+- **Aannames S2-bouwer aanvaard:** gedeelde definitie blokkeert tot S7 (`SHARED_DEFINITION_NOT_SUPPORTED`); 020-3-hash ter
+  plaatse bijwerken (historiek in 020-4); APPLY-reden in `change_reason`, `apply_report_json` en nieuwe kolom `applied_reason`
+  varchar(500); BLOCKING bij vaste waarde/transform/geen kolom op 9–11, onbekende charset, ontbrekende `Supplier`/`ArtImp_BibNr`,
+  definitionStatus ≠ PRESENT, organisatie met zelfde code maar ander type; afwezig `ArtImp_Key_*` = "N" zoals `Prg_1232` r.518;
+  koppelingscode `LEGACY-<interface>`, naam "Legacy <interface>", nieuwe organisatie "Leverancier <nr>"; legacy `Kolom` (1-based,
+  0 = geen) rechtstreeks; `previewFingerprint` over rapport + id/`updated_at` van geraakte rijen.
+- **Liquibase-nummering:** S2 → `021-legacy-config-definition-origin.sql`; S6 → `022`; S8 (maptabel) → `023`.
+**Bron:** mens / S2-bouwerrapport

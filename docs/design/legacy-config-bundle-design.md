@@ -88,14 +88,14 @@ dezelfde `definition.code` of dezelfde `definitionContentHash`.
 | POST | `/receipts` | enkel technische client (§3) | vergeleken met de **laatste** ontvangst van dezelfde herkomst (ongeacht status): zelfde `contentHash` → 200 `UNCHANGED` met id en status van die rij, niets geschreven; anders 201 `RECEIVED` (nieuwe rij, ook bij A → B → A); een open ontvangst → `SUPERSEDED`, `APPLIED`/`DISCARDED` ongemoeid. Antwoord: contract §8 |
 | GET | `/receipts?status=&interface=&page=` | MANAGE | `PageResult`, zonder details |
 | GET | `/receipts/{id}` | MANAGE | Bundel zonder secret, met `secretOutcome` en `credentialRef` (MANAGE wegens host/login, L7b) |
-| GET | `/receipts/{id}/preview` | MANAGE | Rapport (§5) + `previewFingerprint`; schrijft niets |
-| POST | `/receipts/{id}/apply` | MANAGE | `{previewFingerprint, reason, definitionCodeOverride?, charsetWhenUndeclared?}` → 200 + rapport |
+| GET | `/receipts/{id}/preview?definitionCodeOverride=&charsetWhenUndeclared=&libraryCode=` | MANAGE | Rapport (§5) + `previewFingerprint`; schrijft niets. De optionele queryparameters zijn dezelfde keuzes als in de APPLY-body (S2): het rapport en dus de fingerprint hangen ervan af |
+| POST | `/receipts/{id}/apply` | MANAGE | `{previewFingerprint, reason, definitionCodeOverride?, charsetWhenUndeclared?, libraryCode?}` → 200 + `{report, receiptStatus, configurationFindings}`. `libraryCode` is additief (beslissingslog 2026-10-20 "Legacy-config S2", V1 = c): tot S5 door de mens gegeven, nooit het ruwe `ArtImp_BibNr` |
 | POST | `/receipts/{id}/discard` | MANAGE | `{reason}` → `DISCARDED` (latere slice) |
 
 Niet achter `catalogimport.setup-api.enabled` (precedent L7a). 403 vóór 400/404/409 (5-PERM V1).
 
 **Foutcodes:**
-- 400 `LEGACY_BUNDLE_INVALID` (JSON-paden, nooit waarden), `LEGACY_BUNDLE_VERSION_UNSUPPORTED`, `LEGACY_BUNDLE_HASH_MISMATCH`, `LEGACY_APPLY_REASON_REQUIRED`
+- 400 `LEGACY_BUNDLE_INVALID` (JSON-paden, nooit waarden), `LEGACY_BUNDLE_VERSION_UNSUPPORTED`, `LEGACY_BUNDLE_HASH_MISMATCH`, `LEGACY_APPLY_REASON_REQUIRED`, `LEGACY_APPLY_REASON_TOO_LONG` (S2, > 500 tekens)
 - 413 `LEGACY_BUNDLE_TOO_LARGE` (`catalogimport.legacy-config.max-bundle-bytes`, default 2 MB)
 - 404 `LEGACY_RECEIPT_NOT_FOUND`
 - 409 `SECRETS_NOT_CONFIGURED` (bundel met secret zonder sleutelring: hele push geweigerd), `LEGACY_RECEIPT_NOT_APPLICABLE`, `LEGACY_PREVIEW_STALE`, `LEGACY_APPLY_BLOCKED` (met blokkerende codes), `PRODIS_DB_NOT_CONFIGURED`
@@ -104,7 +104,7 @@ Niet achter `catalogimport.setup-api.enabled` (precedent L7a). 403 vóór 400/40
 **Idempotentie (beslissingslog 2026-10-20 "Legacy-config S1: idempotentie tegenover de laatste ontvangst"):** een push wordt enkel
 vergeleken met de laatste ontvangst (`max(id)`) van dezelfde herkomst, ongeacht status; zelfde hash → 200 `UNCHANGED`, anders altijd een
 nieuwe rij. Invariant: de laatste ontvangst is nooit `SUPERSEDED`. Serialisatiepunt is enkel `uk_legacy_config_receipt_open`: eerst de
-open ontvangst met rijslot lezen, dan de laatste ontvangst; een race op de open-marker → hele transactie opnieuw (begrensd). APPLY: rijslot + statusguard; tweede APPLY 409; verouderde `previewFingerprint` → 409 `LEGACY_PREVIEW_STALE`.
+open ontvangst met rijslot lezen, dan de laatste ontvangst; een race op de open-marker → hele transactie opnieuw (begrensd). APPLY: rijslot + statusguard; tweede APPLY 409; verouderde of ontbrekende `previewFingerprint` → 409 `LEGACY_PREVIEW_STALE`.
 
 **Secret door de request (K-3-patroon, decisions 2026-09-29 afwijking 3):**
 1. Body zelf lezen (`HttpServletRequest` → `byte[]` met limiet), nooit `@RequestBody`.
@@ -148,17 +148,25 @@ open ontvangst met rijslot lezen, dan de laatste ontvangst; een race op de open-
   ontvangst). Niet-unieke index `(env, dossier, interface_code, id desc)` voor de laatste ontvangst.
 - **020-2 `legacy_config_origin`:** `(env, dossier, interface_code)` uniek; `import_link_id`, `catalog_import_task_id`,
   `credential_id`, `last_applied_receipt_id` (FK's, null).
-- **020-3 `legacy_config_definition_origin`:** env, dossier, `definition_content_hash`, `supplier_code`, `legacy_definition_codes`
-  (tekst, voor het rapport); `template_definition_id` FK null, `import_definition_id` FK; uniek `(env, dossier, supplier_code, definition_content_hash)`.
-- **020-4 `legacy_config_revision_origin`:** `revision_id` uniek FK, `receipt_id` FK, `definition_content_hash` ("kwam de laatste revisie uit de migratie").
 
-**021-identity-fixed-and-uppercase.sql** (S6, hangt af van M3): op `import_definition_revision`
+**021-legacy-config-definition-origin.sql** (S2; changesets heten 020-3/020-4 zoals hieronder, maar staan in een nieuw bestand omdat
+020 al gecommit was; beslissingslog 2026-10-20 "Legacy-config S2")
+- **020-3 `legacy_config_definition_origin`:** env, dossier, `definition_content_hash`, `supplier_code`, `legacy_definition_codes`
+  (tekst, voor het rapport); `template_definition_id` FK null, `import_definition_id` FK; uniek `(env, dossier, supplier_code, definition_content_hash)`;
+  `created_at`/`updated_at`. Een definitie met zo'n rij is "gemigreerd"; zonder is ze handmatig en nooit migratiedoel. Bij een gewijzigde
+  legacy-definitie wordt de hash ter plaatse bijgewerkt (historiek in 020-4).
+- **020-4 `legacy_config_revision_origin`:** `revision_id` uniek FK, `receipt_id` FK, `definition_content_hash` ("kwam de laatste revisie uit de migratie"),
+  `migrated_content_hash` (SHA-256 over wat APPLY op de revisie zette: door legacy bepaalde velden, alle mappings, alle filters; basis voor
+  `DEFINITION_UNCHANGED` en `MANUAL_CHANGES_SINCE_MIGRATION`), `created_at`.
+- **021-1:** `legacy_config_receipt.applied_reason` varchar(500), nullable (de reden van APPLY; ook in `apply_report_json` en `change_reason`).
+
+**022-identity-fixed-and-uppercase.sql** (S6, hangt af van M3; was 021): op `import_definition_revision`
 `identity_supplier_fixed_value` varchar(50) null, `identity_supplier_group_fixed_value` varchar(50) null,
 `identity_uppercase` boolean not null default false; `drop not null` op `identity_supplier_field` en
 `identity_supplier_group_field`; check per deel "precies één van kolom of vaste waarde". Bestaande rijen voldoen;
 rollback enkel zolang geen rij een vaste waarde heeft.
 
-**022-field-value-map** (S8) `import_field_value_map`: `mapping_id` FK, `sequence`, `source_value` varchar(50),
+**023-field-value-map** (S8; was 022) `import_field_value_map`: `mapping_id` FK, `sequence`, `source_value` varchar(50),
 `target_value` varchar(50); uniek `(mapping_id, source_value)`; vervangt `transform_config varchar(1000)` voor MAP.
 
 ## 5. Vertaalregels bundel → CatalogImport
@@ -168,8 +176,8 @@ rollback enkel zolang geen rij een vaste waarde heeft.
 | `definition.code` / `description` | `ImportDefinition(code, description)` `OWN_DEFINITION`; codeconflict met niet-gemigreerde definitie → `DEFINITION_CODE_CONFLICT_MANUAL` (blokkeert, tenzij `definitionCodeOverride`) | B |
 | `updateFile` / `replacementCode` / `deleteCode` | rapport `LEGACY_CONTROL_CODE_NOT_MIGRATED` | N |
 | INDET `Supplier` | `SourceOrganisation` find-or-create (`SUPPLIER`, code = `Supplier.number`, naam uit Prodis); bron van de definitie en `import_link.supplier_organisation` | B (+S5-validatie) |
-| `ArtImp_BibNr` | `import_link.library_code` = `supplier_catalog.scope_key` van de match op `legacy_number` (A3) | B |
-| `Separator` Comma/Semicolon/Tab | `structure_delimiter` `,` / `;` / TAB (`Prg_1232` r.1188-1192); anders of XML → `STRUCTURE_FORMAT_UNSUPPORTED` (blokkeert) | B |
+| `ArtImp_BibNr` | `import_link.library_code` = `supplier_catalog.scope_key` van de match op `legacy_number` (A3). Tot S5: `libraryCode` uit de APPLY-body (WARNING `PRODIS_REFERENCE_NOT_VERIFIED`); zonder → `LIBRARY_CODE_NOT_RESOLVED` (blokkeert); nooit het ruwe `ArtImp_BibNr`; label afwezig → `LIBRARY_NOT_DECLARED` (blokkeert) | B |
+| `Separator` Comma/Semicolon/Tab | `structure_delimiter` `,` / `;` / TAB (`Prg_1232` r.1188-1192); afwezig/leeg → `;` met WARNING `SEPARATOR_NOT_DECLARED` (`Prg_1232` r.1194); anders of XML → `STRUCTURE_FORMAT_UNSUPPORTED` (blokkeert) | B |
 | `FILE_ENCODING` | `structure_charset`; leeg → `CHARSET_NOT_DECLARED` (blokkeert, tenzij `charsetWhenUndeclared`) — nooit raden | B |
 | `SkipHeaderLines` n | n=0 → geen header; n≥1 → `has_header`, `header_line_number`=n; altijd `COLUMN_INDEX` | B |
 | `DecimalComma`=Y | `decimalSeparator=,` op numerieke mappings; werking voor basisprijs te verifiëren (`ImportValueRules.decimal`) | B / verifiëren |
@@ -194,7 +202,12 @@ rollback enkel zolang geen rij een vaste waarde heeft.
 onvolledig zijn). APPLY activeert nooit.
 
 **Gewijzigde legacy-definitie:** ACTIVE nooit aangeraakt; open DRAFT → `OPEN_DRAFT_EXISTS` (blokkeert); anders opvolgende DRAFT
-(`based_on` = laatste revisie) via de bestaande `RevisionCopier`/opvolgerroute.
+(`based_on` = laatste revisie) via de bestaande `RevisionCopier`/opvolgerroute. Uitwerking S2 (beslissingslog 2026-10-20 "Legacy-config S2",
+V2 = C): levert de ontvangst exact de inhoud die de laatste migratie schreef (`migrated_content_hash`, 020-4) → `DEFINITION_UNCHANGED`,
+geen revisie, ontvangst wel `APPLIED`; wijkt de laatste revisie inhoudelijk (velden, mappings, filters) af van wat de laatste migratie
+schreef → `MANUAL_CHANGES_SINCE_MIGRATION` (blokkeert); anders letterlijke kopie, waarna APPLY structuur, identiteit, basisprijs,
+omschrijving, de vertaalbare mappings en de filters overschrijft; drempels, kritiek-overrules en bookmarks blijven uit de kopie. APPLY
+geldt als R-REV-X3-bevestiging (WARNING `IDENTITY_CHANGE`).
 
 **Koppeling/taak bestaat al:** nooit muteren; afwijking → `LINK_DIFFERS_NOT_CHANGED`.
 **Conflict met handmatige configuratie:** `uk_import_link_scope` → `LINK_SCOPE_CONFLICT_MANUAL` (blokkeert); nooit stil samenvoegen;
@@ -277,13 +290,13 @@ doorgaan na fout), canary-test (secret `canary-…` nergens in logs, `sync-error
 |---|---|---|---|---|---|
 | S0 | beide, docs + testresources | `docs/design/legacy-config-bundle-v1.md` (§1) + golden fixture + verwachte hashes | bouwer-gemiddeld | — | Fixture byte-identiek in beide repo's |
 | S1 (na M2) | ImportService: Liquibase 020-1/020-2, Domain, Dao, Web (JWT-chain), Service | POST `/receipts` zonder secret (secret → 400 tot S4), validatie, hashcontrole, idempotentie, GET lijst/detail | bouwer-zwaar | `mvn -pl Web -am test -Dtest=LegacyConfigReceiptHttpTest,LegacyConfigReceiptSchemaTest,LegacyBundleCanonicalHashTest,PermissionCoverageTest,PermissionHttpTest -Dsurefire.failIfNoSpecifiedTests=false` | 401 zonder token, 403 verkeerde rol/azp, 401 voor sessie met MANAGE, 201 → 200 `UNCHANGED`, hash-mismatch 400 |
-| S2 | ImportService: Service, Web, 020-3/020-4 | PREVIEW + APPLY één interface → `OWN_DEFINITION`, enkel B-rijen zonder Prodis-validatie/vaste waarden; rapport; opvolgende DRAFT; conflictregels; `previewFingerprint` | bouwer-zwaar | `…-Dtest=LegacyConfigPreviewTest,LegacyConfigApplyTest,SetupApiFlowTest,ConfigFactoryParityTest` | DRAFT + koppeling + MANUAL-taak; ACTIVE ongemoeid; tweede APPLY 409; stale 409; golden VROOAM2 |
+| S2 | ImportService: Service, Web, 021 (020-3/020-4) | PREVIEW + APPLY één interface → `OWN_DEFINITION`, enkel B-rijen zonder Prodis-validatie/vaste waarden; rapport; opvolgende DRAFT; conflictregels; `previewFingerprint` | bouwer-zwaar | `…-Dtest=LegacyConfigPreviewTest,LegacyConfigApplyTest,SetupApiFlowTest,ConfigFactoryParityTest` | DRAFT + koppeling + MANUAL-taak; ACTIVE ongemoeid; tweede APPLY 409; stale 409; golden VROOAM2 |
 | S3 | Datasync: pervasive-dao, sync-core, sync-app-config | Job zonder secret, PRODIS-guard, dryRun | bouwer-zwaar | `./mvnw.cmd -pl pervasive-dao,sync-core -am test -Dtest="LegacyConfig*Tests,CanonicalJsonTests,CatalogImportPushClientTests" -Dsurefire.failIfNoSpecifiedTests=false` | Push tegen stub; golden hash = S0 |
 | S4 | beide | Secret over TLS; credential bij ontvangst (SYSTEM-overload); canary-lektests aan beide kanten | bouwer-zwaar | `…-Dtest=LegacyConfigSecretLeakTest,CredentialLeakDetectionTest,CredentialHttpTest,ExternalCredentialSchemaTest` + `LegacyConfigExportJobTests` | Canary nergens behalve als ciphertext; geen tweede credential; `SECRETS_NOT_CONFIGURED` 409 |
 | S5 | ImportService: Web-config, Dao, Service | Alleen-lezen Prodis-bron; validatie leverancier/bibliotheek in PREVIEW | bouwer-zwaar | `…-Dtest=ProdisReferenceDaoTest,ProdisReferenceUnavailableTest,LegacyConfigPreviewTest` | Contexten starten zonder config; 503 bij onbereikbaar |
-| S6 (na M3) | ImportService: Liquibase 021, alle lagen | Vaste leverancier/groep + `identity_uppercase`; keuze-endpoints; migratie gebruikt ze | bouwer-zwaar | `…-Dtest=IdentityFixedValueTest,RevisionConfigHashesParityTest,ConfigFactoryParityTest,ScreeningSchemaTest,DeliveryScreeningFlowTest` | Bestaande hashes byte-identiek; uppercase = PSARF-identiteit |
+| S6 (na M3) | ImportService: Liquibase 022, alle lagen | Vaste leverancier/groep + `identity_uppercase`; keuze-endpoints; migratie gebruikt ze | bouwer-zwaar | `…-Dtest=IdentityFixedValueTest,RevisionConfigHashesParityTest,ConfigFactoryParityTest,ScreeningSchemaTest,DeliveryScreeningFlowTest` | Bestaande hashes byte-identiek; uppercase = PSARF-identiteit |
 | S7 (na M1) | ImportService: Service | Dedup per (leverancier, hash), gedeelde definitie, `sharedWith`, `SHARED_DEFINITION_DIVERGED` | bouwer-zwaar | `…-Dtest=LegacyConfigSharedDefinitionTest,TemplateGuardTest,TemplateReuseTest` | Drie identieke interfaces → één gedeelde set; guard 006-5 intact |
-| S8 | ImportService | 022 maptabel, PSIMPEXCL, transformatieketen (LM-2) | bouwer-zwaar | gericht per klasse | — |
+| S8 | ImportService | 023 maptabel, PSIMPEXCL, transformatieketen (LM-2) | bouwer-zwaar | gericht per klasse | — |
 | S9 | Frontend | Ontvangsten, rapport, APPLY-dialoog | bouwer-gemiddeld | `npx vitest run src/test/LegacyConfig*` | — |
 
 **Parallel:** S3 kan technisch naast S2 (andere repo, contract vast in S0), maar AGENT.md laat zware taken niet parallel lopen:
@@ -303,7 +316,7 @@ DB-rol `catalogimport_ro` (§6).
   API additief uitgebreid; geen sentinelwaarde.
 
 **Aannames:** A1 secret bij herhaling nooit vervangen (UNCHANGED → weggegooid; vervangen via menselijke PUT); A2 credential met
-eventbron SYSTEM, `created_by=svc:<azp>`; A3 `library_code` = `supplier_catalog.scope_key` via `legacy_number`; A4 rechtstreekse
+eventbron SYSTEM, `created_by=svc:<azp>`; A3 `library_code` = `supplier_catalog.scope_key` via `legacy_number` (tot S5 door de mens als `libraryCode` gegeven, zie §5); A4 rechtstreekse
 SELECT op 3 tabellen; A5 wisselkoers ≠ 1 blokkeert APPLY; A6 export van alle interfaces met `ArtImp_Importsoort`; A7 protocol uit
 het URL-schema, `SFTP`-label enkel als hint; A8 enkel MANUAL-taken; A9 ook GET op preview/apply vraagt MANAGE (L7b).
 

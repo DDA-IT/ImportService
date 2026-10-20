@@ -48,3 +48,5 @@ databaseChangeLog:
       file: db/changelog/019-batch-staging-purge.sql
   - include:
       file: db/changelog/020-legacy-config-migration.sql
+  - include:
+      file: db/changelog/021-legacy-config-definition-origin.sql
