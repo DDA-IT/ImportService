@@ -17,7 +17,7 @@ import {
   UploadIcon,
   type IconProps,
 } from './components/icons.tsx';
-import { BrandBlock } from './layout/BrandBlock.tsx';
+import { ProductSwitcher } from './layout/ProductSwitcher.tsx';
 import { ThemeButton } from './layout/ThemeButton.tsx';
 
 const NO_PERMISSIONS_MESSAGE = 'U heeft geen rechten voor CatalogImport.';
@@ -133,7 +133,7 @@ function App() {
         className={`${styles.sidebar} ${mini ? `${styles.sidebarMini} nav-mini` : ''} ${menuOpen ? styles.sidebarOpen : ''}`}
       >
         <div className={styles.navTop}>
-          <BrandBlock />
+          <ProductSwitcher />
         </div>
         <nav className={styles.navScroll} aria-label="Hoofdnavigatie">
           {NAV_GROUPS.map((group) => {

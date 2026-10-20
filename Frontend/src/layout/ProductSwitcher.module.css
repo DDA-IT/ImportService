@@ -1,0 +1,164 @@
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  background: var(--primary-main);
+  color: var(--primary-contrast);
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 15px;
+}
+
+.text,
+.itemText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--text-primary);
+}
+
+.sub {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+
+/* Mini-modus: enkel het merkteken, zonder kader */
+:global(.nav-mini) .brand {
+  border: 0;
+  padding: 4px;
+  justify-content: center;
+}
+
+:global(.nav-mini) .text {
+  display: none;
+}
+
+/* Drawer (< 1200px): altijd het volledige blok */
+@media (max-width: 1199.98px) {
+  :global(.nav-mini) .brand {
+    border: 1px solid var(--divider);
+    padding: 8px 12px;
+    justify-content: flex-start;
+  }
+
+  :global(.nav-mini) .text {
+    display: flex;
+  }
+}
+
+/* Wisselaar: de knop heeft hetzelfde uiterlijk als het merkblok */
+.root {
+  position: relative;
+  width: 100%;
+}
+
+button.brand {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+button.brand:hover,
+button.brand[aria-expanded='true'] {
+  background: var(--action-hover);
+}
+
+button.brand:focus-visible,
+.item:focus-visible {
+  outline: 2px solid var(--primary-main);
+  outline-offset: 2px;
+}
+
+.chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-disabled);
+}
+
+.logo {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+}
+
+.popover {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  width: 280px;
+  z-index: 1300;
+  box-sizing: border-box;
+  background: rgb(var(--bg-paper-ch) / 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-dropdown);
+  border-radius: var(--radius-dropdown);
+  padding: 4px;
+}
+
+.popLabel {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dashed {
+  border: 0;
+  border-top: 1px dashed var(--divider);
+  margin: 0 0 4px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--text-primary);
+}
+
+.item:hover {
+  background: var(--action-hover);
+}
+
+/* Mini-modus: geen chevron in het kader; het menu blijft werken */
+:global(.nav-mini) .chevron {
+  display: none;
+}
+
+@media (max-width: 1199.98px) {
+  :global(.nav-mini) .chevron {
+    display: block;
+  }
+}

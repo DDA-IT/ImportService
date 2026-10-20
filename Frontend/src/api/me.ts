@@ -6,11 +6,18 @@
 
 import { request } from './http.ts';
 
+export type ProductAppId = 'prodis' | 'profin' | 'prodev';
+
+/** Een andere app voor de productwisselaar; naam, logo en ondertitel kent de client (`layout/ProductSwitcher`). */
+export type ProductApp = { id: ProductAppId; url: string };
+
 export type Me = {
   username: string;
   subject: string;
   displayName: string | null;
   permissions: string[];
+  /** Andere apps voor de wisselaar (huidige app niet inbegrepen); ontbreekt = geen. */
+  apps?: ProductApp[];
 };
 
 export function getMe(signal?: AbortSignal): Promise<Me> {

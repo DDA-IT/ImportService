@@ -1,4 +1,5 @@
 import { PERMISSIONS, type Permission } from '../api/types';
+import type { ProductApp } from '../api/me';
 
 /**
  * Vaste geverifieerde identiteit voor tests (testnaad `identity` van `ActorProvider`, geen `/me`-fetch).
@@ -10,6 +11,7 @@ export const TEST_IDENTITY = {
   subject: 'test-sub',
   displayName: null,
   permissions: [...PERMISSIONS] as string[],
+  apps: [] as ProductApp[],
 };
 
 export function testIdentityWith(...permissions: Permission[]) {

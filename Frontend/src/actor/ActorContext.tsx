@@ -17,6 +17,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError, setPermissionDeniedHandler, setUnauthenticatedHandler } from '../api/http';
 import * as meApi from '../api/me';
+import type { ProductApp } from '../api/me';
 import type { Permission } from '../api/types';
 import { ErrorBanner } from '../errors/ErrorBanner';
 import button from '../components/Button.module.css';
@@ -32,6 +33,8 @@ export type ActorIdentity = {
   displayName?: string | null;
   /** De EFFECTIEVE rechtcodes uit `/me` (de backend past de hiërarchie toe; `[]` = geen rechten). */
   permissions: readonly string[];
+  /** Andere apps voor de productwisselaar; ontbreekt = geen. */
+  apps?: readonly ProductApp[];
 };
 
 export type ActorContextValue = {
@@ -41,6 +44,8 @@ export type ActorContextValue = {
   displayName: string | null;
   /** De effectieve rechtcodes zoals `/me` ze leverde (een UI-spiegel; de server blijft de waarheid). */
   permissions: readonly string[];
+  /** Andere apps voor de productwisselaar (`[]` = geen wisselaar-menu). */
+  apps: readonly ProductApp[];
   /** Enkel een lidmaatschapstest op `permissions`: de UI houdt geen eigen rechtenhiërarchie bij. */
   can: (permission: Permission) => boolean;
   /** `true` zodra een actie een 401 kreeg: de sessie is verlopen. */
@@ -186,6 +191,7 @@ export function ActorProvider({ children, identity, onRestorePath }: ActorProvid
       subject: state.identity.subject ?? null,
       displayName: state.identity.displayName ?? null,
       permissions,
+      apps: state.identity.apps ?? [],
       can: (permission: Permission) => permissions.includes(permission),
       sessionExpired,
       reauthenticate,
