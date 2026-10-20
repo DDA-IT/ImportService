@@ -2681,3 +2681,14 @@ die uit legacy leest en importeert.
 - **Identiteit (optie iii):** migratie en de uitbreidingen vaste leverancier/groep (gekozen uit de Prodis-DB) + hoofdletters
   worden direct na elkaar gebouwd.
 **Bron:** mens / `prodis-db-publicatie-en-datasync-design.md` §4
+
+## 2026-10-20 — Frontend-ombouw en productwisselaar uitgevoerd
+**Vraag:** Zijn de ombouw volgens de Prodis-mock en de productwisselaar afgerond?
+**Beslissing:** Ja, op branch `verbeteringen-stap-7`: UI-1..UI-14, cookies, BE-SW en UI-SW elk als eigen commit. Volledige Frontend-suite
+44 bestanden / 670 tests groen, build OK; gerichte Web-tests (SecurityHttpTest, PermissionCoverageTest, AppSwitcher*-, ProdisAccountRelay-,
+MeAppSwitcherHttpTest) groen. Prodis-kant (seed `catalogImport.read/.manage/.approve`, `prodis.catalog-import.url`, `catalogImportUrl` op
+`/api/account`, entry + logo in de ProductSwitcher, geen feature-toggle) staat ongecommit in `C:\javaProject\prodis`.
+**Ontdekt:** de relay hangt af van of Prodis het `web_app`-gebruikerstoken (audience `account`) aanvaardt — anders enkel de Prodis-link.
+**Nog open bij de mens:** visuele controle in de browser (licht/donker, mini, mobiel); Prodis-wijziging reviewen/committen en
+`PermissionRightCatalogIT` buiten de sandbox draaien; lokale `PRODIS_CATALOG_IMPORT_URL` voor andere Prodis-profielen dan `devjeff`.
+**Bron:** hoofdsessie na verificatie
