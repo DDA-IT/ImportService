@@ -103,8 +103,8 @@ ondertekeningsrij waarnaar ze verwijzen draagt het subject al, en zonder kolom i
 | Access denied (`/api/**`) | 403 JSON; bij CSRF-fout `code = CSRF_TOKEN_INVALID`, anders `ACCESS_DENIED`. |
 | `oauth2Login` | registratie `keycloak`; `defaultSuccessUrl("/", true)`; `authorizedClientRepository(new HttpSessionOAuth2AuthorizedClientRepository())` — tokens leven en sterven met de sessie (haakje voor 5-PERM-token-relay, C11). |
 | Request cache | `NullRequestCache` (C2). |
-| CSRF | `CookieCsrfTokenRepository.withHttpOnlyFalse()` (cookie `XSRF-TOKEN`, header `X-XSRF-TOKEN`); request-handler = Prodis-`SpaCsrfTokenRequestHandler` (`SecurityConfiguration.java:270-306`) met één afwijking: token **alleen uit de header**, nooit uit een requestparameter (C3). |
-| Logout | `POST /api/catalog-import/logout` (met CSRF). Sessie invalideren, `JSESSIONID` wissen. Success-handler (subklasse van `OidcClientInitiatedLogoutSuccessHandler`, `postLogoutRedirectUri = "{baseUrl}/"`) schrijft **200 JSON** `{"logoutUrl": "<end_session_endpoint>?id_token_hint=…&post_logout_redirect_uri=…"}` in plaats van een 302 (een fetch kan geen cross-origin redirect volgen). |
+| CSRF | `CookieCsrfTokenRepository.withHttpOnlyFalse()` (cookie `CATALOGIMPORT-XSRF-TOKEN`, header `X-XSRF-TOKEN`); request-handler = Prodis-`SpaCsrfTokenRequestHandler` (`SecurityConfiguration.java:270-306`) met één afwijking: token **alleen uit de header**, nooit uit een requestparameter (C3). |
+| Logout | `POST /api/catalog-import/logout` (met CSRF). Sessie invalideren, `CATALOGIMPORT_SESSION` wissen. Success-handler (subklasse van `OidcClientInitiatedLogoutSuccessHandler`, `postLogoutRedirectUri = "{baseUrl}/"`) schrijft **200 JSON** `{"logoutUrl": "<end_session_endpoint>?id_token_hint=…&post_logout_redirect_uri=…"}` in plaats van een 302 (een fetch kan geen cross-origin redirect volgen). |
 | Sessie | default `IF_REQUIRED`; session fixation → `changeSessionId`. |
 | Uit | CORS, `httpBasic`, `formLogin`, `oauth2ResourceServer`. Standaardheaders aan. CSP pas bij statische SPA-uitlevering. |
 | Fail-fast | Bij opstarten weigeren als registratie `keycloak` ontbreekt of een lege/onopgeloste (`${…`) client-secret heeft. |
@@ -239,7 +239,7 @@ Controller `CatalogImportMeController`, gebouwd in 5A-1 (vóór de actorcontrole
   leidt nooit iets af uit `null`.
 - 401 `AUTHENTICATION_REQUIRED` zonder sessie; 403 `ACTOR_IDENTITY_INVALID` bij onbruikbare identiteit. Een `system`-login
   krijgt 200: lezen mag, tekenen niet.
-- Het endpoint laat de `XSRF-TOKEN`-cookie zetten, zodat die bestaat vóór de eerste schrijfactie.
+- Het endpoint laat de `CATALOGIMPORT-XSRF-TOKEN`-cookie zetten, zodat die bestaat vóór de eerste schrijfactie.
 
 **Haakjes voor 5-PERM** (hier niets beslist): `permissions` in `/me`; de geautoriseerde client in de sessie (token relay
 naar Prodis `GET /api/account`); de 403-vorm via `ActorNotAllowedException`; per actie voorlopig enkel `authenticated()`.
@@ -264,7 +264,7 @@ naar Prodis `GET /api/account`); de 403-vorm via `ActorNotAllowedException`; per
   aanmeldt, krijgt `ACTOR_FIELD_MISMATCH` i.p.v. een handtekening onder een naam die hij niet zag. `validateActorName`
   verdwijnt uit `UploadPage.tsx:124`, `BundleBatchesTab.tsx:213`, `CreateBundleForm.tsx:63`.
 - **`api/http.ts`** (r.52-60): bij elke niet-GET/HEAD-aanroep header `X-XSRF-TOKEN` met de ruwe waarde van cookie
-  `XSRF-TOKEN`; bij status 401 een geregistreerde `onUnauthenticated`-callback van de ActorProvider.
+  `CATALOGIMPORT-XSRF-TOKEN`; bij status 401 een geregistreerde `onUnauthenticated`-callback van de ActorProvider.
 - **401-afhandeling:**
   - 401 op `/me` bij opstart → huidig pad in `sessionStorage['catalogimport.returnTo']` (enkel een pad, geen identiteit),
     dan `location.assign('/oauth2/authorization/keycloak')`. Na login land je op `/` en herstelt de SPA het pad.
@@ -275,8 +275,8 @@ naar Prodis `GET /api/account`); de 403-vorm via `ActorNotAllowedException`; per
   `CSRF_TOKEN_INVALID`.
 - **Vite (`vite.config.ts:11-14`)**: proxy-entries `'/api'`, `'/oauth2'`, `'/login'` naar `http://localhost:8081`, alle
   drie **`changeOrigin: false`** (C10). Host blijft `localhost:5173`, dus Spring bouwt
-  `redirect_uri = http://localhost:5173/login/oauth2/code/keycloak`; de callback loopt via de proxy; `JSESSIONID` en
-  `XSRF-TOKEN` gelden per host (niet per poort). Geen forward-headers, geen CORS. Wijkt af van frontendontwerp §2 ("proxy
+  `redirect_uri = http://localhost:5173/login/oauth2/code/keycloak`; de callback loopt via de proxy; `CATALOGIMPORT_SESSION` en
+  `CATALOGIMPORT-XSRF-TOKEN` gelden per host (niet per poort). Geen forward-headers, geen CORS. Wijkt af van frontendontwerp §2 ("proxy
   blijft ongewijzigd") — enkel ontwikkelconfiguratie.
 
 ---
@@ -503,7 +503,7 @@ motivering.
 - `actor/ActorContext.tsx` laadt de identiteit uit `GET /me` (`api/me.ts`); geen `setActor`, geen `sessionStorage`-naam en
   geen naamvalidatie meer (een oude `catalogimport.actor`-sleutel wordt bij opstart gewist). `useActor()` levert `actor`
   (= username), `subject`, `displayName`, `sessionExpired`, `reauthenticate` en `logout`. Testnaad: prop `identity`.
-- `api/http.ts` zet bij elke niet-GET/HEAD-aanroep de header `X-XSRF-TOKEN` uit de cookie `XSRF-TOKEN` en roept bij een 401
+- `api/http.ts` zet bij elke niet-GET/HEAD-aanroep de header `X-XSRF-TOKEN` uit de cookie `CATALOGIMPORT-XSRF-TOKEN` en roept bij een 401
   (behalve op `/me`) de geregistreerde `onUnauthenticated`-callback aan.
 - 401 op `/me` bij opstart: het huidige pad in `sessionStorage['catalogimport.returnTo']`, dan navigatie naar
   `/oauth2/authorization/keycloak`; een vlag `catalogimport.loginAttempt` voorkomt een redirectlus (bij een tweede 401 volgt

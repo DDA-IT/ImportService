@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -57,7 +58,7 @@ import org.springframework.util.StringUtils;
  *   <li>403 op {@code /api/**} is JSON: {@code CSRF_TOKEN_INVALID} bij een CSRF-fout, anders
  *       {@code ACCESS_DENIED}. Filterfouten bereiken de {@code ApiExceptionHandler} niet; de vorm
  *       {@code {error, code}} is daarom hier nagebouwd.</li>
- *   <li>CSRF via cookie {@code XSRF-TOKEN} + header {@code X-XSRF-TOKEN}; het token wordt <b>alleen uit de
+ *   <li>CSRF via cookie {@code CATALOGIMPORT-XSRF-TOKEN} + header {@code X-XSRF-TOKEN}; het token wordt <b>alleen uit de
  *       header</b> gelezen (C3, zie {@link HeaderOnlySpaCsrfTokenRequestHandler}).</li>
  *   <li>Logout {@code POST} {@value #LOGOUT_URL} antwoordt 200 {@code {"logoutUrl": ...}} (de
  *       end-session-URL van Keycloak) in plaats van een 302.</li>
@@ -74,6 +75,8 @@ public class SecurityConfiguration {
     static final String LOGIN_ENTRY_POINT = "/oauth2/authorization/" + REGISTRATION_ID;
     static final String LOGOUT_URL = "/api/catalog-import/logout";
     static final String API_PATTERN = "/api/**";
+    /** Eigen CSRF-cookienaam, zodat CatalogImport niet botst met Prodis op dezelfde host; de header blijft {@code X-XSRF-TOKEN}. */
+    static final String CSRF_COOKIE_NAME = "CATALOGIMPORT-XSRF-TOKEN";
 
     static final String AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED";
     static final String CSRF_TOKEN_INVALID = "CSRF_TOKEN_INVALID";
@@ -89,11 +92,18 @@ public class SecurityConfiguration {
         return new HttpSessionOAuth2AuthorizedClientRepository();
     }
 
+    static CookieCsrfTokenRepository csrfTokenRepository() {
+        CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        repository.setCookieName(CSRF_COOKIE_NAME);
+        return repository;
+    }
+
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http,
                                             ObjectProvider<ClientRegistrationRepository> clientRegistrationRepository,
                                             OAuth2AuthorizedClientRepository authorizedClients,
-                                            ObjectMapper objectMapper) throws Exception {
+                                            ObjectMapper objectMapper,
+                                            @Value("${server.servlet.session.cookie.name:JSESSIONID}") String sessionCookieName) throws Exception {
         // Zonder enige registratie in de properties maakt Boot geen repository aan: ook dan een duidelijke fout.
         ClientRegistrationRepository clientRegistrations = clientRegistrationRepository.getIfAvailable();
         requireUsableRegistration(clientRegistrations);
@@ -118,13 +128,13 @@ public class SecurityConfiguration {
                         .defaultSuccessUrl("/", true))
                 .requestCache(cache -> cache.requestCache(new NullRequestCache()))
                 .csrf(csrf -> csrf
-                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRepository(csrfTokenRepository())
                         .csrfTokenRequestHandler(new HeaderOnlySpaCsrfTokenRequestHandler()))
                 .logout(logout -> logout
                         .logoutUrl(LOGOUT_URL)
                         .invalidateHttpSession(true)
                         .clearAuthentication(true)
-                        .deleteCookies("JSESSIONID")
+                        .deleteCookies(sessionCookieName)
                         .logoutSuccessHandler(new JsonOidcLogoutSuccessHandler(clientRegistrations, json)))
                 .sessionManagement(session -> session.sessionFixation(fixation -> fixation.changeSessionId()))
                 .cors(AbstractHttpConfigurer::disable)
@@ -246,7 +256,7 @@ public class SecurityConfiguration {
         public void handle(HttpServletRequest request, HttpServletResponse response, Supplier<CsrfToken> csrfToken) {
             // BREACH-bescherming voor het token als requestattribuut.
             this.xor.handle(request, response, csrfToken);
-            // Laadt het uitgestelde token, zodat de XSRF-TOKEN-cookie gezet wordt als die nog ontbreekt.
+            // Laadt het uitgestelde token, zodat de CATALOGIMPORT-XSRF-TOKEN-cookie gezet wordt als die nog ontbreekt.
             csrfToken.get();
         }
 

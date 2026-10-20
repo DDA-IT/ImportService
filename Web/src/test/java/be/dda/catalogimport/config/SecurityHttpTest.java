@@ -532,7 +532,7 @@ class SecurityHttpTest {
         String token = UUID.randomUUID().toString();
         ParameterTrapRequest request = new ParameterTrapRequest("POST", "/api/catalog-import/tasks/1/deliveries");
         request.setContentType("multipart/form-data; boundary=x");
-        request.setCookies(new Cookie("XSRF-TOKEN", token));
+        request.setCookies(new Cookie("CATALOGIMPORT-XSRF-TOKEN", token));
         request.addParameter("_csrf", token);
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
@@ -547,7 +547,7 @@ class SecurityHttpTest {
     void theCsrfFilterAcceptsTheRawCookieValueInTheHeader() throws Exception {
         String token = UUID.randomUUID().toString();
         ParameterTrapRequest request = new ParameterTrapRequest("POST", "/api/catalog-import/bundles");
-        request.setCookies(new Cookie("XSRF-TOKEN", token));
+        request.setCookies(new Cookie("CATALOGIMPORT-XSRF-TOKEN", token));
         request.addHeader("X-XSRF-TOKEN", token);
         MockFilterChain chain = new MockFilterChain();
 
@@ -567,14 +567,14 @@ class SecurityHttpTest {
         assertThat(masked).isNotEqualTo(token);
 
         ParameterTrapRequest maskedRequest = new ParameterTrapRequest("POST", "/api/catalog-import/bundles");
-        maskedRequest.setCookies(new Cookie("XSRF-TOKEN", token));
+        maskedRequest.setCookies(new Cookie("CATALOGIMPORT-XSRF-TOKEN", token));
         maskedRequest.addHeader("X-XSRF-TOKEN", masked);
         MockFilterChain maskedChain = new MockFilterChain();
         csrfFilter().doFilter(maskedRequest, new MockHttpServletResponse(), maskedChain);
         assertThat(maskedChain.getRequest()).isNotNull();
 
         ParameterTrapRequest wrongRequest = new ParameterTrapRequest("POST", "/api/catalog-import/bundles");
-        wrongRequest.setCookies(new Cookie("XSRF-TOKEN", token));
+        wrongRequest.setCookies(new Cookie("CATALOGIMPORT-XSRF-TOKEN", token));
         wrongRequest.addHeader("X-XSRF-TOKEN", UUID.randomUUID().toString());
         MockHttpServletResponse wrongResponse = new MockHttpServletResponse();
         MockFilterChain wrongChain = new MockFilterChain();
@@ -583,7 +583,7 @@ class SecurityHttpTest {
         assertThat(wrongChain.getRequest()).isNull();
     }
 
-    /** Het eerste verzoek zonder cookie (typisch {@code GET /me}) krijgt een door JavaScript leesbare XSRF-TOKEN-cookie. */
+    /** Het eerste verzoek zonder cookie (typisch {@code GET /me}) krijgt een door JavaScript leesbare CATALOGIMPORT-XSRF-TOKEN-cookie. */
     @Test
     void aRequestWithoutCookieReceivesAReadableXsrfTokenCookie() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", ME);
@@ -591,7 +591,7 @@ class SecurityHttpTest {
 
         csrfFilter().doFilter(request, response, new MockFilterChain());
 
-        Cookie cookie = response.getCookie("XSRF-TOKEN");
+        Cookie cookie = response.getCookie("CATALOGIMPORT-XSRF-TOKEN");
         assertThat(cookie).isNotNull();
         assertThat(cookie.getValue()).isNotBlank();
         assertThat(cookie.isHttpOnly()).isFalse();
@@ -600,7 +600,7 @@ class SecurityHttpTest {
     // --- Helpers ---------------------------------------------------------------------------------------
 
     private static CsrfFilter csrfFilter() {
-        CsrfFilter filter = new CsrfFilter(CookieCsrfTokenRepository.withHttpOnlyFalse());
+        CsrfFilter filter = new CsrfFilter(SecurityConfiguration.csrfTokenRepository());
         filter.setRequestHandler(new SecurityConfiguration.HeaderOnlySpaCsrfTokenRequestHandler());
         filter.setAccessDeniedHandler((request, response, denied) -> response.setStatus(403));
         return filter;

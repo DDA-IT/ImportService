@@ -19,7 +19,7 @@ Het "pad" is dus het pad op **uw eigen machine**, dat u aan het uploadscherm (be
 Status: uploadscherm **Beschikbaar** (`/upload`, navigatielink "Levering uploaden", zie 4.4, lokaal via
 frontend `npm run dev`). De API zelf vereist sinds 5-AUTH een Keycloak-login: zonder sessie geeft
 `/api/**` **401 `AUTHENTICATION_REQUIRED`** en een schrijfaanroep zonder CSRF-header `X-XSRF-TOKEN` (cookie
-`XSRF-TOKEN`) 403 `CSRF_TOKEN_INVALID`. Er is geen token-flow voor scripts (V1 = A1): uploaden met `curl` kan
+`CATALOGIMPORT-XSRF-TOKEN`) 403 `CSRF_TOKEN_INVALID`. Er is geen token-flow voor scripts (V1 = A1): uploaden met `curl` kan
 voorlopig niet; gebruik het uploadscherm.
 
 ## 2. Voorbereiding (checklist)
@@ -346,7 +346,7 @@ levering vóór `accept-baseline` is opnieuw een `INITIAL_LOAD`.
 | 401 `AUTHENTICATION_REQUIRED` | geen (geldige) sessie | opnieuw aanmelden via `http://localhost:5173`; herhaal met dezelfde referentie |
 | 403 `PERMISSION_DENIED` | u heeft het recht `catalogImport.manage` niet (upload vraagt Beheren) | de beheerder om het recht vragen |
 | 503 `PERMISSION_SOURCE_UNAVAILABLE` | de rechtenbron is onbereikbaar | later opnieuw proberen |
-| 403 `CSRF_TOKEN_INVALID` | schrijfaanroep zonder header `X-XSRF-TOKEN` (cookie `XSRF-TOKEN`) | via het uploadscherm werken; de UI zet de header zelf |
+| 403 `CSRF_TOKEN_INVALID` | schrijfaanroep zonder header `X-XSRF-TOKEN` (cookie `CATALOGIMPORT-XSRF-TOKEN`) | via het uploadscherm werken; de UI zet de header zelf |
 | 201 met `status=BLOCKED` en `HEADER_*` | header past niet bij de versie | bestand aanpassen of een nieuwe versie maken; nieuwe referentie bij ander bestand |
 | 201 met `status=BLOCKED`, `RECORD_COUNT_MISMATCH` / `BYTE_SIZE_MISMATCH` | opgegeven verwachting klopt niet met het bestand | verwachting of bestand controleren. Het is een screeningblokkade (201 met `blockedCode`), geen HTTP-fout; HTTP-status **nog te verifiëren** |
 | 201 met `status=FAILED`, `blockedCode=SCREENING_FAILED` | technische fout tijdens screening; levering is wél aangemaakt en gearchiveerd | serverlog lezen; **niet** onder een nieuwe referentie herupload maken zonder eerst de oorzaak te kennen |

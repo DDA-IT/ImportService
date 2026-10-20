@@ -63,12 +63,12 @@ function isMutating(method: string | undefined): boolean {
   return upper !== 'GET' && upper !== 'HEAD';
 }
 
-/** De ruwe waarde van cookie `XSRF-TOKEN` (Spring `CookieCsrfTokenRepository`), of `null`. */
+/** De ruwe waarde van cookie `CATALOGIMPORT-XSRF-TOKEN` (Spring `CookieCsrfTokenRepository`), of `null`. */
 function readCsrfToken(): string | null {
   for (const part of document.cookie.split(';')) {
     const trimmed = part.trim();
-    if (trimmed.startsWith('XSRF-TOKEN=')) {
-      return trimmed.substring('XSRF-TOKEN='.length);
+    if (trimmed.startsWith('CATALOGIMPORT-XSRF-TOKEN=')) {
+      return trimmed.substring('CATALOGIMPORT-XSRF-TOKEN='.length);
     }
   }
   return null;

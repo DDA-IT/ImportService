@@ -167,6 +167,8 @@ server:
       # Sessie-idle-timeout = hoe lang ingetrokken toegang nog doorwerkt tot 5-PERM (beslissing V2 = B1).
       timeout: ${CATALOG_SESSION_TIMEOUT:30m}
       cookie:
+        # Eigen naam, zodat CatalogImport niet botst met Prodis (JSESSIONID op dezelfde host localhost).
+        name: CATALOGIMPORT_SESSION
         http-only: true
         # lax, niet strict: de Keycloak-callback is een top-level GET en moet de sessiecookie meedragen.
         same-site: lax

@@ -16,7 +16,7 @@ Stand: 2026-10-01. Hoofdhandleiding:
   scenario. Waar ik iets niet kon bevestigen, staat **nog te verifiëren**.
 - **Aanmelden (5-AUTH).** Elke `/api/**`-aanroep vereist een Keycloak-login (BFF, sessiecookie). Zonder login:
   **401 `AUTHENTICATION_REQUIRED`**. Schrijfaanroepen (`POST`/`PUT`) vereisen bovendien de CSRF-header
-  `X-XSRF-TOKEN` met de waarde van de cookie `XSRF-TOKEN` (anders 403 `CSRF_TOKEN_INVALID`). Er zijn geen
+  `X-XSRF-TOKEN` met de waarde van de cookie `CATALOGIMPORT-XSRF-TOKEN` (anders 403 `CSRF_TOKEN_INVALID`). Er zijn geen
   bearer-tokens en geen omzeiling voor scripts (V1 = A1), dus `curl`-voorbeelden bestaan niet meer. Lokaal
   aanmelden: zie [README, "Lokaal aanmelden"](../../README.md) (Prodis-Keycloak op :9080, realm `prodis`,
   client `catalog-import`, `CATALOG_OIDC_CLIENT_SECRET` in de omgeving); open daarna

@@ -1040,7 +1040,7 @@ Bron: `Frontend/src`, `Frontend/vite.config.ts`, `docs/decisions.md` (2026-09-23
   ander aangemelde gebruiker in een ander tabblad geeft de server 400 `ACTOR_FIELD_MISMATCH` (nieuwe entries in
   `errors/codes.ts`, samen met `AUTHENTICATION_REQUIRED`, `SYSTEM_ACTOR_FORBIDDEN`, `ACTOR_IDENTITY_INVALID`,
   `CSRF_TOKEN_INVALID` en `DECISION_FILTER_UNKNOWN_FIELD`).
-- `api/http.ts` zet op elke niet-GET/HEAD-aanroep de header `X-XSRF-TOKEN` (waarde van cookie `XSRF-TOKEN`) en meldt een 401
+- `api/http.ts` zet op elke niet-GET/HEAD-aanroep de header `X-XSRF-TOKEN` (waarde van cookie `CATALOGIMPORT-XSRF-TOKEN`) en meldt een 401
   (behalve op `/me`) aan de ActorProvider.
 - Login-redirect: 401 op `/me` bij opstart bewaart het huidige pad in `sessionStorage['catalogimport.returnTo']` en navigeert
   naar `/oauth2/authorization/keycloak`; een vlag `catalogimport.loginAttempt` voorkomt een lus. `main.tsx` herstelt het pad

@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>
  * {@code permissions} (Fase 5-PERM, bouwstap 5B-4) is altijd een lijst (nooit {@code null}): de effectieve
  * rechtcodes van de aangemelde gebruiker, gesorteerd alfabetisch; lege lijst als geen rechten. Het endpoint
- * laadt ook het CSRF-token, zodat de {@code XSRF-TOKEN}-cookie bestaat vóór de eerste schrijfactie.
+ * laadt ook het CSRF-token, zodat de {@code CATALOGIMPORT-XSRF-TOKEN}-cookie bestaat vóór de eerste schrijfactie.
  */
 @RestController
 @RequestMapping("/api/catalog-import/me")
@@ -40,7 +40,7 @@ public class CatalogImportMeController {
     MeView me(CsrfToken csrfToken) {
         ActorIdentity actor = currentActor.current();
         if (csrfToken != null) {
-            // Laadt het (uitgestelde) token: een nieuw token schrijft de XSRF-TOKEN-cookie in dit antwoord.
+            // Laadt het (uitgestelde) token: een nieuw token schrijft de CATALOGIMPORT-XSRF-TOKEN-cookie in dit antwoord.
             csrfToken.getToken();
         }
         Set<Permission> effective = currentActor.effectivePermissions(actor);

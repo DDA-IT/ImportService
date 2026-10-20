@@ -58,7 +58,7 @@ verwerkingscontract 252 IMPORT/1179 (zie `docs/openstaande-externe-punten.md`).
 **Beveiliging (5-AUTH, gebouwd):** de applicatie is een Backend-for-Frontend met Keycloak-login
 (`SecurityConfiguration`) en een sessiecookie. Elk `/api/**`-verzoek zonder login geeft
 **401 `AUTHENTICATION_REQUIRED`** (nooit een redirect). Schrijfaanroepen (`POST`/`PUT`/...) vereisen daarnaast
-een CSRF-header `X-XSRF-TOKEN` met de waarde van de cookie `XSRF-TOKEN` (anders 403 `CSRF_TOKEN_INVALID`). De
+een CSRF-header `X-XSRF-TOKEN` met de waarde van de cookie `CATALOGIMPORT-XSRF-TOKEN` (anders 403 `CSRF_TOKEN_INVALID`). De
 actornaam komt uit het token (`preferred_username`) en wordt zo vastgelegd; de actorvelden in een request
 (`uploadedBy`, `acceptedBy`, ...) zijn optioneel, en als ze er zijn moeten ze gelijk zijn aan die naam (anders
 400 `ACTOR_FIELD_MISMATCH`). Er zijn **geen bearer-tokens en geen omzeiling** voor scripts
@@ -141,7 +141,7 @@ browsersessie:
 - **`GET`**: open `http://localhost:5173/<pad>` in het tabblad waarin u bent aangemeld (het antwoord is JSON).
 - **`POST`/`PUT`** (JSON): in de browserconsole van dat tabblad, met de CSRF-header uit de cookie:
   ```js
-  const xsrf = decodeURIComponent(document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]);
+  const xsrf = decodeURIComponent(document.cookie.match(/CATALOGIMPORT-XSRF-TOKEN=([^;]+)/)[1]);
   await fetch('/api/catalog-import/batches/1/accept-baseline', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': xsrf },

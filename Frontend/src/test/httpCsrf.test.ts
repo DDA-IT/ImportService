@@ -1,5 +1,5 @@
 /**
- * 5A-3 — CSRF-header in `api/http.ts`: `X-XSRF-TOKEN` (ruwe cookiewaarde van `XSRF-TOKEN`) bij elke
+ * 5A-3 — CSRF-header in `api/http.ts`: `X-XSRF-TOKEN` (ruwe cookiewaarde van `CATALOGIMPORT-XSRF-TOKEN`) bij elke
  * niet-GET/HEAD-aanroep, nooit bij GET. Zie `docs/design/fase5-auth-design.md` §6.
  */
 
@@ -11,7 +11,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 function clearCookie() {
-  document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+  document.cookie = 'CATALOGIMPORT-XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
 }
 
 describe('api/http — CSRF-header', () => {
@@ -32,26 +32,26 @@ describe('api/http — CSRF-header', () => {
   }
 
   it('POST stuurt X-XSRF-TOKEN met de ruwe cookiewaarde (niet gedecodeerd)', async () => {
-    document.cookie = 'XSRF-TOKEN=abc%3D-def; path=/';
+    document.cookie = 'CATALOGIMPORT-XSRF-TOKEN=abc%3D-def; path=/';
     await request('/bundles/1/freeze', { method: 'POST', body: JSON.stringify({}) });
     expect(sentHeaders().get('X-XSRF-TOKEN')).toBe('abc%3D-def');
   });
 
   it.each(['PUT', 'DELETE', 'PATCH', 'post'])('%s stuurt de header ook', async (method) => {
-    document.cookie = 'XSRF-TOKEN=tok; path=/';
+    document.cookie = 'CATALOGIMPORT-XSRF-TOKEN=tok; path=/';
     await request('/x', { method });
     expect(sentHeaders().get('X-XSRF-TOKEN')).toBe('tok');
   });
 
   it('multipart-POST (FormData) stuurt de header en geen Content-Type', async () => {
-    document.cookie = 'XSRF-TOKEN=tok; path=/';
+    document.cookie = 'CATALOGIMPORT-XSRF-TOKEN=tok; path=/';
     await requestWithStatus('/tasks/5/deliveries', { method: 'POST', body: new FormData() });
     expect(sentHeaders().get('X-XSRF-TOKEN')).toBe('tok');
     expect(sentHeaders().has('Content-Type')).toBe(false);
   });
 
   it('GET (expliciet of standaard) stuurt de header niet, ook niet met cookie', async () => {
-    document.cookie = 'XSRF-TOKEN=tok; path=/';
+    document.cookie = 'CATALOGIMPORT-XSRF-TOKEN=tok; path=/';
     await request('/bundles');
     expect(sentHeaders().has('X-XSRF-TOKEN')).toBe(false);
 
