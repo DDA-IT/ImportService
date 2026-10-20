@@ -199,6 +199,16 @@ public class CurrentActor {
         return (name == null || name.isBlank()) ? null : name.trim();
     }
 
+    /**
+     * De login zelf, enkel als principal voor de token relay van de productwisselaar ({@link AppSwitcher}); zo
+     * blijft deze klasse de enige lezer van de SecurityContext buiten {@code config}. Valideert zoals
+     * {@link #current()}.
+     */
+    Authentication authentication() {
+        oidcUser();
+        return SecurityContextHolder.getContext().getAuthentication();
+    }
+
     private static OidcUser oidcUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || authentication instanceof AnonymousAuthenticationToken

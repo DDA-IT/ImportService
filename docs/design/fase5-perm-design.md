@@ -81,6 +81,20 @@ Bron stuk = 503 `PERMISSION_SOURCE_UNAVAILABLE`. Frontend: `useActor()` krijgt `
 `permissions: []` = één vlak "U heeft geen rechten voor CatalogImport" zonder data-fetches; 403 `PERMISSION_DENIED` tijdens een actie toont de code en herlaadt `/me`.
 Lokale dev: één regel in `application-local.yml` met de eigen Keycloak-username.
 
+**Additief veld `apps` (productwisselaar, beslissingslog 2026-10-20 "Frontend-ombouw volgens de Prodis-mock + productwisselaar").**
+`MeView.apps` is altijd een lijst `[{ "id": "prodis"|"profin"|"prodev", "url": "..." }]`, in die volgorde, zonder CatalogImport zelf;
+naam en logo bepaalt de client. Regels zoals Prodis' `product-switcher.tsx`: `prodis` als `catalogimport.app-switcher.prodis-url`
+gezet is; `profin` (`prodis-url + /dashboard/profin`) als de relay lukt, de gebruiker in Prodis System Admin is of `profin.access` heeft,
+én `prodis-url` gezet is; `prodev` als de relay een geldige (absolute http(s)) `prodevUrl` teruggeeft. Bron: token relay van de
+BFF-sessie (`AppSwitcher`/`ProdisAccountRelay`, Web) naar `catalogimport.app-switcher.prodis-account-url` (Prodis `GET /api/account`,
+access token zo nodig eerst vernieuwd met het refresh token), die enkel `systemAdmin`, `permissions` (alleen `profin.access`) en
+`prodevUrl` leest. **Fail-soft**, in tegenstelling tot de rechtenadapter van §2: elke fout (geen token, refresh geweigerd, timeout,
+3xx/4xx/5xx, te groot antwoord, onverwachte JSON) geeft een WARN zonder token/PII en enkel de Prodis-link; `/me` blijft 200 (of 503
+enkel door de rechtenbron). Per sessie gecachet (`cache-ttl` 5 min na succes, `failure-cache-ttl` 1 min na een fout, gekoppeld aan
+subject + username). **Geen rechtenbron**: `permissions` blijft volledig uit `PermissionSource` komen, ook voor gebruikers zonder
+CatalogImport-recht (zij krijgen `permissions: []` en toch `apps`). 5B-7 (§2) blijft een aparte stap; deze relay mag daarvoor niet
+hergebruikt worden als bron van `catalogImport.*`.
+
 ## 5. Setup-API-vlag: enkel nog voor overzicht en sjabloonbeheer (keuze mens 2026-09-26, herzien 2026-09-30)
 
 **Stand sinds NT-3 (beslissingslog 2026-09-30 "Nieuwe leverancier + taak (NT-spoor)", V2 = a; gedeeltelijke herroeping van 2026-09-26).**

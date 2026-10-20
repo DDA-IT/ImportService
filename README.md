@@ -86,6 +86,7 @@ lege lijst in plaats van een 403 zonder uitleg.
   handlermethode zonder annotatie is dicht (403 + ERROR-log). `system` mag lezen maar nooit `manage`/`approve`:
   de applicatie start niet als een toekenning dat vraagt.
 - **`GET /me`:** `permissions` is altijd een lijst met de **effectieve** rechtcodes (gesorteerd, `[]` = geen rechten).
+  Sinds de productwisselaar staat er ook `apps` in (zie "Productwisselaar" hieronder); dat veld verandert niets aan de rechten.
 
 **Lokaal rechten krijgen.** De lokale rechtenbron (`ConfiguredPermissionSource`) leest toekenningen uit YAML. Vul in
 `application-local.yml` en/of `application-demo.yml` bij `catalogimport.permissions.grants` uw eigen Keycloak
@@ -119,7 +120,8 @@ de overige declaratiepaden en `/setup/overview` 404, ongeacht rechten. Nieuwe le
 
 **Nog niet gebouwd (5B-7):** de Prodis-koppeling (het sessietoken doorgeven aan `GET /api/account` en de codes
 `catalogImport.read/.manage/.approve` lezen). Ze is extern geblokkeerd op de audience `account` en de seed van die
-drie rechten in Prodis. Tot dan is de lokale YAML-bron de enige bron.
+drie rechten in Prodis. Tot dan is de lokale YAML-bron de enige bron. (De token relay van de productwisselaar naar
+datzelfde endpoint leest enkel wisselaargegevens en is dus niet die koppeling.)
 
 ### Lokaal aanmelden
 
@@ -132,6 +134,34 @@ drie rechten in Prodis. Tot dan is de lokale YAML-bron de enige bron.
 - Werk via de Frontend: open `http://localhost:5173`; u wordt naar Keycloak gestuurd en na de login terug. De
   Vite-proxy stuurt `/api`, `/oauth2` en `/login` door naar :8081.
 - De geautomatiseerde tests draaien **zonder** Keycloak (`TestSecurityConfiguration`, niet in het artefact).
+
+### Productwisselaar (Prodis, ProFin, ProDev)
+
+`GET /api/catalog-import/me` levert in `apps` de andere apps voor de wisselaar linksboven (docs/decisions.md
+2026-10-20; zelfde regels als Prodis' `product-switcher.tsx`), als `[{ "id": "prodis"|"profin"|"prodev", "url": ... }]`
+in die volgorde:
+
+- **`prodis`** als `CATALOG_PRODIS_URL` (`catalogimport.app-switcher.prodis-url`, de browser-URL van de Prodis-frontend)
+  gezet is.
+- **`profin`** (`<prodis-url>/dashboard/profin`) als Prodis' `GET /api/account` lukt en de gebruiker daar System Admin
+  is of `profin.access` heeft.
+- **`prodev`** als dat antwoord een `prodevUrl` bevat (Prodis beoordeelt feature, URL en recht zelf).
+
+Daarvoor stuurt de backend het access token van de eigen sessie (zo nodig eerst vernieuwd) als `Bearer` naar
+`CATALOG_PRODIS_ACCOUNT_URL` (`catalogimport.app-switcher.prodis-account-url`) en leest enkel `systemAdmin`,
+`permissions` (alleen `profin.access`) en `prodevUrl`. Die relay is **fail-soft**: geen token, timeout (2 s connect/read,
+`catalogimport.app-switcher.connect-timeout`/`read-timeout`), 401/403/5xx, redirect of onverwachte JSON geven één
+WARN-regel (zonder token of gebruikersgegevens), en de wisselaar toont dan enkel de Prodis-link. `/me` blijft 200. Het
+antwoord wordt per sessie bewaard: 5 min als het lukte (`cache-ttl`), 1 min na een mislukking (`failure-cache-ttl`).
+Dit is **geen rechtenbron**: de rechten van CatalogImport blijven die van "Rechten (5-PERM)" hierboven.
+
+| Variabele | Lokaal (`local`, `ewoutdev`) | Elders (`application.yml`, `demo`) |
+|---|---|---|
+| `CATALOG_PRODIS_URL` | `http://localhost:9060` (Prodis-frontend) | geen default: leeg = geen Prodis-link (en dus geen ProFin) |
+| `CATALOG_PRODIS_ACCOUNT_URL` | `http://localhost:8080/api/account` (Prodis-backend) | geen default: leeg = geen relay (enkel de Prodis-link) |
+
+Elke niet-lege waarde moet een absolute http(s)-URL zijn, anders start de applicatie niet. Draait Prodis lokaal niet,
+dan ziet u enkel de Prodis-link en één WARN-regel per minuut per sessie.
 
 ### Hoe voert u de API-voorbeelden hieronder uit?
 

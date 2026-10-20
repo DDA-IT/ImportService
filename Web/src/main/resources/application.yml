@@ -78,6 +78,18 @@ catalogimport:
   secrets:
     keys: ${CATALOG_SECRETS_KEYS:}
     active-key-id: ${CATALOG_SECRETS_ACTIVE_KEY_ID:}
+  # Productwisselaar linksboven (docs/decisions.md 2026-10-20 "Frontend-ombouw volgens de Prodis-mock +
+  # productwisselaar"). BEWUST GEEN default buiten de lokale profielen (local, ewoutdev): zet per omgeving
+  #   CATALOG_PRODIS_URL          browser-URL van de Prodis-frontend. Leeg = geen Prodis-link (en dus ook geen ProFin).
+  #   CATALOG_PRODIS_ACCOUNT_URL  backend-URL van Prodis' GET /api/account (bv. https://prodis.example.com/api/account).
+  #                               Leeg = geen token relay: enkel de Prodis-link, nooit ProFin of ProDev.
+  # Elke niet-lege waarde moet een absolute http(s)-URL zijn, anders start de applicatie niet. De relay is fail-soft
+  # (Prodis onbereikbaar = enkel de Prodis-link + WARN-log) en is GEEN rechtenbron voor CatalogImport.
+  # Verder (met default): connect-timeout PT2S, read-timeout PT2S, cache-ttl PT5M (geslaagd antwoord, per sessie),
+  # failure-cache-ttl PT1M (mislukte relay, per sessie); strikt positief, anders start de applicatie niet.
+  app-switcher:
+    prodis-url: ${CATALOG_PRODIS_URL:}
+    prodis-account-url: ${CATALOG_PRODIS_ACCOUNT_URL:}
   # catalogimport.fetch.* staat hier BEWUST NIET als waarde (K-4a; docs/decisions.md 2026-09-29 L4b, A12;
   # docs/design/leveringsconfiguratie-design.md par. 5 en 8). Enkel deze toelichting:
   #   fetch.allowed-hosts   (env CATALOGIMPORT_FETCH_ALLOWED_HOSTS) exacte hostnamen, komma-gescheiden in EEN string,

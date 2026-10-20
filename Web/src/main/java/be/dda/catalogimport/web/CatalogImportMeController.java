@@ -1,6 +1,9 @@
 package be.dda.catalogimport.web;
 
 import be.dda.catalogimport.service.ActorIdentity;
+import be.dda.catalogimport.web.AppSwitcher.AppLink;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.Set;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -20,24 +23,35 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code permissions} (Fase 5-PERM, bouwstap 5B-4) is altijd een lijst (nooit {@code null}): de effectieve
  * rechtcodes van de aangemelde gebruiker, gesorteerd alfabetisch; lege lijst als geen rechten. Het endpoint
  * laadt ook het CSRF-token, zodat de {@code CATALOGIMPORT-XSRF-TOKEN}-cookie bestaat vóór de eerste schrijfactie.
+ * <p>
+ * {@code apps} (productwisselaar, docs/decisions.md 2026-10-20) is altijd een lijst: de andere apps
+ * ({@code prodis}, {@code profin}, {@code prodev}, in die volgorde) als {@code {id, url}}, zie {@link AppSwitcher}.
+ * Een Prodis die niet antwoordt verandert de status van dit endpoint nooit (fail-soft); ook een gebruiker
+ * zonder CatalogImport-rechten krijgt de lijst.
  */
 @RestController
 @RequestMapping("/api/catalog-import/me")
 public class CatalogImportMeController {
 
-    /** Antwoord van {@code GET /me}; {@code displayName} en {@code permissions} kunnen {@code null} zijn (5-AUTH), maar {@code permissions} is altijd een lijst (5-PERM). */
-    public record MeView(String username, String subject, String displayName, List<String> permissions) {
+    /**
+     * Antwoord van {@code GET /me}; {@code displayName} kan {@code null} zijn (5-AUTH), {@code permissions} (5-PERM)
+     * en {@code apps} (productwisselaar) zijn altijd een lijst.
+     */
+    public record MeView(String username, String subject, String displayName, List<String> permissions,
+                         List<AppLink> apps) {
     }
 
     private final CurrentActor currentActor;
+    private final AppSwitcher appSwitcher;
 
-    public CatalogImportMeController(CurrentActor currentActor) {
+    public CatalogImportMeController(CurrentActor currentActor, AppSwitcher appSwitcher) {
         this.currentActor = currentActor;
+        this.appSwitcher = appSwitcher;
     }
 
     @NoPermissionRequired
     @GetMapping
-    MeView me(CsrfToken csrfToken) {
+    MeView me(CsrfToken csrfToken, HttpServletRequest request, HttpServletResponse response) {
         ActorIdentity actor = currentActor.current();
         if (csrfToken != null) {
             // Laadt het (uitgestelde) token: een nieuw token schrijft de CATALOGIMPORT-XSRF-TOKEN-cookie in dit antwoord.
@@ -48,6 +62,7 @@ public class CatalogImportMeController {
                 .map(Permission::code)
                 .sorted()
                 .toList();
-        return new MeView(actor.username(), actor.subject(), currentActor.displayName(), codes);
+        List<AppLink> apps = appSwitcher.appsFor(actor, currentActor.authentication(), request, response);
+        return new MeView(actor.username(), actor.subject(), currentActor.displayName(), codes, apps);
     }
 }

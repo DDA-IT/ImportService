@@ -239,12 +239,21 @@ class SecurityHttpTest {
                 .andReturn();
 
         Map<String, Object> body = body(result);
-        assertThat(body).containsOnlyKeys("username", "subject", "displayName", "permissions");
+        // Bewust uitgebreid met "apps" (productwisselaar, docs/decisions.md 2026-10-20): additief veld.
+        assertThat(body).containsOnlyKeys("username", "subject", "displayName", "permissions", "apps");
         // Standaardlogin krijgt alle drie rechten; permissions is altijd een lijst (5B-4), nooit null.
         @SuppressWarnings("unchecked")
         List<String> permissions = (List<String>) body.get("permissions");
         assertThat(permissions).containsExactlyInAnyOrder("catalogImport.read", "catalogImport.manage", "catalogImport.approve");
         assertThat(body.get("displayName")).isNull();
+        // Profiel local zet prodis-url; de testlogin heeft geen access token in de sessie, dus geen relay (fail-soft):
+        // enkel de Prodis-link. Het volledige gedrag staat in MeAppSwitcherHttpTest.
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> apps = (List<Map<String, Object>>) body.get("apps");
+        assertThat(apps).singleElement().satisfies(app -> {
+            assertThat(app).containsOnlyKeys("id", "url");
+            assertThat(app.get("id")).isEqualTo("prodis");
+        });
     }
 
     /** De merge-volgorde van het standaardverzoek: een expliciete {@code .with(as(X))} wint. */
