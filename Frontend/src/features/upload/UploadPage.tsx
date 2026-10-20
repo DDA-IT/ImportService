@@ -38,6 +38,7 @@ import { Count, CounterLabel } from '../batches/format.tsx';
 import { linkCheckHref } from '../setup/check/linkCheck.ts';
 import { deriveDeliveryReference, MAX_DELIVERY_REFERENCE_LENGTH } from './deliveryReference.ts';
 import button from '../../components/Button.module.css';
+import pageCss from '../../components/Page.module.css';
 import styles from './UploadPage.module.css';
 import { formatDateTime } from '../../format.ts';
 
@@ -280,9 +281,24 @@ export function UploadPage() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>Levering uploaden</h1>
+      <header className={pageCss.pageHead}>
+        <div className={pageCss.pageHeadText}>
+          <h1 className={pageCss.title}>Levering uploaden</h1>
+          <ol className={pageCss.crumbs}>
+            <li>
+              <span>CatalogImport</span>
+            </li>
+            <li>
+              <span>Leveringen</span>
+            </li>
+            <li>
+              <span aria-current="page">Levering uploaden</span>
+            </li>
+          </ol>
+        </div>
+      </header>
 
-      <form className={styles.form} onSubmit={handleSubmit}>
+      <form className={`${pageCss.card} ${pageCss.cardPad} ${styles.form}`} onSubmit={handleSubmit}>
         {tasks.error !== null && <ErrorBanner error={tasks.error} />}
         {tasks.loading && tasks.data === null && tasks.error === null && (
           <p className={styles.loading}>Taken laden…</p>
@@ -511,7 +527,7 @@ export function UploadPage() {
       </form>
 
       {delivery !== null && outcome !== null && (
-        <section className={styles.result} data-testid="upload-result" aria-label="Resultaat van de upload">
+        <section className={`${pageCss.card} ${pageCss.cardPad} ${styles.result}`} data-testid="upload-result" aria-label="Resultaat van de upload">
           <h2>{outcome.created ? 'Levering aangemaakt en gecontroleerd' : 'Bestaande levering teruggevonden'}</h2>
           {!outcome.created && (
             <p role="status">
