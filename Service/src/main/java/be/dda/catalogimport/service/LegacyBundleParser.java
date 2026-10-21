@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -308,6 +309,8 @@ public final class LegacyBundleParser {
 
         JsonNode details = array(iface, "details", path);
         Set<String> seen = new HashSet<>();
+        List<Integer> ftpRows = new ArrayList<>();
+        List<Integer> ftp2Rows = new ArrayList<>();
         for (int i = 0; i < details.size(); i++) {
             String detailPath = path + ".details[" + i + "]";
             ObjectNode detail = element(details, i, detailPath);
@@ -325,7 +328,13 @@ public final class LegacyBundleParser {
             if (!seen.add(sequence + "\u001f" + label)) {
                 throw invalid(detailPath, DUPLICATE);
             }
+            if ("FTP".equals(label)) {
+                ftpRows.add(i);
+            } else if ("FTP2".equals(label)) {
+                ftp2Rows.add(i);
+            }
         }
+        checkComposedFtpUserInfo(details, ftpRows, ftp2Rows, path);
 
         JsonNode omitted = array(iface, "omittedSecretLabels", path);
         Set<String> omittedSeen = new HashSet<>();
@@ -407,6 +416,33 @@ public final class LegacyBundleParser {
     }
 
     // --- Hulp ------------------------------------------------------------------------------------------------
+
+    /**
+     * Contract par. 2.1 regel 4c (beslissingslog 2026-10-21 "S4-vervolg"): legacy plakt de bestemming als
+     * {@code Trim(FTP) & Trim(FTP2)} ({@code Prg_1232} r.300), dus ook de samengestelde waarde mag geen userinfo
+     * bevatten. Elke combinatie (FTP-regel, FTP2-regel) wordt getoetst; een ontbrekend label telt als {@code ""}. Zowel
+     * {@link String#trim()} (Magic-{@code Trim}, zoals de verzender) als {@link String#strip()} (zoals
+     * {@code LegacyFtpLocation}) wordt geprobeerd, zodat geen van beide lezingen userinfo kan opleveren. Het foutpad is
+     * de waarde van de FTP2-regel van de combinatie, of die van de FTP-regel als er geen FTP2 is.
+     */
+    private static void checkComposedFtpUserInfo(JsonNode details, List<Integer> ftpRows, List<Integer> ftp2Rows,
+                                                 String path) {
+        List<Integer> firsts = ftpRows.isEmpty() ? Arrays.asList((Integer) null) : ftpRows;
+        List<Integer> seconds = ftp2Rows.isEmpty() ? Arrays.asList((Integer) null) : ftp2Rows;
+        for (Integer first : firsts) {
+            String ftp = first == null ? "" : details.get(first).get("value").textValue();
+            for (Integer second : seconds) {
+                if (first == null && second == null) {
+                    return;
+                }
+                String ftp2 = second == null ? "" : details.get(second).get("value").textValue();
+                if (hasUserInfo(ftp.trim() + ftp2.trim()) || hasUserInfo(ftp.strip() + ftp2.strip())) {
+                    int at = second != null ? second : first;
+                    throw invalid(path + ".details[" + at + "].value", SECRET_IN_DETAILS);
+                }
+            }
+        }
+    }
 
     /** Contract par. 2.1 regel 3: bevat de authority van een URL een {@code @}? */
     static boolean hasUserInfo(String value) {

@@ -60,7 +60,10 @@ Eén bundel per interface. De job exporteert alle INHEAD-interfaces waarvan INDE
 - **INHEAD (DS 270):** enkel configuratie; nooit run-toestand/audit (`Date/Time/User last run`, `Running?`, `MaxRunTime`, `Reserve*`, `User/Date/Time Create/Update`).
 - **INDET (DS 271):** `sequence`, `label`, `value`, zonder auditkolommen. `FTP_password` gaat enkel naar `secret`. Elk ander
   label dat matcht op `(?i)pass|secret|apikey|api_key|token|_pw$` gaat niet mee; enkel de labelnaam in `omittedSecretLabels`.
-  Een `FTP`/`FTP2`-waarde met `://user:pass@` wordt zonder userinfo doorgegeven, met `ftpCredentialsRedacted=true`.
+  Een `FTP`/`FTP2`-waarde met `://user:pass@` wordt zonder userinfo doorgegeven, met `ftpCredentialsRedacted=true`; sinds het
+  S4-vervolg (2026-10-21) ook als de userinfo pas in de samengestelde waarde `Trim(FTP) & Trim(FTP2)` ontstaat (contract §2.1
+  regel 3b/3c: elke regel houdt zijn eigen niet-verwijderde tekens). De ontvanger weigert een samengestelde waarde met userinfo
+  (400 `SECRET_IN_DETAILS`).
 - **PSIMDHFD / PSIMPDEF / PSIMPDEFMAP / PSIMPEXCL (DS 253/252/254/257):** zoals in het schema; `IMPORT`/`EXCL_Code` weggelaten
   (zit in `definition.code`); `maps` met alle `NUMMER`s.
 - **`definitionStatus`:** `PRESENT` | `NOT_REFERENCED` (label leeg) | `MISSING` (code niet in PSIMDHFD) | `TABLE_UNAVAILABLE` (geen DDF).
@@ -120,11 +123,12 @@ open ontvangst met rijslot lezen, dan de laatste ontvangst; een race op de open-
   `boundHost` uit `FTP`+`FTP2`, label `Legacy <dossier>/<interface>`, reden `Overgenomen uit legacy INDET <interface> (ontvangst <id>)`,
   nieuwe additieve overload met eventbron SYSTEM (`changed_by` null), `created_by = svc:<azp>` → `secretOutcome=STORED`.
 - Credential bestaat al → `DISCARDED_ALREADY_PRESENT` (niets ontsleutelen of vergelijken; vervangen = menselijke PUT).
-- FTP/onbekend protocol → `DISCARDED_PROTOCOL_UNSUPPORTED`; geen/ongeldige host → `DISCARDED_NO_HOST`; UNCHANGED → weggegooid.
+- FTP/onbekend protocol → `DISCARDED_PROTOCOL_UNSUPPORTED`; geen/ongeldige host → `DISCARDED_NO_HOST`.
+- UNCHANGED (S4-vervolg 2026-10-21, verfijnt A1): dezelfde regels; zie "Uitwerking S4-vervolg" hieronder.
 
 **Uitwerking S4 (gebouwd 2026-10-20):**
 - Volgorde: (1) bundel met secret en geen sleutelring → 409 `SECRETS_NOT_CONFIGURED`, niets bewaard (ook bij `UNCHANGED`);
-  (2) `UNCHANGED` → secret weggegooid, niets geschreven; (3) herkomst (`legacy_config_origin`, rijslot) heeft al een credential,
+  (2) `UNCHANGED` → secret weggegooid, niets geschreven (sinds het S4-vervolg: zie hieronder); (3) herkomst (`legacy_config_origin`, rijslot) heeft al een credential,
   ongeacht status (ook `REVOKED`) → `DISCARDED_ALREADY_PRESENT`; (4) `FTP`+`FTP2` leeg → `DISCARDED_NO_HOST`; (5) URL-schema niet
   `sftp` (ook geen schema) → `DISCARDED_PROTOCOL_UNSUPPORTED`; (6) geen geldige host → `DISCARDED_NO_HOST`; anders `STORED`.
 - Bestemming = `Trim(FTP) & Trim(FTP2)` (`Prg_1232` r.300), ontleed door `service.support.LegacyFtpLocation`: host zonder poort,
@@ -134,6 +138,22 @@ open ontvangst met rijslot lezen, dan de laatste ontvangst; een race op de open-
   de herkomstrij ontstaat hier als ze nog niet bestond. Ontvangst, credential, event en herkomst zitten in één transactie; een
   gelijktijdige eerste insert van de herkomst (`uk_legacy_config_origin`) wordt net als `uk_legacy_config_receipt_open` herhaald.
 - `secret.value` hoogstens 1024 tekens (grens van `CredentialService`), al bij het parsen getoetst (contract §1).
+
+**Uitwerking S4-vervolg (gebouwd 2026-10-21, beslissingslog "Legacy-config S4-vervolg"):**
+- **Secret bij `UNCHANGED`:** stap (2) hierboven vervalt; een `UNCHANGED`-push met secret doorloopt (3)-(6) onder hetzelfde rijslot
+  (`findForUpdate` op de herkomst, na het slot op de open ontvangst). `STORED` → nieuwe credential (eventbron SYSTEM, reden
+  `Overgenomen uit legacy INDET <interface> (ontvangst <id>, herhaalde push)`), `credential_id` op de herkomst (die zo nodig ontstaat)
+  en op de **laatste ontvangst** (de ontvangst die `UNCHANGED` teruggaf): `secret_received = true`, `secret_outcome = STORED`,
+  `credential_id`, tenzij die ontvangst al `STORED` is (dan enkel de herkomst). Status en andere velden van de ontvangst blijven
+  ongemoeid (ook `APPLIED`). Elke `DISCARDED_*`-uitkomst bij `UNCHANGED` wordt enkel gelogd, niets geschreven (de ontvangst houdt haar
+  eerdere uitkomst). Antwoord blijft 200 `UNCHANGED`. Een bestaande credential wordt nooit vervangen (A1). Gelijktijdige
+  `UNCHANGED`-pushes: het slot op de open ontvangst of de herkomst serialiseert; anders botst de tweede op `uk_legacy_config_origin`
+  en wordt herhaald (ziet dan `DISCARDED_ALREADY_PRESENT`). `secret_received` is daarvoor in JPA wijzigbaar gemaakt (enkel via
+  `LegacyConfigReceipt.recordCredentialFromRepeatedPush`); geen Liquibase (de checks `ck_legacy_config_receipt_secret_outcome` en
+  `ck_legacy_config_receipt_credential` gelden ongewijzigd).
+- **Userinfo over `FTP`+`FTP2`:** contract §2.1 regel 3b/3c/4. `LegacyBundleParser` weigert elke combinatie (`FTP`, `FTP2`) waarvan
+  `Trim(f)+Trim(g)` userinfo heeft (400 `SECRET_IN_DETAILS`, pad = de `FTP2`-waarde). Daardoor bereikt een samengestelde userinfo
+  nooit `bundle_json`; `LegacyFtpLocation` blijft een `@` in de authority als ongeldige host behandelen (vangnet).
 - PREVIEW/APPLY: `planned.credential = {credentialRef (herkomst), secretOutcome (deze ontvangst)}` of `null`; APPLY koppelt geen
   profiel (L5); het item `CONNECTION_NOT_MIGRATED` toont protocol/host/poort/map/`FTP_directory`/login + `credentialRef`
   (`target = external_credential.credentialRef=<uuid>`). Geen Liquibase nodig (020 had alle kolommen en checks al).
@@ -368,7 +388,8 @@ DB-rol `catalogimport_ro` (§6).
   kolomconstraint en de betekenis van API-veld `supplierField`. **Advies:** `drop not null` + check "precies één van beide",
   API additief uitgebreid; geen sentinelwaarde.
 
-**Aannames:** A1 secret bij herhaling nooit vervangen (UNCHANGED → weggegooid; vervangen via menselijke PUT); A2 credential met
+**Aannames:** A1 een bestaande credential wordt bij herhaling nooit vervangen (vervangen via menselijke PUT); verfijnd 2026-10-21:
+heeft de herkomst nog geen credential, dan wordt een secret ook bij `UNCHANGED` overgenomen (§2 "Uitwerking S4-vervolg"); A2 credential met
 eventbron SYSTEM, `created_by=svc:<azp>`; A3 `library_code` = `supplier_catalog.scope_key` via `legacy_number` (sinds S5 automatisch bij precies één `scope_key` met dat
 `legacy_number`; anders, of zonder/met onbereikbare Prodis, door de mens als `libraryCode` gegeven, zie §5); A4 rechtstreekse
 SELECT op 3 tabellen; A5 wisselkoers ≠ 1 blokkeert APPLY; A6 export van alle interfaces met `ArtImp_Importsoort`; A7 protocol uit

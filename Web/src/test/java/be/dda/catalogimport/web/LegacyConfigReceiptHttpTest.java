@@ -645,6 +645,22 @@ class LegacyConfigReceiptHttpTest {
                 invalid("userinfo in FTP", b -> ((ObjectNode) b.get("interface").get("details").get(1))
                         .put("value", "sftp://user:pw@sftp.example.test/x"),
                         "$.interface.details[1].value (SECRET_IN_DETAILS)"),
+                // S4-vervolg (contract par. 2.1 regel 3b/4): userinfo in Trim(FTP) & Trim(FTP2), Prg_1232 r.300.
+                invalid("userinfo split over FTP and FTP2", b -> {
+                    ((ObjectNode) b.get("interface").get("details").get(1)).put("value", "sftp://klant:geh");
+                    ((ArrayNode) b.get("interface").get("details")).addObject()
+                            .put("sequence", 5).put("label", "FTP2").put("value", "eim@host/x");
+                }, "$.interface.details[9].value (SECRET_IN_DETAILS)"),
+                invalid("userinfo split over FTP and FTP2 with Magic padding", b -> {
+                    ((ObjectNode) b.get("interface").get("details").get(1)).put("value", " sftp://klant ");
+                    ((ArrayNode) b.get("interface").get("details")).addObject()
+                            .put("sequence", 5).put("label", "FTP2").put("value", " @host/x");
+                }, "$.interface.details[9].value (SECRET_IN_DETAILS)"),
+                invalid("userinfo only in FTP2 without FTP", b -> {
+                    ((ArrayNode) b.get("interface").get("details")).remove(1);
+                    ((ArrayNode) b.get("interface").get("details")).addObject()
+                            .put("sequence", 5).put("label", "FTP2").put("value", " sftp://u:p@host/x");
+                }, "$.interface.details[8].value (SECRET_IN_DETAILS)"),
                 invalid("duplicate detail", b -> ((ArrayNode) b.get("interface").get("details")).addObject()
                         .put("sequence", 1).put("label", "FTP").put("value", "other"),
                         "$.interface.details[9] (DUPLICATE)"),

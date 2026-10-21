@@ -62,8 +62,13 @@ import org.springframework.web.context.WebApplicationContext;
  *       credential, de bestaande ongemoeid (A1).</li>
  *   <li><b>FTP of onbekend protocol</b> → {@code DISCARDED_PROTOCOL_UNSUPPORTED}; <b>geen bestemming of ongeldige
  *       host</b> → {@code DISCARDED_NO_HOST}; telkens geen credential en geen herkomstrij.</li>
- *   <li><b>{@code UNCHANGED}</b> → secret weggegooid, niets geschreven of aangeraakt.</li>
- *   <li><b>Gelijktijdig:</b> hoogstens één credential per herkomst.</li>
+ *   <li><b>{@code UNCHANGED}</b> (S4-vervolg, beslissingslog 2026-10-21): heeft de herkomst al een credential, of is
+ *       het geen SFTP met geldige host → secret weggegooid, niets geschreven of aangeraakt. Anders (bv. de inhoud kwam
+ *       eerst zonder secret) → toch één credential, op de herkomst en op de laatste ontvangst ({@code STORED}); een
+ *       volgende identieke push vervangt niets.</li>
+ *   <li><b>Gelijktijdig:</b> hoogstens één credential per herkomst, ook bij gelijktijdige {@code UNCHANGED}-pushes.</li>
+ *   <li><b>Userinfo verdeeld over {@code FTP}+{@code FTP2}</b> (contract par. 2.1 regel 3b/4): onbewerkt → 400
+ *       {@code SECRET_IN_DETAILS}; zoals de job redigeert → aanvaard.</li>
  *   <li><b>Lekvrij:</b> de canary staat enkel als ciphertext in {@code external_credential} (ontsleutelbaar tot exact de
  *       canary) en nergens anders: niet in {@code bundle_json}/{@code apply_report_json}, niet in herkomst- of
  *       eventrijen, niet in een HTTP-antwoord (push, detail, preview, APPLY), niet in een logregel (onze pakketten,
@@ -253,12 +258,9 @@ class LegacyConfigSecretLeakTest extends LegacyConfigS2TestBase {
                 b -> detail(b, "FTP", "sftp:///exports/"),
                 b -> detail(b, "FTP", "sftp://sftp.example.test:99999/x"),
                 b -> detail(b, "FTP", "sftp://sftp.[YYYY].test/x"),
-                b -> detail(b, "FTP", "sftp://host name.test/x"),
-                // Legacy plakt FTP+FTP2 aan elkaar (Prg_1232 r.300): samen een userinfo-vorm = geen geldige host.
-                b -> {
-                    detail(b, "FTP", "sftp://klant");
-                    detail(b, "FTP2", "@sftp.example.test/x");
-                });
+                b -> detail(b, "FTP", "sftp://host name.test/x"));
+        // (FTP "sftp://klant" + FTP2 "@host/x" was hier een NO_HOST-variant; sinds het S4-vervolg is userinfo in de
+        // samengestelde waarde een 400 SECRET_IN_DETAILS, zie userInfoSplitOverFtpAndFtp2...)
         for (var variant : variants) {
             String canary = canary();
             ObjectNode bundle = withSecret(golden(), canary);
@@ -308,21 +310,119 @@ class LegacyConfigSecretLeakTest extends LegacyConfigS2TestBase {
     }
 
     /**
-     * A1-gevolg: het secret telt niet mee in de inhoudshash. Kwam de inhoud eerst zonder secret binnen, dan is dezelfde
-     * inhoud met secret {@code UNCHANGED} en wordt er geen credential aangemaakt (vervangen/invoeren = mens).
+     * S4-vervolg (beslissingslog 2026-10-21, verfijnt A1), het S3-scenario: de inhoud kwam eerst zonder secret binnen
+     * (de job had toen nog geen S4). Dezelfde inhoud mét secret is {@code UNCHANGED}, maar de herkomst heeft nog geen
+     * credential: het secret wordt toch versleuteld opgeslagen, op de herkomst en op die laatste ontvangst gezet. Een
+     * tweede identieke push met een ander secret vervangt niets.
      */
     @Test
-    void aSecretThatArrivesLaterWithTheSameContentIsNotTakenOver() throws Exception {
+    void aSecretThatArrivesLaterWithTheSameContentIsStoredOnceAndNeverReplaced() throws Exception {
         ObjectNode bundle = golden();
         long id = created(push(bundle));
+        assertThat(receiptRow(id).get("secret_received")).isEqualTo(false);
         String canary = canary();
 
         push(withSecret(bundle, canary)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.outcome").value("UNCHANGED"));
+                .andExpect(jsonPath("$.outcome").value("UNCHANGED"))
+                .andExpect(jsonPath("$.receiptId").value(id))
+                .andExpect(jsonPath("$.status").value("RECEIVED"))
+                .andExpect(jsonPath("$.supersededReceiptId").value(org.hamcrest.Matchers.nullValue()));
 
-        assertThat(receiptRow(id).get("secret_received")).isEqualTo(false);
-        assertThat(originCount(bundle)).isZero();
-        assertCanaryOnlyAsCiphertext(canary, dossier(bundle), 0);
+        Map<String, Object> receipt = receiptRow(id);
+        assertThat(receipt.get("status")).isEqualTo("RECEIVED");
+        assertThat(receipt.get("secret_received")).isEqualTo(true);
+        assertThat(receipt.get("secret_outcome")).isEqualTo("STORED");
+        long credentialId = ((Number) receipt.get("credential_id")).longValue();
+        assertThat(((Number) originRow(bundle).get("credential_id")).longValue()).isEqualTo(credentialId);
+        assertThat(count("select count(*) from legacy_config_receipt where origin_dossier = ?", dossier(bundle)))
+                .isEqualTo(1);
+        Map<String, Object> credential = jdbc.queryForMap("select * from external_credential where id = ?",
+                credentialId);
+        UUID ref = (UUID) credential.get("credential_ref");
+        assertThat(credential.get("bound_host")).isEqualTo("sftp.example.test");
+        assertThat(credential.get("created_by")).isEqualTo(SERVICE_ACTOR);
+        assertThat(secrets.decrypt((String) credential.get("ciphertext"), ref,
+                ExternalCredentialSecretKind.SFTP_PASSWORD.name())).isEqualTo(canary);
+        assertThat(jdbc.queryForList("select * from external_credential_event where credential_id = ?",
+                credentialId)).singleElement().satisfies(event -> {
+                    assertThat(event.get("source")).isEqualTo("SYSTEM");
+                    assertThat(event.get("changed_by")).isNull();
+                    assertThat(event.get("reason")).isEqualTo("Overgenomen uit legacy INDET GOLDEN_ART (ontvangst "
+                            + id + ", herhaalde push)");
+                });
+        read(get(PUSH + "/{id}", id))
+                .andExpect(jsonPath("$.secretOutcome").value("STORED"))
+                .andExpect(jsonPath("$.credentialRef").value(ref.toString()))
+                .andExpect(jsonPath("$.receipt.secretReceived").value(true));
+        assertCanaryOnlyAsCiphertext(canary, dossier(bundle), 1);
+
+        // Tweede identieke push met een ander secret: geen tweede credential, niets vervangen of aangeraakt (A1).
+        Map<String, Object> receiptBefore = receiptRow(id);
+        Map<String, Object> originBefore = originRow(bundle);
+        Map<String, Object> credentialBefore = jdbc.queryForMap("select * from external_credential where id = ?",
+                credentialId);
+        String otherCanary = canary();
+        push(withSecret(bundle, otherCanary)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.outcome").value("UNCHANGED"))
+                .andExpect(jsonPath("$.receiptId").value(id));
+        assertThat(receiptRow(id)).isEqualTo(receiptBefore);
+        assertThat(originRow(bundle)).isEqualTo(originBefore);
+        assertThat(jdbc.queryForMap("select * from external_credential where id = ?", credentialId))
+                .isEqualTo(credentialBefore);
+        assertThat(credentialsOfOrigin(bundle)).isEqualTo(1);
+        assertThat(count("select count(*) from external_credential_event where credential_id = ?", credentialId))
+                .isEqualTo(1);
+        assertCanaryOnlyAsCiphertext(otherCanary, dossier(bundle), 1);
+        assertCanaryOnlyAsCiphertext(canary, dossier(bundle), 1);
+    }
+
+    /**
+     * S4-vervolg, herkomst die al bestaat (door APPLY) maar nog geen credential heeft: de credential komt op die
+     * herkomst (geen tweede herkomstrij) en op de toegepaste ontvangst, die {@code APPLIED} blijft.
+     */
+    @Test
+    void aSecretAfterApplyWithTheSameContentIsStoredOnTheExistingOriginAndTheAppliedReceipt() throws Exception {
+        ObjectNode bundle = rehash(applicable());
+        long id = created(push(bundle));
+        previewAndApply(id, "libraryCode", "LIB-S4V").andExpect(status().isOk());
+        Map<String, Object> originBefore = originRow(bundle);
+        assertThat(originBefore.get("credential_id")).isNull();
+        assertThat(originBefore.get("import_link_id")).isNotNull();
+        String canary = canary();
+
+        push(withSecret(bundle, canary)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.outcome").value("UNCHANGED"))
+                .andExpect(jsonPath("$.receiptId").value(id))
+                .andExpect(jsonPath("$.status").value("APPLIED"));
+
+        Map<String, Object> receipt = receiptRow(id);
+        assertThat(receipt.get("status")).isEqualTo("APPLIED");
+        assertThat(receipt.get("secret_outcome")).isEqualTo("STORED");
+        Map<String, Object> origin = originRow(bundle);
+        assertThat(origin.get("id")).isEqualTo(originBefore.get("id"));
+        assertThat(origin.get("import_link_id")).isEqualTo(originBefore.get("import_link_id"));
+        assertThat(origin.get("credential_id")).isEqualTo(receipt.get("credential_id")).isNotNull();
+        assertThat(originCount(bundle)).isEqualTo(1);
+        assertCanaryOnlyAsCiphertext(canary, dossier(bundle), 1);
+    }
+
+    /** S4-vervolg: bij {@code UNCHANGED} gelden dezelfde weigerregels; een weggegooid secret schrijft niets. */
+    @Test
+    void anUnchangedPushWithASecretButNoUsableSftpHostWritesNothing() throws Exception {
+        for (String ftp : List.of("ftp://ftp.example.test/in/", "sftp://sftp.[YYYY].test/x")) {
+            ObjectNode bundle = golden();
+            detail(bundle, "FTP", ftp);
+            long id = created(push(bundle));
+            Map<String, Object> before = receiptRow(id);
+            String canary = canary();
+
+            push(withSecret(bundle, canary)).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.outcome").value("UNCHANGED"));
+
+            assertThat(receiptRow(id)).as(ftp).isEqualTo(before);
+            assertThat(originCount(bundle)).isZero();
+            assertCanaryOnlyAsCiphertext(canary, dossier(bundle), 0);
+        }
     }
 
     // --- Gelijktijdigheid -----------------------------------------------------------------------------------------
@@ -347,6 +447,107 @@ class LegacyConfigSecretLeakTest extends LegacyConfigS2TestBase {
         assertThat(count("select count(*) from legacy_config_receipt where origin_dossier = ? "
                 + "and secret_outcome = 'DISCARDED_ALREADY_PRESENT'", dossier(base))).isEqualTo(3);
         assertThat(originCount(base)).isEqualTo(1);
+    }
+
+    /**
+     * S4-vervolg, gelijktijdig: eerst de inhoud zonder secret, dan vier identieke pushes elk met een eigen secret.
+     * Allemaal {@code UNCHANGED}, precies één credential, op de herkomst en op de ene ontvangst.
+     */
+    @Test
+    void concurrentUnchangedPushesWithASecretCreateExactlyOneCredential() throws Exception {
+        ObjectNode base = golden();
+        long id = created(push(base));
+        List<String> canaries = new ArrayList<>();
+        List<Callable<PushResult>> tasks = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            String canary = canary();
+            canaries.add(canary);
+            byte[] body = MAPPER.writeValueAsBytes(rehash(withSecret(base.deepCopy(), canary)));
+            tasks.add(() -> receipts.receive(body.clone(), CLIENT));
+        }
+
+        List<PushResult> results = concurrently(tasks);
+
+        assertThat(results).extracting(PushResult::outcome).containsOnly("UNCHANGED");
+        assertThat(results).extracting(PushResult::receiptId).containsOnly(id);
+        assertThat(credentialsOfOrigin(base)).isEqualTo(1);
+        assertThat(originCount(base)).isEqualTo(1);
+        Map<String, Object> receipt = receiptRow(id);
+        assertThat(receipt.get("secret_outcome")).isEqualTo("STORED");
+        assertThat(receipt.get("credential_id")).isEqualTo(originRow(base).get("credential_id"));
+        assertThat(count("select count(*) from legacy_config_receipt where origin_dossier = ?", dossier(base)))
+                .isEqualTo(1);
+        // Het opgeslagen secret is exact één van de vier; de andere drie staan nergens.
+        long credentialId = ((Number) receipt.get("credential_id")).longValue();
+        Map<String, Object> credential = jdbc.queryForMap("select * from external_credential where id = ?",
+                credentialId);
+        String stored = secrets.decrypt((String) credential.get("ciphertext"), (UUID) credential.get("credential_ref"),
+                ExternalCredentialSecretKind.SFTP_PASSWORD.name());
+        assertThat(canaries).contains(stored);
+        for (String canary : canaries) {
+            assertCanaryOnlyAsCiphertext(canary, dossier(base), 1);
+        }
+    }
+
+    // --- Userinfo over FTP + FTP2 (S4-vervolg) --------------------------------------------------------------------
+
+    /**
+     * Contract par. 2.1 regel 3b/4 (beslissingslog 2026-10-21): legacy plakt {@code Trim(FTP) & Trim(FTP2)}; userinfo
+     * die over de twee labels verdeeld is, staat in de samengestelde waarde. Rechtstreeks (onbewerkt) naar
+     * CatalogImport → 400 {@code SECRET_IN_DETAILS}, niets bewaard, de userinfo nergens terug te vinden. Zoals de job
+     * het redigeert (FTP behoudt {@code sftp://}, FTP2 {@code host/x}) → aanvaard, met een credential op die host.
+     */
+    @Test
+    void userInfoSplitOverFtpAndFtp2IsRefusedRawAndAcceptedAsTheJobRedactsIt() throws Exception {
+        // Een eigen canary als wachtwoord in de userinfo, in twee helften over FTP en FTP2.
+        String userInfoCanary = canary();
+        String half = userInfoCanary.substring(0, userInfoCanary.length() / 2);
+        String rest = userInfoCanary.substring(userInfoCanary.length() / 2);
+        String canary = canary();
+        ObjectNode raw = withSecret(golden(), canary());
+        detail(raw, "FTP", "sftp://klant:" + half);
+        detail(raw, "FTP2", rest + "@sftp.example.test/x");
+        byte[] body = MAPPER.writeValueAsBytes(rehash(raw));
+
+        String refused = push(body).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LEGACY_BUNDLE_INVALID"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(refused).contains("$.interface.details[9].value (SECRET_IN_DETAILS)");
+        Throwable thrown = catchThrowable(() -> receipts.receive(body.clone(), CLIENT));
+        assertThat(thrown).isNotNull();
+        for (Throwable t = thrown; t != null; t = t.getCause()) {
+            assertThat(String.valueOf(t.getMessage())).doesNotContain(half).doesNotContain(rest);
+        }
+        assertThat(count("select count(*) from legacy_config_receipt where origin_dossier = ?", dossier(raw)))
+                .isZero();
+        // Ook spaties rond de labels (Trim) of userinfo enkel in FTP2 helpen niet.
+        for (String[] variant : List.of(new String[] {"  sftp://klant:" + half + " ", " " + rest + "@h.test/x"},
+                new String[] {"", "sftp://klant:" + half + rest + "@h.test/x"})) {
+            ObjectNode other = withSecret(golden(), canary());
+            detail(other, "FTP", variant[0]);
+            detail(other, "FTP2", variant[1]);
+            push(MAPPER.writeValueAsBytes(rehash(other))).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("LEGACY_BUNDLE_INVALID"));
+        }
+
+        ObjectNode redacted = withSecret(golden(), canary);
+        detail(redacted, "FTP", "sftp://");
+        detail(redacted, "FTP2", "sftp.example.test/x");
+        long id = created(push(redacted));
+        assertThat(receiptRow(id).get("secret_outcome")).isEqualTo("STORED");
+        assertThat(boundHost(id)).isEqualTo("sftp.example.test");
+
+        for (String fragment : List.of(half, rest)) {
+            String like = "%" + fragment + "%";
+            assertThat(count("select count(*) from legacy_config_receipt t where t::text like ?", like)).isZero();
+            for (String response : responses) {
+                assertThat(response).doesNotContain(fragment);
+            }
+            for (ILoggingEvent event : log.list) {
+                assertThat(event.getFormattedMessage()).as(event.getLoggerName()).doesNotContain(fragment);
+            }
+        }
+        assertCanaryOnlyAsCiphertext(canary, dossier(redacted), 1);
     }
 
     // --- Fouten zonder lek ------------------------------------------------------------------------------------------

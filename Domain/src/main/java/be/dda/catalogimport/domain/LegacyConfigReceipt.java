@@ -71,10 +71,17 @@ public class LegacyConfigReceipt {
     @Column(name = "bundle_json", nullable = false, updatable = false)
     private String bundleJson;
 
-    @Column(name = "secret_received", nullable = false, updatable = false)
+    /**
+     * Wijzigbaar enkel via {@link #recordCredentialFromRepeatedPush(Long)} (S4-vervolg): een latere identieke push
+     * bracht het secret waaruit de credential ontstond.
+     */
+    @Column(name = "secret_received", nullable = false)
     private boolean secretReceived;
 
-    /** {@code null} = geen secret ontvangen; anders gezet vóór de insert ({@link #recordSecretOutcome}). */
+    /**
+     * {@code null} = geen secret ontvangen; anders gezet vóór de insert ({@link #recordSecretOutcome}) of, enkel naar
+     * {@code STORED}, door een latere identieke push ({@link #recordCredentialFromRepeatedPush}).
+     */
     @Enumerated(EnumType.STRING)
     @Column(name = "secret_outcome", length = 40)
     private LegacyConfigSecretOutcome secretOutcome;
@@ -168,7 +175,7 @@ public class LegacyConfigReceipt {
 
     /**
      * Legt vast dat er een secret meekwam en wat ermee gebeurde (slice S4; design par. 2 "Credential bij ontvangst").
-     * Enkel vóór de eerste insert: {@code secret_received} is niet wijzigbaar en de check
+     * Enkel vóór de eerste insert (daarna enkel nog {@link #recordCredentialFromRepeatedPush}) en de check
      * {@code ck_legacy_config_receipt_secret_outcome} eist dat een ontvangen secret meteen een uitkomst heeft. De waarde
      * zelf komt nooit in deze klasse.
      *
@@ -197,6 +204,26 @@ public class LegacyConfigReceipt {
                     + secretOutcome + ")");
         }
         this.credentialId = required(credentialId, "credentialId");
+    }
+
+    /**
+     * S4-vervolg (beslissingslog 2026-10-21 "wachtwoord bij UNCHANGED"): een identieke push ({@code UNCHANGED}) met
+     * secret leverde voor een herkomst zonder credential toch een credential op. Die credential ontstond uit de inhoud
+     * van díe ontvangst, dus komt ze hier te staan: {@code secret_received = true}, {@code secret_outcome = STORED} en
+     * {@code credential_id}. Een eerdere uitkomst die geen {@code STORED} is, wordt zo vervangen; status en andere
+     * velden blijven ongemoeid. De waarde zelf komt nooit in deze klasse.
+     *
+     * @throws IllegalStateException    de ontvangst is nog niet bewaard, heeft al {@code STORED} of al een credential
+     * @throws IllegalArgumentException geen credential
+     */
+    public void recordCredentialFromRepeatedPush(Long credentialId) {
+        if (id == null || secretOutcome == LegacyConfigSecretOutcome.STORED || this.credentialId != null) {
+            throw new IllegalStateException("Receipt " + id + " cannot take a credential from a repeated push "
+                    + "(secret outcome " + secretOutcome + ")");
+        }
+        this.credentialId = required(credentialId, "credentialId");
+        this.secretReceived = true;
+        this.secretOutcome = LegacyConfigSecretOutcome.STORED;
     }
 
     /**

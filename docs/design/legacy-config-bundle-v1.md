@@ -11,6 +11,13 @@
 > vervalt); `secret.value` is hoogstens 1024 tekens (de grens van de credentialopslag); zonder sleutelring bij de ontvanger:
 > 409 `SECRETS_NOT_CONFIGURED`. Geen wijziging van formaat, canonicalisatie of hashes (golden hashes ongewijzigd), dus nog altijd
 > `version = 1`: tot S4 werd geen enkele bundel met secret aanvaard.
+>
+> **S4-vervolg (2026-10-21, beslissingslog "Legacy-config S4-vervolg"):** (a) de userinfo-redactie gebeurt ook op de samengestelde
+> waarde `Trim(FTP) & Trim(FTP2)` (§2.1 regel 3b/3c) en de ontvanger weigert userinfo in die samengestelde waarde (§2.1 regel 4);
+> (b) een secret bij `UNCHANGED` wordt toch overgenomen als de herkomst nog geen credential heeft (§2.1 regel 7, §8). Binnen v1: geen
+> nieuw veld, geen andere canonicalisatie; de golden fixtures en hun hashes blijven ongewijzigd (hun `FTP` heeft geen userinfo en er
+> is geen `FTP2`). Een bundel die vroeger aanvaard werd met userinfo verdeeld over `FTP`/`FTP2`, wordt nu geweigerd: dat is precies het
+> lek dat hiermee dicht gaat.
 
 ## 1. Envelop
 
@@ -73,20 +80,41 @@ Alle string-velden zijn korter dan 2000 tekens tenzij hierboven anders vermeld; 
 2. Redactieregex (Java-syntaxis, `Matcher.find()` over de **labelnaam**): `(?i)pass|secret|apikey|api_key|token|_pw$`.
    Elk ander INDET-label dat hierop matcht (en niet exact `FTP_password` is) wordt **niet** in `details` opgenomen; enkel de
    labelnaam komt in `omittedSecretLabels` (uniek, ongeacht aantal regels). `(?i)` = ASCII-hoofdletterongevoelig.
-3. **URL-userinfo:** voor de INDET-regels met label exact `FTP` of `FTP2`: zoek `^([A-Za-z][A-Za-z0-9+.-]*://)` ; de *authority* is
-   de tekst na `://` tot het eerste teken van `/`, `?`, `#` of het einde. Bevat de authority een `@`, dan wordt alles tot en met de
-   **laatste** `@` in de authority verwijderd (`sftp://klant:geheim@host/dir` wordt `sftp://host/dir`) en geldt
-   `ftpCredentialsRedacted = true`. De geredigeerde waarde staat in `details` en is wat gehasht wordt.
+3. **URL-userinfo.** Definities: een tekst `x` *is een URL* als `^([A-Za-z][A-Za-z0-9+.-]*://)` erop matcht; de *authority* is
+   dan de tekst na `://` tot het eerste teken van `/`, `?`, `#` of het einde; `x` *heeft userinfo* als die authority een `@` bevat.
+   *Userinfo verwijderen* = alle tekens vanaf het begin van de authority tot en met de **laatste** `@` in de authority weghalen
+   (`sftp://klant:geheim@host/dir` wordt `sftp://host/dir`). De verzender past toe, in deze volgorde, op de reeds getrimde waarden
+   (§2):
+   - **3a. Per regel:** elke INDET-regel met label exact `FTP` of `FTP2` waarvan de waarde userinfo heeft, krijgt de waarde zonder
+     userinfo.
+   - **3b. Samengesteld** (legacy plakt de bestemming als `Trim(FTP) & Trim(FTP2)`, `Prg_1232` r.300): neem `f` = de waarde van de
+     `FTP`-regel en `g` = die van de `FTP2`-regel na 3a (een ontbrekend label = `""`) en `C = f + g`. Heeft `C` userinfo, bepaal dan
+     in `C` het bereik `[s, k]` = begin van de authority t/m de laatste `@` erin. Elke regel houdt **zijn eigen** tekens buiten dat
+     bereik: `f'` = de tekens van `f` (posities `0 .. |f|-1` in `C`) die niet in `[s, k]` liggen, `g'` = de tekens van `g` (posities
+     `|f| .. |C|-1`) die niet in `[s, k]` liggen; beide in hun oorspronkelijke volgorde, **niet** opnieuw getrimd. Een label dat er
+     niet was, wordt niet toegevoegd (zijn `""` blijft `""`). Voorbeeld: `FTP = "sftp://klant:geh"`, `FTP2 = "eim@host/x"` →
+     `C = "sftp://klant:geheim@host/x"`, `[s, k] = [7, 19]` → `FTP = "sftp://"`, `FTP2 = "host/x"` (samen `sftp://host/x`). Zit de
+     userinfo volledig in `FTP`, dan geeft 3b hetzelfde als 3a (en verandert `FTP2` niet).
+   - **3c. Dubbele labels:** komt `FTP` of `FTP2` meer dan eens voor, dan wordt 3b herhaald op de eerste combinatie (`FTP`-regel,
+     `FTP2`-regel) die nog userinfo heeft, beide in oplopende `sequence` (`(sequence, label)` is uniek) met de `FTP`-regels als
+     buitenste lus, tot geen enkele combinatie nog userinfo heeft. Dat eindigt altijd: elke stap verwijdert minstens de `@`.
+   `ftpCredentialsRedacted = true` zodra 3a of 3b iets verwijderde. De geredigeerde waarden staan in `details` en zijn wat gehasht
+   wordt.
 4. De ontvanger MOET weigeren (400 `LEGACY_BUNDLE_INVALID`, regel `SECRET_IN_DETAILS`) als `details` een label bevat dat de
-   redactieregex matcht, of een `FTP`/`FTP2`-waarde met userinfo.
+   redactieregex matcht (pad `…details[i].label`), een `FTP`/`FTP2`-waarde met userinfo (pad `…details[i].value`), of een combinatie
+   (`FTP`-regel, `FTP2`-regel) — een ontbrekend label telt als `""` — waarvan `Trim(f) + Trim(g)` userinfo heeft (pad: de waarde van
+   de `FTP2`-regel van die combinatie, of die van de `FTP`-regel als er geen `FTP2` is). `Trim` = witruimte vooraan en achteraan weg;
+   CatalogImport toetst zowel Java `trim()` als `strip()`.
 5. `secret.value` verschijnt nooit in logs, foutberichten, `toString`, het opgeslagen `bundle_json` of de hashes. Aan de kant
    van de verzender ook nooit in jobparameters, execution context of foutbestanden; enkel in de request-body over TLS.
 6. **Waarde (S4):** de verzender trimt Magic-padding (zoals elk tekstveld, §2); een lege waarde na trim = `secret = null`. Komt
    `FTP_password` meer dan eens voor met verschillende niet-lege waarden, dan wordt de bundel niet gebouwd (de verzender kiest nooit).
-7. **Ontvanger (S4):** het secret wordt enkel bij een **nieuwe** ontvangst (`RECEIVED`) gebruikt en dan meteen versleuteld in de
-   credentialopslag bewaard (zie `legacy-config-bundle-design.md` §2 "Credential bij ontvangst"); bij `UNCHANGED` wordt het
-   weggegooid. Het secret telt niet mee in de hash: een secret dat later verschijnt of wijzigt zonder andere inhoudswijziging,
-   levert `UNCHANGED` en wordt dus niet overgenomen (aanname A1: vervangen is een menselijke actie).
+7. **Ontvanger (S4, verfijnd in het S4-vervolg 2026-10-21):** het secret wordt meteen versleuteld in de credentialopslag bewaard
+   als de herkomst nog **geen** credential heeft en de bestemming SFTP met een geldige host is (zie `legacy-config-bundle-design.md`
+   §2 "Credential bij ontvangst"), zowel bij een nieuwe ontvangst (`RECEIVED`) als bij `UNCHANGED`. Het secret telt niet mee in de
+   hash: een secret dat later verschijnt zonder andere inhoudswijziging (bv. de inhoud kwam eerst zonder secret binnen), levert
+   `UNCHANGED` en wordt dan toch overgenomen. Heeft de herkomst al een credential (ook ingetrokken), dan wordt het secret
+   weggegooid, ook als het verschilt: een bestaande credential wordt nooit vervangen (aanname A1: vervangen is een menselijke actie).
 
 ## 3. `definition` (PSIMDHFD DS 253, PSIMPDEF 252, PSIMPDEFMAP 254, PSIMPEXCL 257)
 
@@ -217,7 +245,7 @@ herkomst `(origin.environment, origin.dossier, interface.code)`, ongeacht haar s
 | HTTP | `outcome` | Wanneer | Effect |
 |---|---|---|---|
 | 201 | `RECEIVED` | geen eerdere ontvangst, of de laatste heeft een andere `contentHash` | nieuwe ontvangst `RECEIVED`; een open ontvangst van de herkomst wordt `SUPERSEDED` (`supersededReceiptId` ingevuld); `APPLIED`/`DISCARDED` blijven ongemoeid (`supersededReceiptId = null`) |
-| 200 | `UNCHANGED` | de laatste ontvangst heeft dezelfde `contentHash` | niets geschreven; `receiptId` en `status` zijn die van de laatste ontvangst |
+| 200 | `UNCHANGED` | de laatste ontvangst heeft dezelfde `contentHash` | geen nieuwe ontvangst; `receiptId` en `status` zijn die van de laatste ontvangst. Enige schrijfactie (S4-vervolg): draagt de push een secret, heeft de herkomst nog geen credential en is de bestemming SFTP met geldige host, dan ontstaat de credential (op de herkomst, en op die laatste ontvangst `secretOutcome = STORED` + credential, tenzij ze al `STORED` is); anders niets geschreven |
 
 Een terugkerende inhoud (A → B → A) is dus een nieuwe ontvangst A'. Invariant: de laatste ontvangst is nooit `SUPERSEDED`; een open
 ontvangst is altijd de laatste. Gelijktijdige pushes van dezelfde herkomst leveren hoogstens één nieuwe ontvangst per inhoud op.

@@ -48,7 +48,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       genormaliseerde host, eventbron SYSTEM, {@code created_by = svc:<azp>}, A2) → {@code STORED}, met
  *       {@code credential_id} op de ontvangst en op de herkomst (die zo nodig hier ontstaat). Credential en ontvangst
  *       zitten in één transactie.</li>
- *   <li><b>Secret bij {@code UNCHANGED}:</b> weggegooid; er wordt niets geschreven of aangeraakt (A1).</li>
+ *   <li><b>Secret bij {@code UNCHANGED}</b> (S4-vervolg, beslissingslog 2026-10-21; verfijnt A1): dezelfde regels als
+ *       hierboven, onder hetzelfde rijslot op de herkomst. Heeft de herkomst al een credential, of is het geen SFTP met
+ *       geldige host, dan wordt het secret weggegooid en niets geschreven. Anders ontstaat de credential toch (eventbron
+ *       SYSTEM, reden met "herhaalde push"), komt ze op de herkomst en op de laatste ontvangst (de ontvangst die
+ *       {@code UNCHANGED} teruggaf: {@code secret_outcome = STORED}, {@code credential_id}), tenzij die al
+ *       {@code STORED} is. Het antwoord blijft {@code UNCHANGED}. Een bestaande credential wordt nooit vervangen.</li>
  *   <li><b>Idempotentie tegenover de laatste ontvangst:</b> een push wordt enkel vergeleken met de <b>laatste</b>
  *       ontvangst (hoogste id) van dezelfde herkomst, ongeacht haar status. Zelfde {@code contentHash} = 200
  *       {@value #OUTCOME_UNCHANGED} met dat id en die status; er wordt niets geschreven.</li>
@@ -198,11 +203,11 @@ public class LegacyConfigReceiptService {
                 .findFirstByOriginEnvironmentAndOriginDossierAndInterfaceCodeOrderByIdDesc(bundle.environment(),
                         bundle.dossier(), bundle.interfaceCode());
         if (latest.isPresent() && latest.get().getContentHash().equals(bundle.contentHash())) {
-            // A1: een herhaalde push raakt niets aan, ook geen credential; een meegestuurd secret wordt weggegooid.
             LegacyConfigReceipt same = latest.get();
+            String secretNote = bundle.secret() == null ? "" : secretOfRepeatedPush(bundle, same, client);
             LOG.info("Legacy-config receipt {} UNCHANGED ({}) for {}/{}/{} contentHash={}{}", same.getId(),
                     same.getStatus(), bundle.environment(), bundle.dossier(), bundle.interfaceCode(),
-                    bundle.contentHash(), bundle.secret() == null ? "" : "; secret discarded");
+                    bundle.contentHash(), secretNote);
             return new PushResult(same.getId(), OUTCOME_UNCHANGED, same.getStatus().name(), same.getContentHash(),
                     null);
         }
@@ -221,7 +226,10 @@ public class LegacyConfigReceiptService {
         LegacyConfigReceipt receipt = receipts.saveAndFlush(fresh);
         UUID credentialRef = null;
         if (secret != null && secret.outcome() == LegacyConfigSecretOutcome.STORED) {
-            credentialRef = storeCredential(bundle, receipt, secret, client);
+            StoredCredential stored = storeCredential(bundle, receipt.getId(), secret, client, false);
+            receipt.linkCredential(stored.id());
+            receipts.saveAndFlush(receipt);
+            credentialRef = stored.ref();
         }
         Long supersededId = null;
         if (open.isPresent()) {
@@ -270,28 +278,57 @@ public class LegacyConfigReceiptService {
     }
 
     /**
-     * Versleutelt het secret als nieuwe credential (eventbron SYSTEM, A2) en legt ze vast op de ontvangst en de
-     * herkomst (die hier ontstaat als ze nog niet bestond). Zelfde transactie als de ontvangst: lukt iets niet, dan
-     * bestaat geen van beide.
+     * S4-vervolg (beslissingslog 2026-10-21 "wachtwoord bij UNCHANGED"; verfijnt A1): een identieke push draagt een
+     * secret. Dezelfde regels als bij een nieuwe ontvangst ({@link #decideSecret}, onder hetzelfde rijslot op de
+     * herkomst): heeft de herkomst nog geen credential en is het SFTP met een geldige host, dan wordt het secret toch
+     * versleuteld opgeslagen (eventbron SYSTEM) en op de herkomst gezet. De credential ontstond uit de inhoud van de
+     * laatste ontvangst, dus krijgt <b>die</b> ontvangst {@code secret_outcome = STORED} en {@code credential_id}, tenzij
+     * ze al {@code STORED} is. Elke andere uitkomst ({@code DISCARDED_*}) wordt enkel gelogd: niets geschreven, net als
+     * vroeger bij {@code UNCHANGED}. Een bestaande credential wordt nooit vervangen (A1).
+     *
+     * @return de lognotitie (uitkomst en eventueel de credentialreferentie, nooit de waarde)
      */
-    private UUID storeCredential(LegacyBundle bundle, LegacyConfigReceipt receipt, SecretDecision decision,
-                                 ActorIdentity client) {
+    private String secretOfRepeatedPush(LegacyBundle bundle, LegacyConfigReceipt same, ActorIdentity client) {
+        SecretDecision decision = decideSecret(bundle);
+        if (decision.outcome() != LegacyConfigSecretOutcome.STORED) {
+            return "; secret discarded (" + decision.outcome() + ")";
+        }
+        StoredCredential stored = storeCredential(bundle, same.getId(), decision, client, true);
+        if (same.getSecretOutcome() != LegacyConfigSecretOutcome.STORED) {
+            same.recordCredentialFromRepeatedPush(stored.id());
+            receipts.saveAndFlush(same);
+        }
+        return "; secretOutcome=STORED credential " + stored.ref() + " (repeated push)";
+    }
+
+    /** Een zojuist aangemaakte credential: de publieke referentie en het interne id. */
+    private record StoredCredential(UUID ref, Long id) {
+    }
+
+    /**
+     * Versleutelt het secret als nieuwe credential (eventbron SYSTEM, A2) en legt ze vast op de herkomst (die hier
+     * ontstaat als ze nog niet bestond); de aanroeper legt ze vast op de ontvangst. Zelfde transactie als de
+     * ontvangst: lukt iets niet, dan bestaat geen van beide.
+     *
+     * @param repeated de credential ontstaat bij een {@code UNCHANGED}-push; dat staat in de reden van het event
+     */
+    private StoredCredential storeCredential(LegacyBundle bundle, Long receiptId, SecretDecision decision,
+                                             ActorIdentity client, boolean repeated) {
         CredentialService.CredentialView created = credentialService.create(
                 CREDENTIAL_LABEL_PREFIX + bundle.dossier() + "/" + bundle.interfaceCode(),
                 ExternalCredentialSecretKind.SFTP_PASSWORD.name(), decision.host(), bundle.secret().value(),
-                "Overgenomen uit legacy INDET " + bundle.interfaceCode() + " (ontvangst " + receipt.getId() + ")",
+                "Overgenomen uit legacy INDET " + bundle.interfaceCode() + " (ontvangst " + receiptId
+                        + (repeated ? ", herhaalde push" : "") + ")",
                 client, ExternalCredentialEventSource.SYSTEM);
         Long credentialId = credentials.findByCredentialRef(created.credentialRef()).map(ExternalCredential::getId)
                 .orElseThrow(() -> new IllegalStateException("Credential " + created.credentialRef()
                         + " was not found right after it was created"));
-        receipt.linkCredential(credentialId);
-        receipts.saveAndFlush(receipt);
         Instant now = clock.instant();
         LegacyConfigOrigin origin = decision.origin() != null ? decision.origin()
                 : new LegacyConfigOrigin(bundle.environment(), bundle.dossier(), bundle.interfaceCode(), now);
         origin.attachCredential(credentialId, now);
         origins.saveAndFlush(origin);
-        return created.credentialRef();
+        return new StoredCredential(created.credentialRef(), credentialId);
     }
 
     // --- Lezen -----------------------------------------------------------------------------------------------
