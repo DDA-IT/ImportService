@@ -6,6 +6,7 @@ import be.dda.catalogimport.dao.ImportDefinitionBookmarkValueRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.ImportFieldMappingRepository;
+import be.dda.catalogimport.dao.ImportFieldTransformStepRepository;
 import be.dda.catalogimport.dao.ImportFieldValueMapRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
 import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
@@ -21,6 +22,7 @@ import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.service.SetupService.FieldCriticalityView;
 import be.dda.catalogimport.service.SetupService.FilterView;
 import be.dda.catalogimport.service.SetupService.MappingView;
+import be.dda.catalogimport.service.SetupService.TransformStepEntry;
 import be.dda.catalogimport.service.SetupService.ValueMapEntry;
 import be.dda.catalogimport.service.TemplateBookmarkService.BookmarkView;
 import be.dda.catalogimport.service.TemplateBookmarkService.UsageView;
@@ -139,6 +141,7 @@ public class SetupQueryService {
     private final ImportDefinitionBookmarkUsageRepository bookmarkUsages;
     private final ImportDefinitionBookmarkValueRepository bookmarkValues;
     private final ImportFieldValueMapRepository valueMaps;
+    private final ImportFieldTransformStepRepository transformSteps;
 
     public SetupQueryService(SourceOrganisationRepository organisations, ImportDefinitionRepository definitions,
                              ImportDefinitionRevisionRepository revisions,
@@ -147,8 +150,10 @@ public class SetupQueryService {
                              ImportDefinitionBookmarkRepository bookmarks,
                              ImportDefinitionBookmarkUsageRepository bookmarkUsages,
                              ImportDefinitionBookmarkValueRepository bookmarkValues,
-                             ImportFieldValueMapRepository valueMaps) {
+                             ImportFieldValueMapRepository valueMaps,
+                             ImportFieldTransformStepRepository transformSteps) {
         this.valueMaps = valueMaps;
+        this.transformSteps = transformSteps;
         this.organisations = organisations;
         this.definitions = definitions;
         this.revisions = revisions;
@@ -224,11 +229,16 @@ public class SetupQueryService {
         valueMaps.findByRevisionId(revisionId).forEach(row -> valueMapsByMapping
                 .computeIfAbsent(row.getMapping().getId(), id -> new ArrayList<>())
                 .add(new ValueMapEntry(row.getSourceValue(), row.getTargetValue())));
+        // S8c: idem voor de ketenstappen (op stapnummer, de query sorteert).
+        Map<Long, List<TransformStepEntry>> stepsByMapping = new LinkedHashMap<>();
+        transformSteps.findByRevisionId(revisionId).forEach(row -> stepsByMapping
+                .computeIfAbsent(row.getMapping().getId(), id -> new ArrayList<>())
+                .add(new TransformStepEntry(row.getTransformKind(), row.getTransformConfig())));
         List<MappingView> mappingViews = fieldMappings.findByRevisionIdWithTargetField(revisionId).stream()
                 .map(mapping -> new MappingView(mapping.getId(), revisionId, mapping.getSequenceNumber(),
                         mapping.getTargetField().getCode(), mapping.getSourceReference(),
                         mapping.getValueKind().name(), mapping.getCriticality().name(),
-                        valueMapsByMapping.get(mapping.getId())))
+                        valueMapsByMapping.get(mapping.getId()), stepsByMapping.get(mapping.getId())))
                 .toList();
         List<FilterView> filterViews =
                 recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId).stream()

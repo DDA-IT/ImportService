@@ -45,5 +45,19 @@ public enum FieldTransformKind {
     UPPER,
 
     /** Deeltekst vanaf een 1-gebaseerde positie, met optionele lengte (legacy Positie/Lengte, S8b). */
-    SUBSTRING
+    SUBSTRING,
+
+    /**
+     * Prefix en/of suffix met de legacy-semantiek (S8c, {@code Prg_1170} r.730): enkel als de getrimde waarde niet leeg
+     * is {@code Trim(prefix) & waarde & Trim(suffix)}, anders {@code ""}. {@link #PREFIX} en {@link #SUFFIX} blijven
+     * ongewijzigd (die zetten hun tekst ook rond een lege waarde).
+     */
+    AFFIX,
+
+    /**
+     * Een vaste keten van 1-3 stappen uit {@code import_field_transform_step} (S8c, changeset 024-1), in de gesloten
+     * volgorde {@code [SUBSTRING] → [AFFIX|PREFIX|SUFFIX] → [één waardebewerking]}. De mapping zelf draagt dan enkel nog
+     * de notatie-instellingen in {@code transform_config}. Nooit zelf een stap (databasecheck 024-1).
+     */
+    CHAIN
 }

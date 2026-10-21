@@ -4,6 +4,7 @@ import be.dda.catalogimport.dao.ImportDefinitionBookmarkRepository;
 import be.dda.catalogimport.dao.ImportDefinitionBookmarkUsageRepository;
 import be.dda.catalogimport.dao.ImportDefinitionBookmarkValueRepository;
 import be.dda.catalogimport.dao.ImportFieldMappingRepository;
+import be.dda.catalogimport.dao.ImportFieldTransformStepRepository;
 import be.dda.catalogimport.dao.ImportFieldValueMapRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
 import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
@@ -13,6 +14,7 @@ import be.dda.catalogimport.domain.ImportDefinitionBookmarkUsage;
 import be.dda.catalogimport.domain.ImportDefinitionBookmarkValue;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldMapping;
+import be.dda.catalogimport.domain.ImportFieldTransformStep;
 import be.dda.catalogimport.domain.ImportFieldValueMap;
 import be.dda.catalogimport.domain.ImportRecordFilter;
 import be.dda.catalogimport.domain.ImportRevisionFieldCriticality;
@@ -72,6 +74,7 @@ public class RevisionCopier {
     private final ImportDefinitionBookmarkUsageRepository usages;
     private final ImportDefinitionBookmarkValueRepository bookmarkValues;
     private final ImportFieldValueMapRepository valueMaps;
+    private final ImportFieldTransformStepRepository transformSteps;
 
     public RevisionCopier(ImportFieldMappingRepository fieldMappings,
                           ImportRecordFilterRepository recordFilters,
@@ -79,7 +82,8 @@ public class RevisionCopier {
                           ImportDefinitionBookmarkRepository bookmarks,
                           ImportDefinitionBookmarkUsageRepository usages,
                           ImportDefinitionBookmarkValueRepository bookmarkValues,
-                          ImportFieldValueMapRepository valueMaps) {
+                          ImportFieldValueMapRepository valueMaps,
+                          ImportFieldTransformStepRepository transformSteps) {
         this.fieldMappings = fieldMappings;
         this.recordFilters = recordFilters;
         this.fieldCriticalities = fieldCriticalities;
@@ -87,6 +91,7 @@ public class RevisionCopier {
         this.usages = usages;
         this.bookmarkValues = bookmarkValues;
         this.valueMaps = valueMaps;
+        this.transformSteps = transformSteps;
     }
 
     /**
@@ -211,19 +216,20 @@ public class RevisionCopier {
     }
 
     /**
-     * De kindrijen van de mappings van {@code source} - vandaag de vertaalrijen ({@code import_field_value_map},
-     * legacy-config S8a) - naar de <b>al opgeslagen</b> kopieën {@code saved} (de uitkomst van {@code saveAll} op
-     * {@link #copyMappings}). Aan te roepen door elke aanroeper van {@link #copyMappings}, direct na {@code saveAll}:
-     * zonder deze stap zou een gekopieerde MAP-mapping haar tabel verliezen en {@code CONFIG_TRANSFORM_INVALID} worden.
+     * De kindrijen van de mappings van {@code source} - de vertaalrijen ({@code import_field_value_map}, legacy-config
+     * S8a) en de ketenstappen ({@code import_field_transform_step}, S8c) - naar de <b>al opgeslagen</b> kopieën
+     * {@code saved} (de uitkomst van {@code saveAll} op {@link #copyMappings}). Aan te roepen door elke aanroeper van
+     * {@link #copyMappings}, direct na {@code saveAll}: zonder deze stap zou een gekopieerde MAP-mapping haar tabel en
+     * een gekopieerde CHAIN-mapping haar stappen verliezen, en {@code CONFIG_TRANSFORM_INVALID} worden.
      * <p>
      * Gekoppeld op doelveldcode (uniek per revisie, {@code uk_import_field_mapping_target}); letterlijk mee: volgnummer,
-     * bron- en doelwaarde. De audittekening is die van de kopie van de mapping ({@code created_by}/{@code _subject}),
-     * dus dezelfde handeling als de mapping zelf. Eén leesquery voor de hele bronrevisie; de rijen worden direct
-     * opgeslagen.
+     * bron- en doelwaarde, resp. stapnummer, soort en instellingen. De audittekening is die van de kopie van de mapping
+     * ({@code created_by}/{@code _subject}), dus dezelfde handeling als de mapping zelf. Eén leesquery per kindtabel
+     * voor de hele bronrevisie; de rijen worden direct opgeslagen.
      *
      * @param saved  de opgeslagen kopieën van de mappings (met id)
      * @param source de bronrevisie
-     * @return het aantal gekopieerde vertaalrijen
+     * @return het aantal gekopieerde kindrijen (vertaalrijen plus ketenstappen)
      */
     public int copyMappingChildren(Collection<ImportFieldMapping> saved, ImportDefinitionRevision source) {
         Map<String, ImportFieldMapping> byTarget = new LinkedHashMap<>();
@@ -232,13 +238,7 @@ public class RevisionCopier {
         }
         List<ImportFieldValueMap> copies = new ArrayList<>();
         for (ImportFieldValueMap row : valueMaps.findByRevisionId(source.getId())) {
-            String target = row.getMapping().getTargetField().getCode();
-            ImportFieldMapping mapping = byTarget.get(target);
-            if (mapping == null) {
-                // copyMappings kopieert elke mapping; ontbreekt er een, dan is er tussen beide stappen iets misgelopen.
-                throw new IllegalStateException("Value map rows of mapping '" + target + "' in revision "
-                        + source.getId() + " have no copied mapping to go to");
-            }
+            ImportFieldMapping mapping = copiedMapping(byTarget, row.getMapping(), source, "Value map rows");
             ImportFieldValueMap copy = new ImportFieldValueMap(mapping, row.getSequenceNumber(),
                     row.getSourceValue(), row.getTargetValue());
             copy.setCreatedBy(mapping.getCreatedBy());
@@ -246,7 +246,29 @@ public class RevisionCopier {
             copies.add(copy);
         }
         valueMaps.saveAll(copies);
-        return copies.size();
+        List<ImportFieldTransformStep> stepCopies = new ArrayList<>();
+        for (ImportFieldTransformStep row : transformSteps.findByRevisionId(source.getId())) {
+            ImportFieldMapping mapping = copiedMapping(byTarget, row.getMapping(), source, "Transform steps");
+            ImportFieldTransformStep copy = new ImportFieldTransformStep(mapping, row.getStepNumber(),
+                    row.getTransformKind(), row.getTransformConfig());
+            copy.setCreatedBy(mapping.getCreatedBy());
+            copy.setCreatedBySubject(mapping.getCreatedBySubject());
+            stepCopies.add(copy);
+        }
+        transformSteps.saveAll(stepCopies);
+        return copies.size() + stepCopies.size();
+    }
+
+    private static ImportFieldMapping copiedMapping(Map<String, ImportFieldMapping> byTarget, ImportFieldMapping original,
+                                                    ImportDefinitionRevision source, String what) {
+        String target = original.getTargetField().getCode();
+        ImportFieldMapping mapping = byTarget.get(target);
+        if (mapping == null) {
+            // copyMappings kopieert elke mapping; ontbreekt er een, dan is er tussen beide stappen iets misgelopen.
+            throw new IllegalStateException(what + " of mapping '" + target + "' in revision " + source.getId()
+                    + " have no copied mapping to go to");
+        }
+        return mapping;
     }
 
     /**

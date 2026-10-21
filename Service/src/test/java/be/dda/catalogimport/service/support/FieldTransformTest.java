@@ -252,7 +252,206 @@ class FieldTransformTest {
         }
     }
 
+    // --- Legacy-config S8c: AFFIX en de keten ------------------------------------------------------
+
+    /** AFFIX volgt legacy: {@code Trim(prefix) & Trim(v) & Trim(suffix)} enkel als de getrimde waarde niet leeg is. */
+    @Test
+    void anAffixFollowsLegacyAndNeverBuildsAValueAroundAnEmptyCell() {
+        assertThat(apply(FieldTransformKind.AFFIX, "prefix=ART-;suffix=-NL", "007")).isEqualTo("ART-007-NL");
+        assertThat(apply(FieldTransformKind.AFFIX, "prefix=ART-;suffix=-NL", "  007  ")).isEqualTo("ART-007-NL");
+        assertThat(apply(FieldTransformKind.AFFIX, "prefix= ART- ", "007")).isEqualTo("ART-007");
+        assertThat(apply(FieldTransformKind.AFFIX, "suffix=-NL", "007")).isEqualTo("007-NL");
+        assertThat(apply(FieldTransformKind.AFFIX, "prefix=ART-;suffix=-NL", "")).isEmpty();
+        assertThat(apply(FieldTransformKind.AFFIX, "prefix=ART-;suffix=-NL", "    ")).isEmpty();
+        assertThat(apply(FieldTransformKind.AFFIX, "prefix=ART-", null)).isNull();
+        // PREFIX/SUFFIX blijven ongewijzigd: die zetten hun tekst ook rond een lege waarde.
+        assertThat(apply(FieldTransformKind.PREFIX, "prefix=ART-", "")).isEqualTo("ART-");
+        assertThat(configCodeOf(FieldTransformKind.AFFIX, null)).isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+        assertThat(configCodeOf(FieldTransformKind.AFFIX, "prefix=;suffix="))
+                .isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+        assertThat(configCodeOf(FieldTransformKind.AFFIX, "prefix=X;index=2"))
+                .isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+    }
+
+    /**
+     * Legacy CALC 7 op een regel met prefix en suffix ({@code Prg_1170} r.730, r.1053): de opzoeking gebeurt op
+     * {@code Trim(prefix) & Trim(v) & Trim(suffix)}. Een lege cel blijft leeg (legacy: geen sleutel {@code ''}, dus
+     * {@code ''}); een onbekende sleutel verwerpt de regel (R-REC-08, tot V1/S8g).
+     */
+    @Test
+    void aChainOfPrefixSuffixAndMapTranslatesLikeLegacy() {
+        List<FieldTransform.Step> steps = List.of(step(1, FieldTransformKind.AFFIX, "prefix=A-;suffix=-Z"),
+                step(2, FieldTransformKind.MAP, "caseSensitive=true"));
+        List<FieldTransform.MapEntry> rows = List.of(entry(1, "A-1-Z", "EEN"), entry(2, "A-2-Z", "TWEE"));
+
+        assertThat(applyChain(steps, rows, "1")).isEqualTo("EEN");
+        assertThat(applyChain(steps, rows, "  2   ")).isEqualTo("TWEE");
+        assertThat(applyChain(steps, rows, "")).isEmpty();
+        assertThat(applyChain(steps, rows, "   ")).isEmpty();
+        assertThat(applyChain(steps, rows, null)).isNull();
+        assertThatThrownBy(() -> applyChain(steps, rows, "3"))
+                .isInstanceOf(ImportValueException.class)
+                .satisfies(failure -> {
+                    assertThat(((ImportValueException) failure).getCode())
+                            .isEqualTo(FieldTransform.CODE_MAPPING_VALUE_UNKNOWN);
+                    assertThat(((ImportValueException) failure).getRawValue()).isEqualTo("A-3-Z");
+                });
+        // values= in de MAP-stap werkt ook (zonder rijen).
+        assertThat(applyChain(List.of(step(1, FieldTransformKind.AFFIX, "suffix=X"),
+                step(2, FieldTransformKind.MAP, "values=7X>ZEVEN")), List.of(), "7")).isEqualTo("ZEVEN");
+    }
+
+    /**
+     * Substring op de <b>ruwe</b> waarde (legacy {@code MID} op het record), dan trimmen, dan prefix/suffix, dan de
+     * waardebewerking. Opvulspaties tellen dus mee voor de startpositie, en vallen daarna weg.
+     */
+    @Test
+    void aChainOfSubstringAffixAndUpperFollowsTheLegacyOrder() {
+        List<FieldTransform.Step> steps = List.of(step(1, FieldTransformKind.SUBSTRING, "start=3;length=4"),
+                step(2, FieldTransformKind.AFFIX, "prefix=x-"), step(3, FieldTransformKind.UPPER, null));
+
+        assertThat(applyChain(steps, List.of(), "abcdefgh")).isEqualTo("X-CDEF");
+        // Twee voorloopspaties: MID(v, 3, 4) neemt "abcd" (zoals legacy op het ruwe record).
+        assertThat(applyChain(steps, List.of(), "  abcdefgh")).isEqualTo("X-ABCD");
+        // Achterloopspaties binnen het deel vallen weg na de substring.
+        assertThat(applyChain(steps, List.of(), "abcd    ")).isEqualTo("X-CD");
+        // Een deel dat enkel uit spaties bestaat is leeg: prefix en hoofdletters worden overgeslagen.
+        assertThat(applyChain(steps, List.of(), "ab    gh")).isEmpty();
+        // Start voorbij het einde: "" (S8b), ook in de keten.
+        assertThat(applyChain(steps, List.of(), "ab")).isEmpty();
+        assertThat(applyChain(steps, List.of(), null)).isNull();
+    }
+
+    /**
+     * Een lege cel blijft leeg, ook voor een rekenkundige stap: legacy rekent {@code Val('')=0 ± x}, hier geen verzonnen
+     * getal (verklaard verschil). Een niet-lege waarde rekent zoals de losse soort.
+     */
+    @Test
+    void anEmptyInputStaysEmptyAndSkipsEveryStep() {
+        List<FieldTransform.Step> add = List.of(step(1, FieldTransformKind.ADD, "operand=1,50"));
+        assertThat(applyChain(add, List.of(), "")).isEmpty();
+        assertThat(applyChain(add, List.of(), "   ")).isEmpty();
+        assertThat(applyChain(add, List.of(), " 10,00 ")).isEqualTo("11.50");
+        assertThat(applyChain(List.of(step(1, FieldTransformKind.DIVIDE, "operandField=NUL")), List.of(), " "))
+                .isEmpty();
+        assertThat(applyChain(List.of(step(1, FieldTransformKind.PREFIX, "prefix=ART-")), List.of(), "  "))
+                .isEmpty();
+        assertThat(applyChain(List.of(step(1, FieldTransformKind.SPLIT, "separator=-;index=2")), List.of(),
+                " ART-007 ")).isEqualTo("007");
+        // Een mislukte stap blijft een mislukte regel, nooit een lege waarde.
+        assertThat(codeOfChain(List.of(step(1, FieldTransformKind.AFFIX, "suffix=%"),
+                step(2, FieldTransformKind.MULTIPLY, "operand=2")), "8")).isEqualTo(FieldTransform.CODE_TRANSFORM_FAILED);
+    }
+
+    /** De gesloten grammatica: elke overtreding is {@code CONFIG_TRANSFORM_INVALID}, met een herkenbare melding. */
+    @Test
+    void refusesAChainOutsideTheClosedGrammar() {
+        assertThat(chainFailure(List.of(), List.of())).endsWith("a chain needs 1 to 3 steps but has 0");
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.SUBSTRING, null),
+                step(2, FieldTransformKind.AFFIX, "prefix=X"), step(3, FieldTransformKind.UPPER, null),
+                step(4, FieldTransformKind.MAP, "values=A>B")), List.of())).endsWith("a chain needs 1 to 3 steps but has 4");
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.AFFIX, "prefix=X"),
+                step(3, FieldTransformKind.UPPER, null)), List.of()))
+                .endsWith("the steps of a chain are numbered 1, 2, 3 without gaps, but step 2 has number 3");
+        for (FieldTransformKind never : List.of(FieldTransformKind.NONE, FieldTransformKind.FIXED_VALUE,
+                FieldTransformKind.CONCAT, FieldTransformKind.CHAIN)) {
+            assertThat(chainFailure(List.of(step(1, never, null)), List.of())).as(never.name())
+                    .contains("step 1 (" + never + ") can never be a step of a chain; a chain holds at most SUBSTRING");
+        }
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.UPPER, null),
+                step(2, FieldTransformKind.SUBSTRING, null)), List.of()))
+                .contains("step 2 (SUBSTRING) cannot follow step 1 (UPPER)");
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.AFFIX, "prefix=X"),
+                step(2, FieldTransformKind.SUFFIX, "suffix=Y")), List.of()))
+                .contains("step 2 (SUFFIX) cannot follow step 1 (AFFIX)");
+        // Hoogstens één waardebewerking, dus ook hoogstens één tabelstap.
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.MAP, "caseSensitive=true"),
+                step(2, FieldTransformKind.UPPER, null)), List.of(entry(1, "A", "1"))))
+                .contains("step 2 (UPPER) cannot follow step 1 (MAP)");
+        assertThat(chainFailure(List.of(step(1, null, null)), List.of()))
+                .endsWith("step 1 of the chain has no transform kind");
+    }
+
+    /** De configuratie van elke stap volgt de regels van haar soort; de melding noemt de stap. */
+    @Test
+    void refusesAStepWhoseOwnConfigurationIsInvalid() {
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.AFFIX, null)), List.of()))
+                .endsWith("has an invalid transform configuration: step 1 (AFFIX): an affix transformation needs "
+                        + "prefix=<text>, suffix=<text> or both");
+        // De notatie hoort bij de mapping, nooit bij een stap.
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.ADD, "operand=1;decimalSeparator=,")), List.of()))
+                .endsWith("step 1 (ADD): setting 'decimalSeparator' is not used by this transformation or data type; "
+                        + "it would silently have no effect");
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.SUBSTRING, "start=0")), List.of()))
+                .endsWith("step 1 (SUBSTRING): setting 'start' must be 1 or higher");
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.MAP, "values=A>1")), List.of(entry(1, "B", "2"))))
+                .endsWith("step 1 (MAP): it has both values= and 1 value map row(s); a translation has exactly one table");
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.MAP, null)), List.of()))
+                .endsWith("step 1 (MAP): setting 'values' is required: a translation needs its table of source and "
+                        + "target values");
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.AFFIX, "prefix")), List.of()))
+                .endsWith("step 1 (AFFIX): setting 'prefix' is not of the form key=value");
+        // Vertaalrijen zonder MAP-stap zouden stil zonder effect blijven.
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.UPPER, null)), List.of(entry(1, "A", "1"))))
+                .endsWith("it has 1 value map row(s) but no step of its chain uses a translation table; they would "
+                        + "silently have no effect");
+    }
+
+    /** Stappen horen enkel bij een CHAIN; een CHAIN zonder de stappen-overload heeft er geen. */
+    @Test
+    void stepsOnlyBelongToAChain() {
+        ScreeningBlockedException onPrefix = assertBlocked(() -> FieldTransform.of(FieldTransformKind.PREFIX,
+                MappingSettings.parse(FIELD, "prefix=X"), List.of(), List.of(step(1, FieldTransformKind.UPPER, null)),
+                FIELD, SCALE_TWO));
+        assertThat(onPrefix.getMessage()).endsWith("it has 1 transformation step(s) but transformation PREFIX is not "
+                + "a CHAIN; they would silently have no effect");
+        assertThat(configCodeOf(FieldTransformKind.CHAIN, null)).isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+        // De mapping zelf draagt bij een CHAIN geen transformatie-instelling: die blijft ongelezen en is dus een fout.
+        assertBlocked(() -> {
+            MappingSettings settings = MappingSettings.parse(FIELD, "prefix=X");
+            FieldTransform.of(FieldTransformKind.CHAIN, settings, List.of(),
+                    List.of(step(1, FieldTransformKind.UPPER, null)), FIELD, SCALE_TWO);
+            settings.verifyFullyUsed();
+        });
+    }
+
     // --- Helpers -----------------------------------------------------------------------------------
+
+    private static FieldTransform.Step step(int number, FieldTransformKind kind, String config) {
+        return new FieldTransform.Step(number, kind, config);
+    }
+
+    private String applyChain(List<FieldTransform.Step> steps, List<FieldTransform.MapEntry> rows, String value) {
+        MappingSettings settings = MappingSettings.parse(FIELD, null);
+        FieldTransform transform = FieldTransform.of(FieldTransformKind.CHAIN, settings, rows, steps, FIELD, SCALE_TWO);
+        settings.verifyFullyUsed();
+        return transform.apply(value, FIELD, columns);
+    }
+
+    private String codeOfChain(List<FieldTransform.Step> steps, String value) {
+        try {
+            applyChain(steps, List.of(), value);
+            throw new AssertionError("expected the row to be rejected");
+        } catch (ImportValueException rejected) {
+            return rejected.getCode();
+        }
+    }
+
+    private static String chainFailure(List<FieldTransform.Step> steps, List<FieldTransform.MapEntry> rows) {
+        return assertBlocked(() -> FieldTransform.of(FieldTransformKind.CHAIN, MappingSettings.parse(FIELD, null),
+                rows, steps, FIELD, SCALE_TWO)).getMessage();
+    }
+
+    private static ScreeningBlockedException assertBlocked(Runnable configuration) {
+        try {
+            configuration.run();
+            throw new AssertionError("expected the configuration to block the delivery");
+        } catch (ScreeningBlockedException blocked) {
+            assertThat(blocked.getCode()).isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+            assertThat(blocked.getFieldName()).isEqualTo(FIELD);
+            return blocked;
+        }
+    }
 
     private static FieldTransform.MapEntry entry(int sequence, String source, String target) {
         return new FieldTransform.MapEntry(sequence, source, target);

@@ -7,6 +7,7 @@ import be.dda.catalogimport.dao.ImportDefinitionRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.ImportFieldCatalogRepository;
 import be.dda.catalogimport.dao.ImportFieldMappingRepository;
+import be.dda.catalogimport.dao.ImportFieldTransformStepRepository;
 import be.dda.catalogimport.dao.ImportFieldValueMapRepository;
 import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
@@ -28,6 +29,7 @@ import be.dda.catalogimport.domain.ImportDefinitionBookmarkUsage;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
 import be.dda.catalogimport.domain.ImportFieldMapping;
+import be.dda.catalogimport.domain.ImportFieldTransformStep;
 import be.dda.catalogimport.domain.ImportFieldValueMap;
 import be.dda.catalogimport.domain.ImportLink;
 import be.dda.catalogimport.domain.ImportRecordFilter;
@@ -292,7 +294,18 @@ public class SetupService {
                                        Integer decimalScale, Boolean zeroAllowed, Boolean negativeAllowed,
                                        FieldTransformKind transformKind, String transformConfig,
                                        Criticality criticality, String createdBy,
-                                       List<ValueMapEntry> valueMap) {
+                                       List<ValueMapEntry> valueMap, List<TransformStepEntry> steps) {
+    }
+
+    /**
+     * Eén stap van de transformatieketen van een {@code CHAIN}-mapping (legacy-config S8c, additief API-veld
+     * {@code steps[{kind, config}]}; tabel {@code import_field_transform_step}), in volgorde: de eerste stap krijgt
+     * nummer 1. Hoogstens {@value ImportFieldTransformStep#MAX_STEPS} stappen; {@code kind} is verplicht en nooit
+     * {@code CHAIN}; {@code config} hoogstens {@value ImportFieldTransformStep#MAX_CONFIG_LENGTH} tekens. Of de keten
+     * past (de gesloten volgorde {@code [SUBSTRING] → [AFFIX|PREFIX|SUFFIX] → [één waardebewerking]}, de instellingen
+     * per stap, {@code steps} enkel bij {@code CHAIN}) beslist de configuratievalidatie: 400 {@code CONFIG_TRANSFORM_INVALID}.
+     */
+    public record TransformStepEntry(FieldTransformKind kind, String config) {
     }
 
     /**
@@ -371,13 +384,17 @@ public class SetupService {
     public record SetupWarning(String code, String field, String message) {
     }
 
-    /** @param valueMap de vertaalrijen (S8a, additief) in volgorde; leeg als de mapping er geen heeft */
+    /**
+     * @param valueMap de vertaalrijen (S8a, additief) in volgorde; leeg als de mapping er geen heeft
+     * @param steps    de ketenstappen (S8c, additief) in volgorde; leeg als de mapping er geen heeft
+     */
     public record MappingView(long id, long revisionId, int sequenceNumber, String targetFieldCode,
                               String sourceReference, String valueKind, String criticality,
-                              List<ValueMapEntry> valueMap) {
+                              List<ValueMapEntry> valueMap, List<TransformStepEntry> steps) {
 
         public MappingView {
             valueMap = valueMap == null ? List.of() : List.copyOf(valueMap);
+            steps = steps == null ? List.of() : List.copyOf(steps);
         }
     }
 
@@ -422,6 +439,7 @@ public class SetupService {
     private final ImportFieldCatalogRepository fieldCatalog;
     private final ImportFieldMappingRepository fieldMappings;
     private final ImportFieldValueMapRepository valueMaps;
+    private final ImportFieldTransformStepRepository transformSteps;
     private final ImportRecordFilterRepository recordFilters;
     private final ImportRevisionFieldCriticalityRepository fieldCriticalities;
     private final ImportLinkRepository links;
@@ -444,9 +462,10 @@ public class SetupService {
                         CatalogImportTaskRepository tasks, ImportDefinitionBookmarkRepository bookmarks,
                         ImportDefinitionBookmarkUsageRepository bookmarkUsages, SourceStateDao sourceStates,
                         ChainConfigurationChecks checks, ProdisReferenceService prodis,
-                        ImportFieldValueMapRepository valueMaps) {
+                        ImportFieldValueMapRepository valueMaps, ImportFieldTransformStepRepository transformSteps) {
         this.organisations = organisations;
         this.valueMaps = valueMaps;
+        this.transformSteps = transformSteps;
         this.definitions = definitions;
         this.revisions = revisions;
         this.fieldCatalog = fieldCatalog;
@@ -1075,6 +1094,7 @@ public class SetupService {
         mapping.setCreatedBy(SetupInput.orDefault(actor.username(), DEFAULT_CREATED_BY));
         mapping.setCreatedBySubject(actor.subject());
         List<ValueMapEntry> valueMap = valueMapInput(command.valueMap());
+        List<TransformStepEntry> steps = stepInput(command.steps());
         ImportFieldMapping stored = fieldMappings.saveAndFlush(mapping);
         // S8a: de vertaalrijen vóór de configuratievalidatie, zodat die de mapping volledig ziet (één transactie).
         List<ImportFieldValueMap> rows = new ArrayList<>(valueMap.size());
@@ -1087,10 +1107,53 @@ public class SetupService {
         }
         valueMaps.saveAll(rows);
         valueMaps.flush();
+        // S8c: idem voor de ketenstappen, genummerd in de volgorde van het verzoek.
+        List<ImportFieldTransformStep> stepRows = new ArrayList<>(steps.size());
+        for (int i = 0; i < steps.size(); i++) {
+            ImportFieldTransformStep row = new ImportFieldTransformStep(stored, i + 1, steps.get(i).kind(),
+                    steps.get(i).config());
+            row.setCreatedBy(stored.getCreatedBy());
+            row.setCreatedBySubject(stored.getCreatedBySubject());
+            stepRows.add(row);
+        }
+        transformSteps.saveAll(stepRows);
+        transformSteps.flush();
         validateConfiguration(revision);
         return new MappingView(stored.getId(), revisionId, stored.getSequenceNumber(), targetFieldCode,
                 stored.getSourceReference(), stored.getValueKind().name(), stored.getCriticality().name(),
-                valueMap);
+                valueMap, steps);
+    }
+
+    /**
+     * S8c: de ketenstappen uit het verzoek. Weigert vóór het schrijven wat de databasechecks van 024-1 anders als 500
+     * zouden geven: meer dan {@value ImportFieldTransformStep#MAX_STEPS} stappen, een lege stap, een stap zonder soort,
+     * een keten als stap en een te lange configuratie. De configuratie wordt getrimd zoals {@code transformConfig}
+     * ({@link SetupInput#optionalText}); leeg wordt {@code null}. Of de keten past, beslist de configuratievalidatie.
+     */
+    private static List<TransformStepEntry> stepInput(List<TransformStepEntry> steps) {
+        if (steps == null || steps.isEmpty()) {
+            return List.of();
+        }
+        if (steps.size() > ImportFieldTransformStep.MAX_STEPS) {
+            throw new BadRequestException(SetupInput.fieldCode("steps", "TOO_MANY"), "steps holds at most "
+                    + ImportFieldTransformStep.MAX_STEPS + " steps (substring, prefix/suffix, one value operation) but "
+                    + "has " + steps.size());
+        }
+        List<TransformStepEntry> entries = new ArrayList<>(steps.size());
+        for (TransformStepEntry step : steps) {
+            if (step == null) {
+                throw new BadRequestException(SetupInput.fieldCode("steps", "INVALID"),
+                        "steps must not contain an empty entry");
+            }
+            FieldTransformKind kind = SetupInput.require(step.kind(), "stepKind");
+            if (kind == FieldTransformKind.CHAIN) {
+                throw new BadRequestException(SetupInput.fieldCode("stepKind", "INVALID"),
+                        "a step of a chain is never a CHAIN itself");
+            }
+            entries.add(new TransformStepEntry(kind, SetupInput.optionalText(step.config(), "stepConfig",
+                    ImportFieldTransformStep.MAX_CONFIG_LENGTH)));
+        }
+        return List.copyOf(entries);
     }
 
     /**
@@ -1253,6 +1316,8 @@ public class SetupService {
                         + " does not exist in revision " + revisionId));
         // S8a: eerst de vertaalrijen (geen cascade in het schema, changeset 023-1), als entiteit verwijderd.
         valueMaps.deleteAll(valueMaps.findByMappingIdOrderBySequenceNumberAsc(mapping.getId()));
+        // S8c: idem voor de ketenstappen (geen cascade in 024-1).
+        transformSteps.deleteAll(transformSteps.findByMappingIdOrderByStepNumberAsc(mapping.getId()));
         fieldMappings.delete(mapping);
         fieldMappings.flush();
         requireBookmarkDeclarationsStillResolve(revisionId);

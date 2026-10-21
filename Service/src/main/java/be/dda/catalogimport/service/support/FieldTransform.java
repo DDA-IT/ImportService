@@ -5,6 +5,7 @@ import be.dda.catalogimport.service.support.ImportValueRules.DecimalCodes;
 import be.dda.catalogimport.service.support.ImportValueRules.DecimalFormat;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -42,7 +43,8 @@ import java.util.regex.Pattern;
 public sealed interface FieldTransform
         permits FieldTransform.Unchanged, FieldTransform.Fixed, FieldTransform.Affix,
         FieldTransform.Concat, FieldTransform.Split, FieldTransform.Translate,
-        FieldTransform.Arithmetic, FieldTransform.Percentage, FieldTransform.Upper, FieldTransform.Substring {
+        FieldTransform.Arithmetic, FieldTransform.Percentage, FieldTransform.Upper, FieldTransform.Substring,
+        FieldTransform.LegacyAffix, FieldTransform.Chain {
 
     /** De bewerking kon niet uitgevoerd worden op deze bronwaarde. */
     String CODE_TRANSFORM_FAILED = "TRANSFORM_FAILED";
@@ -129,6 +131,64 @@ public sealed interface FieldTransform
             }
             int to = length == null ? value.length() : (int) Math.min((long) from + length, value.length());
             return value.substring(from, to);
+        }
+    }
+
+    /**
+     * Prefix en/of suffix met de legacy-semantiek (S8c, {@code Prg_1170} r.730): enkel als de getrimde waarde niet leeg
+     * is {@code Trim(prefix) & waarde & Trim(suffix)}, anders {@code ""}. Anders dan {@link Affix} (PREFIX/SUFFIX) bouwt
+     * dit nooit een waarde rond een lege cel. {@code null} blijft {@code null}.
+     *
+     * @param prefix al getrimd ({@link MappingSettings} trimt elke waarde); {@code ""} = geen
+     * @param suffix idem
+     */
+    record LegacyAffix(String prefix, String suffix) implements FieldTransform {
+
+        @Override
+        public String apply(String value, String fieldName, SourceValues sources) {
+            if (value == null) {
+                return null;
+            }
+            String trimmed = value.trim();
+            return trimmed.isEmpty() ? "" : prefix + trimmed + suffix;
+        }
+    }
+
+    /**
+     * De transformatieketen van een {@code CHAIN}-mapping (S8c, {@code import_field_transform_step}), in de vaste
+     * legacy-volgorde ({@code Prg_1170} r.730-732, r.1039-1115): een eventuele {@link Substring} op de <b>ruwe</b>
+     * waarde (legacy {@code MID} op het record), dan trimmen; is het resultaat leeg, dan is de uitkomst {@code ""} en
+     * worden alle volgende stappen overgeslagen. Legacy rekent een lege waarde met {@code Val('')=0 ± x}; hier blijft
+     * ze leeg (verklaard verschil, nooit een verzonnen getal). {@code null} (kolom ontbreekt) blijft {@code null}.
+     *
+     * @param steps de gevalideerde stappen in volgorde (zie {@link #of(FieldTransformKind, MappingSettings, List,
+     *              List, String, DecimalFormat)})
+     */
+    record Chain(List<FieldTransform> steps) implements FieldTransform {
+
+        public Chain {
+            steps = List.copyOf(steps);
+        }
+
+        @Override
+        public String apply(String value, String fieldName, SourceValues sources) {
+            if (value == null) {
+                return null;
+            }
+            String current = value;
+            int next = 0;
+            if (!steps.isEmpty() && steps.get(0) instanceof Substring substring) {
+                current = substring.apply(current, fieldName, sources);
+                next = 1;
+            }
+            current = current.trim();
+            if (current.isEmpty()) {
+                return "";
+            }
+            for (int i = next; i < steps.size(); i++) {
+                current = steps.get(i).apply(current, fieldName, sources);
+            }
+            return current;
         }
     }
 
@@ -294,6 +354,37 @@ public sealed interface FieldTransform
      */
     static FieldTransform of(FieldTransformKind kind, MappingSettings settings, List<MapEntry> valueMap,
                              String fieldCode, DecimalFormat format) {
+        return of(kind, settings, valueMap, List.of(), fieldCode, format);
+    }
+
+    /**
+     * Eén stap van de transformatieketen van een mapping (legacy-config S8c, {@code import_field_transform_step}).
+     *
+     * @param number het stapnummer (1-gebaseerd)
+     * @param config de instellingen van deze stap, zoals {@code transform_config}; {@code null} = geen
+     */
+    record Step(int number, FieldTransformKind kind, String config) {
+    }
+
+    /**
+     * Zoals {@link #of(FieldTransformKind, MappingSettings, List, String, DecimalFormat)}, met de ketenstappen van deze
+     * mapping (S8c, {@code docs/design/legacy-config-s8-design.md} par. 2c). Een {@code CHAIN} heeft 1-3 stappen in de
+     * gesloten volgorde {@code [SUBSTRING] → [AFFIX|PREFIX|SUFFIX] → [UPPER|MAP|ADD|SUBTRACT|MULTIPLY|DIVIDE|
+     * PERCENTAGE|SPLIT]}; elke stap is een gewone soort met haar eigen instellingen (elke onbekende instelling is een
+     * fout). De vertaalrijen gaan naar de MAP-stap. Stappen bij een andere soort dan {@code CHAIN} zouden stil zonder
+     * effect blijven en zijn een configuratiefout; zo ook vertaalrijen bij een keten zonder MAP-stap.
+     *
+     * @param steps de stappen van deze mapping, op stapnummer; leeg als er geen zijn
+     */
+    static FieldTransform of(FieldTransformKind kind, MappingSettings settings, List<MapEntry> valueMap,
+                             List<Step> steps, String fieldCode, DecimalFormat format) {
+        if (kind != FieldTransformKind.CHAIN && !steps.isEmpty()) {
+            throw invalid(fieldCode, "it has " + steps.size() + " transformation step(s) but transformation " + kind
+                    + " is not a CHAIN; they would silently have no effect");
+        }
+        if (kind == FieldTransformKind.CHAIN) {
+            return chain(steps, valueMap, fieldCode, format);
+        }
         if (kind != FieldTransformKind.MAP && !valueMap.isEmpty()) {
             throw invalid(fieldCode, "it has " + valueMap.size() + " value map row(s) but transformation " + kind
                     + " does not use a translation table; they would silently have no effect");
@@ -320,7 +411,100 @@ public sealed interface FieldTransform
             case PERCENTAGE -> percentage(settings, fieldCode, format);
             case UPPER -> new Upper();
             case SUBSTRING -> substring(settings, fieldCode);
+            case AFFIX -> affix(settings, fieldCode);
+            case CHAIN -> chain(steps, valueMap, fieldCode, format);
         };
+    }
+
+    /** S8c: {@code prefix} en/of {@code suffix}; minstens één van beide is niet leeg. */
+    private static FieldTransform affix(MappingSettings settings, String fieldCode) {
+        String prefix = nullToEmpty(settings.get("prefix"));
+        String suffix = nullToEmpty(settings.get("suffix"));
+        if (prefix.isEmpty() && suffix.isEmpty()) {
+            throw invalid(fieldCode, "an affix transformation needs prefix=<text>, suffix=<text> or both");
+        }
+        return new LegacyAffix(prefix, suffix);
+    }
+
+    /**
+     * S8c: de keten. Volgorde van de controles: aantal, nummering, soort per stap (nooit {@code NONE},
+     * {@code FIXED_VALUE}, {@code CONCAT} of {@code CHAIN}), volgorde, en per stap haar eigen configuratie. Een
+     * waardebewerking komt hoogstens één keer voor, dus ook hoogstens één tabelstap (MAP; S8d voegt MAP_CONTAINS toe).
+     */
+    private static FieldTransform chain(List<Step> steps, List<MapEntry> valueMap, String fieldCode,
+                                        DecimalFormat format) {
+        if (steps.isEmpty() || steps.size() > MAX_CHAIN_STEPS) {
+            throw invalid(fieldCode, "a chain needs 1 to " + MAX_CHAIN_STEPS + " steps but has " + steps.size());
+        }
+        List<FieldTransform> built = new ArrayList<>(steps.size());
+        Step previous = null;
+        boolean usesTable = false;
+        for (int i = 0; i < steps.size(); i++) {
+            Step step = steps.get(i);
+            if (step.number() != i + 1) {
+                throw invalid(fieldCode, String.valueOf(step.number()), "the steps of a chain are numbered 1, 2, 3 "
+                        + "without gaps, but step " + (i + 1) + " has number " + step.number());
+            }
+            if (step.kind() == null) {
+                throw invalid(fieldCode, "step " + step.number() + " of the chain has no transform kind");
+            }
+            int stage = chainStage(step.kind());
+            if (stage == 0) {
+                throw invalid(fieldCode, step.kind().name(), "step " + step.number() + " (" + step.kind()
+                        + ") can never be a step of a chain; " + chainOrder());
+            }
+            if (previous != null && stage <= chainStage(previous.kind())) {
+                throw invalid(fieldCode, step.kind().name(), "step " + step.number() + " (" + step.kind()
+                        + ") cannot follow step " + previous.number() + " (" + previous.kind() + "); " + chainOrder());
+            }
+            boolean table = step.kind() == FieldTransformKind.MAP;
+            try {
+                MappingSettings stepSettings = MappingSettings.parse(fieldCode, step.config());
+                built.add(of(step.kind(), stepSettings, table ? valueMap : List.of(), List.of(), fieldCode, format));
+                stepSettings.verifyFullyUsed();
+            } catch (ScreeningBlockedException invalidStep) {
+                throw inStep(step, fieldCode, invalidStep);
+            }
+            usesTable |= table;
+            previous = step;
+        }
+        if (!valueMap.isEmpty() && !usesTable) {
+            throw invalid(fieldCode, "it has " + valueMap.size() + " value map row(s) but no step of its chain uses "
+                    + "a translation table; they would silently have no effect");
+        }
+        return new Chain(built);
+    }
+
+    /** Hoogstens substring, prefix/suffix en één waardebewerking ({@code ck_import_field_transform_step_number}). */
+    int MAX_CHAIN_STEPS = 3;
+
+    /** De gesloten volgorde, voor de melding. */
+    private static String chainOrder() {
+        return "a chain holds at most SUBSTRING, then one of AFFIX, PREFIX or SUFFIX, then one of UPPER, "
+                + "MAP, ADD, SUBTRACT, MULTIPLY, DIVIDE, PERCENTAGE or SPLIT, in that order";
+    }
+
+    /**
+     * De plaats van een soort in de keten: 1 = substring, 2 = prefix/suffix, 3 = waardebewerking, 0 = nooit een stap.
+     * Bewust een volledige {@code switch} zonder {@code default}: een nieuwe soort (S8d: MAP_CONTAINS → 3) compileert pas
+     * als haar plaats in de keten beslist is.
+     */
+    private static int chainStage(FieldTransformKind kind) {
+        return switch (kind) {
+            case SUBSTRING -> 1;
+            case AFFIX, PREFIX, SUFFIX -> 2;
+            case UPPER, MAP, ADD, SUBTRACT, MULTIPLY, DIVIDE, PERCENTAGE, SPLIT -> 3;
+            case NONE, FIXED_VALUE, CONCAT, CHAIN -> 0;
+        };
+    }
+
+    /** Dezelfde bevinding, met de stap erbij in de melding; code, veld en bronwaarde blijven. */
+    private static ScreeningBlockedException inStep(Step step, String fieldCode, ScreeningBlockedException invalid) {
+        String lead = "Mapping for '" + fieldCode + "' has an invalid transform configuration: ";
+        String message = invalid.getMessage();
+        String reason = message != null && message.startsWith(lead) ? message.substring(lead.length()) : message;
+        return new ScreeningBlockedException(invalid.getCode(), invalid.getFieldName(), invalid.getSourceValue(),
+                invalid.getExpectedValue(), lead + "step " + step.number() + " (" + step.kind() + "): " + reason);
     }
 
     /** S8b: {@code start} (default 1, >= 1) en {@code length} (optioneel, >= 1; leeg = de rest). */

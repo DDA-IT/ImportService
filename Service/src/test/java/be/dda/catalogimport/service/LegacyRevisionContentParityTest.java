@@ -12,9 +12,11 @@ import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
 import be.dda.catalogimport.domain.ImportFieldMapping;
+import be.dda.catalogimport.domain.ImportFieldTransformStep;
 import be.dda.catalogimport.domain.ImportFieldValueMap;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedMapping;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedRevision;
+import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedStep;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedValueMapEntry;
 import java.lang.reflect.Field;
 import java.util.List;
@@ -36,6 +38,14 @@ class LegacyRevisionContentParityTest {
      */
     private static final String PRE_S8A_WITH_VALUES_MAP =
             "480fe0a19fbe1a081aec7f089cf157655ba8f407ee6980304cc601983dcf2b18";
+
+    /**
+     * S8c: {@code ofRevision} van {@link #s2MigratedRevision()} met de S8a-gemigreerde MAP-mapping en haar twee
+     * vertaalrijen (zoals in {@link #theValueMapRowsCountInThePlannedAndTheWrittenContent()}), berekend met de
+     * implementatie van vóór S8c (commit 0a6c10e).
+     */
+    private static final String PRE_S8C_WITH_VALUE_MAP_ROWS =
+            "2cc2e14dd0e8fab18542dfcfd88c51116733264e01dcdb13410f44803351982f";
 
     @Test
     void aRevisionMigratedBeforeS6KeepsItsContentHash() {
@@ -108,6 +118,72 @@ class LegacyRevisionContentParityTest {
         assertThat(LegacyRevisionContent.ofRevision(revision, List.of(mapping), List.of(),
                 List.of(new ImportFieldValueMap(other, 1, "X", "Y")))).isEqualTo(
                 LegacyRevisionContent.ofRevision(revision, List.of(mapping), List.of(), List.of()));
+    }
+
+    /** S8c: zonder ketenstappen byte-identiek aan vóór S8c, ook met vertaalrijen (S8a) en via de nieuwe overload. */
+    @Test
+    void aRevisionWithoutStepsKeepsItsContentHash() throws Exception {
+        ImportDefinitionRevision revision = s2MigratedRevision();
+        ImportFieldMapping mapping = s2MapMapping(revision);
+        mapping.setTransformConfig("caseSensitive=true;decimalSeparator=,");
+        setId(mapping, 41L);
+        List<ImportFieldValueMap> rows = List.of(new ImportFieldValueMap(mapping, 1, "DOOS", "BOX"),
+                new ImportFieldValueMap(mapping, 2, "STK", "PCE"));
+
+        assertThat(LegacyRevisionContent.ofRevision(revision, List.of(mapping), List.of(), rows))
+                .isEqualTo(PRE_S8C_WITH_VALUE_MAP_ROWS);
+        assertThat(LegacyRevisionContent.ofRevision(revision, List.of(mapping), List.of(), rows, List.of()))
+                .isEqualTo(PRE_S8C_WITH_VALUE_MAP_ROWS);
+        assertThat(LegacyRevisionContent.ofRevision(preS6Revision(), List.of(), List.of(), List.of(), List.of()))
+                .isEqualTo(PRE_S6);
+        ImportDefinitionRevision s2 = s2MigratedRevision();
+        assertThat(LegacyRevisionContent.ofRevision(s2, List.of(s2MapMapping(s2)), List.of(), List.of(), List.of()))
+                .isEqualTo(PRE_S8A_WITH_VALUES_MAP);
+    }
+
+    /**
+     * S8c: de ketenstappen tellen mee ({@code T, stapnummer, soort, config} achter hun mapping, vóór de vertaalrijen):
+     * plan en geschreven revisie zijn gelijk; een andere soort, config of volgorde geeft een andere inhoud; dezelfde
+     * legacy-regel als CHAIN is een andere inhoud dan de S8a-vorm (dus een opvolgende DRAFT, nooit "ongewijzigd").
+     */
+    @Test
+    void theStepsCountInThePlannedAndTheWrittenContent() throws Exception {
+        ImportDefinitionRevision revision = s2MigratedRevision();
+        ImportFieldMapping mapping = s2MapMapping(revision);
+        mapping.setTransformKind(FieldTransformKind.CHAIN);
+        mapping.setTransformConfig("decimalSeparator=,");
+        setId(mapping, 41L);
+        List<ImportFieldValueMap> rows = List.of(new ImportFieldValueMap(mapping, 1, "P-DOOS", "BOX"));
+        List<ImportFieldTransformStep> steps = List.of(
+                new ImportFieldTransformStep(mapping, 2, FieldTransformKind.MAP, "caseSensitive=true"),
+                new ImportFieldTransformStep(mapping, 1, FieldTransformKind.AFFIX, "prefix=P-"));
+        PlannedRevision planned = new PlannedRevision("UTF-8", ";", true, 1,
+                IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE, "3", "4", "1", "5", "7", "2", null, null, true,
+                List.of(new PlannedMapping(1, "VKP1_PCT", FieldValueKind.SOURCE_FIELD, "8", null,
+                        FieldTransformKind.CHAIN, "decimalSeparator=,",
+                        List.of(new PlannedValueMapEntry(1, "P-DOOS", "BOX")),
+                        List.of(new PlannedStep(1, FieldTransformKind.AFFIX, "prefix=P-"),
+                                new PlannedStep(2, FieldTransformKind.MAP, "caseSensitive=true")))),
+                List.of());
+
+        String written = LegacyRevisionContent.ofRevision(revision, List.of(mapping), List.of(), rows, steps);
+
+        assertThat(LegacyRevisionContent.ofPlanned(planned, revision.getStructureFormat(),
+                code -> Criticality.NON_CRITICAL)).isEqualTo(written);
+        assertThat(written).isNotEqualTo(LegacyRevisionContent.ofRevision(revision, List.of(mapping), List.of(), rows))
+                .isNotEqualTo(PRE_S8C_WITH_VALUE_MAP_ROWS);
+        assertThat(written).isNotEqualTo(LegacyRevisionContent.ofRevision(revision, List.of(mapping), List.of(), rows,
+                List.of(new ImportFieldTransformStep(mapping, 1, FieldTransformKind.AFFIX, "prefix=Q-"),
+                        new ImportFieldTransformStep(mapping, 2, FieldTransformKind.MAP, "caseSensitive=true"))));
+        assertThat(written).isNotEqualTo(LegacyRevisionContent.ofRevision(revision, List.of(mapping), List.of(), rows,
+                List.of(new ImportFieldTransformStep(mapping, 1, FieldTransformKind.PREFIX, "prefix=P-"),
+                        new ImportFieldTransformStep(mapping, 2, FieldTransformKind.MAP, "caseSensitive=true"))));
+        // Stappen van een andere mapping tellen niet mee voor deze mapping.
+        ImportFieldMapping other = s2MapMapping(revision);
+        setId(other, 42L);
+        assertThat(LegacyRevisionContent.ofRevision(revision, List.of(mapping), List.of(), rows,
+                List.of(new ImportFieldTransformStep(other, 1, FieldTransformKind.UPPER, null))))
+                .isEqualTo(LegacyRevisionContent.ofRevision(revision, List.of(mapping), List.of(), rows));
     }
 
     private static ImportDefinitionRevision s2MigratedRevision() {

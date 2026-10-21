@@ -16,6 +16,7 @@ import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
 import be.dda.catalogimport.domain.ImportFieldMapping;
+import be.dda.catalogimport.domain.ImportFieldTransformStep;
 import be.dda.catalogimport.domain.ImportFieldValueMap;
 import be.dda.catalogimport.domain.ImportRecordFilter;
 import be.dda.catalogimport.domain.ImportRevisionFieldCriticality;
@@ -119,6 +120,39 @@ class ConfigFactoryParityTest {
                         + "needs its table of source and target values");
     }
 
+    /**
+     * S8c, stap B' in collect-modus: een grammaticafout in de keten is een eigen bevinding {@code CONFIG_TRANSFORM_INVALID}
+     * naast de onafhankelijke fouten van andere rijen, met dezelfde boodschap als de eerste worp; zonder de
+     * stappen-overload heeft de keten geen stappen.
+     */
+    @Test
+    void aChainFindingIsReportedInCollectModeNextToOtherFindings() {
+        Fixture fixture = new Fixture();
+        fixture.chain(FieldTransformKind.MAP, "caseSensitive=true", FieldTransformKind.SUBSTRING, null);
+        fixture.valueMap("A", "1");
+        fixture.firstFilter().setFilterStage(null);
+
+        ConfigProblemCollector problems = ConfigProblemCollector.all();
+        StructureFacts facts = STRUCTURE.collectInto(fixture.revision, fixture.linkCurrency, problems);
+        MAPPING.collectInto(fixture.revision, facts, fixture.mappings, fixture.filters, fixture.criticalities,
+                fixture.valueMaps, fixture.steps, problems);
+        ConfigCheckReport report = problems.toReport();
+
+        assertThat(report.findings()).extracting(ConfigFinding::code).contains(TRANSFORM, FILTER);
+        assertThat(report.findings()).filteredOn(finding -> TRANSFORM.equals(finding.code())).singleElement()
+                .satisfies(finding -> {
+                    assertThat(finding.fieldName()).isEqualTo("E_SUPPLIER");
+                    assertThat(finding.sourceValue()).isEqualTo("SUBSTRING");
+                    assertThat(finding.message()).startsWith(tc("E_SUPPLIER")
+                            + "step 2 (SUBSTRING) cannot follow step 1 (MAP)");
+                });
+        ConfigCheckReport withoutSteps = MAPPING.collect(fixture.revision,
+                StructureFacts.of(fixture.deriveStructure()), fixture.mappings, fixture.filters,
+                fixture.criticalities, fixture.valueMaps);
+        assertThat(withoutSteps.findings()).filteredOn(finding -> TRANSFORM.equals(finding.code())).singleElement()
+                .extracting(ConfigFinding::message).asString().endsWith("a chain needs 1 to 3 steps but has 0");
+    }
+
     @Test
     void rowIdsAreUnique() {
         Set<String> seen = new HashSet<>();
@@ -179,9 +213,9 @@ class ConfigFactoryParityTest {
         try {
             SourceStructureConfig structure = fixture.structure != null ? fixture.structure
                     : STRUCTURE.from(fixture.revision, fixture.linkCurrency);
-            // S8a: de overload met vertaalrijen; zonder rijen exact de vorige aanroep.
+            // S8a/S8c: de overload met vertaalrijen en ketenstappen; zonder rijen exact de vorige aanroep.
             MAPPING.from(fixture.revision, structure, fixture.mappings, fixture.filters,
-                    fixture.criticalities, fixture.valueMaps);
+                    fixture.criticalities, fixture.valueMaps, fixture.steps);
         } catch (ScreeningBlockedException blocked) {
             thrown = blocked;
         }
@@ -241,6 +275,7 @@ class ConfigFactoryParityTest {
         valueFormatRows(t);
         transformKindRows(t);
         valueMapRows(t);
+        chainRows(t);
         maxPercentageRows(t);
         sourceRows(t);
         priceComponentAndFilterRows(t);
@@ -777,6 +812,62 @@ class ConfigFactoryParityTest {
                 + "setting 'values' is required: a translation needs its table of source and target values");
     }
 
+    /**
+     * Legacy-config S8c: AFFIX en de keten ({@code import_field_transform_step}) via
+     * {@link ImportMappingConfigFactory#from(ImportDefinitionRevision, SourceStructureConfig, List, List, List, List,
+     * List)}. Toegevoegde rijen; de bestaande rijen zijn ongewijzigd.
+     */
+    private static void chainRows(List<Row> t) {
+        ok(t, "OK-affix", f -> {
+            f.first().setTransformKind(FieldTransformKind.AFFIX);
+            f.first().setTransformConfig("prefix=A-;suffix=-Z");
+        });
+        ok(t, "OK-chain-affix-map", f -> {
+            f.chain(FieldTransformKind.AFFIX, "prefix=A-;suffix=-Z", FieldTransformKind.MAP, "caseSensitive=true");
+            f.valueMap("A-1-Z", "EEN");
+        });
+        ok(t, "OK-chain-substring-affix-upper", f -> f.chain(FieldTransformKind.SUBSTRING, "start=3;length=4",
+                FieldTransformKind.AFFIX, "prefix=x-", FieldTransformKind.UPPER, null));
+        blocked(t, "FT-affix-empty", f -> f.first().setTransformKind(FieldTransformKind.AFFIX), TRANSFORM,
+                "E_SUPPLIER", null, tc("E_SUPPLIER") + "an affix transformation needs prefix=<text>, suffix=<text> "
+                        + "or both");
+        blocked(t, "FT-chain-without-steps", f -> f.first().setTransformKind(FieldTransformKind.CHAIN), TRANSFORM,
+                "E_SUPPLIER", null, tc("E_SUPPLIER") + "a chain needs 1 to 3 steps but has 0");
+        blocked(t, "FT-chain-fixed-value-step", f -> f.chain(FieldTransformKind.FIXED_VALUE, "value=X"), TRANSFORM,
+                "E_SUPPLIER", "FIXED_VALUE", tc("E_SUPPLIER") + "step 1 (FIXED_VALUE) can never be a step of a chain; "
+                        + "a chain holds at most SUBSTRING, then one of AFFIX, PREFIX or SUFFIX, then one of UPPER, MAP, "
+                        + "ADD, SUBTRACT, MULTIPLY, DIVIDE, PERCENTAGE or SPLIT, in that order");
+        blocked(t, "FT-chain-order", f -> f.chain(FieldTransformKind.UPPER, null, FieldTransformKind.AFFIX,
+                "prefix=X"), TRANSFORM, "E_SUPPLIER", "AFFIX", tc("E_SUPPLIER") + "step 2 (AFFIX) cannot follow step 1 "
+                + "(UPPER); a chain holds at most SUBSTRING, then one of AFFIX, PREFIX or SUFFIX, then one of UPPER, "
+                + "MAP, ADD, SUBTRACT, MULTIPLY, DIVIDE, PERCENTAGE or SPLIT, in that order");
+        blocked(t, "FT-chain-step-config", f -> f.chain(FieldTransformKind.SUBSTRING, "start=x"), TRANSFORM,
+                "E_SUPPLIER", "x", tc("E_SUPPLIER") + "step 1 (SUBSTRING): setting 'start' must be a whole number");
+        // De mapping met CHAIN draagt enkel de notatie: een transformatie-instelling op de mapping is ongebruikt.
+        blocked(t, "FT-chain-mapping-setting", f -> {
+            f.chain(FieldTransformKind.UPPER, null);
+            f.first().setTransformConfig("prefix=X");
+        }, TRANSFORM, "E_SUPPLIER", "prefix", tc("E_SUPPLIER") + "setting 'prefix' is not used by this "
+                + "transformation or data type; it would silently have no effect");
+        blocked(t, "FT-steps-on-another-kind", f -> {
+            f.chain(FieldTransformKind.UPPER, null);
+            f.first().setTransformKind(FieldTransformKind.PREFIX);
+            f.first().setTransformConfig("prefix=X");
+        }, TRANSFORM, "E_SUPPLIER", null, tc("E_SUPPLIER") + "it has 1 transformation step(s) but transformation "
+                + "PREFIX is not a CHAIN; they would silently have no effect");
+        blocked(t, "FT-chain-value-map-without-map-step", f -> {
+            f.chain(FieldTransformKind.UPPER, null);
+            f.valueMap("A", "1");
+        }, TRANSFORM, "E_SUPPLIER", null, tc("E_SUPPLIER") + "it has 1 value map row(s) but no step of its chain "
+                + "uses a translation table; they would silently have no effect");
+        // De stappen hangen aan hun mapping: stappen van een andere mapping tellen niet mee.
+        blocked(t, "FT-chain-steps-of-another-mapping-do-not-count", f -> {
+            f.first().setTransformKind(FieldTransformKind.CHAIN);
+            f.steps.add(new ImportFieldTransformStep(mapping(f.revision, 2, supporting("E_OTHER"), "X"), 1,
+                    FieldTransformKind.UPPER, null));
+        }, TRANSFORM, "E_SUPPLIER", null, tc("E_SUPPLIER") + "a chain needs 1 to 3 steps but has 0");
+    }
+
     private static void transform(List<Row> t, String id, FieldTransformKind kind, String config,
                                   String source, String reason) {
         blocked(t, id, f -> {
@@ -989,6 +1080,8 @@ class ConfigFactoryParityTest {
         final List<ImportRevisionFieldCriticality> criticalities = new ArrayList<>();
         /** S8a: de vertaalrijen; leeg in de basisrevisie. */
         final List<ImportFieldValueMap> valueMaps = new ArrayList<>();
+        /** S8c: de ketenstappen; leeg in de basisrevisie. */
+        final List<ImportFieldTransformStep> steps = new ArrayList<>();
 
         Fixture() {
             mappings.add(mapping(revision, 1, supporting("E_SUPPLIER"), "E_LEV"));
@@ -1003,6 +1096,15 @@ class ConfigFactoryParityTest {
         void valueMap(String... pairs) {
             for (int i = 0; i < pairs.length; i += 2) {
                 valueMaps.add(new ImportFieldValueMap(first(), valueMaps.size() + 1, pairs[i], pairs[i + 1]));
+            }
+        }
+
+        /** S8c: de eerste mapping wordt een CHAIN met deze stappen (soort, config), genummerd vanaf 1. */
+        void chain(Object... kindsAndConfigs) {
+            first().setTransformKind(FieldTransformKind.CHAIN);
+            for (int i = 0; i < kindsAndConfigs.length; i += 2) {
+                steps.add(new ImportFieldTransformStep(first(), steps.size() + 1,
+                        (FieldTransformKind) kindsAndConfigs[i], (String) kindsAndConfigs[i + 1]));
             }
         }
 

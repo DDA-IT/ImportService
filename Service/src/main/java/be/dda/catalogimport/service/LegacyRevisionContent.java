@@ -5,12 +5,14 @@ import be.dda.catalogimport.domain.FilterNullBehaviour;
 import be.dda.catalogimport.domain.FilterStage;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldMapping;
+import be.dda.catalogimport.domain.ImportFieldTransformStep;
 import be.dda.catalogimport.domain.ImportFieldValueMap;
 import be.dda.catalogimport.domain.ImportRecordFilter;
 import be.dda.catalogimport.domain.MissingColumnBehaviour;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedFilter;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedMapping;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedRevision;
+import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedStep;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedValueMapEntry;
 import be.dda.catalogimport.service.support.RevisionConfigHashes;
 import java.util.ArrayList;
@@ -40,6 +42,10 @@ import java.util.function.Function;
  * <b>Legacy-config S8a.</b> De vertaalrijen van een mapping ({@code import_field_value_map}) volgen achter die mapping
  * als {@code V, volgnummer, bron, doel}, <b>enkel als ze er zijn</b>: een revisie zonder vertaalrijen heeft exact
  * dezelfde inhoudshash als vóór S8a (bewezen in {@code LegacyRevisionContentParityTest}).
+ * <p>
+ * <b>Legacy-config S8c.</b> De ketenstappen van een mapping ({@code import_field_transform_step}) volgen achter die
+ * mapping als {@code T, stapnummer, soort, config}, vóór de vertaalrijen, eveneens <b>enkel als ze er zijn</b>: een
+ * revisie zonder stappen houdt byte voor byte haar inhoudshash.
  */
 final class LegacyRevisionContent {
 
@@ -65,6 +71,9 @@ final class LegacyRevisionContent {
                     mapping.sourceReference(), mapping.fixedValue(), String.valueOf(mapping.transformKind()),
                     mapping.transformConfig(), null, null, false, null, null, false, false,
                     String.valueOf(criticalityOf.apply(mapping.targetCode())), true, null));
+            mapping.steps().stream().sorted(Comparator.comparingInt(PlannedStep::number))
+                    .forEach(step -> parts.addAll(stepEntry(step.number(), String.valueOf(step.kind()),
+                            step.config())));
             mapping.valueMap().stream().sorted(Comparator.comparingInt(PlannedValueMapEntry::sequence))
                     .forEach(entry -> parts.addAll(valueMapEntry(entry.sequence(), entry.source(), entry.target())));
         });
@@ -82,9 +91,24 @@ final class LegacyRevisionContent {
      */
     static String ofRevision(ImportDefinitionRevision revision, List<ImportFieldMapping> mappings,
                              List<ImportRecordFilter> filters, List<ImportFieldValueMap> valueMaps) {
+        return ofRevision(revision, mappings, filters, valueMaps, List.of());
+    }
+
+    /**
+     * @param valueMaps zie {@link #ofRevision(ImportDefinitionRevision, List, List, List)}
+     * @param steps     de ketenstappen van de mappings van deze revisie (S8c), gekoppeld op {@code mapping.id}; leeg als
+     *                  er geen zijn
+     */
+    static String ofRevision(ImportDefinitionRevision revision, List<ImportFieldMapping> mappings,
+                             List<ImportRecordFilter> filters, List<ImportFieldValueMap> valueMaps,
+                             List<ImportFieldTransformStep> steps) {
         Map<Long, List<ImportFieldValueMap>> valueMapsByMapping = new LinkedHashMap<>();
         for (ImportFieldValueMap row : valueMaps) {
-            valueMapsByMapping.computeIfAbsent(row.getMapping().getId(), id -> new java.util.ArrayList<>()).add(row);
+            valueMapsByMapping.computeIfAbsent(row.getMapping().getId(), id -> new ArrayList<>()).add(row);
+        }
+        Map<Long, List<ImportFieldTransformStep>> stepsByMapping = new LinkedHashMap<>();
+        for (ImportFieldTransformStep row : steps) {
+            stepsByMapping.computeIfAbsent(row.getMapping().getId(), id -> new ArrayList<>()).add(row);
         }
         List<String> parts = scalars(revision.getStructureFormat(), revision.getStructureCharset(),
                 revision.getStructureDelimiter(), revision.isStructureHasHeader(),
@@ -101,6 +125,10 @@ final class LegacyRevisionContent {
                     row.getTransformConfig(), row.getExpectedPosition(), row.getDefaultValue(), row.isRequired(),
                     row.getMaxLength(), row.getDecimalScale(), row.isZeroAllowed(), row.isNegativeAllowed(),
                     String.valueOf(row.getCriticality()), row.isActive(), row.getBookmarkName()));
+            stepsByMapping.getOrDefault(row.getId(), List.of()).stream()
+                    .sorted(Comparator.comparingInt(ImportFieldTransformStep::getStepNumber))
+                    .forEach(step -> parts.addAll(stepEntry(step.getStepNumber(),
+                            String.valueOf(step.getTransformKind()), step.getTransformConfig())));
             valueMapsByMapping.getOrDefault(row.getId(), List.of()).stream()
                     .sorted(Comparator.comparingInt(ImportFieldValueMap::getSequenceNumber))
                     .forEach(entry -> parts.addAll(valueMapEntry(entry.getSequenceNumber(), entry.getSourceValue(),
@@ -168,6 +196,11 @@ final class LegacyRevisionContent {
                 String.valueOf(required), String.valueOf(maxLength), String.valueOf(decimalScale),
                 String.valueOf(zeroAllowed), String.valueOf(negativeAllowed), criticality, String.valueOf(active),
                 String.valueOf(bookmarkName));
+    }
+
+    /** S8c: één ketenstap, achter haar mapping en vóór de vertaalrijen (design par. 3). */
+    private static List<String> stepEntry(int number, String kind, String config) {
+        return List.of("T", String.valueOf(number), kind, String.valueOf(config));
     }
 
     /** S8a: één vertaalrij, achter haar mapping. */

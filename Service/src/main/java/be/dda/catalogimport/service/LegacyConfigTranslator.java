@@ -10,6 +10,7 @@ import be.dda.catalogimport.domain.FieldValueKind;
 import be.dda.catalogimport.domain.FilterOperator;
 import be.dda.catalogimport.domain.FilterOutcome;
 import be.dda.catalogimport.domain.IdentityProfileKind;
+import be.dda.catalogimport.domain.ImportFieldTransformStep;
 import be.dda.catalogimport.domain.ImportFieldValueMap;
 import be.dda.catalogimport.service.LegacyConfigReport.Item;
 import be.dda.catalogimport.service.support.LegacyFtpLocation;
@@ -45,9 +46,11 @@ import java.util.UUID;
  *       de identiteit ({@code FOUR_PART_WITH_DISCOUNT_CODE}).</li>
  *   <li><b>Basisprijs 26 / omschrijving 4:</b> enkel een bronkolom; een transformatie op 26 blokkeert
  *       ({@value #BASE_PRICE_TRANSFORM_UNSUPPORTED}), op 4 vervalt het veld met een waarschuwing.</li>
- *   <li><b>Mappings 33-37, 40, 43, 12, 219, 221:</b> catalogcode uit {@code legacy-config-migratie-design.md} par. 1;
- *       hoogstens één bewerking (prefix, suffix, CALC 1-4/A/7 of vaste waarde). Een combinatie, een deelstring of een
- *       andere CALC laat de mapping vervallen met een waarschuwing.</li>
+ *   <li><b>Mappings 33-37, 40, 43, 12, 219, 221:</b> catalogcode uit {@code legacy-config-migratie-design.md} par. 1.
+ *       Sinds S8c wordt elke regel met minstens één bewerking een {@code CHAIN} in de legacy-volgorde (Positie/Lengte
+ *       → {@code SUBSTRING}, prefix/suffix → {@code AFFIX}, CALC 1-4/A/7/15 → één waardebewerking); een vaste waarde
+ *       negeert de rest ({@value #LEGACY_IGNORED_WITH_FIXED_VALUE}). Een andere CALC laat de mapping vervallen met een
+ *       waarschuwing.</li>
  *   <li><b>CALC 7:</b> PSIMPDEFMAP wordt in legacy enkel op (IMPORT, KEY) gezocht, los van NUMMER ({@code Prg_1170}
  *       r.1009-1054): alle regels vormen één tabel, bij een dubbele sleutel wint de laagste NUMMER
  *       ({@value #MAP_KEY_AMBIGUOUS}). Sinds S8a staat die tabel in {@code import_field_value_map} (geen grens van
@@ -104,9 +107,11 @@ final class LegacyConfigTranslator {
     static final String LEGACY_FIELD_DUPLICATED = "LEGACY_FIELD_DUPLICATED";
     static final String LEGACY_FIELD_NOT_MIGRATED = "LEGACY_FIELD_NOT_MIGRATED";
     static final String LEGACY_LINE_WITHOUT_SOURCE = "LEGACY_LINE_WITHOUT_SOURCE";
+    /** Sinds S8c niet meer gezet (substring naast een vaste waarde: {@value #LEGACY_IGNORED_WITH_FIXED_VALUE}). */
     static final String LEGACY_SUBSTRING_NOT_MIGRATED = "LEGACY_SUBSTRING_NOT_MIGRATED";
     static final String LEGACY_FILL_NOT_MIGRATED = "LEGACY_FILL_NOT_MIGRATED";
     static final String LEGACY_XML_PATH_NOT_MIGRATED = "LEGACY_XML_PATH_NOT_MIGRATED";
+    /** Sinds S8c niet meer gezet: elke combinatie wordt een CHAIN; de code blijft herkenbaar in oudere rapporten. */
     static final String TRANSFORM_CHAIN_UNSUPPORTED = "TRANSFORM_CHAIN_UNSUPPORTED";
     /** S8b: Positie/Lengte van een mapping-regel is negatief; geen betekenis in legacy {@code MID}. */
     static final String LEGACY_SUBSTRING_INVALID = "LEGACY_SUBSTRING_INVALID";
@@ -165,8 +170,6 @@ final class LegacyConfigTranslator {
     private static final Set<String> DECIMAL_TARGETS =
             Set.of("VKP1_PCT", "VKP2_PCT", "VKP3_PCT", "VKP4_PCT", "VKP5_PCT", "AKP_PCT", "VKP_GROSS_PCT");
 
-    /** {@code import_field_mapping.transform_config} varchar(1000). */
-    private static final int MAX_TRANSFORM_CONFIG = 1000;
     /** {@code import_field_mapping.fixed_value} varchar(500). */
     private static final int MAX_FIXED_VALUE = 500;
     /** {@code import_record_filter.compare_value} varchar(500). */
@@ -186,14 +189,28 @@ final class LegacyConfigTranslator {
      * Eén geplande veldmapping, met precies wat {@code SetupService.addMapping} krijgt.
      *
      * @param valueMap S8a: de vertaalrijen van een CALC 7-mapping ({@code import_field_value_map}); anders leeg
+     * @param steps    S8c: de ketenstappen van een CHAIN-mapping ({@code import_field_transform_step}); anders leeg
      */
     record PlannedMapping(int sequence, String targetCode, FieldValueKind valueKind, String sourceReference,
                           String fixedValue, FieldTransformKind transformKind, String transformConfig,
-                          List<PlannedValueMapEntry> valueMap) {
+                          List<PlannedValueMapEntry> valueMap, List<PlannedStep> steps) {
 
         PlannedMapping {
             valueMap = valueMap == null ? List.of() : List.copyOf(valueMap);
+            steps = steps == null ? List.of() : List.copyOf(steps);
         }
+
+        /** De vorm van vóór S8c: geen ketenstappen. */
+        PlannedMapping(int sequence, String targetCode, FieldValueKind valueKind, String sourceReference,
+                       String fixedValue, FieldTransformKind transformKind, String transformConfig,
+                       List<PlannedValueMapEntry> valueMap) {
+            this(sequence, targetCode, valueKind, sourceReference, fixedValue, transformKind, transformConfig,
+                    valueMap, List.of());
+        }
+    }
+
+    /** S8c: één geplande ketenstap; {@code number} 1-gebaseerd in de vaste legacy-volgorde. */
+    record PlannedStep(int number, FieldTransformKind kind, String config) {
     }
 
     /** S8a: één geplande vertaalrij; {@code sequence} 1-gebaseerd in legacy-volgorde (NUMMER, KEY). */
@@ -861,36 +878,24 @@ final class LegacyConfigTranslator {
         return String.valueOf(column);
     }
 
+    /**
+     * Eén PSIMPDEF-regel naar een mapping (S8c, design par. 2c). Legacy past per regel een vaste pijplijn toe
+     * ({@code Prg_1170} r.730-732, r.1039-1115): {@code MID} op de ruwe waarde → {@code Trim} → enkel indien niet leeg
+     * {@code Trim(prefix) & v & Trim(suffix)} → hoogstens één CALC. Elke regel met minstens één bewerking (Positie/Lengte,
+     * prefix/suffix of CALC) wordt daarom een {@code CHAIN} met die stappen in die volgorde (aanname S8, beslissing
+     * 2026-10-21); de mapping zelf draagt enkel nog de notatie. Een vaste {@code Waarde} negeert de rest, zoals legacy
+     * (en S6): {@code FIXED_VALUE} met {@value #LEGACY_IGNORED_WITH_FIXED_VALUE}.
+     */
     private PlannedMapping mapping(int number, JsonNode line, String target, boolean decimalComma,
                                    JsonNode definition, int sequence) {
         String element = "PSIMPDEF#" + number;
         String value = line.path("value").asText("");
-        String prefix = line.path("prefix").asText("");
-        String suffix = line.path("suffix").asText("");
+        // Legacy Trim(prefix)/Trim(suffix): enkel spaties is geen prefix.
+        String prefix = line.path("prefix").asText("").trim();
+        String suffix = line.path("suffix").asText("").trim();
         String calculation = line.path("calculation").asText("");
         int column = line.path("column").asInt();
         boolean substring = hasSubstring(line);
-        int operations = (value.isEmpty() ? 0 : 1) + (prefix.isEmpty() ? 0 : 1) + (suffix.isEmpty() ? 0 : 1)
-                + (calculation.isEmpty() ? 0 : 1);
-        if (substring && !value.isEmpty() && operations == 1) {
-            // Een vaste waarde negeert Positie/Lengte in legacy; het correcte gedrag hoort bij S8c (keten).
-            add(element, WARNING, LEGACY_SUBSTRING_NOT_MIGRATED, null, "field " + number + " reads position "
-                    + line.path("position").asInt() + "/length " + line.path("length").asInt()
-                    + " next to a fixed value; not supported yet, the mapping to " + target + " is not created");
-            return null;
-        }
-        if (operations + (substring ? 1 : 0) > 1) {
-            add(element, WARNING, TRANSFORM_CHAIN_UNSUPPORTED, null, "field " + number + " combines "
-                    + transformDescription(line) + "; only one operation per mapping is supported (S8c), the "
-                    + "mapping to " + target + " is not created");
-            return null;
-        }
-        if (substring && (line.path("position").asInt() < 0 || line.path("length").asInt() < 0)) {
-            add(element, WARNING, LEGACY_SUBSTRING_INVALID, null, "field " + number + " has a negative position "
-                    + line.path("position").asInt() + " or length " + line.path("length").asInt()
-                    + "; the mapping to " + target + " is not created");
-            return null;
-        }
         boolean decimal = DECIMAL_TARGETS.contains(target);
         String notation = decimal && decimalComma ? "decimalSeparator=," : null;
         if (!value.isEmpty()) {
@@ -898,6 +903,11 @@ final class LegacyConfigTranslator {
                 add(element, WARNING, TRANSFORM_VALUE_NOT_EXPRESSIBLE, null, "the fixed value of field " + number
                         + " is longer than " + MAX_FIXED_VALUE + " characters; the mapping is not created");
                 return null;
+            }
+            if (hasTransform(line) || substring) {
+                add(element, NOT_MIGRATED, LEGACY_IGNORED_WITH_FIXED_VALUE, null, "field " + number + " has a fixed "
+                        + "value; legacy ignores its " + transformDescription(line).replace("fixed value + ", "")
+                        + " then, and so does CatalogImport");
             }
             add(element, MIGRATED, "MAPPING", target + " FIXED_VALUE", null);
             return new PlannedMapping(sequence, target, FieldValueKind.FIXED_VALUE, null, value,
@@ -908,27 +918,35 @@ final class LegacyConfigTranslator {
                     + " has no source column and no fixed value");
             return null;
         }
-        String source = String.valueOf(column);
-        FieldTransformKind kind = FieldTransformKind.NONE;
-        String config = null;
+        List<PlannedStep> steps = new ArrayList<>(3);
         List<PlannedValueMapEntry> valueMap = List.of();
+        if (substring) {
+            int position = line.path("position").asInt();
+            int length = line.path("length").asInt();
+            if (position < 0 || length < 0) {
+                add(element, WARNING, LEGACY_SUBSTRING_INVALID, null, "field " + number + " has a negative position "
+                        + position + " or length " + length + "; the mapping to " + target + " is not created");
+                return null;
+            }
+            // S8b: MID(v, pos 0->1, len 0->500) op de ruwe waarde (Prg_1170 r.730); de keten trimt erna.
+            steps.add(new PlannedStep(steps.size() + 1, FieldTransformKind.SUBSTRING,
+                    "start=" + (position == 0 ? 1 : position) + ";length=" + (length == 0 ? 500 : length)));
+        }
         if (!prefix.isEmpty() || !suffix.isEmpty()) {
-            String text = prefix.isEmpty() ? suffix : prefix;
-            if (text.indexOf(';') >= 0) {
+            if (prefix.indexOf(';') >= 0 || suffix.indexOf(';') >= 0) {
                 add(element, WARNING, TRANSFORM_VALUE_NOT_EXPRESSIBLE, null, "the prefix/suffix of field " + number
                         + " contains ';', which a transform configuration cannot express; the mapping is not "
                         + "created");
                 return null;
             }
-            kind = prefix.isEmpty() ? FieldTransformKind.SUFFIX : FieldTransformKind.PREFIX;
-            config = (prefix.isEmpty() ? "suffix=" : "prefix=") + text;
-        } else if (substring) {
-            // S8b: MID(v, pos 0->1, len 0->500) (Prg_1170 r.730); de buitenste Trim volgt in de canonicalisatie.
-            int position = line.path("position").asInt();
-            int length = line.path("length").asInt();
-            kind = FieldTransformKind.SUBSTRING;
-            config = "start=" + (position == 0 ? 1 : position) + ";length=" + (length == 0 ? 500 : length);
-        } else if (!calculation.isEmpty()) {
+            // S8c: AFFIX met de legacy-semantiek (een lege waarde blijft leeg; PREFIX/SUFFIX zouden er tekst rond zetten).
+            String affix = (prefix.isEmpty() ? "" : "prefix=" + prefix)
+                    + (prefix.isEmpty() || suffix.isEmpty() ? "" : ";") + (suffix.isEmpty() ? "" : "suffix=" + suffix);
+            steps.add(new PlannedStep(steps.size() + 1, FieldTransformKind.AFFIX, affix));
+        }
+        if (!calculation.isEmpty()) {
+            FieldTransformKind kind;
+            String config = null;
             switch (calculation) {
                 case "15" -> {
                     // S8b: Upper() op de waarde (taalonafhankelijk).
@@ -949,8 +967,9 @@ final class LegacyConfigTranslator {
                     };
                     config = "operand=" + operand.toPlainString();
                     add(element, WARNING, CALC_ROUNDING_MAY_DIFFER, null, "legacy computes CALC " + calculation
-                            + " with Val(..,'8.2') and Str(..,'8.3'); results can differ in the last decimals, "
-                            + "shown as an explained difference, never corrected");
+                            + " with Val(..,'8.2') and Str(..,'8.3'); results can differ in the last decimals, and "
+                            + "an empty cell stays empty where legacy computes with 0; shown as an explained "
+                            + "difference, never corrected");
                 }
                 case "A" -> {
                     String text = line.path("calculationValue").asText("");
@@ -964,11 +983,11 @@ final class LegacyConfigTranslator {
                     kind = FieldTransformKind.PERCENTAGE;
                     config = "baseField=" + baseColumn;
                     add(element, WARNING, CALC_ROUNDING_MAY_DIFFER, null, "legacy computes CALC A with "
-                            + "Val(..,'8.3'); results can differ in the last decimals, shown as an explained "
-                            + "difference, never corrected");
+                            + "Val(..,'8.3'); results can differ in the last decimals, and an empty cell stays empty "
+                            + "where legacy computes with 0; shown as an explained difference, never corrected");
                 }
                 case "7" -> {
-                    // S8a: de tabel gaat naar import_field_value_map; transform_config draagt enkel de instelling.
+                    // S8a: de tabel gaat naar import_field_value_map (aan de mapping); de MAP-stap draagt de instelling.
                     List<PlannedValueMapEntry> table = mapTable(element, definition);
                     if (table == null) {
                         return null;
@@ -986,19 +1005,22 @@ final class LegacyConfigTranslator {
                     return null;
                 }
             }
+            steps.add(new PlannedStep(steps.size() + 1, kind, config));
         }
-        if (notation != null) {
-            config = config == null ? notation : config + ";" + notation;
+        for (PlannedStep step : steps) {
+            if (step.config() != null && step.config().length() > ImportFieldTransformStep.MAX_CONFIG_LENGTH) {
+                add(element, WARNING, TRANSFORM_VALUE_NOT_EXPRESSIBLE, null, "the transformation of field " + number
+                        + " does not fit in " + ImportFieldTransformStep.MAX_CONFIG_LENGTH + " characters; the "
+                        + "mapping is not created");
+                return null;
+            }
         }
-        if (config != null && config.length() > MAX_TRANSFORM_CONFIG) {
-            add(element, WARNING, TRANSFORM_VALUE_NOT_EXPRESSIBLE, null, "the transformation of field " + number
-                    + " does not fit in " + MAX_TRANSFORM_CONFIG + " characters; the mapping is not created");
-            return null;
-        }
-        add(element, MIGRATED, "MAPPING", target + " <- column " + column
-                + (kind == FieldTransformKind.NONE ? "" : " " + kind), null);
-        return new PlannedMapping(sequence, target, FieldValueKind.SOURCE_FIELD, source, null, kind, config,
-                valueMap);
+        String source = String.valueOf(column);
+        FieldTransformKind kind = steps.isEmpty() ? FieldTransformKind.NONE : FieldTransformKind.CHAIN;
+        add(element, MIGRATED, "MAPPING", target + " <- column " + column + (steps.isEmpty() ? ""
+                : " CHAIN " + String.join(" > ", steps.stream().map(step -> step.kind().name()).toList())), null);
+        return new PlannedMapping(sequence, target, FieldValueKind.SOURCE_FIELD, source, null, kind, notation,
+                valueMap, steps);
     }
 
     /**
@@ -1045,7 +1067,8 @@ final class LegacyConfigTranslator {
         if (definition.path("maps").isEmpty()) {
             return;
         }
-        boolean used = mappings.stream().anyMatch(mapping -> mapping.transformKind() == FieldTransformKind.MAP);
+        boolean used = mappings.stream().anyMatch(mapping -> mapping.transformKind() == FieldTransformKind.MAP
+                || mapping.steps().stream().anyMatch(step -> step.kind() == FieldTransformKind.MAP));
         if (!used) {
             add("PSIMPDEFMAP", NOT_MIGRATED, LEGACY_MAP_UNUSED, null,
                     "PSIMPDEFMAP has entries but no migrated mapping uses CALC 7");

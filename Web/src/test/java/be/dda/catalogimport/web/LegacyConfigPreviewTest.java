@@ -223,8 +223,11 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
         String body = previewBody(id, "libraryCode", "LIB");
 
         assertThat(blockingCodes(body)).containsExactly("BASE_PRICE_TRANSFORM_UNSUPPORTED");
-        assertThat(codes(body, "WARNING")).contains("TRANSFORM_CHAIN_UNSUPPORTED",
-                "DESCRIPTION_TRANSFORM_NOT_MIGRATED");
+        assertThat(codes(body, "WARNING")).contains("CALC_ROUNDING_MAY_DIFFER", "DESCRIPTION_TRANSFORM_NOT_MIGRATED")
+                .doesNotContain("TRANSFORM_CHAIN_UNSUPPORTED");
+        // S8c: de keten in legacy-volgorde (suffix vóór de CALC).
+        assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.code == 'MAPPING')].target"))
+                .contains("VKP5_PCT <- column 9 CHAIN AFFIX > MULTIPLY");
     }
 
     @Test

@@ -181,7 +181,7 @@ public class RevisionSuccessorService {
         // De vijf kindtabellen. copyMappings/copyFilters geven bewust nog niet-opgeslagen rijen terug
         // (de materialisatiewizard vult er eerst bookmarkwaarden in); de opvolger heeft niets in te
         // vullen en schrijft ze onmiddellijk weg.
-        // Legacy-config S8a: de vertaalrijen van de mappings gaan mee, direct na het opslaan van de mappings.
+        // Legacy-config S8a/S8c: vertaalrijen en ketenstappen gaan mee, direct na het opslaan van de mappings.
         revisionCopier.copyMappingChildren(fieldMappings.saveAll(revisionCopier.copyMappings(successor, source,
                 createdBy, createdBySubject).values()), source);
         recordFilters.saveAll(revisionCopier.copyFilters(successor, source, createdBy,

@@ -1,8 +1,9 @@
 # Legacy-config S8 — maptabel, transformatieketen, Include/Exclude, PSIMPEXCL
 
-> **Status: VOORSTEL (2026-10-21), denker-zwaar; S8a en S8b gebouwd (2026-10-21, zie "Uitwerking S8a" in §2a en "Uitwerking S8b" in §2b).** Verfijnt
-> `legacy-config-bundle-design.md` §8 rij S8 en `legacy-config-migratie-design.md` LM-2. S8c–S8e kunnen starten; **S8f wacht
-> op V2**, **S8g wacht op V1** (§5).
+> **Status: VOORSTEL (2026-10-21), denker-zwaar; S8a, S8b en S8c gebouwd (2026-10-21, zie "Uitwerking S8a" in §2a,
+> "Uitwerking S8b" in §2b en "Uitwerking S8c" in §2c).** Verfijnt
+> `legacy-config-bundle-design.md` §8 rij S8 en `legacy-config-migratie-design.md` LM-2. S8d–S8e kunnen starten; S8f (V2 = A)
+> en S8g (V1 = B) zijn beslist (beslissingslog 2026-10-21) (§5).
 > Bronnen: `LegacyConfigTranslator`, `FieldTransform`, `FieldValueMapper`, `MappingSettings`, `ImportMappingConfigFactory`,
 > `RecordFilterEvaluator`, `RevisionCopier`, `LegacyRevisionContent`, Liquibase 004; Legacy-vault `Prg_1170` r.370-480,
 > r.700-1170, r.2582-2690, DS_0254, DS_0257; ruwe bron `C:\XPA48\Projects\PRODIS\Source\Prg_1170.xml` r.18681-18701.
@@ -104,6 +105,45 @@ r.2582-2687, enkel als `NOT >SkipExcludes`, r.395), niet in `Prg_1171`.
 - Migratie (aanname): elke regel met minstens één bewerking wordt `CHAIN`; `TRANSFORM_CHAIN_UNSUPPORTED` verdwijnt. S2-gemigreerde
   PREFIX/MAP-mappings krijgen bij een nieuwe APPLY een opvolgende DRAFT (nooit `MANUAL_CHANGES_SINCE_MIGRATION`).
 
+**Uitwerking S8c (gebouwd 2026-10-21; bouwer-zwaar).**
+- *Schema:* changeset `024-1` zoals hierboven: `check (step_number between 1 and 3)`, `check (transform_kind <> 'CHAIN')`,
+  koppelcheck `created_by_subject is null or created_by is not null`, uniek `(mapping_id, step_number)`; geen cascade (stappen
+  worden als entiteit verwijderd vóór hun mapping, zoals de maprijen van S8a). Entiteit `ImportFieldTransformStep`, repository
+  `ImportFieldTransformStepRepository.findByRevisionId` (één query per revisie, `join fetch` van de mapping).
+- *Model:* `FieldTransformKind` + `AFFIX`, `CHAIN` (additief). `FieldTransform.LegacyAffix` (AFFIX): `prefix` en/of `suffix`
+  (minstens één niet leeg, anders `CONFIG_TRANSFORM_INVALID`); op de getrimde waarde, leeg → `""`. `PREFIX`/`SUFFIX` (`Affix`)
+  ongewijzigd. `FieldTransform.Chain`: `null` blijft `null`; een eerste `SUBSTRING` werkt op de **ruwe** waarde (legacy `MID`
+  op het record, dus opvulspaties vooraan tellen mee voor de startpositie), dan trim; leeg na trim → `""` en alle volgende
+  stappen overgeslagen (ook een rekenstap: legacy `Val('')=0 ± x`, hier leeg, verklaard verschil); daarna de stappen in
+  volgorde zonder tussentijdse trim (de canonicalisatie van `FieldValueMapper` trimt het eindresultaat).
+- *Grammatica (`CONFIG_TRANSFORM_INVALID`, ook in collect-modus B'):* 1-3 stappen, genummerd 1, 2, 3 zonder gaten; plaats 1 =
+  `SUBSTRING`, 2 = `AFFIX`/`PREFIX`/`SUFFIX`, 3 = `UPPER`/`MAP`/`ADD`/`SUBTRACT`/`MULTIPLY`/`DIVIDE`/`PERCENTAGE`/`SPLIT`,
+  strikt oplopend (dus hoogstens één waardebewerking en hoogstens één tabelstap); `NONE`, `FIXED_VALUE`, `CONCAT`, `CHAIN` nooit
+  als stap. Een onbekende soort (o.a. `MAP_CONTAINS` tot S8d) kan niet bestaan: de API weigert ze als onleesbaar verzoek (400
+  `REQUEST_BODY_UNREADABLE`), zoals een onbekende `transformKind`. De plaatstabel is een volledige `switch` zonder `default`:
+  S8d moet de plaats van `MAP_CONTAINS` (3) expliciet toevoegen. Elke stap volgt de regels van haar soort met haar eigen
+  instellingen (een ongebruikte instelling, ook een notatiesleutel, is een fout); de melding noemt de stap
+  (`... configuration: step 2 (MAP): ...`). De vertaalrijen gaan naar de MAP-stap; rijen zonder MAP-stap, stappen bij een
+  andere soort dan `CHAIN`, en een transformatie-instelling op de `CHAIN`-mapping zelf (die enkel de notatie leest) zijn fouten.
+- *Inhoudshash:* `LegacyRevisionContent.ofRevision(revision, mappings, filters, valueMaps, steps)` en `ofPlanned` voegen per
+  mapping `T, stapnummer, soort, config` toe, vóór de `V`-rijen, enkel als er stappen zijn; letterlijke pre-S8c-hash met
+  vertaalrijen in `LegacyRevisionContentParityTest`. `RevisionConfigHashes` ongewijzigd.
+- *Kopie:* `RevisionCopier.copyMappingChildren` kopieert ook de stappen (zelfde tekening als de mapping-kopie) bij opvolger,
+  sjabloonmaterialisatie en migratie (gedeelde definitie, S7).
+- *Setup-API (additief):* `CreateMappingCommand.steps[{kind, config}]` en `MappingView.steps` (ook in het revisiedetail; leeg
+  als er geen zijn); stappen genummerd in de volgorde van het verzoek, config getrimd. 400 `STEPS_TOO_MANY` (> 3),
+  `STEPS_INVALID` (lege regel), `STEP_KIND_REQUIRED`, `STEP_KIND_INVALID` (`CHAIN`), `STEP_CONFIG_TOO_LONG`; de rest via de
+  configuratievalidatie (400 `CONFIG_TRANSFORM_INVALID`); niets bewaard bij een fout. `CreateMappingCommand` kreeg een extra
+  recordcomponent (zoals `valueMap` in S8a): Java-aanroepers geven `null` mee, JSON zonder `steps` blijft geldig.
+- *Migratie:* elke mapping-regel met Positie/Lengte, prefix/suffix of CALC wordt `CHAIN` (mapping-`transform_config` = de notatie
+  of `null`) met stappen `SUBSTRING` → `AFFIX` (prefix/suffix getrimd zoals legacy `Trim()`) → één waardebewerking (zoals S2/S8a/S8b
+  vertaald, CALC 7 → MAP `caseSensitive=true`); rapportdoel `<doel> <- column n CHAIN SUBSTRING > AFFIX > UPPER`. Ook enkelvoudige
+  bewerkingen (een PREFIX, een MAP, een UPPER) worden `CHAIN`: een vóór S8c gemigreerde revisie plant dus een andere inhoud en
+  krijgt bij een nieuwe APPLY een opvolgende DRAFT, nooit `MANUAL_CHANGES_SINCE_MIGRATION`. Vaste `Waarde` → `FIXED_VALUE`;
+  Positie/Lengte, prefix/suffix of CALC ernaast → `NOT_MIGRATED` `LEGACY_IGNORED_WITH_FIXED_VALUE` (zoals S6). Verdwenen voor
+  mapping-regels: `TRANSFORM_CHAIN_UNSUPPORTED`, `LEGACY_SUBSTRING_NOT_MIGRATED` (constanten blijven voor oudere rapporten).
+  `CALC_ROUNDING_MAY_DIFFER` noemt nu ook het lege-cel-verschil. Een tweede APPLY geeft `DEFINITION_UNCHANGED`.
+
 ### 2d. MAP_CONTAINS (S8d)
 - Legacy `MapInstr` (r.1128-1167): enkel rijen van de eigen NUMMER, KEY oplopend; treffer als
   `InStr(Upper(v), Trim(Upper(KEY))) > 0`; eerste treffer met niet-lege VALUE; miss → `''`.
@@ -162,7 +202,7 @@ Steeds: tweemaal dezelfde APPLY → `DEFINITION_UNCHANGED`.
 |---|---|---|---|---|
 | S8a maptabel (**gebouwd 2026-10-21**) | Liquibase 023, alle lagen | bouwer-zwaar | `ImportFieldValueMapTest`; `run-full-tests.ps1 -Tests ScreeningSchemaTest,SetupApiFlowTest,DeliveryScreeningFlowTest` | 2000 sleutels migreren; `values=` werkt nog; kopie (opvolger, sjabloon, migratie) draagt rijen mee; pariteit byte-identiek |
 | S8b UPPER/SUBSTRING (**gebouwd 2026-10-21**) | Domain, Service | bouwer-gemiddeld | — | CALC 15 en Positie/Lengte op mapping-regels gemigreerd |
-| S8c keten + AFFIX | Liquibase 024, alle lagen | bouwer-zwaar | `SetupApiFlowTest`, `DeliveryScreeningFlowTest` | prefix+suffix+CALC 7 = legacy; lege invoer blijft leeg; grammaticafouten blokkeren in B' |
+| S8c keten + AFFIX (**gebouwd 2026-10-21**) | Liquibase 024, alle lagen | bouwer-zwaar | `SetupApiFlowTest`, `DeliveryScreeningFlowTest` | prefix+suffix+CALC 7 = legacy; lege invoer blijft leeg; grammaticafouten blokkeren in B' |
 | S8d MAP_CONTAINS | Service | bouwer-gemiddeld | — | eerste treffer per KEY-volgorde, hoofdletterongevoelig |
 | S8e Include/Exclude | Service | bouwer-gemiddeld | `RecordFilterEvaluatorTest` | codes 1–6; twee includes = EN |
 | S8f PSIMPEXCL (na V2) | Liquibase 025, alle lagen | bouwer-zwaar | `RecordFilterEvaluatorTest`, `SetupApiFlowTest` | vijf vormen + dode rijen; `Skip_Excludes` |

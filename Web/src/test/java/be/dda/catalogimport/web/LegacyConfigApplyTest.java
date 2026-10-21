@@ -138,14 +138,19 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(revision.get("based_on_revision_id")).isEqualTo(templateRevisions.get(0).get("id"));
 
         // Mappings: 33 met MAP en DecimalComma; 37 als bronkolom. S8a: de PSIMPDEFMAP-regels (gesorteerd op NUMMER,
-        // KEY) staan in import_field_value_map, transform_config draagt enkel nog de instellingen.
+        // KEY) staan in import_field_value_map. S8c: de regel wordt een CHAIN met één MAP-stap; de mapping draagt
+        // enkel nog de notatie, de stap de instelling.
         List<Map<String, Object>> mappings = jdbc.queryForList("select target_field_code, value_kind, "
                 + "source_reference, transform_kind, transform_config from import_field_mapping "
                 + "where definition_revision_id = ? order by target_field_code", revisionId);
         assertThat(mappings).hasSize(2);
         assertThat(mappings.get(0)).containsEntry("target_field_code", "VKP1_PCT")
-                .containsEntry("source_reference", "8").containsEntry("transform_kind", "MAP")
-                .containsEntry("transform_config", "caseSensitive=true;decimalSeparator=,");
+                .containsEntry("source_reference", "8").containsEntry("transform_kind", "CHAIN")
+                .containsEntry("transform_config", "decimalSeparator=,");
+        assertThat(steps(revisionId, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true");
+        assertThat(jdbc.queryForList("select s.created_by from import_field_transform_step s join import_field_mapping "
+                + "m on m.id = s.mapping_id where m.definition_revision_id = ?", String.class, revisionId))
+                .containsOnly(USER);
         assertThat(valueMap(revisionId, "VKP1_PCT")).containsExactly("1:DOOS>BOX", "2:STK>PCE");
         assertThat(jdbc.queryForList("select v.created_by from import_field_value_map v join import_field_mapping m "
                 + "on m.id = v.mapping_id where m.definition_revision_id = ?", String.class, revisionId))
@@ -153,6 +158,8 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         // S7: het sjabloon draagt dezelfde rijen (de gedeelde definitie is er een kopie van).
         assertThat(valueMap(((Number) templateRevisions.get(0).get("id")).longValue(), "VKP1_PCT"))
                 .containsExactly("1:DOOS>BOX", "2:STK>PCE");
+        assertThat(steps(((Number) templateRevisions.get(0).get("id")).longValue(), "VKP1_PCT"))
+                .containsExactly("1:MAP:caseSensitive=true");
         assertThat(mappings.get(1)).containsEntry("target_field_code", "VKP5_PCT")
                 .containsEntry("source_reference", "9").containsEntry("transform_kind", "NONE")
                 .containsEntry("transform_config", "decimalSeparator=,");
@@ -389,6 +396,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(active.get("identity_supplier_field")).isEqualTo("3");
         assertThat(active.get("record_base_price_field")).isEqualTo("7");
         assertThat(valueMap(first, "VKP1_PCT")).containsExactly("1:DOOS>BOX", "2:STK>PCE");
+        assertThat(steps(first, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true");
         Map<String, Object> successor = revisions.get(1);
         long successorId = ((Number) successor.get("id")).longValue();
         assertThat(successor.get("status")).isEqualTo("DRAFT");
@@ -399,6 +407,8 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat((BigDecimal) successor.get("price_deviation_percent")).isEqualByComparingTo("20");
         // S8a: de opvolger kreeg eerst de kopie van de rijen, daarna overschreef APPLY de mapping met de nieuwe tabel.
         assertThat(valueMap(successorId, "VKP1_PCT")).containsExactly("1:DOOS>BOX", "2:STK>PCS");
+        // S8c: idem voor de ketenstappen (kopie, verwijderd als entiteit, opnieuw geschreven): precies één MAP-stap.
+        assertThat(steps(successorId, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true");
         assertThat(count("select count(*) from import_record_filter where definition_revision_id = ?", successorId))
                 .isEqualTo(1);
         assertThat(count("select count(*) from legacy_config_revision_origin ro join import_definition_revision r "
@@ -567,7 +577,8 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(rows).contains("4:K10>V10").noneMatch(row -> row.endsWith(">ANDERS"));
         assertThat(jdbc.queryForObject("select transform_config from import_field_mapping where "
                 + "definition_revision_id = ? and target_field_code = 'VKP1_PCT'", String.class, revisionId))
-                .isEqualTo("caseSensitive=true;decimalSeparator=,");
+                .isEqualTo("decimalSeparator=,");
+        assertThat(steps(revisionId, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true");
 
         // Tweemaal dezelfde inhoud: geen nieuwe revisie.
         ((ObjectNode) bundle.get("interface").get("header")).put("info", "tweede export 2000");
@@ -612,8 +623,11 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
 
         long definitionId = definitionId(supplier(bundle), "VROOAM2");
         long revisionId = ((Number) revisionRows(definitionId).get(0).get("id")).longValue();
-        assertThat(mappingOf(revisionId, "VKP5_PCT")).isEqualTo("UPPER|decimalSeparator=,");
-        assertThat(mappingOf(revisionId, "VKP1_PCT")).isEqualTo("SUBSTRING|start=3;length=500;decimalSeparator=,");
+        // S8c: elke regel met een bewerking wordt een CHAIN; de mapping draagt de notatie, de stap de bewerking.
+        assertThat(mappingOf(revisionId, "VKP5_PCT")).isEqualTo("CHAIN|decimalSeparator=,");
+        assertThat(steps(revisionId, "VKP5_PCT")).containsExactly("1:UPPER:");
+        assertThat(mappingOf(revisionId, "VKP1_PCT")).isEqualTo("CHAIN|decimalSeparator=,");
+        assertThat(steps(revisionId, "VKP1_PCT")).containsExactly("1:SUBSTRING:start=3;length=500");
 
         ((ObjectNode) bundle.get("interface").get("header")).put("info", "tweede export s8b");
         long second = receive(bundle);
@@ -624,17 +638,76 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(revisionRows(definitionId)).hasSize(1);
     }
 
-    /** S8b: een substring naast een andere bewerking blijft {@code TRANSFORM_CHAIN_UNSUPPORTED} tot S8c; nooit stil half. */
+    /**
+     * S8c: elke combinatie wordt een CHAIN in de legacy-volgorde (Positie/Lengte → SUBSTRING, prefix/suffix → AFFIX,
+     * CALC → één waardebewerking); {@code TRANSFORM_CHAIN_UNSUPPORTED} verdwijnt. Prefix en suffix worden getrimd zoals
+     * legacy {@code Trim()}. De vertaalrijen van CALC 7 hangen aan de mapping; het sjabloon en de gedeelde definitie
+     * dragen dezelfde stappen. Een tweede APPLY van dezelfde inhoud is {@code DEFINITION_UNCHANGED}.
+     */
     @Test
-    void aSubstringCombinedWithAnotherOperationStaysUnsupportedUntilTheChain() throws Exception {
+    void combinedOperationsBecomeAChainAndASecondApplyIsUnchanged() throws Exception {
         ObjectNode bundle = applicable();
-        line(bundle, 37).put("prefix", "X-").put("position", 2).put("length", 4);
-        line(bundle, 33).put("calculation", "15").put("position", 1).put("length", 2);
-        String preview = previewBody(receive(bundle), "libraryCode", "LIB-S8B2");
+        line(bundle, 37).put("prefix", " X- ").put("position", 2).put("length", 4).put("calculation", "15");
+        line(bundle, 33).put("prefix", "P-").put("suffix", "-S");  // CALC 7 (golden) met prefix en suffix
+        long id = receive(bundle);
 
+        String preview = previewBody(id, "libraryCode", "LIB-S8C");
         assertThat(blockingCodes(preview)).isEmpty();
-        assertThat(codes(preview, "WARNING")).contains("TRANSFORM_CHAIN_UNSUPPORTED");
-        assertThat(codes(preview, "MIGRATED")).doesNotContain("MAPPING");
+        assertThat(preview).doesNotContain("TRANSFORM_CHAIN_UNSUPPORTED").doesNotContain("LEGACY_SUBSTRING_NOT_MIGRATED");
+        assertThat((List<String>) JsonPath.read(preview, "$.report.items[?(@.code == 'MAPPING')].target"))
+                .contains("VKP5_PCT <- column 9 CHAIN SUBSTRING > AFFIX > UPPER",
+                        "VKP1_PCT <- column 8 CHAIN AFFIX > MAP");
+        apply(id, JsonPath.read(preview, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8C")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.configurationFindings").isEmpty());
+
+        long definitionId = definitionId(supplier(bundle), "VROOAM2");
+        long revisionId = ((Number) revisionRows(definitionId).get(0).get("id")).longValue();
+        assertThat(mappingOf(revisionId, "VKP5_PCT")).isEqualTo("CHAIN|decimalSeparator=,");
+        assertThat(steps(revisionId, "VKP5_PCT")).containsExactly("1:SUBSTRING:start=2;length=4", "2:AFFIX:prefix=X-",
+                "3:UPPER:");
+        assertThat(mappingOf(revisionId, "VKP1_PCT")).isEqualTo("CHAIN|decimalSeparator=,");
+        assertThat(steps(revisionId, "VKP1_PCT")).containsExactly("1:AFFIX:prefix=P-;suffix=-S",
+                "2:MAP:caseSensitive=true");
+        assertThat(valueMap(revisionId, "VKP1_PCT")).containsExactly("1:DOOS>BOX", "2:STK>PCE");
+        long templateRevisionId = ((Number) revisionRows(definitionId(supplier(bundle), "VROOAM2-SJ")).get(0)
+                .get("id")).longValue();
+        assertThat(steps(templateRevisionId, "VKP5_PCT")).isEqualTo(steps(revisionId, "VKP5_PCT"));
+        assertThat(steps(templateRevisionId, "VKP1_PCT")).isEqualTo(steps(revisionId, "VKP1_PCT"));
+
+        ((ObjectNode) bundle.get("interface").get("header")).put("info", "tweede export s8c");
+        long second = receive(bundle);
+        String again = previewBody(second, "libraryCode", "LIB-S8C");
+        assertThat(codes(again, "MIGRATED")).contains("DEFINITION_UNCHANGED");
+        apply(second, JsonPath.read(again, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8C")
+                .andExpect(status().isOk());
+        assertThat(revisionRows(definitionId)).hasSize(1);
+        assertThat(steps(revisionId, "VKP5_PCT")).hasSize(3);
+    }
+
+    /**
+     * S8c: een vaste {@code Waarde} negeert Positie/Lengte, prefix/suffix en CALC zoals legacy (en S6): FIXED_VALUE met
+     * {@code LEGACY_IGNORED_WITH_FIXED_VALUE}, nooit meer {@code LEGACY_SUBSTRING_NOT_MIGRATED}.
+     */
+    @Test
+    void aFixedValueIgnoresTheOtherOperationsLikeLegacy() throws Exception {
+        ObjectNode bundle = applicable();
+        line(bundle, 37).put("value", "12,5").put("position", 2).put("length", 3).put("prefix", "X");
+        long id = receive(bundle);
+
+        String preview = previewBody(id, "libraryCode", "LIB-S8CF");
+        assertThat(blockingCodes(preview)).isEmpty();
+        assertThat(preview).doesNotContain("LEGACY_SUBSTRING_NOT_MIGRATED").doesNotContain("TRANSFORM_CHAIN_UNSUPPORTED");
+        assertThat((List<String>) JsonPath.read(preview,
+                "$.report.items[?(@.code == 'LEGACY_IGNORED_WITH_FIXED_VALUE')].element")).containsExactly("PSIMPDEF#37");
+        apply(id, JsonPath.read(preview, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8CF")
+                .andExpect(status().isOk());
+
+        long revisionId = ((Number) revisionRows(definitionId(supplier(bundle), "VROOAM2")).get(0).get("id"))
+                .longValue();
+        assertThat(jdbc.queryForObject("select value_kind || '|' || fixed_value || '|' || transform_kind from "
+                + "import_field_mapping where definition_revision_id = ? and target_field_code = 'VKP5_PCT'",
+                String.class, revisionId)).isEqualTo("FIXED_VALUE|12,5|NONE");
+        assertThat(steps(revisionId, "VKP5_PCT")).isEmpty();
     }
 
     /** S8b: Positie/Lengte op de basisprijs (26) blijft blokkeren. */
@@ -653,6 +726,14 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         return jdbc.queryForObject("select transform_kind || '|' || coalesce(transform_config, '') from "
                 + "import_field_mapping where definition_revision_id = ? and target_field_code = ?", String.class,
                 revisionId, targetFieldCode);
+    }
+
+    /** S8c: de ketenstappen van één mapping als {@code nummer:soort:config}, op stapnummer. */
+    private List<String> steps(long revisionId, String targetFieldCode) {
+        return jdbc.queryForList("select s.step_number || ':' || s.transform_kind || ':' || coalesce(s.transform_config, "
+                + "'') from import_field_transform_step s join import_field_mapping m on m.id = s.mapping_id "
+                + "where m.definition_revision_id = ? and m.target_field_code = ? order by s.step_number",
+                String.class, revisionId, targetFieldCode);
     }
 
     /** S8a: de vertaalrijen van één mapping als {@code volgnummer:bron>doel}, op volgnummer. */

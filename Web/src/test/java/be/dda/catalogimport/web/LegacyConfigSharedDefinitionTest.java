@@ -184,6 +184,13 @@ class LegacyConfigSharedDefinitionTest extends LegacyConfigS2TestBase {
         List<String> templateMap = jdbc.queryForList(valueMapSql, String.class, templateRevision.get("id"));
         assertThat(templateMap).containsExactly("VKP1_PCT:1:DOOS>BOX", "VKP1_PCT:2:STK>PCE");
         assertThat(jdbc.queryForList(valueMapSql, String.class, sharedRevision.get("id"))).isEqualTo(templateMap);
+        // S8c: idem voor de ketenstappen (CALC 7 wordt een CHAIN met één MAP-stap).
+        String stepSql = "select m.target_field_code || ':' || s.step_number || ':' || s.transform_kind || ':' "
+                + "|| coalesce(s.transform_config, '') from import_field_transform_step s join import_field_mapping m "
+                + "on m.id = s.mapping_id where m.definition_revision_id = ? order by m.target_field_code, s.step_number";
+        List<String> templateSteps = jdbc.queryForList(stepSql, String.class, templateRevision.get("id"));
+        assertThat(templateSteps).containsExactly("VKP1_PCT:1:MAP:caseSensitive=true");
+        assertThat(jdbc.queryForList(stepSql, String.class, sharedRevision.get("id"))).isEqualTo(templateSteps);
     }
 
     @Test
