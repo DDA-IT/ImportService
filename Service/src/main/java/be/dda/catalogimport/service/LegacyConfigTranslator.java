@@ -48,9 +48,14 @@ import java.util.UUID;
  *       ({@value #BASE_PRICE_TRANSFORM_UNSUPPORTED}), op 4 vervalt het veld met een waarschuwing.</li>
  *   <li><b>Mappings 33-37, 40, 43, 12, 219, 221:</b> catalogcode uit {@code legacy-config-migratie-design.md} par. 1.
  *       Sinds S8c wordt elke regel met minstens één bewerking een {@code CHAIN} in de legacy-volgorde (Positie/Lengte
- *       → {@code SUBSTRING}, prefix/suffix → {@code AFFIX}, CALC 1-4/A/7/15 → één waardebewerking); een vaste waarde
- *       negeert de rest ({@value #LEGACY_IGNORED_WITH_FIXED_VALUE}). Een andere CALC laat de mapping vervallen met een
+ *       → {@code SUBSTRING}, prefix/suffix → {@code AFFIX}, CALC 1-4/A/7/14/15 → één waardebewerking); een vaste
+ *       waarde negeert de rest ({@value #LEGACY_IGNORED_WITH_FIXED_VALUE}). CALC {@code '0'} betekent "geen berekening"
+ *       ({@code Prg_1170} r.732: {@code CALCULATION<>'' AND <>'0'}). Een andere CALC laat de mapping vervallen met een
  *       waarschuwing.</li>
+ *   <li><b>CALC 14:</b> {@code MAP_CONTAINS} op enkel de PSIMPDEFMAP-rijen van de eigen NUMMER in KEY-volgorde
+ *       ({@code MapInstr}, {@code Prg_1170} r.1128-1167); een rij met lege VALUE of lege KEY wint in legacy nooit en wordt
+ *       niet overgenomen ({@value #MAP_CONTAINS_ROW_NOT_MIGRATED}). Een miss geeft in legacy {@code ''}, bij ons een
+ *       fout ({@value #MAP_CONTAINS_MISS_NOT_EMPTY}).</li>
  *   <li><b>CALC 7:</b> PSIMPDEFMAP wordt in legacy enkel op (IMPORT, KEY) gezocht, los van NUMMER ({@code Prg_1170}
  *       r.1009-1054): alle regels vormen één tabel, bij een dubbele sleutel wint de laagste NUMMER
  *       ({@value #MAP_KEY_AMBIGUOUS}). Sinds S8a staat die tabel in {@code import_field_value_map} (geen grens van
@@ -124,6 +129,10 @@ final class LegacyConfigTranslator {
     /** S8a: een PSIMPDEFMAP-sleutel of -waarde langer dan de 50 tekens van legacy (DS_0254); nooit afgekapt. */
     static final String MAP_ENTRY_TOO_LONG = "MAP_ENTRY_TOO_LONG";
     static final String LEGACY_MAP_UNUSED = "LEGACY_MAP_UNUSED";
+    /** S8d: legacy CALC 14 geeft {@code ''} bij een miss; CatalogImport verwerpt de regel (V1 = B, nooit een stille lege waarde). */
+    static final String MAP_CONTAINS_MISS_NOT_EMPTY = "MAP_CONTAINS_MISS_NOT_EMPTY";
+    /** S8d: PSIMPDEFMAP-rijen van een CALC 14 zonder sleutel of zonder waarde winnen in legacy nooit; niet overgenomen. */
+    static final String MAP_CONTAINS_ROW_NOT_MIGRATED = "MAP_CONTAINS_ROW_NOT_MIGRATED";
     static final String INCLUDE_FILTER_EMPTY_VALUE_NOT_MIGRATED = "INCLUDE_FILTER_EMPTY_VALUE_NOT_MIGRATED";
     static final String INCLUDE_FILTER_WITHOUT_COLUMN = "INCLUDE_FILTER_WITHOUT_COLUMN";
     static final String INCLUDE_EXCLUDE_CODE_NOT_MIGRATED = "INCLUDE_EXCLUDE_CODE_NOT_MIGRATED";
@@ -188,7 +197,8 @@ final class LegacyConfigTranslator {
     /**
      * Eén geplande veldmapping, met precies wat {@code SetupService.addMapping} krijgt.
      *
-     * @param valueMap S8a: de vertaalrijen van een CALC 7-mapping ({@code import_field_value_map}); anders leeg
+     * @param valueMap S8a/S8d: de vertaalrijen van een CALC 7- of CALC 14-mapping ({@code import_field_value_map});
+     *                 anders leeg
      * @param steps    S8c: de ketenstappen van een CHAIN-mapping ({@code import_field_transform_step}); anders leeg
      */
     record PlannedMapping(int sequence, String targetCode, FieldValueKind valueKind, String sourceReference,
@@ -893,7 +903,7 @@ final class LegacyConfigTranslator {
         // Legacy Trim(prefix)/Trim(suffix): enkel spaties is geen prefix.
         String prefix = line.path("prefix").asText("").trim();
         String suffix = line.path("suffix").asText("").trim();
-        String calculation = line.path("calculation").asText("");
+        String calculation = calculationOf(line);
         int column = line.path("column").asInt();
         boolean substring = hasSubstring(line);
         boolean decimal = DECIMAL_TARGETS.contains(target);
@@ -998,6 +1008,18 @@ final class LegacyConfigTranslator {
                     add(element, WARNING, MAP_MISS_NO_FALLBACK, null, "legacy keeps the source value when a key "
                             + "is not in PSIMPDEFMAP; CatalogImport rejects the value (MAPPING_VALUE_UNKNOWN)");
                 }
+                case "14" -> {
+                    // S8d: enkel de rijen van de eigen NUMMER; legacy geeft '' bij een miss, wij verwerpen (V1 = B).
+                    List<PlannedValueMapEntry> table = containsTable(element, definition, number);
+                    if (table == null) {
+                        return null;
+                    }
+                    kind = FieldTransformKind.MAP_CONTAINS;
+                    valueMap = table;
+                    add(element, WARNING, MAP_CONTAINS_MISS_NOT_EMPTY, null, "legacy gives an empty value when no "
+                            + "PSIMPDEFMAP key of field " + number + " is contained in the value; CatalogImport rejects "
+                            + "the value (MAPPING_VALUE_UNKNOWN)");
+                }
                 default -> {
                     add(element, WARNING, "LEGACY_CALC_" + calculation + "_NOT_MIGRATED", null, "CALC "
                             + calculation + " of field " + number + " is not supported yet; the mapping to "
@@ -1063,15 +1085,68 @@ final class LegacyConfigTranslator {
         return List.copyOf(entries);
     }
 
+    /**
+     * S8d: de PSIMPDEFMAP-rijen van één NUMMER voor CALC 14 ({@code MapInstr}, {@code Prg_1170} r.1128-1167), in
+     * KEY-volgorde. Legacy neemt de eerste rij met {@code InStr(Upper(v), Trim(Upper(KEY))) > 0} én een niet-lege VALUE
+     * ({@code End condition Trim(V_RESULT)<>''}): een rij met lege VALUE kan dus nooit het resultaat zijn en wordt niet
+     * overgenomen; ook een lege sleutel niet (de uitkomst van {@code InStr(x,'')} is niet geverifieerd). Gemeld als
+     * {@value #MAP_CONTAINS_ROW_NOT_MIGRATED}. Sleutel en waarde getrimd zoals {@code SetupService} ze bewaart; bij twee
+     * rijen met dezelfde getrimde sleutel wint de eerste. {@code null} = geen bruikbare tabel (gemeld).
+     */
+    private List<PlannedValueMapEntry> containsTable(String element, JsonNode definition, int number) {
+        List<JsonNode> maps = new ArrayList<>();
+        definition.path("maps").forEach(map -> {
+            if (map.path("number").asInt() == number) {
+                maps.add(map);
+            }
+        });
+        maps.sort(Comparator.comparing((JsonNode m) -> m.path("key").asText()));
+        Map<String, String> table = new LinkedHashMap<>();
+        int skipped = 0;
+        for (JsonNode map : maps) {
+            String key = map.path("key").asText("").trim();
+            String value = map.path("value").asText("").trim();
+            if (key.isEmpty() || value.isEmpty()) {
+                skipped++;
+                continue;
+            }
+            if (key.length() > ImportFieldValueMap.MAX_VALUE_LENGTH
+                    || value.length() > ImportFieldValueMap.MAX_VALUE_LENGTH) {
+                add(element, WARNING, MAP_ENTRY_TOO_LONG, null, "a PSIMPDEFMAP key or value is longer than "
+                        + ImportFieldValueMap.MAX_VALUE_LENGTH + " characters (legacy KEY/VALUE, DS_0254); it is "
+                        + "never truncated, the mapping is not created");
+                return null;
+            }
+            String previous = table.putIfAbsent(key, value);
+            if (previous != null && !previous.equals(value)) {
+                add(element, WARNING, MAP_KEY_AMBIGUOUS, null, "PSIMPDEFMAP key '" + key + "' of field " + number
+                        + " occurs with different values; the first ('" + previous + "') is used");
+            }
+        }
+        if (skipped > 0) {
+            add(element, NOT_MIGRATED, MAP_CONTAINS_ROW_NOT_MIGRATED, null, skipped + " PSIMPDEFMAP row(s) of field "
+                    + number + " have an empty key or an empty value; legacy never takes such a row as the result, so "
+                    + "they are not migrated");
+        }
+        if (table.isEmpty()) {
+            add(element, WARNING, MAP_EMPTY, null, "CALC 14 without usable PSIMPDEFMAP entries for field " + number
+                    + "; the mapping is not created");
+            return null;
+        }
+        List<PlannedValueMapEntry> entries = new ArrayList<>(table.size());
+        table.forEach((key, value) -> entries.add(new PlannedValueMapEntry(entries.size() + 1, key, value)));
+        return List.copyOf(entries);
+    }
+
     private void mapsUsage(JsonNode definition, List<PlannedMapping> mappings) {
         if (definition.path("maps").isEmpty()) {
             return;
         }
-        boolean used = mappings.stream().anyMatch(mapping -> mapping.transformKind() == FieldTransformKind.MAP
-                || mapping.steps().stream().anyMatch(step -> step.kind() == FieldTransformKind.MAP));
+        boolean used = mappings.stream().anyMatch(mapping -> isTable(mapping.transformKind())
+                || mapping.steps().stream().anyMatch(step -> isTable(step.kind())));
         if (!used) {
             add("PSIMPDEFMAP", NOT_MIGRATED, LEGACY_MAP_UNUSED, null,
-                    "PSIMPDEFMAP has entries but no migrated mapping uses CALC 7");
+                    "PSIMPDEFMAP has entries but no migrated mapping uses CALC 7 or CALC 14");
         } else {
             add("PSIMPDEFMAP", MIGRATED, "MAP_TABLE", "import_field_value_map", null);
         }
@@ -1123,9 +1198,22 @@ final class LegacyConfigTranslator {
         return name.length() > MAX_DEFINITION_NAME ? name.substring(0, MAX_DEFINITION_NAME) : name;
     }
 
+    private static boolean isTable(FieldTransformKind kind) {
+        return kind == FieldTransformKind.MAP || kind == FieldTransformKind.MAP_CONTAINS;
+    }
+
+    /**
+     * De CALC van een regel; {@code ""} bij geen berekening. Legacy past een CALC enkel toe bij
+     * {@code CALCULATION<>'' AND CALCULATION<>'0'} ({@code Prg_1170} r.732): {@code '0'} betekent dus "geen CALC".
+     */
+    private static String calculationOf(JsonNode line) {
+        String calculation = line.path("calculation").asText("").trim();
+        return "0".equals(calculation) ? "" : calculation;
+    }
+
     private static boolean hasTransform(JsonNode line) {
         return !line.path("prefix").asText("").isEmpty() || !line.path("suffix").asText("").isEmpty()
-                || !line.path("calculation").asText("").isEmpty();
+                || !calculationOf(line).isEmpty();
     }
 
     private static boolean hasSubstring(JsonNode line) {
@@ -1143,8 +1231,8 @@ final class LegacyConfigTranslator {
         if (!line.path("suffix").asText("").isEmpty()) {
             parts.add("suffix");
         }
-        if (!line.path("calculation").asText("").isEmpty()) {
-            parts.add("CALC " + line.path("calculation").asText());
+        if (!calculationOf(line).isEmpty()) {
+            parts.add("CALC " + calculationOf(line));
         }
         if (hasSubstring(line)) {
             parts.add("position/length");

@@ -1,8 +1,8 @@
 # Legacy-config S8 — maptabel, transformatieketen, Include/Exclude, PSIMPEXCL
 
-> **Status: VOORSTEL (2026-10-21), denker-zwaar; S8a, S8b en S8c gebouwd (2026-10-21, zie "Uitwerking S8a" in §2a,
-> "Uitwerking S8b" in §2b en "Uitwerking S8c" in §2c).** Verfijnt
-> `legacy-config-bundle-design.md` §8 rij S8 en `legacy-config-migratie-design.md` LM-2. S8d–S8e kunnen starten; S8f (V2 = A)
+> **Status: VOORSTEL (2026-10-21), denker-zwaar; S8a, S8b, S8c en S8d gebouwd (2026-10-21, zie "Uitwerking S8a" in §2a,
+> "Uitwerking S8b" in §2b, "Uitwerking S8c" in §2c en "Uitwerking S8d" in §2d).** Verfijnt
+> `legacy-config-bundle-design.md` §8 rij S8 en `legacy-config-migratie-design.md` LM-2. S8e kan starten; S8f (V2 = A)
 > en S8g (V1 = B) zijn beslist (beslissingslog 2026-10-21) (§5).
 > Bronnen: `LegacyConfigTranslator`, `FieldTransform`, `FieldValueMapper`, `MappingSettings`, `ImportMappingConfigFactory`,
 > `RecordFilterEvaluator`, `RevisionCopier`, `LegacyRevisionContent`, Liquibase 004; Legacy-vault `Prg_1170` r.370-480,
@@ -151,6 +151,41 @@ r.2582-2687, enkel als `NOT >SkipExcludes`, r.395), niet in `Prg_1171`.
   (`Locale.ROOT`); rijen met lege VALUE niet overgenomen (rapportitem); miss → `MAPPING_VALUE_UNKNOWN` + WARNING
   `MAP_CONTAINS_MISS_NOT_EMPTY` (zie V1). `LEGACY_CALC_14_NOT_MIGRATED` verdwijnt.
 
+**Uitwerking S8d (gebouwd 2026-10-21; bouwer-gemiddeld; geen Liquibase, geen schemawijziging).**
+- *Model:* `FieldTransformKind.MAP_CONTAINS` (additief; `transform_kind` heeft geen check) en `FieldTransform.MapContains`:
+  de rijen van `import_field_value_map` in volgorde van `sequence_number`; de waarde wordt in hoofdletters gezet
+  (`Locale.ROOT`, dus onafhankelijk van de standaardtaal), de sleutel is getrimd en in hoofdletters; de eerste rij waarvan de
+  sleutel in de waarde voorkomt wint; een miss geeft `MAPPING_VALUE_UNKNOWN` (regel verworpen, beslissing V1 = B 2026-10-21);
+  `null` blijft `null`, een lege waarde is een miss (in een keten wordt ze eerder al overgeslagen). Geen instellingen: een
+  onbekende instelling is `CONFIG_TRANSFORM_INVALID` (`verifyFullyUsed`, ook `values=`).
+- *Configuratiefouten (`CONFIG_TRANSFORM_INVALID`, ook in collect-modus B'):* geen rijen, een blanco bronwaarde, een lege
+  doelwaarde (zo'n rij kan in legacy nooit het resultaat zijn, `End condition Trim(V_RESULT)<>''`), een dubbele bronwaarde.
+  Case-only-dubbels zijn hier wel toegelaten (anders dan bij MAP): de rij met de laagste volgorde wint deterministisch.
+  Rijen bij een andere soort dan MAP/MAP_CONTAINS blijven een fout (zoals S8a).
+- *Keten:* `MAP_CONTAINS` heeft plaats 3 in de plaatstabel (waardebewerking/tabelstap, zoals `MAP`); hoogstens één
+  waardebewerking dus hoogstens één tabelstap. De vertaalrijen gaan naar de tabelstap (MAP of MAP_CONTAINS). De volgordemelding
+  noemt nu ook `MAP_CONTAINS` (boodschapwijziging; `ConfigFactoryParityTest`-literals aangepast).
+- *Migratie:* CALC 14 → `CHAIN` met stap `MAP_CONTAINS` (config `null`, consistent met S8c) en als vertaalrijen enkel de
+  PSIMPDEFMAP-rijen van de **eigen NUMMER** (= het veldnummer van de regel, `MapInstr` range op `Overlopen.Nummer`), in
+  KEY-volgorde (tekstueel op de ruwe sleutel) → `sequence_number`; sleutel en waarde getrimd. Rijen met een lege VALUE of een
+  lege KEY worden niet overgenomen: item `MAP_CONTAINS_ROW_NOT_MIGRATED` (NOT_MIGRATED, één per mapping, met het aantal).
+  Dubbele getrimde sleutel: de eerste wint, `MAP_KEY_AMBIGUOUS` bij verschillende waarden. Geen bruikbare rij →
+  `MAP_EMPTY` (mapping vervalt); sleutel/waarde > 50 → `MAP_ENTRY_TOO_LONG` (vervalt). Altijd WARNING
+  `MAP_CONTAINS_MISS_NOT_EMPTY` (legacy geeft `''`, wij verwerpen). `LEGACY_CALC_14_NOT_MIGRATED` verdwijnt voor
+  mapping-regels. Een CALC 7 en een CALC 14 in één definitie: CALC 7 neemt de vereniging van álle NUMMERs (S8a, dus ook de
+  rijen van de CALC 14-regel, zoals legacy `Prg_1170` r.1009-1054 ze ook ziet), CALC 14 enkel de eigen NUMMER; elke mapping
+  heeft haar eigen rijen. `PSIMPDEFMAP`-gebruik (`LEGACY_MAP_UNUSED`/`MAP_TABLE`) telt nu MAP én MAP_CONTAINS.
+- *CALC `'0'` (uitbreiding, `Prg_1170` r.732):* de aanroep van `ApplyCalc` is
+  `CALCULATION<>'' AND CALCULATION<>'0'` (vault-tekst geverifieerd), dus `'0'` is "geen berekening". De vertaler behandelt
+  `'0'` (na trim) voortaan overal als leeg (`calculationOf`): de mapping blijft (zonder CALC-stap, eventueel met andere
+  bewerkingen), `LEGACY_CALC_0_NOT_MIGRATED` verdwijnt, en CALC `'0'` op een identiteits-/basisprijs-/omschrijvingsregel is geen
+  transformatie meer die blokkeert of vervalt. Opmerking: `Prg_1170` r.461 roept 'Write import' ook aan bij `Kolom=0 AND
+  CALCULATION<>''` (dus ook bij `'0'`); een regel zonder kolom en zonder vaste waarde blijft hier `LEGACY_LINE_WITHOUT_SOURCE`
+  (niet gewijzigd).
+- *Hashes/API/kopie:* geen wijziging: soort en rijen staan al in de inhoudshash (`T`/`V`-rijen), `RevisionCopier` en de
+  setup-API (`valueMap`, `steps[{kind, config}]`) zijn generiek; bestaande revisies byte-identiek. Een tweede APPLY geeft
+  `DEFINITION_UNCHANGED`.
+
 ### 2e. Include/Exclude (S8e, geen schema)
 
 | Code | Legacy slaat over als | Ons filter |
@@ -203,7 +238,7 @@ Steeds: tweemaal dezelfde APPLY → `DEFINITION_UNCHANGED`.
 | S8a maptabel (**gebouwd 2026-10-21**) | Liquibase 023, alle lagen | bouwer-zwaar | `ImportFieldValueMapTest`; `run-full-tests.ps1 -Tests ScreeningSchemaTest,SetupApiFlowTest,DeliveryScreeningFlowTest` | 2000 sleutels migreren; `values=` werkt nog; kopie (opvolger, sjabloon, migratie) draagt rijen mee; pariteit byte-identiek |
 | S8b UPPER/SUBSTRING (**gebouwd 2026-10-21**) | Domain, Service | bouwer-gemiddeld | — | CALC 15 en Positie/Lengte op mapping-regels gemigreerd |
 | S8c keten + AFFIX (**gebouwd 2026-10-21**) | Liquibase 024, alle lagen | bouwer-zwaar | `SetupApiFlowTest`, `DeliveryScreeningFlowTest` | prefix+suffix+CALC 7 = legacy; lege invoer blijft leeg; grammaticafouten blokkeren in B' |
-| S8d MAP_CONTAINS | Service | bouwer-gemiddeld | — | eerste treffer per KEY-volgorde, hoofdletterongevoelig |
+| S8d MAP_CONTAINS (**gebouwd 2026-10-21**) | Service | bouwer-gemiddeld | — | eerste treffer per KEY-volgorde, hoofdletterongevoelig |
 | S8e Include/Exclude | Service | bouwer-gemiddeld | `RecordFilterEvaluatorTest` | codes 1–6; twee includes = EN |
 | S8f PSIMPEXCL (na V2) | Liquibase 025, alle lagen | bouwer-zwaar | `RecordFilterEvaluatorTest`, `SetupApiFlowTest` | vijf vormen + dode rijen; `Skip_Excludes` |
 | S8g onMiss (na V1) | Service, catalogus | bouwer-gemiddeld | — | volgens V1 |

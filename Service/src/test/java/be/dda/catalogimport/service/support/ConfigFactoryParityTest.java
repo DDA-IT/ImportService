@@ -810,6 +810,23 @@ class ConfigFactoryParityTest {
                     "1"));
         }, TRANSFORM, "E_SUPPLIER", null, tc("E_SUPPLIER")
                 + "setting 'values' is required: a translation needs its table of source and target values");
+        // S8d: MAP_CONTAINS op dezelfde tabel; rijen met een lege doelwaarde of geen rijen zijn ongeldig.
+        ok(t, "OK-map-contains", f -> {
+            f.first().setTransformKind(FieldTransformKind.MAP_CONTAINS);
+            f.valueMap("ROOD", "R", " groen ", "G");
+        });
+        ok(t, "OK-chain-affix-map-contains", f -> {
+            f.chain(FieldTransformKind.AFFIX, "prefix=A-", FieldTransformKind.MAP_CONTAINS, null);
+            f.valueMap("A-1", "EEN");
+        });
+        blocked(t, "FT-map-contains-without-rows", f -> f.first().setTransformKind(FieldTransformKind.MAP_CONTAINS),
+                TRANSFORM, "E_SUPPLIER", null, tc("E_SUPPLIER")
+                        + "a contains-translation needs its value map rows (import_field_value_map)");
+        blocked(t, "FT-map-contains-empty-target", f -> {
+            f.first().setTransformKind(FieldTransformKind.MAP_CONTAINS);
+            f.valueMap("A", "");
+        }, TRANSFORM, "E_SUPPLIER", "A", tc("E_SUPPLIER") + "value map row 1 of a contains-translation has no target "
+                + "value; a row with an empty target can never be the result");
     }
 
     /**
@@ -836,11 +853,11 @@ class ConfigFactoryParityTest {
         blocked(t, "FT-chain-fixed-value-step", f -> f.chain(FieldTransformKind.FIXED_VALUE, "value=X"), TRANSFORM,
                 "E_SUPPLIER", "FIXED_VALUE", tc("E_SUPPLIER") + "step 1 (FIXED_VALUE) can never be a step of a chain; "
                         + "a chain holds at most SUBSTRING, then one of AFFIX, PREFIX or SUFFIX, then one of UPPER, MAP, "
-                        + "ADD, SUBTRACT, MULTIPLY, DIVIDE, PERCENTAGE or SPLIT, in that order");
+                        + "MAP_CONTAINS, ADD, SUBTRACT, MULTIPLY, DIVIDE, PERCENTAGE or SPLIT, in that order");
         blocked(t, "FT-chain-order", f -> f.chain(FieldTransformKind.UPPER, null, FieldTransformKind.AFFIX,
                 "prefix=X"), TRANSFORM, "E_SUPPLIER", "AFFIX", tc("E_SUPPLIER") + "step 2 (AFFIX) cannot follow step 1 "
                 + "(UPPER); a chain holds at most SUBSTRING, then one of AFFIX, PREFIX or SUFFIX, then one of UPPER, "
-                + "MAP, ADD, SUBTRACT, MULTIPLY, DIVIDE, PERCENTAGE or SPLIT, in that order");
+                + "MAP, MAP_CONTAINS, ADD, SUBTRACT, MULTIPLY, DIVIDE, PERCENTAGE or SPLIT, in that order");
         blocked(t, "FT-chain-step-config", f -> f.chain(FieldTransformKind.SUBSTRING, "start=x"), TRANSFORM,
                 "E_SUPPLIER", "x", tc("E_SUPPLIER") + "step 1 (SUBSTRING): setting 'start' must be a whole number");
         // De mapping met CHAIN draagt enkel de notatie: een transformatie-instelling op de mapping is ongebruikt.

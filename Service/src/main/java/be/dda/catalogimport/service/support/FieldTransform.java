@@ -44,7 +44,7 @@ public sealed interface FieldTransform
         permits FieldTransform.Unchanged, FieldTransform.Fixed, FieldTransform.Affix,
         FieldTransform.Concat, FieldTransform.Split, FieldTransform.Translate,
         FieldTransform.Arithmetic, FieldTransform.Percentage, FieldTransform.Upper, FieldTransform.Substring,
-        FieldTransform.LegacyAffix, FieldTransform.Chain {
+        FieldTransform.LegacyAffix, FieldTransform.Chain, FieldTransform.MapContains {
 
     /** De bewerking kon niet uitgevoerd worden op deze bronwaarde. */
     String CODE_TRANSFORM_FAILED = "TRANSFORM_FAILED";
@@ -273,6 +273,38 @@ public sealed interface FieldTransform
     }
 
     /**
+     * Vertaling op "bevat" (legacy CALC 14, {@code Prg_1170} task MapInstr, S8d): de rijen van de maptabel in volgorde van
+     * {@code sequence_number}; de eerste rij waarvan de (getrimde, in hoofdletters gezette) sleutel in de waarde (in
+     * hoofdletters, {@link Locale#ROOT}) voorkomt, bepaalt het doel. Een miss verwerpt de regel
+     * ({@link #CODE_MAPPING_VALUE_UNKNOWN}, R-REC-08 en beslissing V1 = B van 2026-10-21): legacy geeft {@code ''}, wij
+     * laten nooit een stille lege waarde door. {@code null} blijft {@code null}.
+     *
+     * @param entries sleutels al getrimd en in hoofdletters ({@link Locale#ROOT}), in evaluatievolgorde
+     */
+    record MapContains(List<MapEntry> entries) implements FieldTransform {
+
+        public MapContains {
+            entries = List.copyOf(entries);
+        }
+
+        @Override
+        public String apply(String value, String fieldName, SourceValues sources) {
+            if (value == null) {
+                return null;
+            }
+            String upper = value.toUpperCase(Locale.ROOT);
+            for (MapEntry entry : entries) {
+                if (upper.contains(entry.source())) {
+                    return entry.target();
+                }
+            }
+            throw new ImportValueException(CODE_MAPPING_VALUE_UNKNOWN, fieldName, value,
+                    fieldName + ": '" + value + "' contains none of the keys of the contains-table of this mapping; "
+                            + "an unknown source value is never passed through or replaced by an empty value");
+        }
+    }
+
+    /**
      * Optellen, aftrekken, vermenigvuldigen of delen met een vaste waarde of met een andere kolom.
      * Altijd {@link BigDecimal}, nooit {@code float}; het resultaat krijgt de schaal die het doelveld
      * declareert ({@code decimal_scale}), met {@code HALF_UP} — de enige plaats waar afgerond wordt.
@@ -369,9 +401,9 @@ public sealed interface FieldTransform
     /**
      * Zoals {@link #of(FieldTransformKind, MappingSettings, List, String, DecimalFormat)}, met de ketenstappen van deze
      * mapping (S8c, {@code docs/design/legacy-config-s8-design.md} par. 2c). Een {@code CHAIN} heeft 1-3 stappen in de
-     * gesloten volgorde {@code [SUBSTRING] → [AFFIX|PREFIX|SUFFIX] → [UPPER|MAP|ADD|SUBTRACT|MULTIPLY|DIVIDE|
-     * PERCENTAGE|SPLIT]}; elke stap is een gewone soort met haar eigen instellingen (elke onbekende instelling is een
-     * fout). De vertaalrijen gaan naar de MAP-stap. Stappen bij een andere soort dan {@code CHAIN} zouden stil zonder
+     * gesloten volgorde {@code [SUBSTRING] → [AFFIX|PREFIX|SUFFIX] → [UPPER|MAP|MAP_CONTAINS|ADD|SUBTRACT|MULTIPLY|
+     * DIVIDE|PERCENTAGE|SPLIT]}; elke stap is een gewone soort met haar eigen instellingen (elke onbekende instelling is een
+     * fout). De vertaalrijen gaan naar de MAP- of MAP_CONTAINS-stap. Stappen bij een andere soort dan {@code CHAIN} zouden stil zonder
      * effect blijven en zijn een configuratiefout; zo ook vertaalrijen bij een keten zonder MAP-stap.
      *
      * @param steps de stappen van deze mapping, op stapnummer; leeg als er geen zijn
@@ -385,7 +417,7 @@ public sealed interface FieldTransform
         if (kind == FieldTransformKind.CHAIN) {
             return chain(steps, valueMap, fieldCode, format);
         }
-        if (kind != FieldTransformKind.MAP && !valueMap.isEmpty()) {
+        if (kind != FieldTransformKind.MAP && kind != FieldTransformKind.MAP_CONTAINS && !valueMap.isEmpty()) {
             throw invalid(fieldCode, "it has " + valueMap.size() + " value map row(s) but transformation " + kind
                     + " does not use a translation table; they would silently have no effect");
         }
@@ -412,6 +444,7 @@ public sealed interface FieldTransform
             case UPPER -> new Upper();
             case SUBSTRING -> substring(settings, fieldCode);
             case AFFIX -> affix(settings, fieldCode);
+            case MAP_CONTAINS -> containsTable(valueMap, fieldCode);
             case CHAIN -> chain(steps, valueMap, fieldCode, format);
         };
     }
@@ -429,7 +462,7 @@ public sealed interface FieldTransform
     /**
      * S8c: de keten. Volgorde van de controles: aantal, nummering, soort per stap (nooit {@code NONE},
      * {@code FIXED_VALUE}, {@code CONCAT} of {@code CHAIN}), volgorde, en per stap haar eigen configuratie. Een
-     * waardebewerking komt hoogstens één keer voor, dus ook hoogstens één tabelstap (MAP; S8d voegt MAP_CONTAINS toe).
+     * waardebewerking komt hoogstens één keer voor, dus ook hoogstens één tabelstap (MAP of MAP_CONTAINS).
      */
     private static FieldTransform chain(List<Step> steps, List<MapEntry> valueMap, String fieldCode,
                                         DecimalFormat format) {
@@ -457,7 +490,7 @@ public sealed interface FieldTransform
                 throw invalid(fieldCode, step.kind().name(), "step " + step.number() + " (" + step.kind()
                         + ") cannot follow step " + previous.number() + " (" + previous.kind() + "); " + chainOrder());
             }
-            boolean table = step.kind() == FieldTransformKind.MAP;
+            boolean table = step.kind() == FieldTransformKind.MAP || step.kind() == FieldTransformKind.MAP_CONTAINS;
             try {
                 MappingSettings stepSettings = MappingSettings.parse(fieldCode, step.config());
                 built.add(of(step.kind(), stepSettings, table ? valueMap : List.of(), List.of(), fieldCode, format));
@@ -481,19 +514,19 @@ public sealed interface FieldTransform
     /** De gesloten volgorde, voor de melding. */
     private static String chainOrder() {
         return "a chain holds at most SUBSTRING, then one of AFFIX, PREFIX or SUFFIX, then one of UPPER, "
-                + "MAP, ADD, SUBTRACT, MULTIPLY, DIVIDE, PERCENTAGE or SPLIT, in that order";
+                + "MAP, MAP_CONTAINS, ADD, SUBTRACT, MULTIPLY, DIVIDE, PERCENTAGE or SPLIT, in that order";
     }
 
     /**
      * De plaats van een soort in de keten: 1 = substring, 2 = prefix/suffix, 3 = waardebewerking, 0 = nooit een stap.
-     * Bewust een volledige {@code switch} zonder {@code default}: een nieuwe soort (S8d: MAP_CONTAINS → 3) compileert pas
+     * Bewust een volledige {@code switch} zonder {@code default}: een nieuwe soort compileert pas
      * als haar plaats in de keten beslist is.
      */
     private static int chainStage(FieldTransformKind kind) {
         return switch (kind) {
             case SUBSTRING -> 1;
             case AFFIX, PREFIX, SUFFIX -> 2;
-            case UPPER, MAP, ADD, SUBTRACT, MULTIPLY, DIVIDE, PERCENTAGE, SPLIT -> 3;
+            case UPPER, MAP, MAP_CONTAINS, ADD, SUBTRACT, MULTIPLY, DIVIDE, PERCENTAGE, SPLIT -> 3;
             case NONE, FIXED_VALUE, CONCAT, CHAIN -> 0;
         };
     }
@@ -568,6 +601,35 @@ public sealed interface FieldTransform
             }
         }
         return new Translate(table, caseSensitive);
+    }
+
+    /**
+     * S8d: {@code MAP_CONTAINS} op de rijen van {@code import_field_value_map}, in volgorde van {@code sequence_number}
+     * (de volgorde van de lijst). Geen instellingen. Geen rijen, een blanco sleutel of een lege doelwaarde is
+     * {@code CONFIG_TRANSFORM_INVALID}: legacy slaat een rij met lege VALUE over (de eerste rij met een niet-lege VALUE
+     * wint), dus zo'n rij heeft hier nooit betekenis. Een dubbele sleutel kan ook niet (uniek in de tabel).
+     */
+    private static FieldTransform containsTable(List<MapEntry> valueMap, String fieldCode) {
+        if (valueMap.isEmpty()) {
+            throw invalid(fieldCode, "a contains-translation needs its value map rows (import_field_value_map)");
+        }
+        List<MapEntry> entries = new ArrayList<>(valueMap.size());
+        Map<String, String> seen = new HashMap<>();
+        for (MapEntry entry : valueMap) {
+            String source = entry.source();
+            if (source == null || source.isBlank()) {
+                throw invalid(fieldCode, source, "value map row " + entry.sequence() + " has no source value");
+            }
+            if (entry.target() == null || entry.target().isBlank()) {
+                throw invalid(fieldCode, source, "value map row " + entry.sequence() + " of a contains-translation "
+                        + "has no target value; a row with an empty target can never be the result");
+            }
+            if (seen.putIfAbsent(source, entry.target()) != null) {
+                throw invalid(fieldCode, source, "source value '" + source + "' is translated more than once");
+            }
+            entries.add(new MapEntry(entry.sequence(), source.trim().toUpperCase(Locale.ROOT), entry.target()));
+        }
+        return new MapContains(entries);
     }
 
     private static FieldTransform arithmetic(FieldTransformKind kind, MappingSettings settings,

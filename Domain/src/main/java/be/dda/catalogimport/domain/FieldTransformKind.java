@@ -59,5 +59,12 @@ public enum FieldTransformKind {
      * volgorde {@code [SUBSTRING] → [AFFIX|PREFIX|SUFFIX] → [één waardebewerking]}. De mapping zelf draagt dan enkel nog
      * de notatie-instellingen in {@code transform_config}. Nooit zelf een stap (databasecheck 024-1).
      */
-    CHAIN
+    CHAIN,
+
+    /**
+     * Vertaling op "bevat" via de maptabel {@code import_field_value_map} (S8d, legacy CALC 14): geordend op
+     * {@code sequence_number}, hoofdletterongevoelig, eerste treffer wint; een miss verwerpt de regel
+     * ({@code MAPPING_VALUE_UNKNOWN}, nooit {@code ''}).
+     */
+    MAP_CONTAINS
 }

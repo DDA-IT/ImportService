@@ -719,6 +719,94 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
                 .containsExactly("BASE_PRICE_TRANSFORM_UNSUPPORTED");
     }
 
+    /**
+     * S8d: CALC 14 wordt {@code MAP_CONTAINS} met enkel de PSIMPDEFMAP-rijen van de eigen NUMMER, in KEY-volgorde; rijen
+     * met lege VALUE worden niet overgenomen (gemeld) en de waarschuwing over de miss staat in het rapport. Een CALC 7
+     * in dezelfde definitie gebruikt de vereniging van alle NUMMERs (S8a), dus ook de rijen van de CALC 14-regel.
+     * {@code LEGACY_CALC_14_NOT_MIGRATED} verdwijnt. Een tweede APPLY van dezelfde inhoud is {@code DEFINITION_UNCHANGED}.
+     */
+    @Test
+    void calcFourteenIsMigratedWithTheOwnRowsAndASecondApplyIsUnchanged() throws Exception {
+        ObjectNode bundle = applicable();
+        line(bundle, 37).put("calculation", "14");
+        com.fasterxml.jackson.databind.node.ArrayNode maps = (com.fasterxml.jackson.databind.node.ArrayNode)
+                bundle.get("definition").get("maps");
+        maps.addObject().put("number", 37).put("key", "B-ROOD").put("value", "R").put("reserveAlpha", "");
+        maps.addObject().put("number", 37).put("key", "A-GROEN").put("value", "G").put("reserveAlpha", "");
+        maps.addObject().put("number", 37).put("key", "C-LEEG").put("value", "").put("reserveAlpha", "");
+        long id = receive(bundle);
+
+        String preview = previewBody(id, "libraryCode", "LIB-S8D");
+        assertThat(blockingCodes(preview)).isEmpty();
+        assertThat(preview).doesNotContain("LEGACY_CALC_14_NOT_MIGRATED");
+        assertThat(codes(preview, "WARNING")).contains("MAP_CONTAINS_MISS_NOT_EMPTY");
+        assertThat(codes(preview, "NOT_MIGRATED")).contains("MAP_CONTAINS_ROW_NOT_MIGRATED");
+        assertThat((List<String>) JsonPath.read(preview, "$.report.items[?(@.code == 'MAPPING')].target"))
+                .contains("VKP5_PCT <- column 9 CHAIN MAP_CONTAINS");
+        apply(id, JsonPath.read(preview, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8D")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.configurationFindings").isEmpty());
+
+        long definitionId = definitionId(supplier(bundle), "VROOAM2");
+        long revisionId = ((Number) revisionRows(definitionId).get(0).get("id")).longValue();
+        assertThat(mappingOf(revisionId, "VKP5_PCT")).isEqualTo("CHAIN|decimalSeparator=,");
+        assertThat(steps(revisionId, "VKP5_PCT")).containsExactly("1:MAP_CONTAINS:");
+        assertThat(valueMap(revisionId, "VKP5_PCT")).containsExactly("1:A-GROEN>G", "2:B-ROOD>R");
+        // CALC 7: de vereniging van alle NUMMERs, ook de rijen van de CALC 14-regel (legacy r.1009-1054).
+        assertThat(valueMap(revisionId, "VKP1_PCT")).containsExactly("1:DOOS>BOX", "2:STK>PCE", "3:A-GROEN>G",
+                "4:B-ROOD>R", "5:C-LEEG>");
+
+        ((ObjectNode) bundle.get("interface").get("header")).put("info", "tweede export s8d");
+        long second = receive(bundle);
+        String again = previewBody(second, "libraryCode", "LIB-S8D");
+        assertThat(codes(again, "MIGRATED")).contains("DEFINITION_UNCHANGED");
+        apply(second, JsonPath.read(again, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8D")
+                .andExpect(status().isOk());
+        assertThat(revisionRows(definitionId)).hasSize(1);
+        assertThat(valueMap(revisionId, "VKP5_PCT")).hasSize(2);
+    }
+
+    /** S8d: CALC 14 zonder bruikbare rijen voor de eigen NUMMER laat de mapping vervallen ({@code MAP_EMPTY}). */
+    @Test
+    void calcFourteenWithoutUsableOwnRowsDropsTheMapping() throws Exception {
+        ObjectNode bundle = applicable();
+        line(bundle, 37).put("calculation", "14");
+        // De rijen van NUMMER 7 horen niet bij veld 37; één rij van 37 heeft een lege waarde.
+        ((com.fasterxml.jackson.databind.node.ArrayNode) bundle.get("definition").get("maps")).addObject()
+                .put("number", 37).put("key", "LEEG").put("value", "").put("reserveAlpha", "");
+        String preview = previewBody(receive(bundle), "libraryCode", "LIB-S8D2");
+
+        assertThat(blockingCodes(preview)).isEmpty();
+        assertThat(codes(preview, "WARNING")).contains("MAP_EMPTY");
+        assertThat(codes(preview, "NOT_MIGRATED")).contains("MAP_CONTAINS_ROW_NOT_MIGRATED");
+        assertThat(preview).doesNotContain("MAP_CONTAINS_MISS_NOT_EMPTY");
+    }
+
+    /**
+     * S8d: CALC {@code '0'} betekent "geen berekening" (legacy {@code Prg_1170} r.732: {@code <>'' AND <>'0'}): de mapping
+     * blijft (zonder CALC-stap, eventueel met prefix), er is geen {@code LEGACY_CALC_0_NOT_MIGRATED}, en op een
+     * identiteitsregel is CALC {@code '0'} geen transformatie die blokkeert.
+     */
+    @Test
+    void calcZeroMeansNoCalculation() throws Exception {
+        ObjectNode bundle = applicable();
+        line(bundle, 37).put("calculation", "0").put("prefix", "P-");
+        line(bundle, 4).put("calculation", "0");
+        line(bundle, 11).put("calculation", "0");
+        long id = receive(bundle);
+
+        String preview = previewBody(id, "libraryCode", "LIB-S8D0");
+        assertThat(blockingCodes(preview)).isEmpty();
+        assertThat(preview).doesNotContain("LEGACY_CALC_0_NOT_MIGRATED").doesNotContain("IDENTITY_TRANSFORM_UNSUPPORTED")
+                .doesNotContain("DESCRIPTION_TRANSFORM_NOT_MIGRATED");
+        apply(id, JsonPath.read(preview, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8D0")
+                .andExpect(status().isOk());
+
+        long revisionId = ((Number) revisionRows(definitionId(supplier(bundle), "VROOAM2")).get(0).get("id"))
+                .longValue();
+        assertThat(mappingOf(revisionId, "VKP5_PCT")).isEqualTo("CHAIN|decimalSeparator=,");
+        assertThat(steps(revisionId, "VKP5_PCT")).containsExactly("1:AFFIX:prefix=P-");
+    }
+
     // --- Hulp -----------------------------------------------------------------------------------------------------
 
     /** S8b: soort en configuratie van één mapping als {@code SOORT|config}. */

@@ -8,6 +8,7 @@ import be.dda.catalogimport.service.support.ImportValueRules.DecimalFormat;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -204,6 +205,110 @@ class FieldTransformTest {
                 .endsWith("source value 'A' is translated more than once");
         assertThat(tableConfigFailure(FieldTransformKind.MAP, null, List.of(entry(7, " ", "1"))).getMessage())
                 .endsWith("value map row 7 has no source value");
+    }
+
+    // --- Legacy-config S8d: MAP_CONTAINS (CALC 14) -----------------------------------------------
+
+    /** Legacy {@code MapInstr}: de eerste rij (KEY-volgorde) waarvan de sleutel in de waarde voorkomt, wint. */
+    @Test
+    void mapContainsTakesTheFirstRowInSequenceWhoseKeyIsContainedCaseInsensitively() {
+        List<FieldTransform.MapEntry> rows = List.of(entry(1, "ROOD", "R"), entry(2, "  groen ", "G"),
+                entry(3, "RO", "X"));
+
+        assertThat(applyContains(rows, "Donkerrood")).isEqualTo("R");
+        assertThat(applyContains(rows, "licht GROEN metallic")).isEqualTo("G");
+        // Beide 'ROOD' (volgorde 1) en 'RO' (volgorde 3) komen voor: de eerste in volgorde wint.
+        assertThat(applyContains(rows, "rood")).isEqualTo("R");
+        // Enkel 'RO' komt voor.
+        assertThat(applyContains(rows, "Roze")).isEqualTo("X");
+        assertThat(applyContains(rows, null)).isNull();
+        // De volgorde is die van de rijen, niet de lengte of de alfabetische volgorde.
+        assertThat(applyContains(List.of(entry(1, "RO", "X"), entry(2, "ROOD", "R")), "rood")).isEqualTo("X");
+    }
+
+    @Test
+    void mapContainsRejectsAMissInsteadOfGivingAnEmptyValue() {
+        List<FieldTransform.MapEntry> rows = List.of(entry(1, "ROOD", "R"));
+
+        assertThatThrownBy(() -> applyContains(rows, "blauw"))
+                .isInstanceOf(ImportValueException.class)
+                .satisfies(failure -> {
+                    assertThat(((ImportValueException) failure).getCode())
+                            .isEqualTo(FieldTransform.CODE_MAPPING_VALUE_UNKNOWN);
+                    assertThat(((ImportValueException) failure).getRawValue()).isEqualTo("blauw");
+                });
+        assertThatThrownBy(() -> applyContains(rows, "")).isInstanceOf(ImportValueException.class);
+    }
+
+    /** {@code Locale.ROOT}: onder een Turkse standaardtaal wordt "i" niet "İ" en blijft "ID" in "title" gevonden. */
+    @Test
+    void mapContainsIsIndependentOfTheDefaultLocale() {
+        Locale previous = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+            assertThat(applyContains(List.of(entry(1, "TITLE", "T"), entry(2, "ILE", "I")), "title")).isEqualTo("T");
+            assertThat(applyContains(List.of(entry(1, "iLE", "I")), "FILE")).isEqualTo("I");
+        } finally {
+            Locale.setDefault(previous);
+        }
+    }
+
+    @Test
+    void mapContainsRefusesRowsThatCanNeverBeTheResult() {
+        // Geen rijen, lege doelwaarde, blanco sleutel, dubbele sleutel, een instelling die niet bestaat.
+        assertThat(tableConfigFailure(FieldTransformKind.MAP_CONTAINS, null, List.of()).getMessage())
+                .endsWith("a contains-translation needs its value map rows (import_field_value_map)");
+        assertThat(tableConfigFailure(FieldTransformKind.MAP_CONTAINS, null, List.of(entry(4, "A", ""))).getMessage())
+                .endsWith("value map row 4 of a contains-translation has no target value; a row with an empty target "
+                        + "can never be the result");
+        assertThat(tableConfigFailure(FieldTransformKind.MAP_CONTAINS, null, List.of(entry(2, " ", "1"))).getMessage())
+                .endsWith("value map row 2 has no source value");
+        assertThat(tableConfigFailure(FieldTransformKind.MAP_CONTAINS, null,
+                List.of(entry(1, "A", "1"), entry(2, "A", "2"))).getMessage())
+                .endsWith("source value 'A' is translated more than once");
+        assertThat(tableConfigFailure(FieldTransformKind.MAP_CONTAINS, "values=A>1", List.of(entry(1, "A", "1")))
+                .getMessage()).contains("values");
+    }
+
+    @Test
+    void mapContainsIsAValueOperationOfAChainAndExcludesASecondTableStep() {
+        List<FieldTransform.MapEntry> rows = List.of(entry(1, "ROOD", "R"), entry(2, "GROEN", "G"));
+        List<FieldTransform.Step> steps = List.of(step(1, FieldTransformKind.SUBSTRING, "start=2;length=8"),
+                step(2, FieldTransformKind.AFFIX, "prefix=d;suffix=!"), step(3, FieldTransformKind.MAP_CONTAINS, null));
+
+        // "xrood zzzzz" -> MID(2,8) = "rood zzz" -> "drood zzz!" -> bevat "ROOD" -> "R"
+        assertThat(applyChain(steps, rows, "xrood zzzzz")).isEqualTo("R");
+        assertThat(applyChain(steps, rows, "   ")).isEmpty();
+        assertThatThrownBy(() -> applyChain(steps, rows, "xblauw")).isInstanceOf(ImportValueException.class);
+
+        // Hoogstens één tabelstap, en de tabelstap is altijd de laatste (plaats 3).
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.MAP, "caseSensitive=true"),
+                step(2, FieldTransformKind.MAP_CONTAINS, null)), rows))
+                .contains("step 2 (MAP_CONTAINS) cannot follow step 1 (MAP)");
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.MAP_CONTAINS, null),
+                step(2, FieldTransformKind.UPPER, null)), rows))
+                .contains("step 2 (UPPER) cannot follow step 1 (MAP_CONTAINS)");
+        // Rijen zonder tabelstap blijven een fout; een instelling op de stap ook.
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.UPPER, null)), rows))
+                .endsWith("it has 2 value map row(s) but no step of its chain uses a translation table; they would "
+                        + "silently have no effect");
+        assertThat(chainFailure(List.of(step(1, FieldTransformKind.MAP_CONTAINS, "caseSensitive=true")), rows))
+                .contains("step 1 (MAP_CONTAINS)");
+    }
+
+    @Test
+    void mapContainsRowsAtAnyOtherKindAreAConfigurationError() {
+        assertThat(tableConfigFailure(FieldTransformKind.UPPER, null, List.of(entry(1, "A", "1"))).getMessage())
+                .endsWith("it has 1 value map row(s) but transformation UPPER does not use a translation table; "
+                        + "they would silently have no effect");
+    }
+
+    private String applyContains(List<FieldTransform.MapEntry> rows, String value) {
+        MappingSettings settings = MappingSettings.parse(FIELD, null);
+        FieldTransform transform = FieldTransform.of(FieldTransformKind.MAP_CONTAINS, settings, rows, FIELD,
+                SCALE_TWO);
+        settings.verifyFullyUsed();
+        return transform.apply(value, FIELD, columns);
     }
 
     // --- Legacy-config S8b: UPPER en SUBSTRING -----------------------------------------------------
