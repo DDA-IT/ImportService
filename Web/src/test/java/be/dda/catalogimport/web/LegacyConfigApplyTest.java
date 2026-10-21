@@ -88,7 +88,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
                 .andExpect(jsonPath("$.configurationFindings").isEmpty())
                 .andReturn().getResponse().getContentAsString();
 
-        // Bronorganisatie: find-or-create, SUPPLIER, plaatshoudernaam (Prodis-naam volgt in S5).
+        // Bronorganisatie: find-or-create, SUPPLIER, plaatshoudernaam (Prodis-leesbron uit; met Prodis: S5-test).
         Map<String, Object> organisation = jdbc.queryForMap("select * from source_organisation where code = ?",
                 supplier);
         assertThat(organisation.get("name")).isEqualTo("Leverancier " + supplier);

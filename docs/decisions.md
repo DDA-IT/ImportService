@@ -2745,3 +2745,22 @@ rapport `DEFINITION_UNCHANGED`, ontvangst wel `APPLIED`. Overstemt `legacy-confi
   0 = geen) rechtstreeks; `previewFingerprint` over rapport + id/`updated_at` van geraakte rijen.
 - **Liquibase-nummering:** S2 → `021-legacy-config-definition-origin.sql`; S6 → `022`; S8 (maptabel) → `023`.
 **Bron:** mens / S2-bouwerrapport
+
+## 2026-10-21 — Legacy-config S4-vervolg: wachtwoord bij UNCHANGED, redactie op FTP+FTP2
+**Vraag:** (1) Een `UNCHANGED`-push gooit het secret weg (A1), dus een wachtwoord dat later verschijnt of na een run zonder
+secret wordt nooit overgenomen. (2) Userinfo verdeeld over `FTP` en `FTP2` wordt niet geredigeerd en staat leesbaar in `bundle_json`.
+**Beslissing:**
+- **(1)** Draagt een `UNCHANGED`-push een secret en heeft de herkomst nog geen credential, dan wordt het secret toch versleuteld
+  opgeslagen (zelfde regels als bij RECEIVED: enkel SFTP met geldige host, eventbron SYSTEM). Een bestaande credential wordt nooit
+  vervangen (A1 blijft voor vervangen). Verfijnt A1.
+- **(2)** Contractwijziging binnen v1: userinfo-redactie gebeurt op de samengestelde waarde `Trim(FTP)&Trim(FTP2)`; CatalogImport
+  weigert (400 `SECRET_IN_DETAILS`) een bundel waarvan de samengestelde waarde nog userinfo bevat. Raakt beide repo's.
+**Bron:** mens / S4-bouwerrapport
+
+## 2026-10-21 — Legacy-config S5: aanvaarde implementatiekeuzes
+**Vraag:** Afwijkingen van de S5-bouwer t.o.v. design §6.
+**Beslissing (hoofdsessie, binnen de design-grenzen):** fingerprint bij onbereikbare Prodis = `unverified:<sha256>` (niet letterlijk
+`unverified`, zodat stale-detectie blijft); APPLY bij onbereikbare Prodis toegestaan met `libraryCode` uit de body (design §6),
+geverifieerde preview + Prodis nu weg → 409 STALE; keuze-endpoints `prodis-reference/*` al in S5; `readOnlyMode=always` voor
+PostgreSQL; leverancier dubbel in Prodis → BLOCKING; `legacy_number` exact na trim; lokale profielen zonder Prodis-credentials.
+**Bron:** S5-bouwerrapport / `legacy-config-bundle-design.md` §6

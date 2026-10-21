@@ -3,6 +3,7 @@ import be.dda.catalogimport.service.BadRequestException;
 import be.dda.catalogimport.service.ConflictException;
 import be.dda.catalogimport.service.NotFoundException;
 import be.dda.catalogimport.service.PayloadTooLargeException;
+import be.dda.catalogimport.service.ProdisReferenceUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
@@ -57,6 +58,9 @@ import java.util.Map;
     // doorgaan alsof de gebruiker geen rechten heeft, en nooit alsof hij ze wel heeft.
     // De boodschap is bewust VAST en noemt de bron niet (ontwerp par. 3); de oorzaak staat in de log.
     @ExceptionHandler(PermissionSourceUnavailableException.class) ResponseEntity<Map<String,String>> permissionSourceUnavailable(PermissionSourceUnavailableException error) { LOG.error("{}: {}", PermissionSourceUnavailableException.CODE, error.getMessage(), error); return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body("Your permissions could not be determined right now; try again later", PermissionSourceUnavailableException.CODE)); }
+    // Legacy-config S5 (legacy-config-bundle-design.md par. 6): de alleen-lezen Prodis-database is geconfigureerd maar
+    // onbereikbaar -> 503. Vaste boodschap; de service logde al het type en de SQLState (nooit URL of gebruiker).
+    @ExceptionHandler(ProdisReferenceUnavailableException.class) ResponseEntity<Map<String,String>> prodisReferenceUnavailable(ProdisReferenceUnavailableException error) { return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body(error.getMessage(), ProdisReferenceUnavailableException.CODE)); }
     // Analyse-opvolging stap 3a: de upload overschrijdt de multipartlimiet -> 413 met eigen code (voorheen 413
     // zonder code via Spring). Vaste boodschap; de limiet zelf staat enkel in het logboek.
     @ExceptionHandler(MaxUploadSizeExceededException.class) ResponseEntity<Map<String,String>> uploadTooLarge(MaxUploadSizeExceededException error) { LOG.warn("{}: upload rejected (limit {} bytes)", CODE_UPLOAD_TOO_LARGE, error.getMaxUploadSize()); return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body(UPLOAD_TOO_LARGE_MESSAGE, CODE_UPLOAD_TOO_LARGE)); }

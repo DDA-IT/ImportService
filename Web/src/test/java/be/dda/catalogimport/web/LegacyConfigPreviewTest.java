@@ -26,6 +26,8 @@ import org.springframework.http.MediaType;
  *   <li>Een afgeleide bundel is APPLICABLE en plant organisatie, definitie, revisie, koppeling en taak.</li>
  *   <li>Ontbrekende definitie, charset, separator, wisselkoers en libraryCode volgen de vertaalregels.</li>
  *   <li>403 zonder MANAGE vóór 404.</li>
+ *   <li>S5, zonder Prodis-configuratie (functie uit): de context start, PREVIEW blijft S2-gedrag
+ *       ({@code prodisReference = NOT_CONFIGURED}) en de keuzelijsten geven 409 {@code PRODIS_DB_NOT_CONFIGURED}.</li>
  * </ul>
  */
 class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
@@ -208,6 +210,26 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
         assertThat(blockingCodes(body)).containsExactly("BASE_PRICE_TRANSFORM_UNSUPPORTED");
         assertThat(codes(body, "WARNING")).contains("TRANSFORM_CHAIN_UNSUPPORTED",
                 "DESCRIPTION_TRANSFORM_NOT_MIGRATED");
+    }
+
+    @Test
+    void withoutProdisConfigurationThePreviewStaysS2AndTheReferenceListsAre409() throws Exception {
+        long id = receive(applicable());
+        String body = previewBody(id, "libraryCode", "LIB-OFF");
+        assertThat((String) JsonPath.read(body, "$.report.prodisReference")).isEqualTo("NOT_CONFIGURED");
+        assertThat((String) JsonPath.read(body, "$.previewFingerprint")).matches("[0-9a-f]{64}");
+        assertThat((List<String>) JsonPath.read(body,
+                "$.report.items[?(@.code == 'PRODIS_REFERENCE_NOT_VERIFIED')].element"))
+                .containsExactly("INDET:Supplier", "INDET:ArtImp_BibNr");
+        assertThat((List<?>) JsonPath.read(body, "$.report.planned.link.libraryCandidates")).isEmpty();
+
+        for (String path : List.of("/suppliers?q=x", "/suppliers/1/groups", "/suppliers/1/catalogs")) {
+            mockMvc.perform(get("/api/catalog-import/prodis-reference" + path).with(as(USER, Permission.READ)))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(get("/api/catalog-import/prodis-reference" + path).with(as(USER, Permission.MANAGE)))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("PRODIS_DB_NOT_CONFIGURED"));
+        }
     }
 
     @Test

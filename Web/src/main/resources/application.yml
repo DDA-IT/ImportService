@@ -107,6 +107,24 @@ catalogimport:
   legacy-config:
     # Grootste aanvaarde bundel in bytes (body van de push); groter = 413 LEGACY_BUNDLE_TOO_LARGE. Default 2 MB.
     max-bundle-bytes: ${CATALOG_LEGACY_CONFIG_MAX_BUNDLE_BYTES:2097152}
+  # Alleen-lezen Prodis-database (legacy-config S5; docs/design/legacy-config-bundle-design.md par. 6; beslissingslog
+  # 2026-10-20 "datasync-aanpak, Prodis-DB lezen, sjablonen"): leveranciers, groepen en bibliotheken voor de controle in
+  # PREVIEW/APPLY en de keuzelijsten /api/catalog-import/prodis-reference/**. BEWUST GEEN default, in geen enkel profiel:
+  #   CATALOG_PRODIS_DB_URL       bv. jdbc:postgresql://<host>:5432/Prodis (zonder wachtwoord in de URL)
+  #   CATALOG_PRODIS_DB_USERNAME  de eigen alleen-lezen rol (catalogimport_ro; infra)
+  #   CATALOG_PRODIS_DB_PASSWORD  nooit in de repo
+  # Alle drie leeg = functie uit: de applicatie start, keuzelijsten 409 PRODIS_DB_NOT_CONFIGURED, PREVIEW toont
+  # PRODIS_REFERENCE_NOT_VERIFIED en vraagt libraryCode (gedrag S2). Een of twee gezet, een URL die geen driver kent of
+  # een wachtwoord draagt, of een ongeldige waarde hieronder = de applicatie start niet. Onbereikbaar = de applicatie
+  # start wel (503 PRODIS_DB_UNAVAILABLE; PREVIEW "unverified"). Pool readOnly, geen Liquibase, buiten de readiness-probe.
+  prodis-db:
+    url: ${CATALOG_PRODIS_DB_URL:}
+    username: ${CATALOG_PRODIS_DB_USERNAME:}
+    password: ${CATALOG_PRODIS_DB_PASSWORD:}
+    # Wachten op een verbinding (min. PT0.25S), time-out per query (min. PT1S, hele seconden), poolgrootte (1..10).
+    connect-timeout: ${CATALOG_PRODIS_DB_CONNECT_TIMEOUT:PT5S}
+    query-timeout: ${CATALOG_PRODIS_DB_QUERY_TIMEOUT:PT10S}
+    maximum-pool-size: ${CATALOG_PRODIS_DB_MAXIMUM_POOL_SIZE:2}
   # catalogimport.fetch.* staat hier BEWUST NIET als waarde (K-4a; docs/decisions.md 2026-09-29 L4b, A12;
   # docs/design/leveringsconfiguratie-design.md par. 5 en 8). Enkel deze toelichting:
   #   fetch.allowed-hosts   (env CATALOGIMPORT_FETCH_ALLOWED_HOSTS) exacte hostnamen, komma-gescheiden in EEN string,

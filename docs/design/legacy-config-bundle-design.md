@@ -192,8 +192,8 @@ rollback enkel zolang geen rij een vaste waarde heeft.
 |---|---|---|
 | `definition.code` / `description` | `ImportDefinition(code, description)` `OWN_DEFINITION`; codeconflict met niet-gemigreerde definitie → `DEFINITION_CODE_CONFLICT_MANUAL` (blokkeert, tenzij `definitionCodeOverride`) | B |
 | `updateFile` / `replacementCode` / `deleteCode` | rapport `LEGACY_CONTROL_CODE_NOT_MIGRATED` | N |
-| INDET `Supplier` | `SourceOrganisation` find-or-create (`SUPPLIER`, code = `Supplier.number`, naam uit Prodis); bron van de definitie en `import_link.supplier_organisation` | B (+S5-validatie) |
-| `ArtImp_BibNr` | `import_link.library_code` = `supplier_catalog.scope_key` van de match op `legacy_number` (A3). Tot S5: `libraryCode` uit de APPLY-body (WARNING `PRODIS_REFERENCE_NOT_VERIFIED`); zonder → `LIBRARY_CODE_NOT_RESOLVED` (blokkeert); nooit het ruwe `ArtImp_BibNr`; label afwezig → `LIBRARY_NOT_DECLARED` (blokkeert) | B |
+| INDET `Supplier` | `SourceOrganisation` find-or-create (`SUPPLIER`, code = `Supplier.number`); bron van de definitie en `import_link.supplier_organisation`. S5 (Prodis geconfigureerd en bereikbaar): exact één `supplier.number` vereist, anders `PRODIS_SUPPLIER_NOT_FOUND` / `PRODIS_SUPPLIER_AMBIGUOUS` (blokkeert; `number` is in Prodis niet uniek); een **nieuwe** organisatie krijgt `supplier.name` (leeg → plaatshouder + WARNING `PRODIS_SUPPLIER_NAME_EMPTY`; > 200 tekens → `PRODIS_SUPPLIER_NAME_TOO_LONG`, nooit afgekapt), een bestaande wordt nooit hernoemd (`SOURCE_ORGANISATION_NAME_KEPT`). Zonder of met onbereikbare Prodis: WARNING `PRODIS_REFERENCE_NOT_VERIFIED`, plaatshouder "Leverancier &lt;nr&gt;" | B (S5 gebouwd) |
+| `ArtImp_BibNr` | `import_link.library_code` = `supplier_catalog.scope_key` (A3); nooit het ruwe `ArtImp_BibNr`; label afwezig → `LIBRARY_NOT_DECLARED` (blokkeert). S5 (Prodis geverifieerd, nieuwe koppeling): zonder `libraryCode` de `scope_key` als precies één **`scope_key`** van die leverancier een rij heeft met `legacy_number` = `ArtImp_BibNr` (exact, getrimd; historiekrijen van dezelfde `scope_key` tellen als één); 0 of > 1 → `LIBRARY_CODE_NOT_RESOLVED` (blokkeert) met de kandidaten (bij 0: alle bibliotheken van de leverancier) in `planned.link.libraryCandidates` en in de boodschap; een gegeven `libraryCode` moet een `scope_key` van die leverancier zijn, anders `LIBRARY_CODE_NOT_IN_PRODIS` (blokkeert, met kandidaten); een andere bibliotheek dan de legacy-match → WARNING `LIBRARY_CODE_NOT_LEGACY_MATCH`. Prodis niet geconfigureerd of onbereikbaar: gedrag S2 (`libraryCode` uit de body + WARNING `PRODIS_REFERENCE_NOT_VERIFIED`; zonder → `LIBRARY_CODE_NOT_RESOLVED`) | B (S5 gebouwd) |
 | `Separator` Comma/Semicolon/Tab | `structure_delimiter` `,` / `;` / TAB (`Prg_1232` r.1188-1192); afwezig/leeg → `;` met WARNING `SEPARATOR_NOT_DECLARED` (`Prg_1232` r.1194); anders of XML → `STRUCTURE_FORMAT_UNSUPPORTED` (blokkeert) | B |
 | `FILE_ENCODING` | `structure_charset`; leeg → `CHARSET_NOT_DECLARED` (blokkeert, tenzij `charsetWhenUndeclared`) — nooit raden | B |
 | `SkipHeaderLines` n | n=0 → geen header; n≥1 → `has_header`, `header_line_number`=n; altijd `COLUMN_INDEX` | B |
@@ -238,27 +238,57 @@ sjabloon buiten scope, 2026-09-23 keuze 4). Gedeelde definitie die in één inte
 hashes blijven byte-identiek (byte-vergelijkingstest).
 
 **Rapport (PREVIEW = APPLY-resultaat):** `{receiptId, contentHash, outcome APPLICABLE|BLOCKED, planned{sourceOrganisation,
-definition, link, task, credential}, sharedWith, items[{element:"PSIMPDEF#9", status: MIGRATED|NOT_MIGRATED|WARNING|BLOCKING,
-code, target, message}]}`; `previewFingerprint` = SHA-256 over het canonieke rapport + id's/versies van geraakte bestaande rijen.
+definition, link{…, libraryCode, libraryCandidates[{scopeKey, catalogName, legacyNumber, status}]}, task, credential}, sharedWith,
+items[{element:"PSIMPDEF#9", status: MIGRATED|NOT_MIGRATED|WARNING|BLOCKING, code, target, message}],
+prodisReference VERIFIED|UNAVAILABLE|NOT_CONFIGURED}`; `previewFingerprint` = SHA-256 over het canonieke rapport + id's/versies van
+geraakte bestaande rijen + (S5) de gelezen Prodis-rijen (leverancier: `number|name`; alle bibliotheekrijen van die leverancier:
+`scope_key|legacy_number|catalog_name|status`). `libraryCandidates` en `prodisReference` zijn additief (S5).
 
 ## 6. Alleen-lezen Prodis-datasource
 
-- **Config:** `catalogimport.prodis-db.url`, `.username`, `.password` (env `CATALOG_PRODIS_DB_*`, geen default);
-  `.connect-timeout` PT5S, `.query-timeout` PT10S, `.maximum-pool-size` 2. Geen config → functie uit, preview-items
-  `PRODIS_REFERENCE_NOT_VERIFIED`, APPLY zet geen vaste leverancier/groep. Ongeldige config → fail-fast.
-- **Lagen:** Web `config/ProdisReadOnlyDatabaseConfiguration` bouwt een `HikariDataSource` (`readOnly=true`), gewikkeld in een eigen
-  bean `ProdisReferenceJdbc` — **geen** bean van type `DataSource`/`JdbcTemplate`. Dao `ProdisReferenceDao` (JDBC-projectie):
-  `findSupplier(number)`, `findSupplierGroups(supplierNumber)` (`supplier_group.legacy_code` = `lev|grp|korting`, `group_name`,
-  `discount_code`), `findSupplierCatalog(supplierNumber, legacyNumber)` (`scope_key`, `legacy_number`, `catalog_name`, `status`).
-  Service `ProdisReferenceService` vertaalt fouten. Geen Liquibase, geen `@Transactional` van de hoofd-TM op deze bron.
-- **DB-rol (infra):** `catalogimport_ro`, enkel SELECT op `supplier(id, number, name)`, `supplier_group(id, supplier_id,
-  group_name, discount_code, legacy_code)`, `supplier_catalog(id, supplier_id, scope_key, legacy_number, catalog_name, status)`,
-  `default_transaction_read_only=on`; rechtstreekse tabellen, geen views (A4).
-- **Bewaren:** enkel businesscodes; geen Prodis-id's, geen cross-DB-FK.
-- **Onbereikbaar:** 503 `PRODIS_DB_UNAVAILABLE` op keuze-endpoints; PREVIEW → `PRODIS_REFERENCE_NOT_VERIFIED`, fingerprint
-  `"unverified"`; APPLY mag een DRAFT maken zonder vaste waarden; activeren blokkeert dan op `CONFIG_IDENTITY_FIELD_MISSING` (fail-closed).
-- **Keuze-endpoints** (S6, MANAGE): `GET /prodis-reference/suppliers?q=`, `/suppliers/{nr}/groups`, `/suppliers/{nr}/catalogs`.
-- **Testen:** H2 in testresources (`prodis-reference-test-schema.sql`), test met onbereikbare URL (503), test zonder config (functie uit).
+> **Gebouwd in S5 (2026-10-20).** Hieronder de werkelijkheid; afwijkingen van het oorspronkelijke voorstel staan erbij.
+
+- **Config:** `catalogimport.prodis-db.url`, `.username`, `.password` (env `CATALOG_PRODIS_DB_*`, geen default, ook niet in
+  `local`/`ewoutdev`: de lokale Docker-database kent enkel de eigenaar `Prodis`, en die hoort niet in de repo);
+  `.connect-timeout` PT5S (min. PT0.25S), `.query-timeout` PT10S (min. PT1S), `.maximum-pool-size` 2 (1..10). Alle drie leeg →
+  functie uit (preview-items `PRODIS_REFERENCE_NOT_VERIFIED`, gedrag S2). Fail-fast bij: één of twee van de drie gezet, een URL
+  die geen JDBC-driver herkent of die een wachtwoord bevat, een ongeldige time-out/poolgrootte, een onbekende sleutel. Geen
+  boodschap noemt URL, gebruiker of wachtwoord. Een onbereikbare database laat de applicatie wél starten.
+- **Lagen:** Web `config/ProdisReadOnlyDatabaseConfiguration` (+ `ProdisReferenceDatabaseProperties`) bouwt een `HikariDataSource`
+  en wikkelt die in de eigen bean `ProdisReferenceJdbc` (Dao) — **geen** bean van type `DataSource`/`JdbcTemplate`/
+  `NamedParameterJdbcTemplate` (bewezen in `ProdisReferenceHttpTest`: één DataSource; JPA, Liquibase en `JdbcTemplate` op de
+  hoofddatabase). Pool: `readOnly=true`, `autoCommit=true`, `minimumIdle=0`, `initializationFailTimeout=-1` (verbindt pas bij de
+  eerste query, houdt niets vast), geen MBeans; voor PostgreSQL ook pgjdbc `readOnly=true`, **`readOnlyMode=always`** (zie par. 10),
+  `connectTimeout`, `loginTimeout`, `socketTimeout`, `logServerErrorDetail=false`. Geen `DataSourceUtils`: elke query een eigen
+  kortlevende verbinding, nooit gekoppeld aan een transactie(synchronisatie) van de hoofddatabase. Dao `ProdisReferenceDao`
+  (alle SQL op één plek): `findSupplier(number)` (lijst, hoogstens 2: `supplier.number` is in Prodis niet uniek),
+  `searchSuppliers(text)` (nummerprefix of naam, hoofdletterongevoelig, LIKE-tekens letterlijk, max. 50),
+  `findSupplierGroups(supplierNumber)` (`legacy_code` = `lev|grp|korting`, `group_name`, `discount_code`),
+  `findSupplierCatalogs(supplierNumber, legacyNumber|null)` (`scope_key`, `legacy_number`, `catalog_name`, `status`; per
+  `scope_key` meerdere rijen mogelijk: historiek per status). Service `ProdisReferenceService` (niet `@Transactional`): elke
+  `DataAccessException` (verbinding, time-out, rechten, ontbrekende tabel) = onbereikbaar → `ProdisReferenceUnavailableException`
+  (503) of `Availability.UNAVAILABLE` in PREVIEW; nooit een lege lijst. Een bibliotheek = één `scope_key` (de `ACTIVE`-rij als die
+  er is, anders de nieuwste). Geen Liquibase, geen readiness-indicator (een Prodis-storing haalt CatalogImport niet uit de rotatie).
+- **DB-rol (infra, bevestigd tegen de Prodis-Liquibase):** `catalogimport_ro`, `LOGIN`, `default_transaction_read_only=on`, enkel
+  `CONNECT` op de database, `USAGE` op schema `public`, en `SELECT (id, number, name) ON supplier`,
+  `SELECT (id, supplier_id, group_name, discount_code, legacy_code) ON supplier_group`,
+  `SELECT (id, supplier_id, scope_key, legacy_number, catalog_name, status) ON supplier_catalog`; rechtstreekse tabellen, geen views
+  (A4). `prodis-reference-test-schema.sql` bevat exact deze kolommen.
+- **Bewaren:** enkel businesscodes (`source_organisation.code` = `supplier.number`, `import_link.library_code` = `scope_key`, de
+  Prodis-naam als `source_organisation.name` van een nieuwe organisatie); geen Prodis-id's, geen cross-DB-FK.
+- **Onbereikbaar:** 503 `PRODIS_DB_UNAVAILABLE` op de keuze-endpoints; PREVIEW → `PRODIS_REFERENCE_NOT_VERIFIED`,
+  `prodisReference=UNAVAILABLE` en een fingerprint **`unverified:<sha256>`** (afwijking van het letterlijke `"unverified"`: zo
+  blijft de controle op veroudering van de rest van het rapport werken, en een geverifieerde fingerprint begint nooit zo). APPLY
+  mag dan een DRAFT maken met de `libraryCode` uit de body (er bestaan in S5 nog geen vaste waarden; activeren blokkeert later op
+  `CONFIG_IDENTITY_FIELD_MISSING` zodra S6 vaste waarden kent), **zolang Prodis onbereikbaar blijft**: is Prodis intussen terug,
+  dan geeft dezelfde fingerprint 409 `LEGACY_PREVIEW_STALE`, en omgekeerd (geverifieerde preview, Prodis nu weg → 409).
+- **Keuze-endpoints** (S5, MANAGE, niet achter de setup-vlag): `GET /api/catalog-import/prodis-reference/suppliers?q=`
+  (max. 100 tekens, anders 400 `PRODIS_REFERENCE_QUERY_INVALID`), `/suppliers/{nr}/groups`, `/suppliers/{nr}/catalogs`
+  (één rij per `scopeKey`); 404 `PRODIS_SUPPLIER_NOT_FOUND`, 409 `PRODIS_DB_NOT_CONFIGURED`, 503 `PRODIS_DB_UNAVAILABLE`; 403 vóór alles.
+- **Testen:** H2 (enkel test-scope) in testresources (`prodis-reference-test-schema.sql`, schema eenmaal per database, niet via
+  `INIT=` zodat een onbruikbare bron te simuleren is); `ProdisReferenceUnavailableTest` met een gesloten poort (503, "unverified");
+  `LegacyConfigPreviewTest` zonder config (functie uit, 409); `ProdisReadOnlyDatabaseConfigurationTest` met fail-fast en de
+  readOnly-proef tegen echte PostgreSQL (SQLState 25006).
 
 ## 7. Datasync-job (`C:\javaProject\ProdisDatasyncEngine`)
 
@@ -316,8 +346,8 @@ doorgaan na fout), canary-test (secret `canary-…` nergens in logs, `sync-error
 | S2 | ImportService: Service, Web, 021 (020-3/020-4) | PREVIEW + APPLY één interface → `OWN_DEFINITION`, enkel B-rijen zonder Prodis-validatie/vaste waarden; rapport; opvolgende DRAFT; conflictregels; `previewFingerprint` | bouwer-zwaar | `…-Dtest=LegacyConfigPreviewTest,LegacyConfigApplyTest,SetupApiFlowTest,ConfigFactoryParityTest` | DRAFT + koppeling + MANUAL-taak; ACTIVE ongemoeid; tweede APPLY 409; stale 409; golden VROOAM2 |
 | S3 | Datasync: pervasive-dao, sync-core, sync-app-config | Job zonder secret, PRODIS-guard, dryRun | bouwer-zwaar | `./mvnw.cmd -pl pervasive-dao,sync-core -am test -Dtest="LegacyConfig*Tests,CanonicalJsonTests,CatalogImportPushClientTests" -Dsurefire.failIfNoSpecifiedTests=false` | Push tegen stub; golden hash = S0 |
 | S4 | beide | Secret over TLS; credential bij ontvangst (SYSTEM-overload); canary-lektests aan beide kanten | bouwer-zwaar | `…-Dtest=LegacyConfigSecretLeakTest,CredentialLeakDetectionTest,CredentialHttpTest,ExternalCredentialSchemaTest` + `LegacyConfigExportJobTests` | Canary nergens behalve als ciphertext; geen tweede credential; `SECRETS_NOT_CONFIGURED` 409 |
-| S5 | ImportService: Web-config, Dao, Service | Alleen-lezen Prodis-bron; validatie leverancier/bibliotheek in PREVIEW | bouwer-zwaar | `…-Dtest=ProdisReferenceDaoTest,ProdisReferenceUnavailableTest,LegacyConfigPreviewTest` | Contexten starten zonder config; 503 bij onbereikbaar |
-| S6 (na M3) | ImportService: Liquibase 022, alle lagen | Vaste leverancier/groep + `identity_uppercase`; keuze-endpoints; migratie gebruikt ze | bouwer-zwaar | `…-Dtest=IdentityFixedValueTest,RevisionConfigHashesParityTest,ConfigFactoryParityTest,ScreeningSchemaTest,DeliveryScreeningFlowTest` | Bestaande hashes byte-identiek; uppercase = PSARF-identiteit |
+| S5 | ImportService: Web-config, Dao, Service, Web | Alleen-lezen Prodis-bron; validatie leverancier/bibliotheek in PREVIEW/APPLY; automatische `libraryCode`; keuze-endpoints (naar voren gehaald uit S6) | bouwer-zwaar | `…-Dtest=ProdisReferenceDaoTest,ProdisReadOnlyDatabaseConfigurationTest,ProdisReferenceUnavailableTest,ProdisReferenceHttpTest,LegacyConfigProdisReferenceTest,LegacyConfigPreviewTest,LegacyConfigApplyTest,PermissionCoverageTest` | Contexten starten zonder config; 503 bij onbereikbaar |
+| S6 (na M3) | ImportService: Liquibase 022, alle lagen | Vaste leverancier/groep + `identity_uppercase`; migratie gebruikt de keuze-endpoints (S5) | bouwer-zwaar | `…-Dtest=IdentityFixedValueTest,RevisionConfigHashesParityTest,ConfigFactoryParityTest,ScreeningSchemaTest,DeliveryScreeningFlowTest` | Bestaande hashes byte-identiek; uppercase = PSARF-identiteit |
 | S7 (na M1) | ImportService: Service | Dedup per (leverancier, hash), gedeelde definitie, `sharedWith`, `SHARED_DEFINITION_DIVERGED` | bouwer-zwaar | `…-Dtest=LegacyConfigSharedDefinitionTest,TemplateGuardTest,TemplateReuseTest` | Drie identieke interfaces → één gedeelde set; guard 006-5 intact |
 | S8 | ImportService | 023 maptabel, PSIMPEXCL, transformatieketen (LM-2) | bouwer-zwaar | gericht per klasse | — |
 | S9 | Frontend | Ontvangsten, rapport, APPLY-dialoog | bouwer-gemiddeld | `npx vitest run src/test/LegacyConfig*` | — |
@@ -339,7 +369,8 @@ DB-rol `catalogimport_ro` (§6).
   API additief uitgebreid; geen sentinelwaarde.
 
 **Aannames:** A1 secret bij herhaling nooit vervangen (UNCHANGED → weggegooid; vervangen via menselijke PUT); A2 credential met
-eventbron SYSTEM, `created_by=svc:<azp>`; A3 `library_code` = `supplier_catalog.scope_key` via `legacy_number` (tot S5 door de mens als `libraryCode` gegeven, zie §5); A4 rechtstreekse
+eventbron SYSTEM, `created_by=svc:<azp>`; A3 `library_code` = `supplier_catalog.scope_key` via `legacy_number` (sinds S5 automatisch bij precies één `scope_key` met dat
+`legacy_number`; anders, of zonder/met onbereikbare Prodis, door de mens als `libraryCode` gegeven, zie §5); A4 rechtstreekse
 SELECT op 3 tabellen; A5 wisselkoers ≠ 1 blokkeert APPLY; A6 export van alle interfaces met `ArtImp_Importsoort`; A7 protocol uit
 het URL-schema, `SFTP`-label enkel als hint; A8 enkel MANUAL-taken; A9 ook GET op preview/apply vraagt MANAGE (L7b).
 
@@ -366,6 +397,19 @@ het URL-schema, `SFTP`-label enkel als hint; A8 enkel MANUAL-taken; A9 ook GET o
 >
 > Een tweede bean van type `DataSource` of `JdbcTemplate` in CatalogImport laat de Spring Boot-autoconfiguratie van de
 > hoofddatabase terugtreden (`@ConditionalOnMissingBean`). De Prodis-leesbron moet in een eigen beantype gewikkeld worden.
+
+> **Important technical constraint discovered** (S5)
+>
+> pgjdbc dwingt `Connection.setReadOnly(true)` (ook HikariCP `readOnly=true`) standaard enkel af binnen een transactie
+> (`readOnlyMode=transaction`); met `autoCommit=true` wordt er dan gewoon geschreven. Pas met `readOnlyMode=always` zet de driver
+> `SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY` (bewezen: zonder die eigenschap faalt `writesAreRejectedOnPostgres`).
+> De DB-rol met `default_transaction_read_only=on` blijft de eerste verdedigingslinie.
+
+> **Important technical constraint discovered** (S5)
+>
+> In Prodis is `supplier.number` niet uniek (enkel `idx_supplier__number_coalesced`) en heeft `supplier_catalog` per `scope_key`
+> meerdere rijen (historiek per `status`; uniek enkel `(supplier_id, catalog_name, scope_key) WHERE status='ACTIVE'`). Matching op
+> `legacy_number` telt daarom `scope_key`s, geen rijen, en een dubbel leveranciersnummer blokkeert (nooit stil de eerste nemen).
 
 > **Important technical constraint discovered**
 >

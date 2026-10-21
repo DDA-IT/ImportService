@@ -215,6 +215,11 @@ class PermissionCoverageTest {
         // S2: preview (schrijft niets) en apply, beide MANAGE (A9, L7b).
         m.put("GET /api/catalog-import/legacy-config/receipts/{}/preview", "MANAGE");
         m.put("POST /api/catalog-import/legacy-config/receipts/{}/apply", "MANAGE");
+        // S5: keuzelijsten uit de alleen-lezen Prodis-database (design par. 6), MANAGE zoals de legacy-config-endpoints
+        // (wie migreert, kiest). Niet achter de setup-vlag.
+        m.put("GET /api/catalog-import/prodis-reference/suppliers", "MANAGE");
+        m.put("GET /api/catalog-import/prodis-reference/suppliers/{}/groups", "MANAGE");
+        m.put("GET /api/catalog-import/prodis-reference/suppliers/{}/catalogs", "MANAGE");
         // /me
         m.put("GET /api/catalog-import/me", NONE);
         return m;

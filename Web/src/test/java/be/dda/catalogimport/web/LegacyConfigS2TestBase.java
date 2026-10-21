@@ -48,7 +48,10 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * wordt enkel met leverancier 9999/interface GOLDEN_ART gebruikt voor een PREVIEW (nooit toegepast).
  */
 @SpringBootTest(properties = "catalogimport.screening.recovery-on-startup=false")
-@TestPropertySource(properties = "spring.datasource.hikari.maximum-pool-size=3")
+// S5: de Prodis-leesbron staat voor de S2-tests expliciet uit (ook als CATALOG_PRODIS_DB_* in de omgeving staat);
+// LegacyConfigProdisTestBase en ProdisReferenceUnavailableTest overschrijven dit.
+@TestPropertySource(properties = {"spring.datasource.hikari.maximum-pool-size=3", "catalogimport.prodis-db.url=",
+        "catalogimport.prodis-db.username=", "catalogimport.prodis-db.password="})
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
 abstract class LegacyConfigS2TestBase {

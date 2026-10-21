@@ -326,9 +326,10 @@ final class LegacyConfigTranslator {
             return null;
         }
         add("INDET:" + LABEL_SUPPLIER, MIGRATED, "SOURCE_ORGANISATION", "source_organisation.code=" + value, null);
+        // S5: LegacyConfigApplyService vervangt dit item door de uitkomst van de Prodis-controle als die geconfigureerd is.
         add("INDET:" + LABEL_SUPPLIER, WARNING, PRODIS_REFERENCE_NOT_VERIFIED, null,
-                "supplier " + value + " is not verified against the Prodis database (S5); the name of a new source "
-                        + "organisation is a placeholder");
+                "supplier " + value + " is not verified: the Prodis database is not configured; the name of a new "
+                        + "source organisation is a placeholder");
         return value;
     }
 

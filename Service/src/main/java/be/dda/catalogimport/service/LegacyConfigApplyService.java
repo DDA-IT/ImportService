@@ -21,6 +21,8 @@ import be.dda.catalogimport.dao.LegacyConfigDefinitionOriginRepository;
 import be.dda.catalogimport.dao.LegacyConfigOriginRepository;
 import be.dda.catalogimport.dao.LegacyConfigReceiptRepository;
 import be.dda.catalogimport.dao.LegacyConfigRevisionOriginRepository;
+import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierCatalogRow;
+import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierRow;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import be.dda.catalogimport.domain.CatalogImportTask;
 import be.dda.catalogimport.domain.Criticality;
@@ -40,6 +42,7 @@ import be.dda.catalogimport.domain.RevisionStatus;
 import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.domain.SourceOrganisationType;
 import be.dda.catalogimport.service.LegacyConfigReport.Item;
+import be.dda.catalogimport.service.LegacyConfigReport.LibraryCandidate;
 import be.dda.catalogimport.service.LegacyConfigReport.Planned;
 import be.dda.catalogimport.service.LegacyConfigReport.PlannedCredential;
 import be.dda.catalogimport.service.LegacyConfigReport.PlannedDefinition;
@@ -50,6 +53,8 @@ import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedFilter;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedMapping;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedRevision;
 import be.dda.catalogimport.service.LegacyConfigTranslator.Translation;
+import be.dda.catalogimport.service.ProdisReferenceService.Availability;
+import be.dda.catalogimport.service.ProdisReferenceService.LegacyLookup;
 import be.dda.catalogimport.service.support.ConfigFinding;
 import be.dda.catalogimport.service.support.RevisionConfigHashes;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -67,6 +72,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -115,6 +121,23 @@ import org.springframework.transaction.annotation.Transactional;
  *       inhoud of code) blokkeert tot S7 ({@code SHARED_DEFINITION_NOT_SUPPORTED}); een bestaande koppelingscode of
  *       -scope ({@code LINK_CODE_CONFLICT_MANUAL}, {@code LINK_SCOPE_CONFLICT_MANUAL}).</li>
  * </ul>
+ * <h2>Prodis-controle (slice S5, design par. 5 en 6)</h2>
+ * Via {@link ProdisReferenceService} (alleen-lezen Prodis-database), in PREVIEW en APPLY gelijk:
+ * <ul>
+ *   <li><b>Leverancier:</b> INDET {@code Supplier} moet precies één {@code supplier.number} zijn
+ *       ({@value #PRODIS_SUPPLIER_NOT_FOUND} / {@value #PRODIS_SUPPLIER_AMBIGUOUS} blokkeren). Een <b>nieuwe</b>
+ *       bronorganisatie krijgt de Prodis-naam; een bestaande wordt nooit hernoemd ({@value #SOURCE_ORGANISATION_NAME_KEPT}).</li>
+ *   <li><b>Bibliotheek (nieuwe koppeling):</b> zonder {@code libraryCode} de {@code scope_key} van de enige bibliotheek
+ *       van die leverancier met {@code legacy_number} = {@code ArtImp_BibNr}; geen of meer dan één →
+ *       {@value #LIBRARY_CODE_NOT_RESOLVED} met de kandidaten in {@code planned.link.libraryCandidates}. Een gegeven
+ *       {@code libraryCode} moet een {@code scope_key} van die leverancier zijn ({@value #LIBRARY_CODE_NOT_IN_PRODIS}).</li>
+ *   <li>De gebruikte Prodis-gegevens tellen mee in de {@code previewFingerprint}: wijzigen ze tussen PREVIEW en APPLY,
+ *       dan is de preview verouderd ({@value #CODE_STALE}).</li>
+ *   <li><b>Niet geconfigureerd:</b> gedrag S2 ({@code PRODIS_REFERENCE_NOT_VERIFIED}, {@code libraryCode} verplicht).
+ *       <b>Onbereikbaar:</b> idem, en de fingerprint begint met
+ *       {@value LegacyConfigReport#FINGERPRINT_UNVERIFIED_PREFIX}; APPLY mag dan met de {@code libraryCode} uit de body
+ *       (design par. 6), zolang Prodis onbereikbaar blijft - is Prodis intussen terug, dan is die preview verouderd.</li>
+ * </ul>
  * Schrijven gaat via de bestaande services ({@link SetupService}, {@link RevisionSuccessorService}), die hun eigen regels
  * bewaken; enkel een TAB-scheidingsteken wordt rechtstreeks op de revisie gezet, omdat {@code SetupInput.requireText}
  * een tab als leeg ziet. Gelogd wordt enkel id, herkomst, uitkomst en codes; nooit de bundel.
@@ -144,6 +167,15 @@ public class LegacyConfigApplyService {
     static final String IDENTITY_CHANGE = "IDENTITY_CHANGE";
     static final String DEFINITION_UNCHANGED = "DEFINITION_UNCHANGED";
     static final String LEGACY_DEFINITION_CODE_CHANGED = "LEGACY_DEFINITION_CODE_CHANGED";
+    // S5: controle tegen de alleen-lezen Prodis-database.
+    static final String PRODIS_SUPPLIER_NOT_FOUND = ProdisReferenceService.CODE_SUPPLIER_NOT_FOUND;
+    static final String PRODIS_SUPPLIER_AMBIGUOUS = "PRODIS_SUPPLIER_AMBIGUOUS";
+    static final String PRODIS_SUPPLIER = "PRODIS_SUPPLIER";
+    static final String PRODIS_SUPPLIER_NAME_EMPTY = "PRODIS_SUPPLIER_NAME_EMPTY";
+    static final String PRODIS_SUPPLIER_NAME_TOO_LONG = "PRODIS_SUPPLIER_NAME_TOO_LONG";
+    static final String SOURCE_ORGANISATION_NAME_KEPT = "SOURCE_ORGANISATION_NAME_KEPT";
+    static final String LIBRARY_CODE_NOT_IN_PRODIS = "LIBRARY_CODE_NOT_IN_PRODIS";
+    static final String LIBRARY_CODE_NOT_LEGACY_MATCH = "LIBRARY_CODE_NOT_LEGACY_MATCH";
 
     static final String LINK_CODE_PREFIX = "LEGACY-";
     static final String NAME_PREFIX = "Legacy ";
@@ -154,6 +186,8 @@ public class LegacyConfigApplyService {
     private static final int MAX_REASON_LENGTH = 500;
     private static final int MAX_DEFINITION_CODE = 50;
     private static final int MAX_LIBRARY_CODE = 20;
+    /** {@code source_organisation.name} ({@code SetupService}). */
+    private static final int MAX_ORGANISATION_NAME = 200;
     private static final Set<RevisionStatus> CLONEABLE = Set.of(RevisionStatus.ACTIVE, RevisionStatus.SUPERSEDED);
     private static final Logger LOG = LoggerFactory.getLogger(LegacyConfigApplyService.class);
 
@@ -211,6 +245,7 @@ public class LegacyConfigApplyService {
     private final SetupService setup;
     private final RevisionSuccessorService successors;
     private final ChainConfigurationChecks checks;
+    private final ProdisReferenceService prodis;
     private final Clock clock;
     private final ObjectMapper bundleReader = new ObjectMapper();
     /** Canoniek (alfabetisch) voor de fingerprint en het bewaarde rapport. */
@@ -229,7 +264,7 @@ public class LegacyConfigApplyService {
                                     ImportFieldCatalogRepository fieldCatalog, ImportLinkRepository links,
                                     CatalogImportTaskRepository tasks, ExternalCredentialRepository credentials,
                                     SetupService setup, RevisionSuccessorService successors,
-                                    ChainConfigurationChecks checks, Clock clock) {
+                                    ChainConfigurationChecks checks, ProdisReferenceService prodis, Clock clock) {
         this.receipts = receipts;
         this.origins = origins;
         this.definitionOrigins = definitionOrigins;
@@ -246,6 +281,7 @@ public class LegacyConfigApplyService {
         this.setup = setup;
         this.successors = successors;
         this.checks = checks;
+        this.prodis = prodis;
         this.clock = clock;
     }
 
@@ -310,7 +346,8 @@ public class LegacyConfigApplyService {
 
     /** Alles wat APPLY nodig heeft, plus het rapport en de fingerprint. */
     private record Plan(LegacyConfigReport report, String fingerprint, Translation translation, ApplyOptions options,
-                        SourceOrganisation organisation, String organisationCode, ImportDefinition definition,
+                        SourceOrganisation organisation, String organisationCode, String organisationName,
+                        ImportDefinition definition,
                         String definitionCode, String revisionAction, ImportDefinitionRevision basedOn,
                         ImportLink link, String linkCode, String libraryCode, Long taskId, String taskName,
                         LegacyConfigOrigin origin, LegacyConfigDefinitionOrigin definitionOrigin,
@@ -339,6 +376,9 @@ public class LegacyConfigApplyService {
         PlannedRevision planned = translation.revision();
         String plannedHash = planned == null ? null
                 : LegacyRevisionContent.ofPlanned(planned, "CSV", this::defaultCriticality);
+        // S5: leverancier en bibliotheken uit de alleen-lezen Prodis-database (of: uit / onbereikbaar).
+        LegacyLookup lookup = prodis.lookup(supplierCode);
+        SupplierRow prodisSupplier = verifySupplier(items, rows, lookup, supplierCode);
 
         rows.add("origin:" + (origin == null ? "none" : origin.getId() + ":" + origin.getUpdatedAt()));
         ImportLink link = origin == null || origin.getImportLinkId() == null ? null
@@ -353,6 +393,7 @@ public class LegacyConfigApplyService {
         ImportDefinitionRevision basedOn = null;
         String linkCode;
         String libraryCode;
+        List<LibraryCandidate> libraryCandidates = List.of();
         String linkAction;
         Long taskId = null;
         String taskAction;
@@ -463,23 +504,10 @@ public class LegacyConfigApplyService {
             }
             linkAction = ACTION_CREATE;
             linkCode = LINK_CODE_PREFIX + interfaceCode;
-            libraryCode = options.libraryCode();
-            if (translation.libraryNumber() != null) {
-                if (libraryCode == null) {
-                    items.add(new Item("INDET:ArtImp_BibNr", BLOCKING, LIBRARY_CODE_NOT_RESOLVED, null,
-                            "legacy library " + translation.libraryNumber() + " cannot be resolved to a library code "
-                                    + "without the Prodis database (S5); give libraryCode (supplier_catalog.scope_key)"));
-                } else if (libraryCode.length() > MAX_LIBRARY_CODE) {
-                    items.add(new Item("INDET:ArtImp_BibNr", BLOCKING, LIBRARY_CODE_INVALID, null,
-                            "libraryCode is longer than " + MAX_LIBRARY_CODE + " characters"));
-                } else {
-                    items.add(new Item("INDET:ArtImp_BibNr", MIGRATED, "LIBRARY_CODE",
-                            "import_link.libraryCode=" + libraryCode, "given by the person applying"));
-                    items.add(new Item("INDET:ArtImp_BibNr", WARNING, LegacyConfigTranslator.PRODIS_REFERENCE_NOT_VERIFIED,
-                            null, "libraryCode " + libraryCode + " for legacy library " + translation.libraryNumber()
-                                    + " is not verified against the Prodis database (S5)"));
-                }
-            }
+            LibraryDecision library = resolveLibrary(items, lookup, prodisSupplier, translation.libraryNumber(),
+                    options.libraryCode());
+            libraryCode = library.libraryCode();
+            libraryCandidates = library.candidates();
             Optional<ImportLink> codeClash = links.findByCode(linkCode);
             if (codeClash.isPresent()) {
                 rows.add("linkClash:" + codeClash.get().getId() + ":" + codeClash.get().getUpdatedAt());
@@ -489,24 +517,243 @@ public class LegacyConfigApplyService {
             taskAction = ACTION_CREATE;
         }
 
+        String organisationName = organisationName(items, organisation, prodisSupplier, supplierCode);
         boolean blocked = items.stream().anyMatch(item -> BLOCKING.equals(item.status()));
         Planned plannedSection = new Planned(
                 new PlannedOrganisation(organisationAction, organisation == null ? null : organisation.getId(),
-                        supplierCode, organisation == null
-                        ? (supplierCode == null ? null : ORGANISATION_NAME_PREFIX + supplierCode)
-                        : organisation.getName()),
+                        supplierCode, organisationName),
                 new PlannedDefinition(definitionAction, definition == null ? null : definition.getId(), definitionCode,
                         definition == null ? translation.definitionName() : definition.getDescription(),
                         revisionAction, basedOn == null ? null : basedOn.getId(), null),
-                new PlannedLink(linkAction, link == null ? null : link.getId(), linkCode, libraryCode),
+                new PlannedLink(linkAction, link == null ? null : link.getId(), linkCode, libraryCode,
+                        libraryCandidates),
                 new PlannedTask(taskAction, taskId, taskName), plannedCredential);
         LegacyConfigReport report = new LegacyConfigReport(receipt.getId(), receipt.getContentHash(),
                 receipt.getStatus().name(), blocked ? LegacyConfigReport.OUTCOME_BLOCKED
-                : LegacyConfigReport.OUTCOME_APPLICABLE, plannedSection, List.of(), items);
+                : LegacyConfigReport.OUTCOME_APPLICABLE, plannedSection, List.of(), items,
+                lookup.availability().name());
         String fingerprint = fingerprint(report, rows);
-        return new Plan(report, fingerprint, translation, options, organisation, supplierCode, definition,
+        if (lookup.availability() == Availability.UNAVAILABLE) {
+            // Design par. 6 ("unverified"): nooit gelijk aan een geverifieerde fingerprint, maar wel nog gebonden aan
+            // het rapport en de geraakte rijen (anders zou een APPLY tijdens een Prodis-storing niet meer op
+            // veroudering controleren).
+            fingerprint = LegacyConfigReport.FINGERPRINT_UNVERIFIED_PREFIX + fingerprint;
+        }
+        return new Plan(report, fingerprint, translation, options, organisation, supplierCode, organisationName,
+                definition,
                 definitionCode, revisionAction, basedOn, link, linkCode, libraryCode, taskId, taskName, origin,
                 definitionOrigin, plannedHash);
+    }
+
+    // --- Prodis-controle (S5) -------------------------------------------------------------------------------------
+
+    /**
+     * Vervangt het S2-item {@code PRODIS_REFERENCE_NOT_VERIFIED} van {@code INDET:Supplier} (uit de vertaler) door de
+     * uitkomst van de Prodis-controle, op dezelfde plaats in het rapport, en neemt de gebruikte Prodis-gegevens op in de
+     * fingerprintrijen. Niet geconfigureerd: het S2-item blijft ongewijzigd.
+     *
+     * @return de Prodis-leverancier als ze precies één keer bestaat, anders {@code null}
+     */
+    private static SupplierRow verifySupplier(List<Item> items, List<String> rows, LegacyLookup lookup,
+                                              String supplierCode) {
+        if (supplierCode == null || lookup.availability() == Availability.NOT_CONFIGURED) {
+            return null;
+        }
+        String element = "INDET:" + LegacyConfigTranslator.LABEL_SUPPLIER;
+        String notVerified = LegacyConfigTranslator.PRODIS_REFERENCE_NOT_VERIFIED;
+        if (lookup.availability() == Availability.UNAVAILABLE) {
+            replaceItem(items, element, notVerified, new Item(element, WARNING, notVerified, null, "supplier "
+                    + supplierCode + " is not verified: the Prodis database is not available right now; the name of a "
+                    + "new source organisation is a placeholder"));
+            return null;
+        }
+        for (SupplierRow supplier : lookup.suppliers()) {
+            rows.add("prodis:supplier:" + supplier.number() + "|" + supplier.name());
+        }
+        for (SupplierCatalogRow catalog : lookup.catalogs()) {
+            rows.add("prodis:catalog:" + catalog.scopeKey() + "|" + catalog.legacyNumber() + "|"
+                    + catalog.catalogName() + "|" + catalog.status());
+        }
+        if (lookup.suppliers().isEmpty()) {
+            replaceItem(items, element, notVerified, new Item(element, BLOCKING, PRODIS_SUPPLIER_NOT_FOUND, null,
+                    "supplier " + supplierCode + " does not exist in Prodis (supplier.number); the source organisation "
+                            + "and the link cannot be determined"));
+            return null;
+        }
+        if (lookup.suppliers().size() > 1) {
+            replaceItem(items, element, notVerified, new Item(element, BLOCKING, PRODIS_SUPPLIER_AMBIGUOUS, null,
+                    "supplier number " + supplierCode + " occurs more than once in Prodis (supplier.number is not "
+                            + "unique there); it cannot be verified"));
+            return null;
+        }
+        SupplierRow supplier = lookup.suppliers().get(0);
+        replaceItem(items, element, notVerified, new Item(element, MIGRATED, PRODIS_SUPPLIER,
+                "prodis.supplier.number=" + supplier.number(), "verified in Prodis: " + supplier.name()));
+        return supplier;
+    }
+
+    /**
+     * De naam van de bronorganisatie: een bestaande organisatie houdt haar naam (nooit hernoemd); een nieuwe krijgt de
+     * Prodis-naam, of zonder Prodis-controle de plaatshouder "Leverancier &lt;nr&gt;" (S2).
+     */
+    private static String organisationName(List<Item> items, SourceOrganisation organisation, SupplierRow prodisSupplier,
+                                           String supplierCode) {
+        String element = "INDET:" + LegacyConfigTranslator.LABEL_SUPPLIER;
+        if (organisation != null) {
+            if (prodisSupplier != null && prodisSupplier.name() != null
+                    && organisation.getCode().equals(supplierCode)
+                    && !prodisSupplier.name().strip().equals(organisation.getName())) {
+                items.add(new Item(element, LegacyConfigReport.NOT_MIGRATED, SOURCE_ORGANISATION_NAME_KEPT,
+                        "source_organisation.id=" + organisation.getId(), "the existing source organisation keeps its "
+                                + "name '" + organisation.getName() + "'; Prodis names it '"
+                                + prodisSupplier.name().strip() + "'"));
+            }
+            return organisation.getName();
+        }
+        if (supplierCode == null) {
+            return null;
+        }
+        String placeholder = ORGANISATION_NAME_PREFIX + supplierCode;
+        if (prodisSupplier == null) {
+            return placeholder;
+        }
+        String name = prodisSupplier.name() == null ? "" : prodisSupplier.name().strip();
+        if (name.isEmpty()) {
+            items.add(new Item(element, WARNING, PRODIS_SUPPLIER_NAME_EMPTY, "source_organisation.name=" + placeholder,
+                    "supplier " + supplierCode + " has no name in Prodis; the new source organisation gets a placeholder"));
+            return placeholder;
+        }
+        if (name.length() > MAX_ORGANISATION_NAME) {
+            items.add(new Item(element, BLOCKING, PRODIS_SUPPLIER_NAME_TOO_LONG, null, "the Prodis name of supplier "
+                    + supplierCode + " is longer than " + MAX_ORGANISATION_NAME + " characters; it is never truncated"));
+            return placeholder;
+        }
+        return name;
+    }
+
+    private record LibraryDecision(String libraryCode, List<LibraryCandidate> candidates) {
+    }
+
+    /**
+     * De bibliotheekcode van een nieuwe koppeling (A3: {@code supplier_catalog.scope_key} via {@code legacy_number} =
+     * {@code ArtImp_BibNr}; nooit het ruwe {@code ArtImp_BibNr}).
+     */
+    private static LibraryDecision resolveLibrary(List<Item> items, LegacyLookup lookup, SupplierRow prodisSupplier,
+                                                  String libraryNumber, String given) {
+        String element = "INDET:" + LegacyConfigTranslator.LABEL_LIBRARY;
+        if (libraryNumber == null) {
+            return new LibraryDecision(given, List.of()); // LIBRARY_NOT_DECLARED blokkeert al (vertaler)
+        }
+        if (given != null && given.length() > MAX_LIBRARY_CODE) {
+            items.add(new Item(element, BLOCKING, LIBRARY_CODE_INVALID, null,
+                    "libraryCode is longer than " + MAX_LIBRARY_CODE + " characters"));
+            return new LibraryDecision(given, List.of());
+        }
+        if (lookup.availability() != Availability.VERIFIED) {
+            String why = lookup.availability() == Availability.NOT_CONFIGURED
+                    ? "the Prodis database is not configured" : "the Prodis database is not available right now";
+            if (given == null) {
+                items.add(new Item(element, BLOCKING, LIBRARY_CODE_NOT_RESOLVED, null, "legacy library " + libraryNumber
+                        + " cannot be resolved to a library code: " + why + "; give libraryCode "
+                        + "(supplier_catalog.scope_key)"));
+            } else {
+                items.add(new Item(element, MIGRATED, "LIBRARY_CODE", "import_link.libraryCode=" + given,
+                        "given by the person applying"));
+                items.add(new Item(element, WARNING, LegacyConfigTranslator.PRODIS_REFERENCE_NOT_VERIFIED, null,
+                        "libraryCode " + given + " for legacy library " + libraryNumber + " is not verified: " + why));
+            }
+            return new LibraryDecision(given, List.of());
+        }
+        if (prodisSupplier == null) {
+            // De leverancier is niet (eenduidig) in Prodis: PRODIS_SUPPLIER_* of SUPPLIER_NOT_DECLARED blokkeert al.
+            items.add(given == null
+                    ? new Item(element, BLOCKING, LIBRARY_CODE_NOT_RESOLVED, null, "legacy library " + libraryNumber
+                    + " cannot be resolved: the supplier is not (uniquely) known in Prodis")
+                    : new Item(element, BLOCKING, LIBRARY_CODE_NOT_IN_PRODIS, null, "libraryCode " + given
+                    + " cannot be verified: the supplier is not (uniquely) known in Prodis"));
+            return new LibraryDecision(given, List.of());
+        }
+        String number = libraryNumber.strip();
+        Set<String> matchingScopes = new LinkedHashSet<>();
+        for (SupplierCatalogRow row : lookup.catalogs()) {
+            if (row.legacyNumber() != null && row.legacyNumber().strip().equals(number)) {
+                matchingScopes.add(row.scopeKey());
+            }
+        }
+        List<LibraryCandidate> all = new ArrayList<>();
+        List<LibraryCandidate> matches = new ArrayList<>();
+        for (SupplierCatalogRow library : ProdisReferenceService.libraries(lookup.catalogs())) {
+            LibraryCandidate candidate = new LibraryCandidate(library.scopeKey(), library.catalogName(),
+                    library.legacyNumber(), library.status());
+            all.add(candidate);
+            if (matchingScopes.contains(library.scopeKey())) {
+                matches.add(candidate);
+            }
+        }
+        String supplier = prodisSupplier.number();
+        if (given == null) {
+            if (matches.size() == 1) {
+                LibraryCandidate match = matches.get(0);
+                if (match.scopeKey().length() > MAX_LIBRARY_CODE) {
+                    items.add(new Item(element, BLOCKING, LIBRARY_CODE_INVALID, null, "Prodis library "
+                            + match.scopeKey() + " is longer than " + MAX_LIBRARY_CODE + " characters"));
+                    return new LibraryDecision(null, matches);
+                }
+                items.add(new Item(element, MIGRATED, "LIBRARY_CODE", "import_link.libraryCode=" + match.scopeKey(),
+                        "resolved from Prodis: library " + match.scopeKey() + " (" + match.catalogName()
+                                + ") of supplier " + supplier + " has legacy_number " + number));
+                return new LibraryDecision(match.scopeKey(), List.of());
+            }
+            List<LibraryCandidate> candidates = matches.isEmpty() ? all : matches;
+            items.add(new Item(element, BLOCKING, LIBRARY_CODE_NOT_RESOLVED, null, (matches.isEmpty()
+                    ? "no Prodis library of supplier " + supplier + " has legacy_number " + number
+                    : matches.size() + " Prodis libraries of supplier " + supplier + " have legacy_number " + number)
+                    + "; give libraryCode, one of: " + describe(candidates)));
+            return new LibraryDecision(null, candidates);
+        }
+        if (all.stream().noneMatch(candidate -> candidate.scopeKey().equals(given))) {
+            List<LibraryCandidate> candidates = matches.isEmpty() ? all : matches;
+            items.add(new Item(element, BLOCKING, LIBRARY_CODE_NOT_IN_PRODIS, null, "libraryCode " + given
+                    + " is not a library (supplier_catalog.scope_key) of supplier " + supplier + " in Prodis; one of: "
+                    + describe(candidates)));
+            return new LibraryDecision(given, candidates);
+        }
+        items.add(new Item(element, MIGRATED, "LIBRARY_CODE", "import_link.libraryCode=" + given,
+                "given by the person applying; a library of supplier " + supplier + " in Prodis"));
+        if (!matchingScopes.contains(given)) {
+            items.add(new Item(element, WARNING, LIBRARY_CODE_NOT_LEGACY_MATCH, "import_link.libraryCode=" + given,
+                    "Prodis library " + given + " does not have legacy_number " + number + " (ArtImp_BibNr)"));
+        }
+        return new LibraryDecision(given, List.of());
+    }
+
+    /** Hoogstens 20 kandidaten in de boodschap; de volledige lijst staat in {@code planned.link.libraryCandidates}. */
+    private static String describe(List<LibraryCandidate> candidates) {
+        if (candidates.isEmpty()) {
+            return "(the supplier has no library in Prodis)";
+        }
+        StringBuilder text = new StringBuilder();
+        int shown = Math.min(candidates.size(), 20);
+        for (int i = 0; i < shown; i++) {
+            LibraryCandidate candidate = candidates.get(i);
+            text.append(i == 0 ? "" : ", ").append(candidate.scopeKey()).append(" (").append(candidate.catalogName())
+                    .append(')');
+        }
+        if (candidates.size() > shown) {
+            text.append(", ... (").append(candidates.size() - shown).append(" more)");
+        }
+        return text.toString();
+    }
+
+    /** Vervangt het eerste item met dit element en deze code; bestaat het niet, dan wordt het achteraan toegevoegd. */
+    private static void replaceItem(List<Item> items, String element, String code, Item replacement) {
+        for (int i = 0; i < items.size(); i++) {
+            if (items.get(i).element().equals(element) && items.get(i).code().equals(code)) {
+                items.set(i, replacement);
+                return;
+            }
+        }
+        items.add(replacement);
     }
 
     private record RevisionDecision(String action, ImportDefinitionRevision basedOn) {
@@ -605,7 +852,7 @@ public class LegacyConfigApplyService {
         SourceOrganisation organisation = plan.organisation();
         if (organisation == null) {
             setup.createSourceOrganisation(new SetupService.CreateSourceOrganisationCommand(plan.organisationCode(),
-                    ORGANISATION_NAME_PREFIX + plan.organisationCode(), SourceOrganisationType.SUPPLIER));
+                    plan.organisationName(), SourceOrganisationType.SUPPLIER));
             organisation = organisations.findByCode(plan.organisationCode()).orElseThrow();
         }
 
@@ -712,7 +959,7 @@ public class LegacyConfigApplyService {
         receipts.saveAndFlush(receipt);
         LegacyConfigReport applied = new LegacyConfigReport(report.receiptId(), report.contentHash(),
                 LegacyConfigReceiptStatus.APPLIED.name(), report.outcome(), report.planned(), report.sharedWith(),
-                report.items());
+                report.items(), report.prodisReference());
         return new ApplyResult(applied, LegacyConfigReceiptStatus.APPLIED.name(), findings);
     }
 
@@ -770,10 +1017,11 @@ public class LegacyConfigApplyService {
                 new PlannedDefinition(planned.definition().action(), definitionId, planned.definition().code(),
                         planned.definition().name(), planned.definition().revisionAction(),
                         planned.definition().basedOnRevision(), revisionId),
-                new PlannedLink(planned.link().action(), linkId, planned.link().code(), planned.link().libraryCode()),
+                new PlannedLink(planned.link().action(), linkId, planned.link().code(), planned.link().libraryCode(),
+                        planned.link().libraryCandidates()),
                 new PlannedTask(planned.task().action(), taskId, planned.task().name()), planned.credential());
         return new LegacyConfigReport(report.receiptId(), report.contentHash(), report.receiptStatus(),
-                report.outcome(), withIds, report.sharedWith(), report.items());
+                report.outcome(), withIds, report.sharedWith(), report.items(), report.prodisReference());
     }
 
     private static ConfigurationFinding finding(ConfigFinding finding) {

@@ -24,9 +24,12 @@ import java.util.UUID;
  * @param planned       wat APPLY zou doen (of deed)
  * @param sharedWith    andere interfaces die dezelfde definitie delen; in S2 altijd leeg (delen volgt in S7)
  * @param items         per legacy-element de uitkomst, in vaste volgorde
+ * @param prodisReference (S5) of leverancier en bibliotheek tegen de alleen-lezen Prodis-database gecontroleerd zijn:
+ *                      {@code VERIFIED}, {@code UNAVAILABLE} (geconfigureerd maar onbereikbaar; de fingerprint begint
+ *                      dan met {@value #FINGERPRINT_UNVERIFIED_PREFIX}) of {@code NOT_CONFIGURED} (functie uit, gedrag S2)
  */
 public record LegacyConfigReport(long receiptId, String contentHash, String receiptStatus, String outcome,
-                                 Planned planned, List<String> sharedWith, List<Item> items) {
+                                 Planned planned, List<String> sharedWith, List<Item> items, String prodisReference) {
 
     public static final String MIGRATED = "MIGRATED";
     public static final String NOT_MIGRATED = "NOT_MIGRATED";
@@ -42,6 +45,13 @@ public record LegacyConfigReport(long receiptId, String contentHash, String rece
     public static final String ACTION_SUCCESSOR_DRAFT = "SUCCESSOR_DRAFT";
     public static final String ACTION_UNCHANGED = "UNCHANGED";
     public static final String ACTION_NONE = "NONE";
+
+    /**
+     * Begin van de {@code previewFingerprint} van een rapport dat Prodis niet kon raadplegen (design par. 6:
+     * fingerprint "unverified"). Een geverifieerd rapport heeft nooit dit begin, dus een APPLY met een niet-geverifieerde
+     * preview faalt met {@code LEGACY_PREVIEW_STALE} zodra Prodis weer bereikbaar is, en omgekeerd.
+     */
+    public static final String FINGERPRINT_UNVERIFIED_PREFIX = "unverified:";
 
     public LegacyConfigReport {
         sharedWith = List.copyOf(sharedWith);
@@ -100,7 +110,29 @@ public record LegacyConfigReport(long receiptId, String contentHash, String rece
                                     Long basedOnRevision, Long revisionId) {
     }
 
-    public record PlannedLink(String action, Long id, String code, String libraryCode) {
+    /**
+     * @param libraryCode       de bibliotheekcode ({@code supplier_catalog.scope_key}), of {@code null} als ze niet bepaald is
+     * @param libraryCandidates (S5) de Prodis-bibliotheken waaruit de mens moet kiezen als {@code ArtImp_BibNr} geen of
+     *                          meer dan één match heeft, of als een gegeven {@code libraryCode} niet bij de leverancier
+     *                          hoort; anders leeg
+     */
+    public record PlannedLink(String action, Long id, String code, String libraryCode,
+                              List<LibraryCandidate> libraryCandidates) {
+
+        public PlannedLink {
+            libraryCandidates = libraryCandidates == null ? List.of() : List.copyOf(libraryCandidates);
+        }
+    }
+
+    /**
+     * Een bibliotheek van de leverancier in Prodis (één per {@code scope_key}; de {@code ACTIVE}-rij als die er is).
+     *
+     * @param scopeKey     {@code supplier_catalog.scope_key} = de mogelijke {@code libraryCode}
+     * @param catalogName  {@code supplier_catalog.catalog_name}
+     * @param legacyNumber {@code supplier_catalog.legacy_number}
+     * @param status       {@code supplier_catalog.status}
+     */
+    public record LibraryCandidate(String scopeKey, String catalogName, String legacyNumber, String status) {
     }
 
     public record PlannedTask(String action, Long id, String name) {
