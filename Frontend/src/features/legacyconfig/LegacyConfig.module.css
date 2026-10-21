@@ -1,0 +1,254 @@
+/* S9 — overname van de legacy-configuratie: lijst, detail, rapport en dialoog. Enkel tokens, geen vaste kleuren. */
+
+.page {
+  padding: var(--spacing-4) 0 var(--spacing-8) 0;
+}
+
+/* Field heeft een eigen onderrand voor formulieren; in de werkbalk niet. */
+.toolbar > div {
+  flex: 0 1 200px;
+  margin-bottom: 0;
+}
+
+.loading {
+  padding: 0 20px 12px;
+  color: var(--text-secondary);
+}
+
+.muted {
+  color: var(--text-secondary);
+}
+
+.noPermission {
+  padding: 24px;
+}
+
+/* Detailkop (mock .detail-head): terugknop, titel + labels */
+.detailHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 32px;
+}
+
+.backButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.backButton:hover {
+  background: var(--action-hover);
+  text-decoration: none;
+}
+
+.backButton svg {
+  width: 20px;
+  height: 20px;
+}
+
+.detailId {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+
+.section {
+  margin-top: 24px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  margin: 0 0 16px;
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fact dt {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.fact dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.subTitle {
+  margin: 16px 0 8px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.plainList {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.notice {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--status-awaiting-bg);
+  color: var(--status-awaiting-text);
+}
+
+.success {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+/* Keuzes die de controle vooraf beïnvloeden */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.choices > div {
+  flex: 1 1 240px;
+  margin-bottom: 0;
+}
+
+.choices input,
+.choices select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.choicesActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+/* Samenvatting van wat overgenomen wordt */
+.planned {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 16px;
+}
+
+.plannedRow {
+  display: grid;
+  grid-template-columns: minmax(140px, 200px) 1fr;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--divider);
+  font-size: 0.875rem;
+}
+
+.plannedRow dt {
+  color: var(--text-secondary);
+}
+
+.plannedRow dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.plannedRow dd span + span {
+  margin-left: 8px;
+}
+
+/* Rapport per soort punt */
+.group {
+  margin-top: 16px;
+}
+
+.groupTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--divider);
+}
+
+.itemTitle {
+  font-weight: 600;
+}
+
+.itemExplanation {
+  margin: 2px 0 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.blockingGroup {
+  padding: 8px 12px;
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.blockedReason {
+  margin: 0;
+  color: var(--status-rejected-text);
+  font-size: 0.875rem;
+}
+
+.dialogBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 0.875rem;
+}
+
+.dialogBody p {
+  margin: 0;
+}
+
+@media (max-width: 899px) {
+  .toolbar > div {
+    flex: 1 1 100%;
+  }
+}

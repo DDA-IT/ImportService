@@ -834,6 +834,83 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     title: 'Aanvaarding loopt nog',
     explanation: 'Er loopt al een aanvaarding als nulmeting voor deze koppeling. Probeer het later opnieuw.',
   },
+  // S9 — overname van de legacy-configuratie (`docs/design/legacy-config-bundle-design.md` §2).
+  LEGACY_RECEIPT_NOT_FOUND: {
+    title: 'Ontvangst niet gevonden',
+    explanation: 'Deze ontvangst van een legacy-configuratie bestaat niet (meer), of het id in de link klopt niet.',
+    whatNow: 'Ga terug naar de lijst met ontvangsten en zoek ze opnieuw op.',
+  },
+  LEGACY_RECEIPT_NOT_APPLICABLE: {
+    title: 'Deze ontvangst kan niet meer overgenomen worden',
+    explanation:
+      'Alleen een ontvangst met de status "Ontvangen" kan overgenomen worden. Deze is al overgenomen, vervangen door ' +
+      'een nieuwere of terzijde gelegd.',
+    whatNow: 'Laad de ontvangst opnieuw, of open de nieuwste ontvangst van dezelfde interface in de lijst.',
+  },
+  LEGACY_PREVIEW_STALE: {
+    title: 'De controle vooraf is verouderd',
+    explanation:
+      'Sinds u de controle bekeek is er iets veranderd, bijvoorbeeld in de configuratie, in Prodis of in uw keuzes. ' +
+      'Er is niets overgenomen.',
+    whatNow: 'De controle is opnieuw uitgevoerd. Lees de nieuwe samenvatting en bevestig opnieuw als ze nog klopt.',
+  },
+  LEGACY_APPLY_BLOCKED: {
+    title: 'Overnemen is geblokkeerd',
+    explanation: 'Minstens één punt van de controle blokkeert het overnemen. Er is niets overgenomen.',
+    whatNow: 'Bekijk de blokkerende punten in het rapport, los ze op of maak een keuze, en probeer dan opnieuw.',
+  },
+  LEGACY_APPLY_REASON_REQUIRED: {
+    title: 'Reden ontbreekt',
+    explanation: 'Voor het overnemen is een reden verplicht.',
+    whatNow: 'Vul een reden in en bevestig opnieuw.',
+  },
+  LEGACY_APPLY_REASON_TOO_LONG: {
+    title: 'Reden is te lang',
+    explanation: 'De reden mag hoogstens 500 tekens bevatten.',
+    whatNow: 'Kort de reden in en bevestig opnieuw.',
+  },
+  LEGACY_BUNDLE_INVALID: {
+    title: 'Ontvangen configuratie is ongeldig',
+    explanation: 'De configuratie die de datasync stuurde, voldoet niet aan het afgesproken formaat en is niet bewaard.',
+    whatNow: 'Laat de beheerder van de datasync de export nakijken.',
+  },
+  LEGACY_BUNDLE_VERSION_UNSUPPORTED: {
+    title: 'Versie van de configuratie niet ondersteund',
+    explanation: 'De datasync stuurde een versie van het formaat die CatalogImport niet kent.',
+    whatNow: 'Laat de beheerder van de datasync de versie nakijken.',
+  },
+  LEGACY_BUNDLE_HASH_MISMATCH: {
+    title: 'Controlegetal van de configuratie klopt niet',
+    explanation: 'De inhoud van de ontvangen configuratie komt niet overeen met haar controlegetal; ze is niet bewaard.',
+    whatNow: 'Laat de beheerder van de datasync de export nakijken.',
+  },
+  LEGACY_BUNDLE_TOO_LARGE: {
+    title: 'Ontvangen configuratie is te groot',
+    explanation: 'De configuratie overschrijdt de toegelaten grootte en is niet bewaard.',
+  },
+  SECRETS_NOT_CONFIGURED: {
+    title: 'Wachtwoorden kunnen niet bewaard worden',
+    explanation: 'Er is geen sleutelring ingesteld om wachtwoorden versleuteld te bewaren.',
+    whatNow: 'Vraag de beheerder om de sleutelring in te stellen.',
+  },
+  PRODIS_DB_NOT_CONFIGURED: {
+    title: 'Prodis-database is niet ingesteld',
+    explanation: 'CatalogImport kan de leveranciers en bibliotheken van Prodis niet nakijken omdat die verbinding niet is ingesteld.',
+    whatNow: 'Vraag de beheerder om de verbinding met de Prodis-database in te stellen.',
+  },
+  PRODIS_DB_UNAVAILABLE: {
+    title: 'Prodis-database is niet bereikbaar',
+    explanation: 'CatalogImport kon de Prodis-database nu niet lezen. Er is niets overgenomen.',
+    whatNow: 'Probeer het later opnieuw. De controle vooraf toont tot dan dat Prodis niet gecontroleerd is.',
+  },
+  PRODIS_SUPPLIER_NOT_FOUND: {
+    title: 'Leverancier niet gevonden in Prodis',
+    explanation: 'Dit leveranciersnummer bestaat niet in de Prodis-database.',
+  },
+  PRODIS_REFERENCE_QUERY_INVALID: {
+    title: 'Ongeldige vraag aan Prodis',
+    explanation: 'De gevraagde gegevens van Prodis konden niet opgezocht worden met deze invoer.',
+  },
 };
 
 type FamilyFallback = { match: (code: string) => boolean; title: string; explanation: string };

@@ -77,6 +77,16 @@ export const TERM_DOMAINS = [
   'definitionUsage',
   'materialisationMode',
   'materialisationWarning',
+  // S9: overname van de legacy-configuratie (ontvangsten, rapport, bewerkingen op een extra veld).
+  'legacyReceiptStatus',
+  'legacyOutcome',
+  'legacyReportStatus',
+  'legacySecretOutcome',
+  'legacyAction',
+  'legacyProdisReference',
+  'legacyDefinitionStatus',
+  'transformKind',
+  'legacyReportCode',
 ] as const;
 export type TermDomain = (typeof TERM_DOMAINS)[number];
 
@@ -312,6 +322,18 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     identityProfileKind: {
       label: 'Herkenning van een artikel',
       uitleg: 'Welke kolommen samen bepalen dat het in een volgende levering om hetzelfde artikel gaat.',
+    },
+    supplierFixedValue: {
+      label: 'Vaste leverancier',
+      uitleg: 'Een vaste leverancier voor alle regels, in plaats van een kolom.',
+    },
+    supplierGroupFixedValue: {
+      label: 'Vaste groep',
+      uitleg: 'Een vaste artikelgroep voor alle regels, in plaats van een kolom.',
+    },
+    identityUppercase: {
+      label: 'Herkenning in hoofdletters',
+      uitleg: 'Leverancier, groep en referentie worden in hoofdletters vergeleken.',
     },
     supplierField: { label: 'Kolom leverancier', uitleg: 'De kolom met de leverancier van het artikel.' },
     supplierGroupField: { label: 'Kolom groep', uitleg: 'De kolom met de artikelgroep van de leverancier.' },
@@ -663,6 +685,14 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     CONFIG_BOOKMARK_PLACE_NOT_SUPPORTED: {
       label: 'Bestemming van een invulpunt niet ondersteund',
       uitleg: 'Een invulpunt verwijst naar een plaats die niet gevuld kan worden.',
+    },
+    CONFIG_IDENTITY_SOURCE_CONFLICT: {
+      label: 'Kolom en vaste waarde tegelijk',
+      uitleg: 'Voor leverancier of groep is zowel een kolom als een vaste waarde ingesteld; kies er één.',
+    },
+    MAPPING_VALUE_PASSED_THROUGH: {
+      label: 'Waarde ongewijzigd doorgelaten',
+      uitleg: 'De waarde stond niet in de omzettingstabel en is, zoals ingesteld, ongewijzigd doorgelaten.',
     },
     SOURCE_FILE_EMPTY: { label: 'Het bestand is leeg', uitleg: 'Het bestand bevat geen enkele regel.' },
     SOURCE_NO_DATA_RECORDS: {
@@ -1519,6 +1549,621 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     LINK_SEARCH_SUPPLIER_NOT_DERIVED: {
       label: 'Leverancierscode in de bibliotheek is niet ingevuld',
       uitleg: 'Die code wordt nooit automatisch uit de leverancier afgeleid; vul ze zo nodig zelf in.',
+    },
+  },
+  // S9: Overname van de legacy-configuratie: status van een ontvangst.
+  legacyReceiptStatus: {
+    RECEIVED: {
+      label: 'Ontvangen',
+      uitleg: 'Deze configuratie is binnengekomen en wacht op uw beslissing; er is nog niets overgenomen.',
+    },
+    APPLIED: {
+      label: 'Overgenomen',
+      uitleg: 'De configuratie is overgenomen in CatalogImport.',
+    },
+    SUPERSEDED: {
+      label: 'Vervangen',
+      uitleg: 'Er is een nieuwere ontvangst van dezelfde interface; deze kan niet meer overgenomen worden.',
+    },
+    DISCARDED: {
+      label: 'Terzijde gelegd',
+      uitleg: 'Een beheerder heeft deze ontvangst terzijde gelegd; ze wordt niet overgenomen.',
+    },
+  },
+  // S9: Overname van de legacy-configuratie: uitkomst van de controle vooraf.
+  legacyOutcome: {
+    APPLICABLE: {
+      label: 'Klaar om over te nemen',
+      uitleg: 'Er blokkeert niets; u kunt de configuratie overnemen.',
+    },
+    BLOCKED: {
+      label: 'Geblokkeerd',
+      uitleg: 'Minstens één punt blokkeert; los dat eerst op voor u kunt overnemen.',
+    },
+  },
+  // S9: Overname van de legacy-configuratie: soort punt in het rapport.
+  legacyReportStatus: {
+    BLOCKING: {
+      label: 'Blokkeert',
+      uitleg: 'Dit punt moet eerst opgelost worden voor de configuratie overgenomen kan worden.',
+    },
+    WARNING: {
+      label: 'Let op',
+      uitleg: 'Dit wordt overgenomen of weggelaten met een verschil in gedrag dat u moet beoordelen.',
+    },
+    NOT_MIGRATED: {
+      label: 'Wordt niet overgenomen',
+      uitleg: 'Dit onderdeel wordt bewust niet overgenomen; er verandert niets stilzwijgend.',
+    },
+    MIGRATED: {
+      label: 'Wordt overgenomen',
+      uitleg: 'Dit onderdeel wordt overgenomen naar CatalogImport.',
+    },
+  },
+  // S9: Overname van de legacy-configuratie: wat er met het wachtwoord gebeurde.
+  legacySecretOutcome: {
+    STORED: {
+      label: 'Wachtwoord veilig bewaard',
+      uitleg: 'Het wachtwoord is versleuteld bewaard en alleen via een verwijzing te gebruiken.',
+    },
+    DISCARDED_ALREADY_PRESENT: {
+      label: 'Wachtwoord niet overgenomen: bestaat al',
+      uitleg: 'Voor deze interface bestaat al een wachtwoord; het nieuwe is weggegooid, vervangen doet u zelf.',
+    },
+    DISCARDED_PROTOCOL_UNSUPPORTED: {
+      label: 'Wachtwoord niet overgenomen: protocol',
+      uitleg: 'Enkel bij SFTP wordt een wachtwoord overgenomen; dit wachtwoord is weggegooid.',
+    },
+    DISCARDED_NO_HOST: {
+      label: 'Wachtwoord niet overgenomen: geen server',
+      uitleg: 'Er was geen geldige server om het wachtwoord aan te koppelen; het is weggegooid.',
+    },
+    null: {
+      label: 'Geen wachtwoord ontvangen',
+      uitleg: 'Bij deze ontvangst zat geen wachtwoord.',
+    },
+  },
+  // S9: Overname van de legacy-configuratie: wat er met een onderdeel gebeurt.
+  legacyAction: {
+    CREATE: {
+      label: 'Wordt aangemaakt',
+      uitleg: 'Dit bestaat nog niet en wordt nieuw aangemaakt.',
+    },
+    REUSE: {
+      label: 'Wordt hergebruikt',
+      uitleg: 'Dit bestaat al en wordt ongewijzigd hergebruikt.',
+    },
+    SUCCESSOR_DRAFT: {
+      label: 'Nieuwe conceptversie',
+      uitleg: 'Er komt een nieuwe conceptversie naast de bestaande; de actieve versie blijft ongemoeid.',
+    },
+    UNCHANGED: {
+      label: 'Blijft ongewijzigd',
+      uitleg: 'De inhoud is gelijk aan wat al overgenomen was; er verandert niets.',
+    },
+    NONE: {
+      label: 'Geen',
+      uitleg: 'Hier is geen actie voor nodig of mogelijk.',
+    },
+  },
+  // S9: Overname van de legacy-configuratie: controle tegen Prodis.
+  legacyProdisReference: {
+    VERIFIED: {
+      label: 'Gecontroleerd in Prodis',
+      uitleg: 'Leverancier en bibliotheek zijn nagekeken in de Prodis-database.',
+    },
+    UNAVAILABLE: {
+      label: 'Prodis niet bereikbaar',
+      uitleg: 'De Prodis-database kon niet gelezen worden; leverancier en bibliotheek zijn niet nagekeken.',
+    },
+    NOT_CONFIGURED: {
+      label: 'Niet gecontroleerd',
+      uitleg: 'De controle tegen Prodis staat niet aan; leverancier en bibliotheek zijn niet nagekeken.',
+    },
+  },
+  // S9: Overname van de legacy-configuratie: staat van de importsoort in een ontvangst.
+  legacyDefinitionStatus: {
+    PRESENT: {
+      label: 'Importsoort aanwezig',
+      uitleg: 'De importsoort van de interface is gevonden en meegestuurd.',
+    },
+    NOT_REFERENCED: {
+      label: 'Geen importsoort gekoppeld',
+      uitleg: 'De interface verwijst naar geen enkele importsoort.',
+    },
+    MISSING: {
+      label: 'Importsoort niet gevonden',
+      uitleg: 'De interface verwijst naar een importsoort die niet bestaat.',
+    },
+    TABLE_UNAVAILABLE: {
+      label: 'Tabel met importsoorten niet beschikbaar',
+      uitleg: 'De tabel met importsoorten kon bij het exporteren niet gelezen worden.',
+    },
+  },
+  // S9: Bewerkingen op een extra veld (stappen van een keten).
+  transformKind: {
+    NONE: {
+      label: 'Geen bewerking',
+      uitleg: 'De waarde wordt zoals ze is overgenomen.',
+    },
+    FIXED_VALUE: {
+      label: 'Vaste waarde',
+      uitleg: 'Het veld krijgt altijd dezelfde waarde.',
+    },
+    PREFIX: {
+      label: 'Voorvoegsel',
+      uitleg: 'Er wordt tekst vóór de waarde gezet.',
+    },
+    SUFFIX: {
+      label: 'Achtervoegsel',
+      uitleg: 'Er wordt tekst achter de waarde gezet.',
+    },
+    AFFIX: {
+      label: 'Voor- en achtervoegsel',
+      uitleg: 'Er wordt tekst voor en achter de waarde gezet; een lege waarde blijft leeg.',
+    },
+    CONCAT: {
+      label: 'Samenvoegen',
+      uitleg: 'Meerdere kolommen worden aan elkaar gezet.',
+    },
+    SPLIT: {
+      label: 'Splitsen',
+      uitleg: 'Een deel van de waarde wordt genomen na een scheidingsteken.',
+    },
+    SUBSTRING: {
+      label: 'Deel van de tekst',
+      uitleg: 'Enkel een stuk van de waarde, vanaf een positie en met een lengte, wordt genomen.',
+    },
+    UPPER: {
+      label: 'Hoofdletters',
+      uitleg: 'De waarde wordt in hoofdletters gezet.',
+    },
+    MAP: {
+      label: 'Waarde omzetten',
+      uitleg: 'Een waarde wordt omgezet met een omzettingstabel.',
+    },
+    MAP_CONTAINS: {
+      label: 'Omzetten op een deel van de waarde',
+      uitleg: 'De eerste regel van de tabel waarvan de sleutel in de waarde voorkomt, bepaalt de nieuwe waarde.',
+    },
+    ADD: {
+      label: 'Optellen',
+      uitleg: 'Er wordt een vast getal bij de waarde opgeteld.',
+    },
+    SUBTRACT: {
+      label: 'Aftrekken',
+      uitleg: 'Er wordt een vast getal van de waarde afgetrokken.',
+    },
+    MULTIPLY: {
+      label: 'Vermenigvuldigen',
+      uitleg: 'De waarde wordt met een vast getal vermenigvuldigd.',
+    },
+    DIVIDE: {
+      label: 'Delen',
+      uitleg: 'De waarde wordt door een vast getal gedeeld.',
+    },
+    PERCENTAGE: {
+      label: 'Percentage',
+      uitleg: 'Er wordt een percentage van de waarde genomen of bijgeteld.',
+    },
+    CHAIN: {
+      label: 'Keten van bewerkingen',
+      uitleg: 'Meerdere bewerkingen worden na elkaar uitgevoerd, in een vaste volgorde.',
+    },
+  },
+  // S9: Overname van de legacy-configuratie: punten in het rapport.
+  legacyReportCode: {
+    DEFINITION_NOT_PRESENT: {
+      label: 'Geen importsoort om over te nemen',
+      uitleg: 'De interface verwijst niet naar een bestaande importsoort, of de gegevens ervan ontbreken; zonder die beschrijving valt er niets over te nemen.',
+    },
+    INTERFACE_SETTING_DUPLICATED: {
+      label: 'Instelling van de interface komt meerdere keren voor',
+      uitleg: 'Legacy leest er maar één van en niet te bepalen welke; maak de interface eerst eenduidig.',
+    },
+    SUPPLIER_NOT_DECLARED: {
+      label: 'Leverancier ontbreekt in de interface',
+      uitleg: 'Zonder leverancier kan niet bepaald worden voor wie de koppeling is.',
+    },
+    SUPPLIER_CODE_TOO_LONG: {
+      label: 'Leveranciersnummer is te lang',
+      uitleg: 'Het leveranciersnummer van de interface past niet in CatalogImport.',
+    },
+    LIBRARY_NOT_DECLARED: {
+      label: 'Bibliotheek ontbreekt in de interface',
+      uitleg: 'Zonder bibliotheeknummer kan de bibliotheek van de koppeling niet bepaald worden.',
+    },
+    STRUCTURE_FORMAT_UNSUPPORTED: {
+      label: 'Bestandsformaat niet ondersteund',
+      uitleg: 'Enkel CSV met komma, puntkomma of tab wordt overgenomen; dit formaat of scheidingsteken niet.',
+    },
+    CHARSET_NOT_DECLARED: {
+      label: 'Tekenset niet opgegeven',
+      uitleg: 'De interface noemt geen tekenset en die wordt nooit geraden; kies er zelf een, of let op de gekozen waarde.',
+    },
+    CHARSET_UNSUPPORTED: {
+      label: 'Tekenset niet ondersteund',
+      uitleg: 'De opgegeven tekenset bestaat niet of wordt niet ondersteund.',
+    },
+    SKIP_HEADER_LINES_INVALID: {
+      label: 'Aantal over te slaan regels is ongeldig',
+      uitleg: 'Het aantal kopregels van de interface is geen bruikbaar getal.',
+    },
+    IDENTITY_PROFILE_UNSUPPORTED: {
+      label: 'Herkenning van artikelen niet ondersteund',
+      uitleg: 'De sleutelinstellingen van de interface (bijvoorbeeld zonder groep, of met barcode) kunnen niet overgenomen worden.',
+    },
+    CURRENCY_RATE_NOT_SUPPORTED: {
+      label: 'Wisselkoers niet ondersteund',
+      uitleg: 'Een wisselkoers zou prijzen omrekenen; een financiële omrekening wordt niet overgenomen.',
+    },
+    LEGACY_FIELD_DUPLICATED: {
+      label: 'Veld komt meerdere keren voor',
+      uitleg: 'Hetzelfde veldnummer staat meer dan eens in de importsoort; kies er eerst één.',
+    },
+    IDENTITY_FIELD_MISSING: {
+      label: 'Kolom voor de herkenning ontbreekt',
+      uitleg: 'Een van de velden waarmee een artikel herkend wordt, heeft geen kolom of vaste waarde.',
+    },
+    IDENTITY_FIXED_VALUE_TOO_LONG: {
+      label: 'Vaste waarde is te lang',
+      uitleg: 'De vaste leverancier of groep is langer dan wat CatalogImport bewaart.',
+    },
+    IDENTITY_FIXED_VALUE_UNSUPPORTED: {
+      label: 'Vaste waarde niet ondersteund',
+      uitleg: 'Enkel voor leverancier en groep kan een vaste waarde de herkenning bepalen.',
+    },
+    IDENTITY_TRANSFORM_UNSUPPORTED: {
+      label: 'Bewerking op de herkenning niet ondersteund',
+      uitleg: 'Een kolom voor de herkenning wordt in legacy bewerkt; dat wordt niet overgenomen.',
+    },
+    BASE_PRICE_FIELD_MISSING: {
+      label: 'Kolom basisprijs ontbreekt',
+      uitleg: 'De basisprijs heeft in de importsoort geen kolom.',
+    },
+    BASE_PRICE_TRANSFORM_UNSUPPORTED: {
+      label: 'Bewerking op de basisprijs niet ondersteund',
+      uitleg: 'De basisprijs wordt in legacy bewerkt of vast ingesteld; een prijs wordt nooit stilzwijgend aangepast.',
+    },
+    LEGACY_EXCLUDE_EXCLUDES_ALL: {
+      label: 'Uitsluiting sluit alles uit',
+      uitleg: 'Een uitsluitingsrij blijkt elke regel uit te sluiten; dat zou de hele levering wegfilteren.',
+    },
+    DEFINITION_CODE_CONFLICT_MANUAL: {
+      label: 'Code van de beschrijving is al in gebruik',
+      uitleg: 'Een andere, handmatig gemaakte beschrijving heeft al deze code; kies een andere code of los het conflict zelf op.',
+    },
+    TEMPLATE_CODE_CONFLICT_MANUAL: {
+      label: 'Code van het sjabloon is al in gebruik',
+      uitleg: 'Een andere definitie gebruikt al de code die het sjabloon zou krijgen; kies een andere code.',
+    },
+    DEFINITION_CODE_OVERRIDE_INVALID: {
+      label: 'Gekozen code van de beschrijving is ongeldig',
+      uitleg: 'De code die u koos is te lang of bevat tekens die niet mogen.',
+    },
+    SOURCE_ORGANISATION_TYPE_CONFLICT: {
+      label: 'Leverancier bestaat al als ander soort organisatie',
+      uitleg: 'Er is al een organisatie met dit nummer die geen leverancier is; die wordt nooit omgezet.',
+    },
+    LINK_CODE_CONFLICT_MANUAL: {
+      label: 'Code van de koppeling is al in gebruik',
+      uitleg: 'Een handmatig gemaakte koppeling heeft al de code die hier zou ontstaan.',
+    },
+    LINK_SCOPE_CONFLICT_MANUAL: {
+      label: 'Er bestaat al een koppeling voor deze leverancier en bibliotheek',
+      uitleg: 'Dezelfde combinatie van leverancier en bibliotheek is al in gebruik; er wordt nooit stil samengevoegd.',
+    },
+    LINK_DIFFERS_NOT_CHANGED: {
+      label: 'Bestaande koppeling wijkt af',
+      uitleg: 'De bestaande koppeling is anders dan wat de legacy-interface zegt; ze wordt nooit aangepast.',
+    },
+    SHARED_DEFINITION_DIVERGED: {
+      label: 'Gedeelde beschrijving wijkt af',
+      uitleg: 'Deze interface wijkt af van de beschrijving die ze met andere interfaces deelt; loskoppelen kan nog niet.',
+    },
+    MANUAL_CHANGES_SINCE_MIGRATION: {
+      label: 'Beschrijving is na de vorige overname handmatig gewijzigd',
+      uitleg: 'De laatste versie wijkt af van wat de vorige overname schreef; die wijzigingen worden nooit overschreven.',
+    },
+    OPEN_DRAFT_EXISTS: {
+      label: 'Er is al een conceptversie',
+      uitleg: 'Rond de bestaande conceptversie eerst af of verwijder ze voor er een nieuwe komt.',
+    },
+    REVISION_NOT_CLONEABLE: {
+      label: 'Laatste versie kan niet gekopieerd worden',
+      uitleg: 'Van de laatste versie kan geen nieuwe conceptversie gemaakt worden.',
+    },
+    PRODIS_SUPPLIER_NOT_FOUND: {
+      label: 'Leverancier niet gevonden in Prodis',
+      uitleg: 'Dit leveranciersnummer bestaat niet in de Prodis-database.',
+    },
+    PRODIS_SUPPLIER_AMBIGUOUS: {
+      label: 'Leverancier komt meerdere keren voor in Prodis',
+      uitleg: 'Dit leveranciersnummer is in Prodis niet uniek; er kan niet gekozen worden.',
+    },
+    PRODIS_SUPPLIER_GROUP_NOT_FOUND: {
+      label: 'Groep niet gevonden in Prodis',
+      uitleg: 'De vaste groep bestaat niet bij deze leverancier in Prodis.',
+    },
+    PRODIS_SUPPLIER_NAME_TOO_LONG: {
+      label: 'Naam van de leverancier is te lang',
+      uitleg: 'De naam in Prodis past niet in CatalogImport en wordt nooit afgekapt.',
+    },
+    LIBRARY_CODE_INVALID: {
+      label: 'Bibliotheekcode is ongeldig',
+      uitleg: 'De bibliotheekcode heeft een vorm die niet gebruikt kan worden.',
+    },
+    LIBRARY_CODE_NOT_RESOLVED: {
+      label: 'Bibliotheek niet eenduidig bepaald',
+      uitleg: 'De bibliotheek van de legacy-interface is niet eenduidig te vinden; kies er zelf een uit de lijst.',
+    },
+    LIBRARY_CODE_NOT_IN_PRODIS: {
+      label: 'Gekozen bibliotheek hoort niet bij de leverancier',
+      uitleg: 'De bibliotheekcode die u koos bestaat niet bij deze leverancier in Prodis.',
+    },
+    PRODIS_REFERENCE_NOT_VERIFIED: {
+      label: 'Niet gecontroleerd in Prodis',
+      uitleg: 'Prodis is niet ingesteld of niet bereikbaar; leverancier, groep of bibliotheek zijn niet nagekeken en een nieuwe leverancier krijgt een tijdelijke naam.',
+    },
+    SEPARATOR_NOT_DECLARED: {
+      label: 'Scheidingsteken niet opgegeven',
+      uitleg: 'De interface noemt geen scheidingsteken; zoals legacy wordt de puntkomma gebruikt.',
+    },
+    DECIMAL_COMMA_BASE_PRICE: {
+      label: 'Decimale komma bij de basisprijs',
+      uitleg: 'De interface leest getallen met een decimale komma; de basisprijs leest komma en punt beide als decimaalteken en weigert een duizendtalscheiding.',
+    },
+    INCLUDE_EXCLUDE_CODE_NOT_MIGRATED: {
+      label: 'Onbekende code voor insluiten of uitsluiten',
+      uitleg: 'Deze code kent legacy niet; regels die ze zou filteren worden hier niet gefilterd.',
+    },
+    DESCRIPTION_TRANSFORM_NOT_MIGRATED: {
+      label: 'Omschrijving wordt in legacy bewerkt',
+      uitleg: 'De omschrijving is vast of bewerkt; de kolom omschrijving wordt daarom niet overgenomen.',
+    },
+    TRANSFORM_VALUE_NOT_EXPRESSIBLE: {
+      label: 'Waarde of tekst past niet',
+      uitleg: 'Een vaste waarde, voor- of achtervoegsel is te lang of bevat een teken dat niet bewaard kan worden; het veld wordt niet aangemaakt.',
+    },
+    LEGACY_SUBSTRING_INVALID: {
+      label: 'Ongeldige positie of lengte',
+      uitleg: 'Een negatieve positie of lengte kan niet overgenomen worden; het veld wordt niet aangemaakt.',
+    },
+    LEGACY_CALC_VALUE_INVALID: {
+      label: 'Ongeldige waarde bij een berekening',
+      uitleg: 'Het getal van de berekening ontbreekt of is niet bruikbaar; het veld wordt niet aangemaakt.',
+    },
+    CALC_ROUNDING_MAY_DIFFER: {
+      label: 'Afronding kan verschillen',
+      uitleg: 'Legacy rekent met een andere nauwkeurigheid; resultaten kunnen in de laatste decimalen verschillen.',
+    },
+    MAP_CONTAINS_MISS_NOT_EMPTY: {
+      label: 'Onbekende waarde wordt verworpen',
+      uitleg: 'Legacy geeft hier een lege waarde als niets in de tabel past; CatalogImport verwerpt zo een regel.',
+    },
+    LEGACY_CALC_NOT_MIGRATED: {
+      label: 'Berekening nog niet ondersteund',
+      uitleg: 'Deze berekening van de legacy-definitie wordt nog niet overgenomen; het veld wordt niet aangemaakt.',
+    },
+    MAP_ENTRY_TOO_LONG: {
+      label: 'Omzetting te lang',
+      uitleg: 'Een sleutel of waarde in de omzettingstabel is te lang en wordt nooit afgekapt; het veld wordt niet aangemaakt.',
+    },
+    MAP_KEY_AMBIGUOUS: {
+      label: 'Sleutel in de omzettingstabel komt meerdere keren voor',
+      uitleg: 'Dezelfde sleutel heeft meerdere waarden; de waarde met het laagste nummer wint.',
+    },
+    MAP_EMPTY: {
+      label: 'Omzettingstabel is leeg',
+      uitleg: 'Er zijn geen bruikbare omzettingen; het veld wordt niet aangemaakt.',
+    },
+    LEGACY_FILTER_PADDING_UNVERIFIED: {
+      label: 'Opvulling bij een filter niet nagekeken',
+      uitleg: 'Of legacy bij dit filter opvulspaties meetelt, is niet bevestigd; controleer het resultaat.',
+    },
+    INCLUDE_FILTER_WITHOUT_COLUMN: {
+      label: 'Filter zonder kolom',
+      uitleg: 'Een insluit- of uitsluitregel heeft geen kolom om op te filteren; er komt geen filter.',
+    },
+    INCLUDE_EXCLUDE_SUBSTRING_NOT_MIGRATED: {
+      label: 'Filter op een deel van de waarde',
+      uitleg: 'Een filter op positie en lengte wordt niet overgenomen; er komt geen filter.',
+    },
+    INCLUDE_FILTER_EMPTY_VALUE_NOT_MIGRATED: {
+      label: 'Filter met een lege vergelijkwaarde',
+      uitleg: 'Een filter dat op een lege waarde vergelijkt, wordt niet overgenomen.',
+    },
+    INCLUDE_EXCLUDE_WITH_FIXED_VALUE: {
+      label: 'Filter op een veld met vaste waarde',
+      uitleg: 'Het veld heeft een vaste waarde, dus filteren heeft geen zin; er komt geen filter.',
+    },
+    LEGACY_EXCLUDE_NOT_EXPRESSIBLE: {
+      label: 'Uitsluiting kan niet uitgedrukt worden',
+      uitleg: 'Een uitsluitingsrij vergelijkt een kortingscode die in deze beschrijving niet beschikbaar is; de rij wordt niet overgenomen.',
+    },
+    DEFINITION_CODE_OVERRIDDEN: {
+      label: 'Gekozen code voor de beschrijving',
+      uitleg: 'U koos een andere code dan die van legacy; de beschrijving krijgt de gekozen code.',
+    },
+    DEFINITION_CODE_OVERRIDE_NOT_USED: {
+      label: 'Gekozen code niet gebruikt',
+      uitleg: 'Er wordt een bestaande gedeelde beschrijving hergebruikt, dus uw gekozen code is niet nodig.',
+    },
+    LEGACY_DEFINITION_CODE_CHANGED: {
+      label: 'Code van de importsoort is veranderd',
+      uitleg: 'De interface verwijst nu naar een andere importsoort dan bij de vorige overname.',
+    },
+    PRODIS_SUPPLIER_NAME_EMPTY: {
+      label: 'Leverancier heeft geen naam in Prodis',
+      uitleg: 'De leverancier krijgt een tijdelijke naam met het nummer; pas die later aan.',
+    },
+    LIBRARY_CODE_NOT_LEGACY_MATCH: {
+      label: 'Andere bibliotheek dan legacy',
+      uitleg: 'De bibliotheek die u koos is niet die van het legacy-bibliotheeknummer.',
+    },
+    IDENTITY_CHANGE: {
+      label: 'Herkenning van artikelen verandert',
+      uitleg: 'De nieuwe conceptversie herkent artikelen anders; met overnemen bevestigt u die wijziging.',
+    },
+    LEGACY_CONTROL_CODE_NOT_MIGRATED: {
+      label: 'Beheercode van legacy',
+      uitleg: 'Dit is een instelling voor het beheer van de importsoort in legacy en geen onderdeel van de beschrijving.',
+    },
+    CONNECTION_NOT_MIGRATED: {
+      label: 'Verbinding wordt niet aangemaakt',
+      uitleg: 'Een verbindingsprofiel vraagt een eigen keuze; het rapport toont enkel een voorstel met server, map en login.',
+    },
+    PUBLICATION_PARAMETER_NOT_MIGRATED: {
+      label: 'Parameter voor publicatie niet overgenomen',
+      uitleg: 'Een instelling voor de publicatie naar Prodis hoort niet bij de beschrijving van het bestand.',
+    },
+    INTERFACE_SETTING_NOT_MIGRATED: {
+      label: 'Instelling van de interface niet overgenomen',
+      uitleg: 'Voor deze instelling bestaat in CatalogImport geen plaats.',
+    },
+    SECRET_LABEL_OMITTED: {
+      label: 'Geheime instelling weggelaten',
+      uitleg: 'Een wachtwoord of sleutel wordt nooit doorgegeven; vul ze zo nodig zelf in.',
+    },
+    SCHEDULE_NOT_MIGRATED: {
+      label: 'Planning niet overgenomen',
+      uitleg: 'De legacy-planning wordt niet overgenomen; de taak wordt handmatig gestart.',
+    },
+    DISCOUNT_CODE_NOT_IN_KEY: {
+      label: 'Kortingscode hoort niet bij de herkenning',
+      uitleg: 'De interface gebruikt de kortingscode niet om artikelen te herkennen.',
+    },
+    LEGACY_FIELD_NOT_MIGRATED: {
+      label: 'Veld zonder doel',
+      uitleg: 'Voor dit legacy-veld bestaat in CatalogImport geen doelveld.',
+    },
+    LEGACY_IGNORED_WITH_FIXED_VALUE: {
+      label: 'Genegeerd door de vaste waarde',
+      uitleg: 'Bij een vaste waarde negeert legacy de rest van de regel; dat doet CatalogImport ook.',
+    },
+    LEGACY_LINE_WITHOUT_SOURCE: {
+      label: 'Regel zonder kolom',
+      uitleg: 'De legacy-regel heeft geen kolom en geen vaste waarde; er is niets om over te nemen.',
+    },
+    MAP_CONTAINS_ROW_NOT_MIGRATED: {
+      label: 'Rij van de omzettingstabel overgeslagen',
+      uitleg: 'Een rij met een lege sleutel of een lege waarde wordt niet overgenomen.',
+    },
+    LEGACY_MAP_UNUSED: {
+      label: 'Omzettingstabel niet gebruikt',
+      uitleg: 'De tabel hoort bij een veld dat niet omgezet wordt, en wordt dus niet overgenomen.',
+    },
+    LEGACY_FILL_NOT_MIGRATED: {
+      label: 'Opvulling niet overgenomen',
+      uitleg: 'De opvulling van een veld wordt niet overgenomen.',
+    },
+    LEGACY_XML_PATH_NOT_MIGRATED: {
+      label: 'XML-pad niet overgenomen',
+      uitleg: 'Enkel CSV-bestanden worden overgenomen, dus een XML-pad niet.',
+    },
+    LEGACY_EXCLUDES_SKIPPED: {
+      label: 'Uitsluitingen worden niet toegepast',
+      uitleg: 'De interface zegt de uitsluitingen over te slaan, dus ze worden niet overgenomen.',
+    },
+    LEGACY_EXCLUDE_NEVER_MATCHES: {
+      label: 'Uitsluiting past nooit',
+      uitleg: 'Een uitsluitingsrij kan nooit overeenkomen en wordt niet overgenomen.',
+    },
+    TEMPLATE_NOT_UPDATED: {
+      label: 'Sjabloon blijft ongewijzigd',
+      uitleg: 'Het sjabloon van de groep blijft zoals het was; pas het zo nodig zelf aan.',
+    },
+    SOURCE_ORGANISATION_NAME_KEPT: {
+      label: 'Naam van de leverancier blijft',
+      uitleg: 'De bestaande leverancier behoudt haar naam en wordt nooit hernoemd.',
+    },
+    DEFINITION: {
+      label: 'Importsoort wordt overgenomen',
+      uitleg: 'De legacy-importsoort wordt een beschrijving van het bestand in CatalogImport.',
+    },
+    SOURCE_ORGANISATION: {
+      label: 'Leverancier wordt overgenomen',
+      uitleg: 'De leverancier van de interface wordt als leverancier in CatalogImport gebruikt; bestaat ze al, dan wordt ze hergebruikt.',
+    },
+    DELIMITER: {
+      label: 'Scheidingsteken wordt overgenomen',
+      uitleg: 'Het scheidingsteken van de interface wordt dat van het bestand.',
+    },
+    CHARSET: {
+      label: 'Tekenset wordt overgenomen',
+      uitleg: 'De tekenset van de interface wordt die van het bestand.',
+    },
+    HEADER: {
+      label: 'Kopregel wordt overgenomen',
+      uitleg: 'Het aantal over te slaan regels bepaalt of er een kopregel is en op welke regel ze staat.',
+    },
+    IDENTITY_PROFILE: {
+      label: 'Herkenning van artikelen wordt overgenomen',
+      uitleg: 'De sleutelinstellingen van de interface bepalen welke delen een artikel herkennen.',
+    },
+    IDENTITY_FIELD: {
+      label: 'Kolom voor de herkenning wordt overgenomen',
+      uitleg: 'De kolom voor leverancier, groep, referentie of kortingscode wordt overgenomen.',
+    },
+    IDENTITY_FIXED_VALUE: {
+      label: 'Vaste waarde voor de herkenning',
+      uitleg: 'Leverancier of groep krijgt een vaste waarde in plaats van een kolom, zoals in legacy.',
+    },
+    IDENTITY_UPPERCASE: {
+      label: 'Herkenning in hoofdletters',
+      uitleg: 'Leverancier, groep en referentie worden in hoofdletters vergeleken, zoals legacy altijd doet; de kortingscode niet.',
+    },
+    BASE_PRICE: {
+      label: 'Kolom basisprijs wordt overgenomen',
+      uitleg: 'De kolom met de basisprijs wordt overgenomen.',
+    },
+    DESCRIPTION: {
+      label: 'Kolom omschrijving wordt overgenomen',
+      uitleg: 'De kolom met de omschrijving wordt overgenomen.',
+    },
+    MAPPING: {
+      label: 'Extra veld wordt overgenomen',
+      uitleg: 'Een veld van de legacy-definitie wordt een extra veld, eventueel met bewerkingen.',
+    },
+    MAP_TABLE: {
+      label: 'Omzettingstabel wordt overgenomen',
+      uitleg: 'De omzettingen van de legacy-definitie worden bij het veld bewaard.',
+    },
+    MAP_MISS_KEEPS_SOURCE: {
+      label: 'Onbekende waarden blijven ongewijzigd',
+      uitleg: 'Zoals in legacy gaat een waarde die niet in de omzettingstabel staat ongewijzigd door; elke keer wordt het gemeld.',
+    },
+    RECORD_FILTER: {
+      label: 'Filter op de regels wordt overgenomen',
+      uitleg: 'Een insluit- of uitsluitregel van de legacy-definitie wordt een filter op de regels.',
+    },
+    RECORD_FILTER_GROUP: {
+      label: 'Uitsluiting wordt overgenomen',
+      uitleg: 'Een uitsluitingsrij wordt een groep filters waarvan alle voorwaarden samen moeten kloppen.',
+    },
+    PRODIS_SUPPLIER: {
+      label: 'Leverancier gevonden in Prodis',
+      uitleg: 'Het leveranciersnummer bestaat precies één keer in Prodis.',
+    },
+    PRODIS_SUPPLIER_GROUP: {
+      label: 'Groep gevonden in Prodis',
+      uitleg: 'De vaste groep bestaat bij de leverancier in Prodis.',
+    },
+    LIBRARY_CODE: {
+      label: 'Bibliotheek wordt overgenomen',
+      uitleg: 'De bibliotheek van de leverancier waarin de koppeling komt, is bepaald.',
+    },
+    SHARED_DEFINITION: {
+      label: 'Gedeelde beschrijving wordt hergebruikt',
+      uitleg: 'Een andere interface met dezelfde importsoort gebruikt al een gedeelde beschrijving; enkel koppeling en taak komen erbij.',
+    },
+    DEFINITION_UNCHANGED: {
+      label: 'Beschrijving blijft ongewijzigd',
+      uitleg: 'De legacy-inhoud is gelijk aan wat de vorige overname schreef; er komt geen nieuwe versie.',
+    },
+    SUCCESSOR_DRAFT: {
+      label: 'Nieuwe conceptversie',
+      uitleg: 'De legacy-definitie is gewijzigd; er komt een nieuwe conceptversie die u zelf nakijkt en activeert.',
     },
   },
 };

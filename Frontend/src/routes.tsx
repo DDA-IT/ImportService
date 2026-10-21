@@ -15,6 +15,8 @@ import { WorkQueuePage } from './features/workqueue/WorkQueuePage.tsx';
 import { SetupOverviewPage } from './features/setup/SetupOverviewPage.tsx';
 import { NewSupplierWizardPage } from './features/setup/wizard/NewSupplierWizardPage.tsx';
 import { LinkCheckPage } from './features/setup/check/LinkCheckPage.tsx';
+import { LegacyReceiptListPage } from './features/legacyconfig/LegacyReceiptListPage.tsx';
+import { LegacyReceiptDetailPage } from './features/legacyconfig/LegacyReceiptDetailPage.tsx';
 import { TemplateListPage } from './features/templates/TemplateListPage.tsx';
 import { TemplateDetailPage } from './features/templates/TemplateDetailPage.tsx';
 import { IssueCaseListPage } from './features/issuecases/IssueCaseListPage.tsx';
@@ -77,6 +79,14 @@ export const routes: RouteObject[] = [
   {
     path: '/setup/links/:linkId/check',
     element: <LinkCheckPage />,
+  },
+  {
+    path: '/setup/legacy-config',
+    element: <LegacyReceiptListPage />,
+  },
+  {
+    path: '/setup/legacy-config/:receiptId',
+    element: <LegacyReceiptDetailPage />,
   },
   {
     path: '/templates',

@@ -28,7 +28,7 @@
 import { useState, type ReactNode } from 'react';
 import * as setupApi from '../../api/setup.ts';
 import * as setupRevisionsApi from '../../api/setupRevisions.ts';
-import { PERMISSION_MANAGE, type RevisionDetail } from '../../api/types.ts';
+import { PERMISSION_MANAGE, type MappingView, type RevisionDetail } from '../../api/types.ts';
 import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
@@ -36,7 +36,7 @@ import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { gateTitle } from '../../actor/gate.ts';
-import { termLabel } from '../../terms/index.ts';
+import { term, termLabel } from '../../terms/index.ts';
 import { INVULPUNT, INVULPUNT_CAP, INVULPUNTEN } from '../../terms/wording.ts';
 import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
 import { Term } from '../../terms/Term.tsx';
@@ -268,10 +268,19 @@ function RevisionSummary({ revision }: { revision: RevisionDetail }) {
           name="identityProfileKind"
           value={<Term domain="identityProfile" code={revision.identityProfileKind} unknownLabel="Andere herkenning" />}
         />
-        <FieldRow name="supplierField" value={revision.identitySupplierField} />
-        <FieldRow name="supplierGroupField" value={revision.identitySupplierGroupField} />
+        <FieldRow name="supplierField" value={show(revision.identitySupplierField)} />
+        {revision.identitySupplierFixedValue != null && (
+          <FieldRow name="supplierFixedValue" value={revision.identitySupplierFixedValue} />
+        )}
+        <FieldRow name="supplierGroupField" value={show(revision.identitySupplierGroupField)} />
+        {revision.identitySupplierGroupFixedValue != null && (
+          <FieldRow name="supplierGroupFixedValue" value={revision.identitySupplierGroupFixedValue} />
+        )}
         <FieldRow name="supplierReferenceField" value={revision.identitySupplierReferenceField} />
         <FieldRow name="discountCodeField" value={show(revision.identityDiscountCodeField)} />
+        {revision.identityUppercase !== undefined && (
+          <FieldRow name="identityUppercase" value={bool(revision.identityUppercase)} />
+        )}
         <FieldRow name="canonicalisationVersion" value={String(revision.recordCanonicalisationVersion)} />
       </dl>
 
@@ -369,6 +378,27 @@ function FieldKeyTerm({ code }: { code: string }) {
   return <Term domain="fieldKey" code={code} unknownLabel="Ander veld" />;
 }
 
+/**
+ * Legacy-config S8 (alleen-lezen): het aantal omzettingen (`valueMap`), de bewerkingen van een keten (`steps`) en of een
+ * onbekende waarde ongewijzigd doorgaat (`onMiss=KEEP_SOURCE` in de configuratie van een stap). Bewerken valt buiten S9.
+ */
+function MappingExtras({ mapping }: { mapping: MappingView }) {
+  const valueMapCount = mapping.valueMap?.length ?? 0;
+  const steps = mapping.steps ?? [];
+  const keepsSource = steps.some((step) => (step.config ?? '').split(';').includes('onMiss=KEEP_SOURCE'));
+  return (
+    <>
+      {valueMapCount > 0 && <span>Omzettingen: {valueMapCount}</span>}
+      {steps.length > 0 && (
+        <span>
+          Bewerkingen: {steps.map((step) => termLabel('transformKind', step.kind, 'andere bewerking')).join(' → ')}
+        </span>
+      )}
+      {keepsSource && <span>{term('legacyReportCode', 'MAP_MISS_KEEPS_SOURCE').label}</span>}
+    </>
+  );
+}
+
 /** Extra velden, filters, kritiek per veld, bookmarkdeclaraties en hun DEFINITION-waarden. */
 function ChildRows({ revision, onChanged }: { revision: RevisionDetail; onChanged: () => void }) {
   const draft = revision.status === 'DRAFT';
@@ -396,6 +426,7 @@ function ChildRows({ revision, onChanged }: { revision: RevisionDetail; onChange
                 <span>
                   <Term domain="criticality" code={mapping.criticality} unknownLabel="Andere kritiek" />
                 </span>
+                <MappingExtras mapping={mapping} />
                 {draft && (
                   <DeleteChildRowAction
                     revisionId={revision.id}
@@ -429,6 +460,7 @@ function ChildRows({ revision, onChanged }: { revision: RevisionDetail; onChange
                 <span>
                   <Term domain="filterOutcome" code={filter.outcome} unknownLabel="Andere uitkomst" />
                 </span>
+                {filter.matchGroup != null && <span>Groep {filter.matchGroup}: alle voorwaarden samen</span>}
                 {draft && (
                   <DeleteChildRowAction
                     revisionId={revision.id}

@@ -421,6 +421,9 @@ het veld staan in het stappenplan "Nieuwe leverancier en taak".
 | `headerLineNumber` | Regelnummer van de kopregel | Op welke regel de kolomnamen staan; de regels erboven worden overgeslagen. |
 | `fieldReferenceKind` | Kolommen herkennen | Of een kolom herkend wordt aan haar naam of aan haar volgnummer. |
 | `identityProfileKind` | Herkenning van een artikel | Welke kolommen samen bepalen dat het in een volgende levering om hetzelfde artikel gaat. |
+| `supplierFixedValue` | Vaste leverancier | Een vaste leverancier voor alle regels, in plaats van een kolom. |
+| `supplierGroupFixedValue` | Vaste groep | Een vaste artikelgroep voor alle regels, in plaats van een kolom. |
+| `identityUppercase` | Herkenning in hoofdletters | Leverancier, groep en referentie worden in hoofdletters vergeleken. |
 | `supplierField` | Kolom leverancier | De kolom met de leverancier van het artikel. |
 | `supplierGroupField` | Kolom groep | De kolom met de artikelgroep van de leverancier. |
 | `supplierReferenceField` | Kolom referentie | De kolom met het artikelnummer van de leverancier. |
@@ -545,6 +548,8 @@ veldnaam erachter (zoals een ontbrekende kolom) wordt op het deel vóór de dubb
 | `CONFIG_BOOKMARK_WITHOUT_PLACE` | Invulpunt zonder bestemming | Een invulpunt zegt niet waar zijn waarde terechtkomt. |
 | `CONFIG_BOOKMARK_PLACE_UNRESOLVED` | Bestemming van een invulpunt bestaat niet | Een invulpunt verwijst naar een veld of filter dat niet (meer) bestaat. |
 | `CONFIG_BOOKMARK_PLACE_NOT_SUPPORTED` | Bestemming van een invulpunt niet ondersteund | Een invulpunt verwijst naar een plaats die niet gevuld kan worden. |
+| `CONFIG_IDENTITY_SOURCE_CONFLICT` | Kolom en vaste waarde tegelijk | Voor leverancier of groep is zowel een kolom als een vaste waarde ingesteld; kies er één. |
+| `MAPPING_VALUE_PASSED_THROUGH` | Waarde ongewijzigd doorgelaten | De waarde stond niet in de omzettingstabel en is, zoals ingesteld, ongewijzigd doorgelaten. |
 | `SOURCE_FILE_EMPTY` | Het bestand is leeg | Het bestand bevat geen enkele regel. |
 | `SOURCE_NO_DATA_RECORDS` | Geen regels met gegevens | Het bestand bevat geen enkele regel met gegevens, hooguit een kopregel. |
 | `SOURCE_BOM_REMOVED` | Onzichtbaar beginteken genegeerd | Het bestand begon met een onzichtbaar teken dat de tekenset aanduidt; dat teken is genegeerd. |
@@ -1103,3 +1108,210 @@ Overal heet dit "invulpunt" (beslissing van de mens, zie het beslissingslog); in
 | --- | --- | --- |
 | `OPTIONAL_BOOKMARK_NOT_FILLED` | Een optionele waarde is niet ingevuld | Een optionele waarde is leeg gebleven; de standaardwaarde van het sjabloon geldt, als die er is. |
 | `LINK_SEARCH_SUPPLIER_NOT_DERIVED` | Leverancierscode in de bibliotheek is niet ingevuld | Die code wordt nooit automatisch uit de leverancier afgeleid; vul ze zo nodig zelf in. |
+
+### Overname van de legacy-configuratie: status van een ontvangst
+
+Een ontvangst is één legacy-interface die de datasync naar CatalogImport stuurde.
+
+<!-- terms:legacyReceiptStatus -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `RECEIVED` | Ontvangen | Deze configuratie is binnengekomen en wacht op uw beslissing; er is nog niets overgenomen. |
+| `APPLIED` | Overgenomen | De configuratie is overgenomen in CatalogImport. |
+| `SUPERSEDED` | Vervangen | Er is een nieuwere ontvangst van dezelfde interface; deze kan niet meer overgenomen worden. |
+| `DISCARDED` | Terzijde gelegd | Een beheerder heeft deze ontvangst terzijde gelegd; ze wordt niet overgenomen. |
+
+### Overname van de legacy-configuratie: uitkomst van de controle vooraf
+
+<!-- terms:legacyOutcome -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `APPLICABLE` | Klaar om over te nemen | Er blokkeert niets; u kunt de configuratie overnemen. |
+| `BLOCKED` | Geblokkeerd | Minstens één punt blokkeert; los dat eerst op voor u kunt overnemen. |
+
+### Overname van de legacy-configuratie: soort punt in het rapport
+
+<!-- terms:legacyReportStatus -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `BLOCKING` | Blokkeert | Dit punt moet eerst opgelost worden voor de configuratie overgenomen kan worden. |
+| `WARNING` | Let op | Dit wordt overgenomen of weggelaten met een verschil in gedrag dat u moet beoordelen. |
+| `NOT_MIGRATED` | Wordt niet overgenomen | Dit onderdeel wordt bewust niet overgenomen; er verandert niets stilzwijgend. |
+| `MIGRATED` | Wordt overgenomen | Dit onderdeel wordt overgenomen naar CatalogImport. |
+
+### Overname van de legacy-configuratie: wat er met het wachtwoord gebeurde
+
+Een wachtwoord wordt nergens getoond: u ziet enkel wat ermee gebeurd is.
+
+<!-- terms:legacySecretOutcome -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `STORED` | Wachtwoord veilig bewaard | Het wachtwoord is versleuteld bewaard en alleen via een verwijzing te gebruiken. |
+| `DISCARDED_ALREADY_PRESENT` | Wachtwoord niet overgenomen: bestaat al | Voor deze interface bestaat al een wachtwoord; het nieuwe is weggegooid, vervangen doet u zelf. |
+| `DISCARDED_PROTOCOL_UNSUPPORTED` | Wachtwoord niet overgenomen: protocol | Enkel bij SFTP wordt een wachtwoord overgenomen; dit wachtwoord is weggegooid. |
+| `DISCARDED_NO_HOST` | Wachtwoord niet overgenomen: geen server | Er was geen geldige server om het wachtwoord aan te koppelen; het is weggegooid. |
+| `null` | Geen wachtwoord ontvangen | Bij deze ontvangst zat geen wachtwoord. |
+
+### Overname van de legacy-configuratie: wat er met een onderdeel gebeurt
+
+<!-- terms:legacyAction -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `CREATE` | Wordt aangemaakt | Dit bestaat nog niet en wordt nieuw aangemaakt. |
+| `REUSE` | Wordt hergebruikt | Dit bestaat al en wordt ongewijzigd hergebruikt. |
+| `SUCCESSOR_DRAFT` | Nieuwe conceptversie | Er komt een nieuwe conceptversie naast de bestaande; de actieve versie blijft ongemoeid. |
+| `UNCHANGED` | Blijft ongewijzigd | De inhoud is gelijk aan wat al overgenomen was; er verandert niets. |
+| `NONE` | Geen | Hier is geen actie voor nodig of mogelijk. |
+
+### Overname van de legacy-configuratie: controle tegen Prodis
+
+<!-- terms:legacyProdisReference -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `VERIFIED` | Gecontroleerd in Prodis | Leverancier en bibliotheek zijn nagekeken in de Prodis-database. |
+| `UNAVAILABLE` | Prodis niet bereikbaar | De Prodis-database kon niet gelezen worden; leverancier en bibliotheek zijn niet nagekeken. |
+| `NOT_CONFIGURED` | Niet gecontroleerd | De controle tegen Prodis staat niet aan; leverancier en bibliotheek zijn niet nagekeken. |
+
+### Overname van de legacy-configuratie: staat van de importsoort in een ontvangst
+
+<!-- terms:legacyDefinitionStatus -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `PRESENT` | Importsoort aanwezig | De importsoort van de interface is gevonden en meegestuurd. |
+| `NOT_REFERENCED` | Geen importsoort gekoppeld | De interface verwijst naar geen enkele importsoort. |
+| `MISSING` | Importsoort niet gevonden | De interface verwijst naar een importsoort die niet bestaat. |
+| `TABLE_UNAVAILABLE` | Tabel met importsoorten niet beschikbaar | De tabel met importsoorten kon bij het exporteren niet gelezen worden. |
+
+### Bewerkingen op een extra veld (stappen van een keten)
+
+<!-- terms:transformKind -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `NONE` | Geen bewerking | De waarde wordt zoals ze is overgenomen. |
+| `FIXED_VALUE` | Vaste waarde | Het veld krijgt altijd dezelfde waarde. |
+| `PREFIX` | Voorvoegsel | Er wordt tekst vóór de waarde gezet. |
+| `SUFFIX` | Achtervoegsel | Er wordt tekst achter de waarde gezet. |
+| `AFFIX` | Voor- en achtervoegsel | Er wordt tekst voor en achter de waarde gezet; een lege waarde blijft leeg. |
+| `CONCAT` | Samenvoegen | Meerdere kolommen worden aan elkaar gezet. |
+| `SPLIT` | Splitsen | Een deel van de waarde wordt genomen na een scheidingsteken. |
+| `SUBSTRING` | Deel van de tekst | Enkel een stuk van de waarde, vanaf een positie en met een lengte, wordt genomen. |
+| `UPPER` | Hoofdletters | De waarde wordt in hoofdletters gezet. |
+| `MAP` | Waarde omzetten | Een waarde wordt omgezet met een omzettingstabel. |
+| `MAP_CONTAINS` | Omzetten op een deel van de waarde | De eerste regel van de tabel waarvan de sleutel in de waarde voorkomt, bepaalt de nieuwe waarde. |
+| `ADD` | Optellen | Er wordt een vast getal bij de waarde opgeteld. |
+| `SUBTRACT` | Aftrekken | Er wordt een vast getal van de waarde afgetrokken. |
+| `MULTIPLY` | Vermenigvuldigen | De waarde wordt met een vast getal vermenigvuldigd. |
+| `DIVIDE` | Delen | De waarde wordt door een vast getal gedeeld. |
+| `PERCENTAGE` | Percentage | Er wordt een percentage van de waarde genomen of bijgeteld. |
+| `CHAIN` | Keten van bewerkingen | Meerdere bewerkingen worden na elkaar uitgevoerd, in een vaste volgorde. |
+
+### Overname van de legacy-configuratie: punten in het rapport
+
+Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor een beheerder betekent. Het rapport groepeert ze per soort: blokkerend, let op, niet overgenomen en overgenomen.
+
+<!-- terms:legacyReportCode -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `DEFINITION_NOT_PRESENT` | Geen importsoort om over te nemen | De interface verwijst niet naar een bestaande importsoort, of de gegevens ervan ontbreken; zonder die beschrijving valt er niets over te nemen. |
+| `INTERFACE_SETTING_DUPLICATED` | Instelling van de interface komt meerdere keren voor | Legacy leest er maar één van en niet te bepalen welke; maak de interface eerst eenduidig. |
+| `SUPPLIER_NOT_DECLARED` | Leverancier ontbreekt in de interface | Zonder leverancier kan niet bepaald worden voor wie de koppeling is. |
+| `SUPPLIER_CODE_TOO_LONG` | Leveranciersnummer is te lang | Het leveranciersnummer van de interface past niet in CatalogImport. |
+| `LIBRARY_NOT_DECLARED` | Bibliotheek ontbreekt in de interface | Zonder bibliotheeknummer kan de bibliotheek van de koppeling niet bepaald worden. |
+| `STRUCTURE_FORMAT_UNSUPPORTED` | Bestandsformaat niet ondersteund | Enkel CSV met komma, puntkomma of tab wordt overgenomen; dit formaat of scheidingsteken niet. |
+| `CHARSET_NOT_DECLARED` | Tekenset niet opgegeven | De interface noemt geen tekenset en die wordt nooit geraden; kies er zelf een, of let op de gekozen waarde. |
+| `CHARSET_UNSUPPORTED` | Tekenset niet ondersteund | De opgegeven tekenset bestaat niet of wordt niet ondersteund. |
+| `SKIP_HEADER_LINES_INVALID` | Aantal over te slaan regels is ongeldig | Het aantal kopregels van de interface is geen bruikbaar getal. |
+| `IDENTITY_PROFILE_UNSUPPORTED` | Herkenning van artikelen niet ondersteund | De sleutelinstellingen van de interface (bijvoorbeeld zonder groep, of met barcode) kunnen niet overgenomen worden. |
+| `CURRENCY_RATE_NOT_SUPPORTED` | Wisselkoers niet ondersteund | Een wisselkoers zou prijzen omrekenen; een financiële omrekening wordt niet overgenomen. |
+| `LEGACY_FIELD_DUPLICATED` | Veld komt meerdere keren voor | Hetzelfde veldnummer staat meer dan eens in de importsoort; kies er eerst één. |
+| `IDENTITY_FIELD_MISSING` | Kolom voor de herkenning ontbreekt | Een van de velden waarmee een artikel herkend wordt, heeft geen kolom of vaste waarde. |
+| `IDENTITY_FIXED_VALUE_TOO_LONG` | Vaste waarde is te lang | De vaste leverancier of groep is langer dan wat CatalogImport bewaart. |
+| `IDENTITY_FIXED_VALUE_UNSUPPORTED` | Vaste waarde niet ondersteund | Enkel voor leverancier en groep kan een vaste waarde de herkenning bepalen. |
+| `IDENTITY_TRANSFORM_UNSUPPORTED` | Bewerking op de herkenning niet ondersteund | Een kolom voor de herkenning wordt in legacy bewerkt; dat wordt niet overgenomen. |
+| `BASE_PRICE_FIELD_MISSING` | Kolom basisprijs ontbreekt | De basisprijs heeft in de importsoort geen kolom. |
+| `BASE_PRICE_TRANSFORM_UNSUPPORTED` | Bewerking op de basisprijs niet ondersteund | De basisprijs wordt in legacy bewerkt of vast ingesteld; een prijs wordt nooit stilzwijgend aangepast. |
+| `LEGACY_EXCLUDE_EXCLUDES_ALL` | Uitsluiting sluit alles uit | Een uitsluitingsrij blijkt elke regel uit te sluiten; dat zou de hele levering wegfilteren. |
+| `DEFINITION_CODE_CONFLICT_MANUAL` | Code van de beschrijving is al in gebruik | Een andere, handmatig gemaakte beschrijving heeft al deze code; kies een andere code of los het conflict zelf op. |
+| `TEMPLATE_CODE_CONFLICT_MANUAL` | Code van het sjabloon is al in gebruik | Een andere definitie gebruikt al de code die het sjabloon zou krijgen; kies een andere code. |
+| `DEFINITION_CODE_OVERRIDE_INVALID` | Gekozen code van de beschrijving is ongeldig | De code die u koos is te lang of bevat tekens die niet mogen. |
+| `SOURCE_ORGANISATION_TYPE_CONFLICT` | Leverancier bestaat al als ander soort organisatie | Er is al een organisatie met dit nummer die geen leverancier is; die wordt nooit omgezet. |
+| `LINK_CODE_CONFLICT_MANUAL` | Code van de koppeling is al in gebruik | Een handmatig gemaakte koppeling heeft al de code die hier zou ontstaan. |
+| `LINK_SCOPE_CONFLICT_MANUAL` | Er bestaat al een koppeling voor deze leverancier en bibliotheek | Dezelfde combinatie van leverancier en bibliotheek is al in gebruik; er wordt nooit stil samengevoegd. |
+| `LINK_DIFFERS_NOT_CHANGED` | Bestaande koppeling wijkt af | De bestaande koppeling is anders dan wat de legacy-interface zegt; ze wordt nooit aangepast. |
+| `SHARED_DEFINITION_DIVERGED` | Gedeelde beschrijving wijkt af | Deze interface wijkt af van de beschrijving die ze met andere interfaces deelt; loskoppelen kan nog niet. |
+| `MANUAL_CHANGES_SINCE_MIGRATION` | Beschrijving is na de vorige overname handmatig gewijzigd | De laatste versie wijkt af van wat de vorige overname schreef; die wijzigingen worden nooit overschreven. |
+| `OPEN_DRAFT_EXISTS` | Er is al een conceptversie | Rond de bestaande conceptversie eerst af of verwijder ze voor er een nieuwe komt. |
+| `REVISION_NOT_CLONEABLE` | Laatste versie kan niet gekopieerd worden | Van de laatste versie kan geen nieuwe conceptversie gemaakt worden. |
+| `PRODIS_SUPPLIER_NOT_FOUND` | Leverancier niet gevonden in Prodis | Dit leveranciersnummer bestaat niet in de Prodis-database. |
+| `PRODIS_SUPPLIER_AMBIGUOUS` | Leverancier komt meerdere keren voor in Prodis | Dit leveranciersnummer is in Prodis niet uniek; er kan niet gekozen worden. |
+| `PRODIS_SUPPLIER_GROUP_NOT_FOUND` | Groep niet gevonden in Prodis | De vaste groep bestaat niet bij deze leverancier in Prodis. |
+| `PRODIS_SUPPLIER_NAME_TOO_LONG` | Naam van de leverancier is te lang | De naam in Prodis past niet in CatalogImport en wordt nooit afgekapt. |
+| `LIBRARY_CODE_INVALID` | Bibliotheekcode is ongeldig | De bibliotheekcode heeft een vorm die niet gebruikt kan worden. |
+| `LIBRARY_CODE_NOT_RESOLVED` | Bibliotheek niet eenduidig bepaald | De bibliotheek van de legacy-interface is niet eenduidig te vinden; kies er zelf een uit de lijst. |
+| `LIBRARY_CODE_NOT_IN_PRODIS` | Gekozen bibliotheek hoort niet bij de leverancier | De bibliotheekcode die u koos bestaat niet bij deze leverancier in Prodis. |
+| `PRODIS_REFERENCE_NOT_VERIFIED` | Niet gecontroleerd in Prodis | Prodis is niet ingesteld of niet bereikbaar; leverancier, groep of bibliotheek zijn niet nagekeken en een nieuwe leverancier krijgt een tijdelijke naam. |
+| `SEPARATOR_NOT_DECLARED` | Scheidingsteken niet opgegeven | De interface noemt geen scheidingsteken; zoals legacy wordt de puntkomma gebruikt. |
+| `DECIMAL_COMMA_BASE_PRICE` | Decimale komma bij de basisprijs | De interface leest getallen met een decimale komma; de basisprijs leest komma en punt beide als decimaalteken en weigert een duizendtalscheiding. |
+| `INCLUDE_EXCLUDE_CODE_NOT_MIGRATED` | Onbekende code voor insluiten of uitsluiten | Deze code kent legacy niet; regels die ze zou filteren worden hier niet gefilterd. |
+| `DESCRIPTION_TRANSFORM_NOT_MIGRATED` | Omschrijving wordt in legacy bewerkt | De omschrijving is vast of bewerkt; de kolom omschrijving wordt daarom niet overgenomen. |
+| `TRANSFORM_VALUE_NOT_EXPRESSIBLE` | Waarde of tekst past niet | Een vaste waarde, voor- of achtervoegsel is te lang of bevat een teken dat niet bewaard kan worden; het veld wordt niet aangemaakt. |
+| `LEGACY_SUBSTRING_INVALID` | Ongeldige positie of lengte | Een negatieve positie of lengte kan niet overgenomen worden; het veld wordt niet aangemaakt. |
+| `LEGACY_CALC_VALUE_INVALID` | Ongeldige waarde bij een berekening | Het getal van de berekening ontbreekt of is niet bruikbaar; het veld wordt niet aangemaakt. |
+| `CALC_ROUNDING_MAY_DIFFER` | Afronding kan verschillen | Legacy rekent met een andere nauwkeurigheid; resultaten kunnen in de laatste decimalen verschillen. |
+| `MAP_CONTAINS_MISS_NOT_EMPTY` | Onbekende waarde wordt verworpen | Legacy geeft hier een lege waarde als niets in de tabel past; CatalogImport verwerpt zo een regel. |
+| `LEGACY_CALC_NOT_MIGRATED` | Berekening nog niet ondersteund | Deze berekening van de legacy-definitie wordt nog niet overgenomen; het veld wordt niet aangemaakt. |
+| `MAP_ENTRY_TOO_LONG` | Omzetting te lang | Een sleutel of waarde in de omzettingstabel is te lang en wordt nooit afgekapt; het veld wordt niet aangemaakt. |
+| `MAP_KEY_AMBIGUOUS` | Sleutel in de omzettingstabel komt meerdere keren voor | Dezelfde sleutel heeft meerdere waarden; de waarde met het laagste nummer wint. |
+| `MAP_EMPTY` | Omzettingstabel is leeg | Er zijn geen bruikbare omzettingen; het veld wordt niet aangemaakt. |
+| `LEGACY_FILTER_PADDING_UNVERIFIED` | Opvulling bij een filter niet nagekeken | Of legacy bij dit filter opvulspaties meetelt, is niet bevestigd; controleer het resultaat. |
+| `INCLUDE_FILTER_WITHOUT_COLUMN` | Filter zonder kolom | Een insluit- of uitsluitregel heeft geen kolom om op te filteren; er komt geen filter. |
+| `INCLUDE_EXCLUDE_SUBSTRING_NOT_MIGRATED` | Filter op een deel van de waarde | Een filter op positie en lengte wordt niet overgenomen; er komt geen filter. |
+| `INCLUDE_FILTER_EMPTY_VALUE_NOT_MIGRATED` | Filter met een lege vergelijkwaarde | Een filter dat op een lege waarde vergelijkt, wordt niet overgenomen. |
+| `INCLUDE_EXCLUDE_WITH_FIXED_VALUE` | Filter op een veld met vaste waarde | Het veld heeft een vaste waarde, dus filteren heeft geen zin; er komt geen filter. |
+| `LEGACY_EXCLUDE_NOT_EXPRESSIBLE` | Uitsluiting kan niet uitgedrukt worden | Een uitsluitingsrij vergelijkt een kortingscode die in deze beschrijving niet beschikbaar is; de rij wordt niet overgenomen. |
+| `DEFINITION_CODE_OVERRIDDEN` | Gekozen code voor de beschrijving | U koos een andere code dan die van legacy; de beschrijving krijgt de gekozen code. |
+| `DEFINITION_CODE_OVERRIDE_NOT_USED` | Gekozen code niet gebruikt | Er wordt een bestaande gedeelde beschrijving hergebruikt, dus uw gekozen code is niet nodig. |
+| `LEGACY_DEFINITION_CODE_CHANGED` | Code van de importsoort is veranderd | De interface verwijst nu naar een andere importsoort dan bij de vorige overname. |
+| `PRODIS_SUPPLIER_NAME_EMPTY` | Leverancier heeft geen naam in Prodis | De leverancier krijgt een tijdelijke naam met het nummer; pas die later aan. |
+| `LIBRARY_CODE_NOT_LEGACY_MATCH` | Andere bibliotheek dan legacy | De bibliotheek die u koos is niet die van het legacy-bibliotheeknummer. |
+| `IDENTITY_CHANGE` | Herkenning van artikelen verandert | De nieuwe conceptversie herkent artikelen anders; met overnemen bevestigt u die wijziging. |
+| `LEGACY_CONTROL_CODE_NOT_MIGRATED` | Beheercode van legacy | Dit is een instelling voor het beheer van de importsoort in legacy en geen onderdeel van de beschrijving. |
+| `CONNECTION_NOT_MIGRATED` | Verbinding wordt niet aangemaakt | Een verbindingsprofiel vraagt een eigen keuze; het rapport toont enkel een voorstel met server, map en login. |
+| `PUBLICATION_PARAMETER_NOT_MIGRATED` | Parameter voor publicatie niet overgenomen | Een instelling voor de publicatie naar Prodis hoort niet bij de beschrijving van het bestand. |
+| `INTERFACE_SETTING_NOT_MIGRATED` | Instelling van de interface niet overgenomen | Voor deze instelling bestaat in CatalogImport geen plaats. |
+| `SECRET_LABEL_OMITTED` | Geheime instelling weggelaten | Een wachtwoord of sleutel wordt nooit doorgegeven; vul ze zo nodig zelf in. |
+| `SCHEDULE_NOT_MIGRATED` | Planning niet overgenomen | De legacy-planning wordt niet overgenomen; de taak wordt handmatig gestart. |
+| `DISCOUNT_CODE_NOT_IN_KEY` | Kortingscode hoort niet bij de herkenning | De interface gebruikt de kortingscode niet om artikelen te herkennen. |
+| `LEGACY_FIELD_NOT_MIGRATED` | Veld zonder doel | Voor dit legacy-veld bestaat in CatalogImport geen doelveld. |
+| `LEGACY_IGNORED_WITH_FIXED_VALUE` | Genegeerd door de vaste waarde | Bij een vaste waarde negeert legacy de rest van de regel; dat doet CatalogImport ook. |
+| `LEGACY_LINE_WITHOUT_SOURCE` | Regel zonder kolom | De legacy-regel heeft geen kolom en geen vaste waarde; er is niets om over te nemen. |
+| `MAP_CONTAINS_ROW_NOT_MIGRATED` | Rij van de omzettingstabel overgeslagen | Een rij met een lege sleutel of een lege waarde wordt niet overgenomen. |
+| `LEGACY_MAP_UNUSED` | Omzettingstabel niet gebruikt | De tabel hoort bij een veld dat niet omgezet wordt, en wordt dus niet overgenomen. |
+| `LEGACY_FILL_NOT_MIGRATED` | Opvulling niet overgenomen | De opvulling van een veld wordt niet overgenomen. |
+| `LEGACY_XML_PATH_NOT_MIGRATED` | XML-pad niet overgenomen | Enkel CSV-bestanden worden overgenomen, dus een XML-pad niet. |
+| `LEGACY_EXCLUDES_SKIPPED` | Uitsluitingen worden niet toegepast | De interface zegt de uitsluitingen over te slaan, dus ze worden niet overgenomen. |
+| `LEGACY_EXCLUDE_NEVER_MATCHES` | Uitsluiting past nooit | Een uitsluitingsrij kan nooit overeenkomen en wordt niet overgenomen. |
+| `TEMPLATE_NOT_UPDATED` | Sjabloon blijft ongewijzigd | Het sjabloon van de groep blijft zoals het was; pas het zo nodig zelf aan. |
+| `SOURCE_ORGANISATION_NAME_KEPT` | Naam van de leverancier blijft | De bestaande leverancier behoudt haar naam en wordt nooit hernoemd. |
+| `DEFINITION` | Importsoort wordt overgenomen | De legacy-importsoort wordt een beschrijving van het bestand in CatalogImport. |
+| `SOURCE_ORGANISATION` | Leverancier wordt overgenomen | De leverancier van de interface wordt als leverancier in CatalogImport gebruikt; bestaat ze al, dan wordt ze hergebruikt. |
+| `DELIMITER` | Scheidingsteken wordt overgenomen | Het scheidingsteken van de interface wordt dat van het bestand. |
+| `CHARSET` | Tekenset wordt overgenomen | De tekenset van de interface wordt die van het bestand. |
+| `HEADER` | Kopregel wordt overgenomen | Het aantal over te slaan regels bepaalt of er een kopregel is en op welke regel ze staat. |
+| `IDENTITY_PROFILE` | Herkenning van artikelen wordt overgenomen | De sleutelinstellingen van de interface bepalen welke delen een artikel herkennen. |
+| `IDENTITY_FIELD` | Kolom voor de herkenning wordt overgenomen | De kolom voor leverancier, groep, referentie of kortingscode wordt overgenomen. |
+| `IDENTITY_FIXED_VALUE` | Vaste waarde voor de herkenning | Leverancier of groep krijgt een vaste waarde in plaats van een kolom, zoals in legacy. |
+| `IDENTITY_UPPERCASE` | Herkenning in hoofdletters | Leverancier, groep en referentie worden in hoofdletters vergeleken, zoals legacy altijd doet; de kortingscode niet. |
+| `BASE_PRICE` | Kolom basisprijs wordt overgenomen | De kolom met de basisprijs wordt overgenomen. |
+| `DESCRIPTION` | Kolom omschrijving wordt overgenomen | De kolom met de omschrijving wordt overgenomen. |
+| `MAPPING` | Extra veld wordt overgenomen | Een veld van de legacy-definitie wordt een extra veld, eventueel met bewerkingen. |
+| `MAP_TABLE` | Omzettingstabel wordt overgenomen | De omzettingen van de legacy-definitie worden bij het veld bewaard. |
+| `MAP_MISS_KEEPS_SOURCE` | Onbekende waarden blijven ongewijzigd | Zoals in legacy gaat een waarde die niet in de omzettingstabel staat ongewijzigd door; elke keer wordt het gemeld. |
+| `RECORD_FILTER` | Filter op de regels wordt overgenomen | Een insluit- of uitsluitregel van de legacy-definitie wordt een filter op de regels. |
+| `RECORD_FILTER_GROUP` | Uitsluiting wordt overgenomen | Een uitsluitingsrij wordt een groep filters waarvan alle voorwaarden samen moeten kloppen. |
+| `PRODIS_SUPPLIER` | Leverancier gevonden in Prodis | Het leveranciersnummer bestaat precies één keer in Prodis. |
+| `PRODIS_SUPPLIER_GROUP` | Groep gevonden in Prodis | De vaste groep bestaat bij de leverancier in Prodis. |
+| `LIBRARY_CODE` | Bibliotheek wordt overgenomen | De bibliotheek van de leverancier waarin de koppeling komt, is bepaald. |
+| `SHARED_DEFINITION` | Gedeelde beschrijving wordt hergebruikt | Een andere interface met dezelfde importsoort gebruikt al een gedeelde beschrijving; enkel koppeling en taak komen erbij. |
+| `DEFINITION_UNCHANGED` | Beschrijving blijft ongewijzigd | De legacy-inhoud is gelijk aan wat de vorige overname schreef; er komt geen nieuwe versie. |
+| `SUCCESSOR_DRAFT` | Nieuwe conceptversie | De legacy-definitie is gewijzigd; er komt een nieuwe conceptversie die u zelf nakijkt en activeert. |

@@ -9,6 +9,7 @@ import {
   CaseIcon,
   ChevDIcon,
   ChevIcon,
+  LinkIcon,
   MenuIcon,
   QueueIcon,
   SetupIcon,
@@ -63,6 +64,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/setup', label: 'Overzicht', end: true, Icon: SetupIcon },
       { to: '/setup/new', label: 'Nieuwe leverancier', end: false, Icon: SupplierIcon, requires: PERMISSION_MANAGE },
       { to: '/templates', label: 'Sjablonen', end: false, Icon: TemplateIcon },
+      { to: '/setup/legacy-config', label: 'Overname uit legacy', end: false, Icon: LinkIcon, requires: PERMISSION_MANAGE },
     ],
   },
 ];

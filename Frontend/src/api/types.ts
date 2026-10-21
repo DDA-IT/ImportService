@@ -727,8 +727,10 @@ export type RevisionView = {
   hasHeader: boolean;
   fieldReferenceKind: string;
   canonicalisationVersion: number;
-  supplierField: string;
-  supplierGroupField: string;
+  /** `null` als de leverancier een vaste waarde heeft (`supplierFixedValue`, legacy-config S6). */
+  supplierField: string | null;
+  /** `null` als de groep een vaste waarde heeft (`supplierGroupFixedValue`, legacy-config S6). */
+  supplierGroupField: string | null;
   supplierReferenceField: string;
   discountCodeField: string | null;
   basePriceField: string;
@@ -738,7 +740,19 @@ export type RevisionView = {
   maxCriticalSharePercent: number | null;
   maxRejectedSharePercent: number | null;
   bulkIncidentSharePercent: number | null;
+  /** Legacy-config S6 (additief): vaste leverancier in plaats van een kolom, of `null`. */
+  supplierFixedValue?: string | null;
+  /** Legacy-config S6 (additief): vaste groep in plaats van een kolom, of `null`. */
+  supplierGroupFixedValue?: string | null;
+  /** Legacy-config S6 (additief): leverancier, groep en referentie in hoofdletters vergelijken. */
+  identityUppercase?: boolean;
 };
+
+/** be.dda.catalogimport.service.SetupService.ValueMapEntry — één vertaalrij van een MAP (legacy-config S8a, additief). */
+export type ValueMapEntryView = { source: string; target: string };
+
+/** be.dda.catalogimport.service.SetupService.TransformStepEntry — één ketenstap (legacy-config S8c, additief). */
+export type TransformStepView = { kind: string; config: string | null };
 
 // be.dda.catalogimport.service.SetupService.MappingView — één veldmapping van een revisie.
 export type MappingView = {
@@ -749,6 +763,10 @@ export type MappingView = {
   sourceReference: string;
   valueKind: string;
   criticality: string;
+  /** Legacy-config S8a (additief): de vertaalrijen van een MAP; leeg of afwezig als er geen zijn. */
+  valueMap?: ValueMapEntryView[];
+  /** Legacy-config S8c (additief): de stappen van een keten; leeg of afwezig als er geen zijn. */
+  steps?: TransformStepView[];
 };
 
 // be.dda.catalogimport.service.SetupService.FilterView — één recordfilter van een revisie.
@@ -760,6 +778,8 @@ export type FilterView = {
   operator: string;
   compareValue: string | null;
   outcome: string;
+  /** Legacy-config S8f (additief): filterrijen met dezelfde groep vormen één EN-regel; `null` = losse rij. */
+  matchGroup?: number | null;
 };
 
 // be.dda.catalogimport.service.SetupService.FieldCriticalityView — één kritiek-overrule. Heeft geen
@@ -805,10 +825,18 @@ export type RevisionDetail = {
   basedOnRevisionId: number | null;
   changeReason: string | null;
   identityProfileKind: string;
-  identitySupplierField: string;
-  identitySupplierGroupField: string;
+  /** `null` als de leverancier een vaste waarde heeft (`identitySupplierFixedValue`, legacy-config S6). */
+  identitySupplierField: string | null;
+  /** `null` als de groep een vaste waarde heeft (`identitySupplierGroupFixedValue`, legacy-config S6). */
+  identitySupplierGroupField: string | null;
   identitySupplierReferenceField: string;
   identityDiscountCodeField: string | null;
+  /** Legacy-config S6 (additief): de vaste leverancier, of `null`. */
+  identitySupplierFixedValue?: string | null;
+  /** Legacy-config S6 (additief): de vaste groep, of `null`. */
+  identitySupplierGroupFixedValue?: string | null;
+  /** Legacy-config S6 (additief): leverancier, groep en referentie worden in hoofdletters vergeleken. */
+  identityUppercase?: boolean;
   structureFormat: string;
   structureCharset: string;
   structureDelimiter: string;
@@ -1721,4 +1749,168 @@ export type TrialReadResult = {
   /** Codes van grondoorzaken waardoor afhankelijke configuratiecontroles niet beoordeeld werden (NT-14-3). */
   configChecksSkippedBecause?: string[];
   notEvaluated: TrialNotEvaluated[];
+};
+
+// --- S9: overname van de legacy-configuratie (`docs/design/legacy-config-bundle-design.md` §2 en §5) ---
+// Alle endpoints onder `/legacy-config` vragen `MANAGE` (de bundel toont host en login). Een secret komt hier
+// nooit in een antwoord: de bundel heeft `secret: null` en `secretOutcome` zegt enkel wat ermee gebeurde.
+
+// be.dda.catalogimport.domain.LegacyConfigReceiptStatus
+export const LEGACY_RECEIPT_STATUSES = ['RECEIVED', 'APPLIED', 'SUPERSEDED', 'DISCARDED'] as const;
+export type LegacyReceiptStatus = (typeof LEGACY_RECEIPT_STATUSES)[number];
+
+/** be.dda.catalogimport.service.LegacyConfigReceiptService.ReceiptRow — één regel van de ontvangstenlijst, zonder bundel. */
+export type LegacyReceiptRow = {
+  id: number;
+  originEnvironment: string;
+  originDossier: string;
+  interfaceCode: string;
+  bundleVersion: number;
+  contentHash: string;
+  definitionContentHash: string | null;
+  legacyDefinitionCode: string | null;
+  status: string;
+  secretReceived: boolean;
+  /** `STORED`, `DISCARDED_*` of `null` (geen secret). Nooit een waarde. */
+  secretOutcome: string | null;
+  exportedAt: string | null;
+  receivedAt: string;
+  receivedBy: string | null;
+  supersededByReceiptId: number | null;
+  appliedAt: string | null;
+  appliedBy: string | null;
+};
+
+/** Eén label/waarde-paar uit de interface-instellingen van de bundel (nooit een wachtwoord). */
+export type LegacyBundleDetail = { sequence: number; label: string; value: string };
+
+/** De bundel zonder secret, zoals `ReceiptDetail.bundle` hem teruggeeft (JSON-vorm van contract v1). */
+export type LegacyBundle = {
+  schema?: string;
+  version?: number;
+  origin?: { environment?: string; dossier?: string; legacyMaster?: string };
+  exportedAt?: string;
+  interface?: {
+    code?: string;
+    header?: {
+      direction?: string;
+      importExportType?: string;
+      executeAutomatic?: boolean;
+      executeEvery?: string;
+      executionTime?: string;
+      endTime?: string;
+      weekdays?: boolean[];
+      dayOfWeek?: string;
+      dayOfMonth?: number;
+      monthOfYear?: number;
+      specificUser?: string;
+      info?: string;
+    };
+    details?: LegacyBundleDetail[];
+    omittedSecretLabels?: string[];
+    ftpCredentialsRedacted?: boolean;
+  };
+  definitionStatus?: string;
+  definition?: {
+    code?: string;
+    description?: string;
+    lines?: unknown[];
+    maps?: unknown[];
+    excludes?: unknown[];
+  } | null;
+};
+
+/** be.dda.catalogimport.service.LegacyConfigReceiptService.ReceiptDetail. */
+export type LegacyReceiptDetail = {
+  receipt: LegacyReceiptRow;
+  secretOutcome: string | null;
+  /** Verwijzing naar de credential van de herkomst (id), nooit het wachtwoord. */
+  credentialRef: string | null;
+  bundle: LegacyBundle | null;
+};
+
+// be.dda.catalogimport.service.LegacyConfigReport — status van één rapportitem.
+export const LEGACY_REPORT_STATUSES = ['BLOCKING', 'WARNING', 'NOT_MIGRATED', 'MIGRATED'] as const;
+export type LegacyReportStatus = (typeof LEGACY_REPORT_STATUSES)[number];
+
+export type LegacyReportItem = {
+  /** Legacy-element, bv. `PSIMPDEF#9` of `PLAN:link`. */
+  element: string;
+  status: string;
+  code: string;
+  target: string | null;
+  /** Engelse ontwikkelaarstekst; de schermen tonen de Nederlandse uitleg uit het woordenboek. */
+  message: string | null;
+};
+
+export type LegacyPlannedOrganisation = { action: string; id: number | null; code: string; name: string | null };
+export type LegacyPlannedDefinition = {
+  action: string;
+  id: number | null;
+  code: string;
+  name: string | null;
+  revisionAction: string;
+  basedOnRevision: number | null;
+  revisionId: number | null;
+};
+export type LegacyLibraryCandidate = {
+  scopeKey: string;
+  catalogName: string | null;
+  legacyNumber: string | null;
+  status: string | null;
+};
+export type LegacyPlannedLink = {
+  action: string;
+  id: number | null;
+  code: string;
+  libraryCode: string | null;
+  libraryCandidates: LegacyLibraryCandidate[];
+};
+export type LegacyPlannedTask = { action: string; id: number | null; name: string };
+export type LegacyPlannedCredential = { credentialRef: string | null; secretOutcome: string | null };
+export type LegacyPlannedTemplate = { action: string; id: number | null; code: string; revisionId: number | null };
+
+export type LegacyPlanned = {
+  sourceOrganisation: LegacyPlannedOrganisation | null;
+  definition: LegacyPlannedDefinition | null;
+  link: LegacyPlannedLink | null;
+  task: LegacyPlannedTask | null;
+  credential: LegacyPlannedCredential | null;
+  template?: LegacyPlannedTemplate | null;
+};
+
+/** be.dda.catalogimport.service.LegacyConfigReport. */
+export type LegacyConfigReport = {
+  receiptId: number;
+  contentHash: string;
+  receiptStatus: string;
+  /** `APPLICABLE` of `BLOCKED`. */
+  outcome: string;
+  planned: LegacyPlanned;
+  sharedWith: string[];
+  items: LegacyReportItem[];
+  /** `VERIFIED`, `UNAVAILABLE` of `NOT_CONFIGURED`. */
+  prodisReference: string;
+};
+
+/** be.dda.catalogimport.service.LegacyConfigApplyService.PreviewResult. */
+export type LegacyPreviewResult = { report: LegacyConfigReport; previewFingerprint: string };
+
+/** De door de mens gegeven keuzes die de preview beïnvloeden (queryparameters van PREVIEW, body van APPLY). */
+export type LegacyApplyChoices = {
+  definitionCodeOverride?: string;
+  charsetWhenUndeclared?: string;
+  libraryCode?: string;
+};
+
+/** Body van `POST /legacy-config/receipts/{id}/apply`. */
+export type LegacyApplyRequest = LegacyApplyChoices & { previewFingerprint: string; reason: string };
+
+export type LegacyConfigurationFinding = { code: string; fieldName: string | null; message: string };
+
+/** be.dda.catalogimport.service.LegacyConfigApplyService.ApplyResult. */
+export type LegacyApplyResult = {
+  report: LegacyConfigReport;
+  receiptStatus: string;
+  configurationFindings: LegacyConfigurationFinding[];
 };

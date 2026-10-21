@@ -62,8 +62,9 @@ export function numberText(value: number | null): string {
 export function initialForm(revision: RevisionDetail): FormState {
   return {
     identityProfileKind: revision.identityProfileKind,
-    supplierField: revision.identitySupplierField,
-    supplierGroupField: revision.identitySupplierGroupField,
+    // Een vaste leverancier/groep (legacy-config S6) heeft geen kolom: het veld blijft leeg en ongewijzigd.
+    supplierField: revision.identitySupplierField ?? '',
+    supplierGroupField: revision.identitySupplierGroupField ?? '',
     supplierReferenceField: revision.identitySupplierReferenceField,
     discountCodeField: revision.identityDiscountCodeField ?? '',
     basePriceField: revision.recordBasePriceField,
@@ -141,8 +142,8 @@ export function diffNumber(text: string, current: number | null): NumberDiff {
 export function identityChanged(form: FormState, revision: RevisionDetail): boolean {
   return (
     form.identityProfileKind !== revision.identityProfileKind ||
-    form.supplierField.trim() !== revision.identitySupplierField.trim() ||
-    form.supplierGroupField.trim() !== revision.identitySupplierGroupField.trim() ||
+    form.supplierField.trim() !== (revision.identitySupplierField ?? '').trim() ||
+    form.supplierGroupField.trim() !== (revision.identitySupplierGroupField ?? '').trim() ||
     form.supplierReferenceField.trim() !== revision.identitySupplierReferenceField.trim() ||
     normaliseOptional(form.discountCodeField) !==
       (revision.identityDiscountCodeField === null ? null : revision.identityDiscountCodeField.trim())
@@ -183,8 +184,11 @@ export function buildRequest(
 
   // Verplichte tekstvelden: leeg is een fout, nooit een lege waarde in het verzoek.
   const requiredFields: Array<[string, string]> = [
-    ['supplierField', form.supplierField],
-    ['supplierGroupField', form.supplierGroupField],
+    // Met een vaste leverancier/groep (kolom `null`, legacy-config S6) is een lege kolom geen fout.
+    ...(revision.identitySupplierField === null ? [] : ([['supplierField', form.supplierField]] as Array<[string, string]>)),
+    ...(revision.identitySupplierGroupField === null
+      ? []
+      : ([['supplierGroupField', form.supplierGroupField]] as Array<[string, string]>)),
     ['supplierReferenceField', form.supplierReferenceField],
     ['basePriceField', form.basePriceField],
     ['delimiter', form.delimiter],
@@ -207,8 +211,8 @@ export function buildRequest(
 
   const body: UpdateRevisionRequest = {
     identityProfileKind: diffEnum<IdentityProfileKind>(form.identityProfileKind, revision.identityProfileKind),
-    supplierField: diffRequiredText(form.supplierField, revision.identitySupplierField),
-    supplierGroupField: diffRequiredText(form.supplierGroupField, revision.identitySupplierGroupField),
+    supplierField: diffRequiredText(form.supplierField, revision.identitySupplierField ?? ''),
+    supplierGroupField: diffRequiredText(form.supplierGroupField, revision.identitySupplierGroupField ?? ''),
     supplierReferenceField: diffRequiredText(
       form.supplierReferenceField,
       revision.identitySupplierReferenceField,

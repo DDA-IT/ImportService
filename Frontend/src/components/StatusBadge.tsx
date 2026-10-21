@@ -61,6 +61,13 @@ const STATUS_FAMILY: Record<string, StatusFamily> = {
   FILTERED_OUT: 'expired',
   EXCEEDED: 'rejected',
   WITHIN: 'ready',
+  // S9: overname van de legacy-configuratie (RECEIVED, BLOCKING en BLOCKED staan hierboven al).
+  APPLIED: 'ready',
+  SUPERSEDED: 'expired',
+  DISCARDED: 'expired',
+  APPLICABLE: 'ready',
+  MIGRATED: 'ready',
+  WARNING: 'awaiting',
 };
 
 /**
