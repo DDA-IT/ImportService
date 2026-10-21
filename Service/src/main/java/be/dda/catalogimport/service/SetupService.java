@@ -128,6 +128,8 @@ public class SetupService {
     private static final int MAX_USER_LENGTH = 100;
     /** {@code identity_*_field}, {@code record_*_field}, {@code source_reference}. */
     static final int MAX_FIELD_REFERENCE_LENGTH = 200;
+    /** {@code identity_supplier_fixed_value}, {@code identity_supplier_group_fixed_value} (legacy-config S6). */
+    static final int MAX_IDENTITY_FIXED_VALUE_LENGTH = 50;
     /** {@code import_definition_revision.change_reason}. */
     static final int MAX_CHANGE_REASON_LENGTH = 500;
     /** Wie een rij aanmaakte wanneer de aanroeper niets meegeeft; nooit een echte gebruikersnaam. */
@@ -177,6 +179,17 @@ public class SetupService {
     /**
      * De inhoud van één nieuwe revisie. Elk veld dat {@code null} blijft, houdt de bestaande default
      * van {@link ImportDefinitionRevision} — er wordt nooit stil een andere waarde gekozen.
+     * <p>
+     * <b>Legacy-config S6 (additief; gemelde betekeniswijziging van {@code supplierField}, beslissingslog M3).</b>
+     * {@code supplierFixedValue}/{@code supplierGroupFixedValue} leggen de leverancier/groep vast voor elke regel
+     * (businesscode uit Prodis, hoogstens 50 tekens); dan is {@code supplierField}/{@code supplierGroupField}
+     * <b>optioneel</b> en moet het leeg blijven: precies één van kolom of vaste waarde (400
+     * {@code SUPPLIER_FIXED_VALUE_INVALID} / {@code SUPPLIER_GROUP_FIXED_VALUE_INVALID} bij beide, 400
+     * {@code SUPPLIER_FIELD_REQUIRED} / {@code SUPPLIER_GROUP_FIELD_REQUIRED} bij geen van beide, zoals vroeger). Is de
+     * Prodis-leesbron geconfigureerd, dan moet de vaste waarde daar bestaan (400 {@code *_NOT_IN_PRODIS}, 503
+     * {@code PRODIS_DB_UNAVAILABLE}); zonder Prodis-bron wordt ze aanvaard met een waarschuwing in
+     * {@link RevisionView#warnings()}. {@code identityUppercase} ({@code null} = {@code false}) zet de identiteitsdelen
+     * in hoofdletters vóór de canonicalisatie.
      */
     public record CreateRevisionCommand(String delimiter, String quoteChar, String charset, Boolean hasHeader,
                                         Integer headerLineNumber, String fieldReferenceKind,
@@ -193,7 +206,9 @@ public class SetupService {
                                         RowIssueSeverity priceDeviationSeverity,
                                         Boolean basePriceZeroAllowed, Boolean basePriceNegativeAllowed,
                                         BigDecimal priceDerivationTolerance, String changeReason,
-                                        String createdBy) implements RevisionThresholds {
+                                        String createdBy, String supplierFixedValue,
+                                        String supplierGroupFixedValue,
+                                        Boolean identityUppercase) implements RevisionThresholds {
     }
 
     /**
@@ -226,6 +241,14 @@ public class SetupService {
      * @param createdBy                 optioneel en sinds 5A-6 enkel nog een controle tegen de aangemelde
      *                                  gebruiker; een wijziging aan een DRAFT heeft geen eigen
      *                                  {@code *_by}-kolom, dus er wordt hier geen naam bewaard
+     * @param supplierFixedValue        legacy-config S6: {@code null} = ongewijzigd, {@code ""} = wissen, anders de
+     *                                  vaste leverancier. Omdat precies één van kolom of vaste waarde mag, wist wie
+     *                                  overstapt de andere uitdrukkelijk ({@code "supplierField": ""} betekent sinds S6
+     *                                  "wissen" in plaats van een 400 — die volgt nog altijd als er daarna geen van
+     *                                  beide overblijft). Nooit een stille wissel.
+     * @param supplierGroupFixedValue   idem voor de leveranciersgroep en {@code supplierGroupField}
+     * @param identityUppercase         {@code null} = ongewijzigd. Een wijziging aan een vaste waarde of aan deze
+     *                                  schakelaar is een identiteitswijziging (R-REV-X3)
      */
     public record UpdateRevisionCommand(String delimiter, String quoteChar, String charset, Boolean hasHeader,
                                         Integer headerLineNumber, String fieldReferenceKind,
@@ -243,13 +266,15 @@ public class SetupService {
                                         Boolean basePriceZeroAllowed, Boolean basePriceNegativeAllowed,
                                         BigDecimal priceDerivationTolerance, String changeReason,
                                         Boolean acknowledgeIdentityChange,
-                                        String createdBy) implements RevisionThresholds {
+                                        String createdBy, String supplierFixedValue,
+                                        String supplierGroupFixedValue,
+                                        Boolean identityUppercase) implements RevisionThresholds {
 
         /** Een leeg verzoek: elke wijziging afwezig, dus alles ongewijzigd. */
         static UpdateRevisionCommand empty() {
             return new UpdateRevisionCommand(null, null, null, null, null, null, null, null, null, null,
                     null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                    null, null, null, null);
+                    null, null, null, null, null, null, null);
         }
     }
 
@@ -301,7 +326,34 @@ public class SetupService {
                                String discountCodeField, String basePriceField, String descriptionField,
                                String currencyField, BigDecimal creationThresholdSharePercent,
                                BigDecimal maxCriticalSharePercent, BigDecimal maxRejectedSharePercent,
-                               BigDecimal bulkIncidentSharePercent) {
+                               BigDecimal bulkIncidentSharePercent, String supplierFixedValue,
+                               String supplierGroupFixedValue, boolean identityUppercase,
+                               List<SetupWarning> warnings) {
+
+        public RevisionView {
+            warnings = warnings == null ? List.of() : List.copyOf(warnings);
+        }
+
+        /** Dezelfde weergave met de waarschuwingen van dit verzoek. */
+        RevisionView withWarnings(List<SetupWarning> requestWarnings) {
+            return new RevisionView(id, definitionId, revisionNumber, status, identityProfileKind, delimiter,
+                    hasHeader, fieldReferenceKind, canonicalisationVersion, supplierField, supplierGroupField,
+                    supplierReferenceField, discountCodeField, basePriceField, descriptionField, currencyField,
+                    creationThresholdSharePercent, maxCriticalSharePercent, maxRejectedSharePercent,
+                    bulkIncidentSharePercent, supplierFixedValue, supplierGroupFixedValue, identityUppercase,
+                    requestWarnings);
+        }
+    }
+
+    /**
+     * Een waarschuwing bij het aanmaken of wijzigen van een revisie (legacy-config S6, additief): het verzoek is
+     * uitgevoerd, maar iets is niet nagekeken. Vandaag enkel {@code PRODIS_REFERENCE_NOT_VERIFIED}: een vaste
+     * leverancier/groep is aanvaard zonder Prodis-controle omdat de Prodis-leesbron niet geconfigureerd is. Wordt niet
+     * bewaard; enkel in het antwoord van dat verzoek.
+     *
+     * @param field het verzoekveld ({@code supplierFixedValue} of {@code supplierGroupFixedValue})
+     */
+    public record SetupWarning(String code, String field, String message) {
     }
 
     public record MappingView(long id, long revisionId, int sequenceNumber, String targetFieldCode,
@@ -356,6 +408,7 @@ public class SetupService {
     private final ImportDefinitionBookmarkUsageRepository bookmarkUsages;
     private final SourceStateDao sourceStates;
     private final ChainConfigurationChecks checks;
+    private final ProdisReferenceService prodis;
 
     /**
      * Sinds NT-8 lopen de configuratievalidatie (screeningfabrieken) en de DEFINITION-bookmarkcontrole via
@@ -368,7 +421,7 @@ public class SetupService {
                         ImportRevisionFieldCriticalityRepository fieldCriticalities, ImportLinkRepository links,
                         CatalogImportTaskRepository tasks, ImportDefinitionBookmarkRepository bookmarks,
                         ImportDefinitionBookmarkUsageRepository bookmarkUsages, SourceStateDao sourceStates,
-                        ChainConfigurationChecks checks) {
+                        ChainConfigurationChecks checks, ProdisReferenceService prodis) {
         this.organisations = organisations;
         this.definitions = definitions;
         this.revisions = revisions;
@@ -382,6 +435,7 @@ public class SetupService {
         this.bookmarkUsages = bookmarkUsages;
         this.sourceStates = sourceStates;
         this.checks = checks;
+        this.prodis = prodis;
     }
 
     // --- Bronorganisatie --------------------------------------------------------------------------
@@ -477,6 +531,16 @@ public class SetupService {
      */
     public RevisionView createRevision(long definitionId, CreateRevisionCommand command,
                                        ActorIdentity actor) {
+        return createRevision(definitionId, command, actor, true);
+    }
+
+    /**
+     * @param verifyInProdis legacy-config S6: {@code false} enkel voor de legacy-migratie
+     *                       ({@code LegacyConfigApplyService}), die de vaste waarden al in haar PREVIEW tegen Prodis
+     *                       controleerde (en ze bij een onbereikbare Prodis bewust toelaat, design par. 6)
+     */
+    RevisionView createRevision(long definitionId, CreateRevisionCommand command, ActorIdentity actor,
+                                boolean verifyInProdis) {
         ImportDefinition definition = definitions.findById(definitionId)
                 .orElseThrow(() -> new NotFoundException("DEFINITION_NOT_FOUND",
                         "Import definition " + definitionId + " does not exist"));
@@ -497,10 +561,23 @@ public class SetupService {
                 identityKind, SetupInput.requireText(SetupInput.orDefault(actor.username(), DEFAULT_CREATED_BY), "createdBy",
                 MAX_USER_LENGTH));
         revision.setCreatedBySubject(actor.subject());
-        revision.setIdentitySupplierField(
-                SetupInput.requireText(command.supplierField(), "supplierField", MAX_FIELD_REFERENCE_LENGTH));
-        revision.setIdentitySupplierGroupField(
-                SetupInput.requireText(command.supplierGroupField(), "supplierGroupField", MAX_FIELD_REFERENCE_LENGTH));
+        // Legacy-config S6 (M3): leverancier en groep uit precies één van kolom of vaste waarde. Zonder vaste waarde
+        // exact het gedrag van vóór S6 (SUPPLIER_FIELD_REQUIRED).
+        String supplierFixed = SetupInput.optionalText(command.supplierFixedValue(), "supplierFixedValue",
+                MAX_IDENTITY_FIXED_VALUE_LENGTH);
+        String groupFixed = SetupInput.optionalText(command.supplierGroupFixedValue(), "supplierGroupFixedValue",
+                MAX_IDENTITY_FIXED_VALUE_LENGTH);
+        revision.setIdentitySupplierField(supplierFixed == null
+                ? SetupInput.requireText(command.supplierField(), "supplierField", MAX_FIELD_REFERENCE_LENGTH)
+                : SetupInput.optionalText(command.supplierField(), "supplierField", MAX_FIELD_REFERENCE_LENGTH));
+        revision.setIdentitySupplierFixedValue(supplierFixed);
+        revision.setIdentitySupplierGroupField(groupFixed == null
+                ? SetupInput.requireText(command.supplierGroupField(), "supplierGroupField", MAX_FIELD_REFERENCE_LENGTH)
+                : SetupInput.optionalText(command.supplierGroupField(), "supplierGroupField",
+                        MAX_FIELD_REFERENCE_LENGTH));
+        revision.setIdentitySupplierGroupFixedValue(groupFixed);
+        RevisionFieldRules.requireOneIdentitySource(revision);
+        revision.setIdentityUppercase(Boolean.TRUE.equals(command.identityUppercase()));
         revision.setIdentitySupplierReferenceField(SetupInput.requireText(command.supplierReferenceField(),
                 "supplierReferenceField", MAX_FIELD_REFERENCE_LENGTH));
         // De databasecheck ck_import_definition_revision_identity houdt profiel en kortingscodeveld
@@ -544,8 +621,12 @@ public class SetupService {
         // materialisatiewizard moet exact dezelfde hashes op een afgeleide revisie kunnen zetten; twee
         // kopieën van deze opbouw zouden op termijn uit elkaar lopen (zie RevisionConfigHashes#applyAll).
         RevisionConfigHashes.applyAll(revision);
+        List<SetupWarning> warnings = verifyInProdis
+                ? verifyFixedIdentityInProdis(revision, revision.getIdentitySupplierFixedValue() != null,
+                revision.getIdentitySupplierGroupFixedValue() != null)
+                : List.of();
         try {
-            return view(revisions.saveAndFlush(revision));
+            return view(revisions.saveAndFlush(revision)).withWarnings(warnings);
         } catch (DataIntegrityViolationException violation) {
             throw translateDraftConflict(violation, definitionId);
         }
@@ -640,6 +721,11 @@ public class SetupService {
      *                                  kortingscodeveld past
      */
     public RevisionView updateRevision(long revisionId, UpdateRevisionCommand command) {
+        return updateRevision(revisionId, command, true);
+    }
+
+    /** @param verifyInProdis zie {@link #createRevision(long, CreateRevisionCommand, ActorIdentity, boolean)} */
+    RevisionView updateRevision(long revisionId, UpdateRevisionCommand command, boolean verifyInProdis) {
         ImportDefinitionRevision revision = editableRevision(revisionId);
         UpdateRevisionCommand request = command == null ? UpdateRevisionCommand.empty() : command;
         RevisionFieldRules.IdentityBefore before = RevisionFieldRules.IdentityBefore.of(revision);
@@ -655,7 +741,78 @@ public class SetupService {
         // prijsbeleid zitten bewust niet in enige hash (zie de ontdekking in ontwerp §9), dus een verzoek
         // dat enkel drempels wijzigt, laat de vier hashes terecht ongewijzigd.
         RevisionConfigHashes.applyAll(revision);
-        return view(revisions.saveAndFlush(revision));
+        // Legacy-config S6: enkel een vaste waarde die (of waarvan de hoofdletterschakelaar) in dit verzoek wijzigt,
+        // wordt opnieuw in Prodis nagekeken; een ongewijzigde DRAFT hangt niet van Prodis af.
+        List<SetupWarning> warnings = verifyInProdis
+                ? verifyFixedIdentityInProdis(revision, before.supplierFixedValueChangedIn(revision),
+                before.groupFixedValueChangedIn(revision))
+                : List.of();
+        return view(revisions.saveAndFlush(revision)).withWarnings(warnings);
+    }
+
+    /**
+     * Legacy-config S6 ({@code docs/design/legacy-config-bundle-design.md} par. 5 rijen 9/10, par. 6): een vaste
+     * leverancier/groep moet in de Prodis-database bestaan als die bron geconfigureerd is. Gecontroleerd wordt de
+     * waarde zoals de screening ze gebruikt: in hoofdletters als {@code identity_uppercase} aan staat.
+     * <ul>
+     *   <li>leverancier: precies één {@code supplier.number}; geen → 400 {@code SUPPLIER_FIXED_VALUE_NOT_IN_PRODIS}, twee
+     *       → 400 {@code SUPPLIER_FIXED_VALUE_AMBIGUOUS_IN_PRODIS} (nooit stil de eerste nemen, S5);</li>
+     *   <li>groep: een {@code supplier_group.group_name} van de leverancier van deze identiteit (de vaste leverancier,
+     *       anders de bronorganisatie van de definitie) → anders 400 {@code SUPPLIER_GROUP_FIXED_VALUE_NOT_IN_PRODIS};</li>
+     *   <li>Prodis niet geconfigureerd: aanvaard, met een waarschuwing {@code PRODIS_REFERENCE_NOT_VERIFIED} per waarde;
+     *       onbereikbaar: 503 {@code PRODIS_DB_UNAVAILABLE} (zoals de keuzelijsten van S5), er wordt niets bewaard.</li>
+     * </ul>
+     * Bewaard wordt enkel de businesscode, nooit een Prodis-id.
+     */
+    private List<SetupWarning> verifyFixedIdentityInProdis(ImportDefinitionRevision revision, boolean supplierChanged,
+                                                           boolean groupChanged) {
+        String supplierFixed = revision.getIdentitySupplierFixedValue();
+        String groupFixed = revision.getIdentitySupplierGroupFixedValue();
+        boolean checkSupplier = supplierChanged && supplierFixed != null;
+        boolean checkGroup = groupChanged && groupFixed != null;
+        if (!checkSupplier && !checkGroup) {
+            return List.of();
+        }
+        boolean uppercase = revision.isIdentityUppercase();
+        String supplier = checkSupplier ? effective(supplierFixed, uppercase) : null;
+        String group = checkGroup ? effective(groupFixed, uppercase) : null;
+        String groupSupplier = !checkGroup ? null : supplierFixed != null ? effective(supplierFixed, uppercase)
+                : revision.getImportDefinition().getSourceOrganisation().getCode();
+        ProdisReferenceService.FixedIdentityLookup lookup = prodis.verifyFixedIdentity(supplier, groupSupplier);
+        if (lookup.availability() == ProdisReferenceService.Availability.NOT_CONFIGURED) {
+            List<SetupWarning> warnings = new ArrayList<>(2);
+            if (checkSupplier) {
+                warnings.add(notVerified("supplierFixedValue", "supplier " + supplier));
+            }
+            if (checkGroup) {
+                warnings.add(notVerified("supplierGroupFixedValue", "supplier group " + group));
+            }
+            return warnings;
+        }
+        if (checkSupplier && lookup.suppliers().isEmpty()) {
+            throw new BadRequestException("SUPPLIER_FIXED_VALUE_NOT_IN_PRODIS", "supplierFixedValue " + supplier
+                    + " does not exist in Prodis (supplier.number)");
+        }
+        if (checkSupplier && lookup.suppliers().size() > 1) {
+            throw new BadRequestException("SUPPLIER_FIXED_VALUE_AMBIGUOUS_IN_PRODIS", "supplierFixedValue "
+                    + supplier + " occurs more than once in Prodis (supplier.number is not unique); it is never "
+                    + "resolved to one of them silently");
+        }
+        if (checkGroup && !lookup.hasGroup(group)) {
+            throw new BadRequestException("SUPPLIER_GROUP_FIXED_VALUE_NOT_IN_PRODIS", "supplierGroupFixedValue "
+                    + group + " is not a supplier group (supplier_group.group_name) of supplier " + groupSupplier
+                    + " in Prodis");
+        }
+        return List.of();
+    }
+
+    private static String effective(String fixedValue, boolean uppercase) {
+        return uppercase ? fixedValue.toUpperCase(Locale.ROOT) : fixedValue;
+    }
+
+    private static SetupWarning notVerified(String field, String what) {
+        return new SetupWarning(LegacyConfigTranslator.PRODIS_REFERENCE_NOT_VERIFIED, field, what
+                + " is not verified: the Prodis database is not configured");
     }
 
     /**
@@ -1289,7 +1446,9 @@ public class SetupService {
                 revision.getIdentityDiscountCodeField(), revision.getRecordBasePriceField(),
                 revision.getRecordDescriptionField(), revision.getRecordCurrencyField(),
                 revision.getCreationThresholdSharePercent(), revision.getMaxCriticalSharePercent(),
-                revision.getMaxRejectedSharePercent(), revision.getBulkIncidentSharePercent());
+                revision.getMaxRejectedSharePercent(), revision.getBulkIncidentSharePercent(),
+                revision.getIdentitySupplierFixedValue(), revision.getIdentitySupplierGroupFixedValue(),
+                revision.isIdentityUppercase(), List.of());
     }
 
     private static LinkView view(ImportLink link) {

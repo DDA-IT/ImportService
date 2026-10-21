@@ -2764,3 +2764,13 @@ secret wordt nooit overgenomen. (2) Userinfo verdeeld over `FTP` en `FTP2` wordt
 geverifieerde preview + Prodis nu weg → 409 STALE; keuze-endpoints `prodis-reference/*` al in S5; `readOnlyMode=always` voor
 PostgreSQL; leverancier dubbel in Prodis → BLOCKING; `legacy_number` exact na trim; lokale profielen zonder Prodis-credentials.
 **Bron:** S5-bouwerrapport / `legacy-config-bundle-design.md` §6
+
+## 2026-10-21 — Legacy-config S6: hoofdletters zoals legacy (kortingscode niet)
+**Vraag:** `identity_uppercase` zet in S6 ook de kortingscode (veld 23) in hoofdletters; legacy doet `Upper()` enkel op 9, 10, 11
+(`Prg_1170` r.768, r.863). Volgen we legacy?
+**Beslissing:** Ja. `identity_uppercase` zet enkel leverancier, groep en referentie in hoofdletters (`Locale.ROOT`), ook vaste waarden;
+de kortingscode blijft ongewijzigd. Waarschuwing `DISCOUNT_CODE_UPPERCASED` vervalt. Aanvaard verder (S6-bouwerrapport): vaste waarde
+op 9/10 negeert kolom/prefix/suffix/CALC zoals legacy (`LEGACY_IGNORED_WITH_FIXED_VALUE`); setup-API valideert vaste waarden tegen
+Prodis (400 onbekend, 503 onbereikbaar, WARNING niet geconfigureerd); migratie bij onbereikbare Prodis volgt het S5-patroon; groep
+gevalideerd per leverancier op `supplier_group.group_name`; bewaard zoals gegeven, gecontroleerd in effectieve vorm.
+**Bron:** mens / S6-bouwerrapport

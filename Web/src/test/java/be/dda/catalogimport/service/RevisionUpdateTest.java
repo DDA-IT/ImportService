@@ -827,7 +827,7 @@ class RevisionUpdateTest {
                     supplierReferenceField, discountCodeField, null, descriptionField, null,
                     canonicalisationVersion, creationThresholdSharePercent, maxCriticalSharePercent, null,
                     null, priceDeviationPercent, null, basePriceZeroAllowed, null,
-                    priceDerivationTolerance, null, acknowledgeIdentityChange, null);
+                    priceDerivationTolerance, null, acknowledgeIdentityChange, null, null, null, null);
         }
     }
 }

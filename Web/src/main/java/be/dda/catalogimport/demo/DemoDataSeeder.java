@@ -112,7 +112,7 @@ public class DemoDataSeeder implements ApplicationRunner {
                 IdentityProfileKind.THREE_PART, "leverancier", "groep", "referentie", null,
                 "prijs", "omschrijving", "valuta", 2,
                 new BigDecimal("10"), new BigDecimal("25"), null, null,
-                null, null, null, null, null, "Demoketen voor handmatig uitproberen", CREATED_BY);
+                null, null, null, null, null, "Demoketen voor handmatig uitproberen", CREATED_BY, null, null, null);
     }
 
     private boolean hasOrganisation() {

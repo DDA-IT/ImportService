@@ -22,6 +22,7 @@ import be.dda.catalogimport.dao.LegacyConfigOriginRepository;
 import be.dda.catalogimport.dao.LegacyConfigReceiptRepository;
 import be.dda.catalogimport.dao.LegacyConfigRevisionOriginRepository;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierCatalogRow;
+import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierGroupRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierRow;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import be.dda.catalogimport.domain.CatalogImportTask;
@@ -74,6 +75,7 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -137,6 +139,12 @@ import org.springframework.transaction.annotation.Transactional;
  *       <b>Onbereikbaar:</b> idem, en de fingerprint begint met
  *       {@value LegacyConfigReport#FINGERPRINT_UNVERIFIED_PREFIX}; APPLY mag dan met de {@code libraryCode} uit de body
  *       (design par. 6), zolang Prodis onbereikbaar blijft - is Prodis intussen terug, dan is die preview verouderd.</li>
+ *   <li><b>Vaste leverancier/groep (S6, PSIMPDEF 9/10 met een vaste "Waarde"):</b> wordt {@code identity_*_fixed_value};
+ *       de leverancier moet precies één {@code supplier.number} zijn, de groep een {@code supplier_group.group_name}
+ *       van de leverancier van de identiteit ({@value #PRODIS_SUPPLIER_GROUP_NOT_FOUND}), gecontroleerd in hoofdletters
+ *       ({@link #verifyFixedValues}). Elke gemigreerde revisie krijgt {@code identity_uppercase=true}; beide tellen
+ *       mee in de inhoudshash ({@link LegacyRevisionContent}) en zo ook in de fingerprint. Niet geconfigureerd of
+ *       onbereikbaar: zoals de leverancier hierboven ({@code PRODIS_REFERENCE_NOT_VERIFIED}, "unverified").</li>
  * </ul>
  * Schrijven gaat via de bestaande services ({@link SetupService}, {@link RevisionSuccessorService}), die hun eigen regels
  * bewaken; enkel een TAB-scheidingsteken wordt rechtstreeks op de revisie gezet, omdat {@code SetupInput.requireText}
@@ -171,6 +179,9 @@ public class LegacyConfigApplyService {
     static final String PRODIS_SUPPLIER_NOT_FOUND = ProdisReferenceService.CODE_SUPPLIER_NOT_FOUND;
     static final String PRODIS_SUPPLIER_AMBIGUOUS = "PRODIS_SUPPLIER_AMBIGUOUS";
     static final String PRODIS_SUPPLIER = "PRODIS_SUPPLIER";
+    // S6: vaste groep (PSIMPDEF 10) tegen Prodis.
+    static final String PRODIS_SUPPLIER_GROUP = "PRODIS_SUPPLIER_GROUP";
+    static final String PRODIS_SUPPLIER_GROUP_NOT_FOUND = "PRODIS_SUPPLIER_GROUP_NOT_FOUND";
     static final String PRODIS_SUPPLIER_NAME_EMPTY = "PRODIS_SUPPLIER_NAME_EMPTY";
     static final String PRODIS_SUPPLIER_NAME_TOO_LONG = "PRODIS_SUPPLIER_NAME_TOO_LONG";
     static final String SOURCE_ORGANISATION_NAME_KEPT = "SOURCE_ORGANISATION_NAME_KEPT";
@@ -379,6 +390,9 @@ public class LegacyConfigApplyService {
         // S5: leverancier en bibliotheken uit de alleen-lezen Prodis-database (of: uit / onbereikbaar).
         LegacyLookup lookup = prodis.lookup(supplierCode);
         SupplierRow prodisSupplier = verifySupplier(items, rows, lookup, supplierCode);
+        // S6: vaste leverancier/groep (PSIMPDEF 9/10) tegen dezelfde Prodis-bron; samen met de leverancier bepalen ze
+        // of de preview geverifieerd is.
+        Availability availability = verifyFixedValues(items, rows, translation, supplierCode, lookup.availability());
 
         rows.add("origin:" + (origin == null ? "none" : origin.getId() + ":" + origin.getUpdatedAt()));
         ImportLink link = origin == null || origin.getImportLinkId() == null ? null
@@ -531,9 +545,9 @@ public class LegacyConfigApplyService {
         LegacyConfigReport report = new LegacyConfigReport(receipt.getId(), receipt.getContentHash(),
                 receipt.getStatus().name(), blocked ? LegacyConfigReport.OUTCOME_BLOCKED
                 : LegacyConfigReport.OUTCOME_APPLICABLE, plannedSection, List.of(), items,
-                lookup.availability().name());
+                availability.name());
         String fingerprint = fingerprint(report, rows);
-        if (lookup.availability() == Availability.UNAVAILABLE) {
+        if (availability == Availability.UNAVAILABLE) {
             // Design par. 6 ("unverified"): nooit gelijk aan een geverifieerde fingerprint, maar wel nog gebonden aan
             // het rapport en de geraakte rijen (anders zou een APPLY tijdens een Prodis-storing niet meer op
             // veroudering controleren).
@@ -590,6 +604,85 @@ public class LegacyConfigApplyService {
         replaceItem(items, element, notVerified, new Item(element, MIGRATED, PRODIS_SUPPLIER,
                 "prodis.supplier.number=" + supplier.number(), "verified in Prodis: " + supplier.name()));
         return supplier;
+    }
+
+    /**
+     * S6 (design par. 5 rijen 9/10): een vaste leverancier/groep moet in Prodis bestaan. Gecontroleerd wordt de waarde
+     * zoals de screening ze gebruikt, dus in hoofdletters (een gemigreerde revisie heeft altijd
+     * {@code identity_uppercase=true}). De groep hoort bij de leverancier van de identiteit: de vaste leverancier,
+     * anders INDET {@code Supplier}. Vervangt het item {@code PRODIS_REFERENCE_NOT_VERIFIED} van de vertaler op zijn
+     * plaats (zoals {@link #verifySupplier}) en neemt de gelezen Prodis-rijen op in de fingerprint.
+     * <ul>
+     *   <li>niet geconfigureerd: de vertaleritems blijven ({@code PRODIS_REFERENCE_NOT_VERIFIED});</li>
+     *   <li>onbereikbaar: idem, met de reden; de preview is "unverified" (design par. 6, zoals de leverancier in S5);</li>
+     *   <li>geverifieerd: leverancier 0 of 2 keer → {@value #PRODIS_SUPPLIER_NOT_FOUND} /
+     *       {@value #PRODIS_SUPPLIER_AMBIGUOUS}, groep niet bij die leverancier → {@value #PRODIS_SUPPLIER_GROUP_NOT_FOUND}
+     *       (blokkerend).</li>
+     * </ul>
+     *
+     * @return de samengevoegde beschikbaarheid: {@code UNAVAILABLE} zodra één van beide lezingen faalde
+     */
+    private Availability verifyFixedValues(List<Item> items, List<String> rows, Translation translation,
+                                           String supplierCode, Availability supplierAvailability) {
+        String supplierFixed = translation.supplierFixedValue();
+        String groupFixed = translation.groupFixedValue();
+        if (supplierFixed == null && groupFixed == null) {
+            return supplierAvailability;
+        }
+        String supplier = supplierFixed == null ? null : supplierFixed.toUpperCase(Locale.ROOT);
+        String group = groupFixed == null ? null : groupFixed.toUpperCase(Locale.ROOT);
+        String groupSupplier = group == null ? null : supplier != null ? supplier : supplierCode;
+        ProdisReferenceService.FixedIdentityLookup lookup = prodis.lookupFixedIdentity(supplier, groupSupplier);
+        Availability fixedAvailability = lookup.availability();
+        if (fixedAvailability == Availability.NOT_CONFIGURED) {
+            return supplierAvailability;
+        }
+        String notVerified = LegacyConfigTranslator.PRODIS_REFERENCE_NOT_VERIFIED;
+        String supplierElement = "PSIMPDEF#" + LegacyConfigTranslator.LINE_SUPPLIER;
+        String groupElement = "PSIMPDEF#" + LegacyConfigTranslator.LINE_GROUP;
+        if (fixedAvailability == Availability.UNAVAILABLE) {
+            if (supplier != null) {
+                replaceItem(items, supplierElement, notVerified, new Item(supplierElement, WARNING, notVerified, null,
+                        "fixed supplier " + supplier + " is not verified: the Prodis database is not available right "
+                                + "now"));
+            }
+            if (group != null) {
+                replaceItem(items, groupElement, notVerified, new Item(groupElement, WARNING, notVerified, null,
+                        "fixed supplier group " + group + " is not verified: the Prodis database is not available "
+                                + "right now"));
+            }
+            return Availability.UNAVAILABLE;
+        }
+        if (supplier != null) {
+            for (SupplierRow row : lookup.suppliers()) {
+                rows.add("prodisFixedSupplier:" + row.number() + "|" + row.name());
+            }
+            Item outcome;
+            if (lookup.suppliers().isEmpty()) {
+                outcome = new Item(supplierElement, BLOCKING, PRODIS_SUPPLIER_NOT_FOUND, null, "fixed supplier "
+                        + supplier + " does not exist in Prodis (supplier.number)");
+            } else if (lookup.suppliers().size() > 1) {
+                outcome = new Item(supplierElement, BLOCKING, PRODIS_SUPPLIER_AMBIGUOUS, null, "fixed supplier "
+                        + supplier + " occurs more than once in Prodis (supplier.number is not unique)");
+            } else {
+                outcome = new Item(supplierElement, MIGRATED, PRODIS_SUPPLIER, "prodis.supplier.number=" + supplier,
+                        "verified in Prodis: " + lookup.suppliers().get(0).name());
+            }
+            replaceItem(items, supplierElement, notVerified, outcome);
+        }
+        if (group != null) {
+            for (SupplierGroupRow row : lookup.groups()) {
+                rows.add("prodisGroup:" + row.legacyCode() + "|" + row.groupName() + "|" + row.discountCode());
+            }
+            Item outcome = lookup.hasGroup(group)
+                    ? new Item(groupElement, MIGRATED, PRODIS_SUPPLIER_GROUP, "prodis.supplier_group.group_name="
+                    + group, "verified in Prodis: a group of supplier " + groupSupplier)
+                    : new Item(groupElement, BLOCKING, PRODIS_SUPPLIER_GROUP_NOT_FOUND, null, "fixed supplier group "
+                    + group + " is not a group (supplier_group.group_name) of supplier " + groupSupplier
+                    + " in Prodis");
+            replaceItem(items, groupElement, notVerified, outcome);
+        }
+        return supplierAvailability == Availability.UNAVAILABLE ? Availability.UNAVAILABLE : Availability.VERIFIED;
     }
 
     /**
@@ -809,7 +902,8 @@ public class LegacyConfigApplyService {
         }
         if (identityDiffers(latest, planned)) {
             items.add(new Item(element, WARNING, IDENTITY_CHANGE, "revision.identity*", "the identity definition "
-                    + "changes (profile or identity columns): every existing offer can come back as NEW. APPLY "
+                    + "changes (profile, identity columns, fixed values or upper case): every existing offer can come "
+                    + "back as NEW. APPLY "
                     + "counts as the acknowledgement (R-REV-X3)"));
         }
         items.add(new Item(element, MIGRATED, ACTION_SUCCESSOR_DRAFT, "revision.basedOn=" + latest.getId(),
@@ -839,7 +933,10 @@ public class LegacyConfigApplyService {
                 || !Objects.equals(latest.getIdentitySupplierField(), planned.supplierField())
                 || !Objects.equals(latest.getIdentitySupplierGroupField(), planned.groupField())
                 || !Objects.equals(latest.getIdentitySupplierReferenceField(), planned.referenceField())
-                || !Objects.equals(latest.getIdentityDiscountCodeField(), planned.discountField());
+                || !Objects.equals(latest.getIdentityDiscountCodeField(), planned.discountField())
+                || !Objects.equals(latest.getIdentitySupplierFixedValue(), planned.supplierFixedValue())
+                || !Objects.equals(latest.getIdentitySupplierGroupFixedValue(), planned.groupFixedValue())
+                || latest.isIdentityUppercase() != planned.identityUppercase();
     }
 
     // --- Uitvoeren ------------------------------------------------------------------------------------------------
@@ -867,11 +964,13 @@ public class LegacyConfigApplyService {
 
         Long revisionId = null;
         switch (plan.revisionAction()) {
+            // S6: de vaste waarden zijn in plan() al tegen Prodis gecontroleerd (of bewust "unverified", design par. 6);
+            // SetupService controleert ze daarom niet opnieuw.
             case ACTION_CREATE -> revisionId = setup.createRevision(definitionId, createCommand(planned, reason),
-                    actor).id();
+                    actor, false).id();
             case ACTION_SUCCESSOR_DRAFT -> {
                 revisionId = successors.createSuccessor(plan.basedOn().getId(), reason, actor).id();
-                setup.updateRevision(revisionId, updateCommand(planned));
+                setup.updateRevision(revisionId, updateCommand(planned), false);
                 for (ImportFieldMapping mapping : fieldMappings.findByRevisionIdWithTargetField(revisionId)) {
                     if (LegacyConfigTranslator.MAPPING_TARGETS.containsValue(mapping.getTargetField().getCode())) {
                         setup.deleteMapping(revisionId, mapping.getId());
@@ -989,7 +1088,8 @@ public class LegacyConfigApplyService {
                 planned.identityProfileKind(), planned.supplierField(), planned.groupField(),
                 planned.referenceField(), planned.discountField(), planned.basePriceField(),
                 planned.descriptionField(), null, CANONICALISATION_VERSION, null, null, null, null, null, null, null,
-                null, null, reason, null);
+                null, null, reason, null, planned.supplierFixedValue(), planned.groupFixedValue(),
+                planned.identityUppercase());
     }
 
     /** {@code null} = ongewijzigd, {@code ""} = wissen ({@link SetupService.UpdateRevisionCommand}). */
@@ -997,10 +1097,17 @@ public class LegacyConfigApplyService {
         String delimiter = "\t".equals(planned.delimiter()) ? null : planned.delimiter();
         return new SetupService.UpdateRevisionCommand(delimiter, null, planned.charset(), planned.hasHeader(),
                 planned.headerLineNumber(), LegacyConfigTranslator.FIELD_REFERENCE_KIND, null,
-                planned.identityProfileKind(), planned.supplierField(), planned.groupField(),
+                planned.identityProfileKind(), emptyIfNull(planned.supplierField()), emptyIfNull(planned.groupField()),
                 planned.referenceField(), planned.discountField() == null ? "" : planned.discountField(),
                 planned.basePriceField(), planned.descriptionField() == null ? "" : planned.descriptionField(), null,
-                null, null, null, null, null, null, null, null, null, null, null, Boolean.TRUE, null);
+                null, null, null, null, null, null, null, null, null, null, null, Boolean.TRUE, null,
+                emptyIfNull(planned.supplierFixedValue()), emptyIfNull(planned.groupFixedValue()),
+                planned.identityUppercase());
+    }
+
+    /** S6: precies één van kolom of vaste waarde; de andere bron wordt uitdrukkelijk gewist ({@code ""}). */
+    private static String emptyIfNull(String value) {
+        return value == null ? "" : value;
     }
 
     /** Een TAB kan niet via {@code SetupInput.requireText} (blank); tijdelijk {@code ;}, daarna rechtstreeks gezet. */

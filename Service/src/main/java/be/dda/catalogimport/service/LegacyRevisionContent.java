@@ -50,6 +50,8 @@ final class LegacyRevisionContent {
                 String.valueOf(planned.identityProfileKind()), planned.supplierField(), planned.groupField(),
                 planned.referenceField(), planned.discountField(), planned.basePriceField(),
                 planned.descriptionField());
+        parts.addAll(identityExtensions(planned.supplierFixedValue(), planned.groupFixedValue(),
+                planned.identityUppercase()));
         planned.mappings().stream().sorted(Comparator.comparing(PlannedMapping::targetCode)).forEach(mapping ->
                 parts.addAll(mapping(mapping.targetCode(), String.valueOf(mapping.valueKind()),
                         mapping.sourceReference(), mapping.fixedValue(), String.valueOf(mapping.transformKind()),
@@ -72,6 +74,8 @@ final class LegacyRevisionContent {
                 revision.getIdentitySupplierGroupField(), revision.getIdentitySupplierReferenceField(),
                 revision.getIdentityDiscountCodeField(), revision.getRecordBasePriceField(),
                 revision.getRecordDescriptionField());
+        parts.addAll(identityExtensions(revision.getIdentitySupplierFixedValue(),
+                revision.getIdentitySupplierGroupFixedValue(), revision.isIdentityUppercase()));
         mappings.stream().sorted(Comparator.comparing(row -> row.getTargetField().getCode())).forEach(row ->
                 parts.addAll(mapping(row.getTargetField().getCode(), String.valueOf(row.getValueKind()),
                         row.getSourceReference(), row.getFixedValue(), String.valueOf(row.getTransformKind()),
@@ -105,6 +109,28 @@ final class LegacyRevisionContent {
         parts.add(String.valueOf(discount));
         parts.add(String.valueOf(basePrice));
         parts.add(String.valueOf(description));
+        return parts;
+    }
+
+    /**
+     * Legacy-config S6: vaste leverancier, vaste groep en hoofdletters, <b>enkel</b> als ze niet de default hebben
+     * ({@code null}/{@code false}), met hun naam als voorvoegsel - hetzelfde principe als
+     * {@code RevisionConfigHashes}. Zo blijft de {@code migrated_content_hash} van elke revisie die vóór S6 gemigreerd
+     * werd geldig: een ongewijzigde legacy-definitie geeft na S6 wél een andere geplande inhoud (altijd hoofdletters),
+     * dus een opvolgende DRAFT met {@code IDENTITY_CHANGE}, en nooit onterecht {@code MANUAL_CHANGES_SINCE_MIGRATION}.
+     */
+    private static List<String> identityExtensions(String supplierFixedValue, String groupFixedValue,
+                                                   boolean uppercase) {
+        List<String> parts = new ArrayList<>(3);
+        if (supplierFixedValue != null) {
+            parts.add("identitySupplierFixedValue=" + supplierFixedValue);
+        }
+        if (groupFixedValue != null) {
+            parts.add("identitySupplierGroupFixedValue=" + groupFixedValue);
+        }
+        if (uppercase) {
+            parts.add("identityUppercase=true");
+        }
         return parts;
     }
 

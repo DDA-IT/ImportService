@@ -173,6 +173,7 @@ class ConfigFactoryParityTest {
     private static final String REF_KIND = "CONFIG_FIELD_REFERENCE_KIND_INVALID";
     private static final String HEADER_REF = "CONFIG_HEADER_REFERENCE_INCONSISTENT";
     private static final String IDENTITY_MISSING = "CONFIG_IDENTITY_FIELD_MISSING";
+    private static final String IDENTITY_SOURCE_CONFLICT = "CONFIG_IDENTITY_SOURCE_CONFLICT";
     private static final String DISCOUNT_MISSING = "CONFIG_DISCOUNT_FIELD_MISSING";
     private static final String PRICE_MISSING = "CONFIG_PRICE_FIELD_MISSING";
     private static final String COLUMN_COUNT = "CONFIG_COLUMN_COUNT_INVALID";
@@ -332,6 +333,29 @@ class ConfigFactoryParityTest {
         blocked(t, "S9-supplier-reference-null", f -> f.revision.setIdentitySupplierReferenceField(null),
                 IDENTITY_MISSING, null, null,
                 "No source field configured for identity_supplier_reference_field");
+        // S9, legacy-config S6 (M3): precies één van kolom of vaste waarde, per deel. Toegevoegde rijen; de rijen
+        // hierboven zijn ongewijzigd.
+        blocked(t, "S9-supplier-column-and-fixed-value", f -> f.revision.setIdentitySupplierFixedValue("ACME"),
+                IDENTITY_SOURCE_CONFLICT, null, null, "identity_supplier_field and identity_supplier_fixed_value "
+                        + "are both set; exactly one of a source field or a fixed value determines this identity part");
+        blocked(t, "S9-group-column-and-fixed-value", f -> f.revision.setIdentitySupplierGroupFixedValue("GRP"),
+                IDENTITY_SOURCE_CONFLICT, null, null, "identity_supplier_group_field and "
+                        + "identity_supplier_group_fixed_value are both set; exactly one of a source field or a fixed "
+                        + "value determines this identity part");
+        blocked(t, "S9-supplier-fixed-value-blank", f -> {
+            f.revision.setIdentitySupplierField(null);
+            f.revision.setIdentitySupplierFixedValue("   ");
+        }, IDENTITY_MISSING, null, null, "No source field configured for identity_supplier_field");
+        ok(t, "OK-S6-supplier-fixed-value", f -> {
+            f.revision.setIdentitySupplierField(null);
+            f.revision.setIdentitySupplierFixedValue("ACME");
+        });
+        ok(t, "OK-S6-group-fixed-value-column-index-and-uppercase", f -> {
+            f.columnIndex();
+            f.revision.setIdentitySupplierGroupField(null);
+            f.revision.setIdentitySupplierGroupFixedValue("GRP-A");
+            f.revision.setIdentityUppercase(true);
+        });
         // S10: :128-134
         blocked(t, "S10-discount-field-null", f -> f.revision.setIdentityProfileKind(
                 IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE), DISCOUNT_MISSING, null, null,

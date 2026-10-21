@@ -610,8 +610,13 @@ public class TrialReadService {
     /** De verwachte kolommen in vaste volgorde: de revisievelden (als {@code declaredFields}), mappings, filters. */
     private static List<Expected> expectedColumns(SourceStructureConfig config, ImportMappingConfig mapping) {
         List<Expected> expected = new ArrayList<>();
-        expected.add(new Expected(config.supplierField(), ColumnRole.IDENTITY, true));
-        expected.add(new Expected(config.supplierGroupField(), ColumnRole.IDENTITY, true));
+        // Legacy-config S6: een vaste leverancier/groep leest geen kolom (zoals SourceStructureConfig#declaredFields).
+        if (config.supplierField() != null) {
+            expected.add(new Expected(config.supplierField(), ColumnRole.IDENTITY, true));
+        }
+        if (config.supplierGroupField() != null) {
+            expected.add(new Expected(config.supplierGroupField(), ColumnRole.IDENTITY, true));
+        }
         expected.add(new Expected(config.supplierReferenceField(), ColumnRole.IDENTITY, true));
         if (config.identityProfileKind() == IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE
                 && config.discountCodeField() != null) {

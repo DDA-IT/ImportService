@@ -197,11 +197,18 @@ open ontvangst met rijslot lezen, dan de laatste ontvangst; een race op de open-
   `DEFINITION_UNCHANGED` en `MANUAL_CHANGES_SINCE_MIGRATION`), `created_at`.
 - **021-1:** `legacy_config_receipt.applied_reason` varchar(500), nullable (de reden van APPLY; ook in `apply_report_json` en `change_reason`).
 
-**022-identity-fixed-and-uppercase.sql** (S6, hangt af van M3; was 021): op `import_definition_revision`
+**022-identity-fixed-and-uppercase.sql** (S6, hangt af van M3; was 021; **gebouwd 2026-10-21**): op `import_definition_revision`
 `identity_supplier_fixed_value` varchar(50) null, `identity_supplier_group_fixed_value` varchar(50) null,
 `identity_uppercase` boolean not null default false; `drop not null` op `identity_supplier_field` en
 `identity_supplier_group_field`; check per deel "precies één van kolom of vaste waarde". Bestaande rijen voldoen;
 rollback enkel zolang geen rij een vaste waarde heeft.
+- Uitwerking: changeset **022-1** (de drie kolommen + `ck_import_definition_revision_supplier_fixed_not_blank` /
+  `_group_fixed_not_blank`: een vaste waarde is nooit blanco) en **022-2** (`drop not null` +
+  `ck_import_definition_revision_supplier_source` / `_group_source`). De rollback van 022-2 zet `not null` terug en faalt dus
+  bewust zodra een rij een vaste waarde heeft. **Gemelde constraintwijziging (M3):** de twee kolommen zijn niet meer
+  `not null`; de entiteit (`ImportDefinitionRevision`) volgt.
+- Bewaard wordt de businesscode zoals gegeven (setup) of zoals legacy ze heeft (migratie, bv. `grp-a`); de
+  hoofdletteromzetting gebeurt bij de screening. Geen Prodis-id, geen cross-DB-FK.
 
 **023-field-value-map** (S8; was 022) `import_field_value_map`: `mapping_id` FK, `sequence`, `source_value` varchar(50),
 `target_value` varchar(50); uniek `(mapping_id, source_value)`; vervangt `transform_config varchar(1000)` voor MAP.
@@ -219,8 +226,8 @@ rollback enkel zolang geen rij een vaste waarde heeft.
 | `SkipHeaderLines` n | n=0 → geen header; n≥1 → `has_header`, `header_line_number`=n; altijd `COLUMN_INDEX` | B |
 | `DecimalComma`=Y | `decimalSeparator=,` op numerieke mappings; werking voor basisprijs te verifiëren (`ImportValueRules.decimal`) | B / verifiëren |
 | PSIMPDEF 9/10/11 met `column` | `identity_*_field` = `column` | B |
-| 9/10 met `value` | `identity_*_fixed_value`, gevalideerd tegen Prodis-DB (S5/S6); onbekend → blokkeert | U (S6) |
-| altijd (legacy `Upper()`) | `identity_uppercase=true` op gemigreerde revisies | U (S6) |
+| 9/10 met `value` | `identity_*_fixed_value` (item `IDENTITY_FIXED_VALUE`), gevalideerd tegen Prodis-DB in hoofdletters: leverancier precies één `supplier.number` (`PRODIS_SUPPLIER_NOT_FOUND`/`_AMBIGUOUS` op `PSIMPDEF#9`), groep een `supplier_group.group_name` van de leverancier van de identiteit (vaste leverancier, anders INDET `Supplier`; `PRODIS_SUPPLIER_GROUP_NOT_FOUND`), beide blokkerend; niet geconfigureerd of onbereikbaar → WARNING `PRODIS_REFERENCE_NOT_VERIFIED` (onbereikbaar: "unverified"-fingerprint, zoals S5). Kolom/transformatie op die regel worden genegeerd zoals in legacy (`LEGACY_IGNORED_WITH_FIXED_VALUE`); > 50 tekens → `IDENTITY_FIXED_VALUE_TOO_LONG`. Vaste waarde op 11/23 blijft `IDENTITY_FIXED_VALUE_UNSUPPORTED` | B (S6 gebouwd) |
+| altijd (legacy `Upper()`) | `identity_uppercase=true` op gemigreerde revisies (item `IDENTITY_UPPERCASE`): leverancier, groep en referentie, niet de kortingscode (zoals legacy; beslissingslog 2026-10-21) | B (S6 gebouwd) |
 | 23 | `identity_discount_code_field` + `FOUR_PART`, enkel als `ArtImp_Key_Korting=Y` | B |
 | `ArtImp_Key_LevGrp`=N of `Key_Barcode`=Y | `IDENTITY_PROFILE_UNSUPPORTED` (blokkeert; decisions 2026-09-18) | N |
 | 26 / 4 | `record_base_price_field` / `record_description_field`; prefix/suffix/CALC op 26 → `BASE_PRICE_TRANSFORM_UNSUPPORTED` (blokkeert) | B |
@@ -256,6 +263,33 @@ sjabloon buiten scope, 2026-09-23 keuze 4). Gedeelde definitie die in één inte
 
 **Configuratiehash:** nieuwe revisiekolommen tellen in `RevisionConfigHashes` enkel mee als ze niet de default hebben; bestaande
 hashes blijven byte-identiek (byte-vergelijkingstest).
+
+**Uitwerking S6 (gebouwd 2026-10-21; beslissingslog M3 en "datasync-aanpak ... optie iii"):**
+- **Hashes.** `RevisionConfigHashes` (laag `record`) en `LegacyRevisionContent` voegen achteraan
+  `identitySupplierFixedValue=<v>`, `identitySupplierGroupFixedValue=<v>`, `identityUppercase=true` toe, **enkel** als niet
+  default. Bewezen met letterlijke pre-S6-hashes (`RevisionConfigHashesParityTest`, `LegacyRevisionContentParityTest`). Gevolg
+  voor een vóór S6 gemigreerde definitie: dezelfde legacy-inhoud plant nu `identity_uppercase=true`, dus een opvolgende DRAFT met
+  `IDENTITY_CHANGE` (nooit `MANUAL_CHANGES_SINCE_MIGRATION`, want de `migrated_content_hash` blijft geldig). `previewFingerprint`
+  bevat de gelezen Prodis-leveranciers (`prodisFixedSupplier:`) en -groepen (`prodisGroup:`).
+- **Screening.** `SourceStructureConfigFactory` (S9): per deel precies één van kolom of vaste waarde; beide →
+  `CONFIG_IDENTITY_SOURCE_CONFLICT` (nieuw, ook in `ImportIssueCatalog`), geen → `CONFIG_IDENTITY_FIELD_MISSING`. Een vaste waarde
+  declareert geen kolom (header, kolomindexcontrole, trial-read). `CandidateNormaliser` gebruikt de vaste waarde voor elke regel en
+  zet met `identity_uppercase` leverancier, groep en referentie (ook een vaste waarde) in hoofdletters (`Locale.ROOT`, lengtecontrole erna)
+  vóór de canonicalisatie; ook de gestagede waarden. Geen canonicalisatieversie 3: zonder S6-velden byte-identiek.
+- **Setup-API (additief; gemelde betekeniswijziging `supplierField`).** `CreateRevisionCommand`/`UpdateRevisionCommand`:
+  `supplierFixedValue`, `supplierGroupFixedValue` (≤ 50), `identityUppercase`; `RevisionView`/`RevisionDetail`: dezelfde velden,
+  `RevisionView.warnings[{code, field, message}]`. `supplierField`/`supplierGroupField` zijn optioneel naast een vaste waarde; beide
+  → 400 `SUPPLIER_FIXED_VALUE_INVALID`/`SUPPLIER_GROUP_FIXED_VALUE_INVALID`, geen → 400 `SUPPLIER_FIELD_REQUIRED`/`_GROUP_FIELD_REQUIRED`
+  (ongewijzigd). PATCH: `""` wist nu ook `supplierField`/`supplierGroupField` (vroeger 400), zodat wie overstapt de andere bron
+  uitdrukkelijk wist; vaste waarden en hoofdletters tellen voor R-REV-X3. Prodis geconfigureerd: de vaste waarde (in hoofdletters als
+  `identityUppercase`) moet bestaan → anders 400 `SUPPLIER_FIXED_VALUE_NOT_IN_PRODIS` / `_AMBIGUOUS_IN_PRODIS` /
+  `SUPPLIER_GROUP_FIXED_VALUE_NOT_IN_PRODIS` (groep van de vaste leverancier, anders van de bronorganisatie van de definitie);
+  onbereikbaar → 503 `PRODIS_DB_UNAVAILABLE`, niets bewaard; niet geconfigureerd → aanvaard met `warnings` =
+  `PRODIS_REFERENCE_NOT_VERIFIED` per waarde (niet bewaard). Enkel een gewijzigde vaste waarde (of hoofdletterschakelaar) wordt
+  opnieuw nagekeken. De migratie roept `SetupService` aan zonder deze controle (al in de PREVIEW gedaan).
+- **Kortingscode (beslissingslog 2026-10-21 "Legacy-config S6: hoofdletters zoals legacy"):** zoals legacy (`Prg_1170` r.768,
+  r.863: `Upper()` enkel op 9-11) blijft de kortingscode (veld 23) ongewijzigd, ook met `identity_uppercase`. Een eerste bouwversie
+  zette ze wél in hoofdletters met WARNING `DISCOUNT_CODE_UPPERCASED`; beide zijn teruggedraaid.
 
 **Rapport (PREVIEW = APPLY-resultaat):** `{receiptId, contentHash, outcome APPLICABLE|BLOCKED, planned{sourceOrganisation,
 definition, link{…, libraryCode, libraryCandidates[{scopeKey, catalogName, legacyNumber, status}]}, task, credential}, sharedWith,
@@ -299,8 +333,8 @@ geraakte bestaande rijen + (S5) de gelezen Prodis-rijen (leverancier: `number|na
 - **Onbereikbaar:** 503 `PRODIS_DB_UNAVAILABLE` op de keuze-endpoints; PREVIEW → `PRODIS_REFERENCE_NOT_VERIFIED`,
   `prodisReference=UNAVAILABLE` en een fingerprint **`unverified:<sha256>`** (afwijking van het letterlijke `"unverified"`: zo
   blijft de controle op veroudering van de rest van het rapport werken, en een geverifieerde fingerprint begint nooit zo). APPLY
-  mag dan een DRAFT maken met de `libraryCode` uit de body (er bestaan in S5 nog geen vaste waarden; activeren blokkeert later op
-  `CONFIG_IDENTITY_FIELD_MISSING` zodra S6 vaste waarden kent), **zolang Prodis onbereikbaar blijft**: is Prodis intussen terug,
+  mag dan een DRAFT maken met de `libraryCode` uit de body (sinds S6 ook met niet-geverifieerde vaste waarden, WARNING
+  `PRODIS_REFERENCE_NOT_VERIFIED` op `PSIMPDEF#9/10`), **zolang Prodis onbereikbaar blijft**: is Prodis intussen terug,
   dan geeft dezelfde fingerprint 409 `LEGACY_PREVIEW_STALE`, en omgekeerd (geverifieerde preview, Prodis nu weg → 409).
 - **Keuze-endpoints** (S5, MANAGE, niet achter de setup-vlag): `GET /api/catalog-import/prodis-reference/suppliers?q=`
   (max. 100 tekens, anders 400 `PRODIS_REFERENCE_QUERY_INVALID`), `/suppliers/{nr}/groups`, `/suppliers/{nr}/catalogs`
@@ -367,7 +401,7 @@ doorgaan na fout), canary-test (secret `canary-…` nergens in logs, `sync-error
 | S3 | Datasync: pervasive-dao, sync-core, sync-app-config | Job zonder secret, PRODIS-guard, dryRun | bouwer-zwaar | `./mvnw.cmd -pl pervasive-dao,sync-core -am test -Dtest="LegacyConfig*Tests,CanonicalJsonTests,CatalogImportPushClientTests" -Dsurefire.failIfNoSpecifiedTests=false` | Push tegen stub; golden hash = S0 |
 | S4 | beide | Secret over TLS; credential bij ontvangst (SYSTEM-overload); canary-lektests aan beide kanten | bouwer-zwaar | `…-Dtest=LegacyConfigSecretLeakTest,CredentialLeakDetectionTest,CredentialHttpTest,ExternalCredentialSchemaTest` + `LegacyConfigExportJobTests` | Canary nergens behalve als ciphertext; geen tweede credential; `SECRETS_NOT_CONFIGURED` 409 |
 | S5 | ImportService: Web-config, Dao, Service, Web | Alleen-lezen Prodis-bron; validatie leverancier/bibliotheek in PREVIEW/APPLY; automatische `libraryCode`; keuze-endpoints (naar voren gehaald uit S6) | bouwer-zwaar | `…-Dtest=ProdisReferenceDaoTest,ProdisReadOnlyDatabaseConfigurationTest,ProdisReferenceUnavailableTest,ProdisReferenceHttpTest,LegacyConfigProdisReferenceTest,LegacyConfigPreviewTest,LegacyConfigApplyTest,PermissionCoverageTest` | Contexten starten zonder config; 503 bij onbereikbaar |
-| S6 (na M3) | ImportService: Liquibase 022, alle lagen | Vaste leverancier/groep + `identity_uppercase`; migratie gebruikt de keuze-endpoints (S5) | bouwer-zwaar | `…-Dtest=IdentityFixedValueTest,RevisionConfigHashesParityTest,ConfigFactoryParityTest,ScreeningSchemaTest,DeliveryScreeningFlowTest` | Bestaande hashes byte-identiek; uppercase = PSARF-identiteit |
+| S6 (na M3; gebouwd 2026-10-21) | ImportService: Liquibase 022, alle lagen | Vaste leverancier/groep + `identity_uppercase`; migratie gebruikt de Prodis-bron (S5); zie §5 "Uitwerking S6" | bouwer-zwaar | `mvn -pl Service -am test -Dtest='be.dda.catalogimport.service.**' -Dsurefire.failIfNoSpecifiedTests=false` (o.a. `IdentityFixedValueTest`, `RevisionConfigHashesParityTest`, `LegacyRevisionContentParityTest`, `ConfigFactoryParityTest`, `RevisionFieldRulesTest`) + `mvn -pl Web -am test -Dtest=IdentityFixedValueHttpTest,IdentityFixedValueNotConfiguredHttpTest,LegacyConfigPreviewTest,LegacyConfigApplyTest,LegacyConfigProdisReferenceTest -Dsurefire.failIfNoSpecifiedTests=false` + `scripts/test/run-full-tests.ps1 -Tests ScreeningSchemaTest,SetupApiFlowTest,DeliveryScreeningFlowTest,...` (vaste codes: schoon schema) | Bestaande hashes byte-identiek; uppercase = PSARF-identiteit (9-11; kortingscode ongewijzigd) |
 | S7 (na M1) | ImportService: Service | Dedup per (leverancier, hash), gedeelde definitie, `sharedWith`, `SHARED_DEFINITION_DIVERGED` | bouwer-zwaar | `…-Dtest=LegacyConfigSharedDefinitionTest,TemplateGuardTest,TemplateReuseTest` | Drie identieke interfaces → één gedeelde set; guard 006-5 intact |
 | S8 | ImportService | 023 maptabel, PSIMPEXCL, transformatieketen (LM-2) | bouwer-zwaar | gericht per klasse | — |
 | S9 | Frontend | Ontvangsten, rapport, APPLY-dialoog | bouwer-gemiddeld | `npx vitest run src/test/LegacyConfig*` | — |

@@ -32,8 +32,10 @@ import java.util.UUID;
  *
  * <h2>Business rule → technische vertaling</h2>
  * <ul>
- *   <li><b>Identiteit (PSIMPDEF 9/10/11, 23):</b> enkel een bronkolom ({@code Kolom}, 1-gebaseerd, 0 = geen) wordt
- *       {@code identity_*_field}. Een vaste waarde ({@value #IDENTITY_FIXED_VALUE_UNSUPPORTED}, tot S6), een
+ *   <li><b>Identiteit (PSIMPDEF 9/10/11, 23):</b> een bronkolom ({@code Kolom}, 1-gebaseerd, 0 = geen) wordt
+ *       {@code identity_*_field}; een vaste "Waarde" op 9/10 wordt {@code identity_*_fixed_value} (S6, met Prodis-controle
+ *       in {@code LegacyConfigApplyService}) en elke gemigreerde revisie krijgt {@code identity_uppercase=true} (legacy
+ *       {@code Upper()}). Een vaste waarde op 11/23 ({@value #IDENTITY_FIXED_VALUE_UNSUPPORTED}), een
  *       transformatie ({@value #IDENTITY_TRANSFORM_UNSUPPORTED}) of geen kolom ({@value #IDENTITY_FIELD_MISSING})
  *       blokkeert: weglaten zou de identiteit van elke aanbieding veranderen.</li>
  *   <li><b>Sleutelprofiel (INDET {@code ArtImp_Key_*}):</b> een afwezig label telt als {@code N}, zoals
@@ -85,6 +87,11 @@ final class LegacyConfigTranslator {
     static final String SCHEDULE_NOT_MIGRATED = "SCHEDULE_NOT_MIGRATED";
     static final String IDENTITY_FIELD_MISSING = "IDENTITY_FIELD_MISSING";
     static final String IDENTITY_FIXED_VALUE_UNSUPPORTED = "IDENTITY_FIXED_VALUE_UNSUPPORTED";
+    // S6: vaste leverancier/groep (PSIMPDEF 9/10 met een vaste "Waarde") en hoofdletters.
+    static final String IDENTITY_FIXED_VALUE = "IDENTITY_FIXED_VALUE";
+    static final String IDENTITY_FIXED_VALUE_TOO_LONG = "IDENTITY_FIXED_VALUE_TOO_LONG";
+    static final String LEGACY_IGNORED_WITH_FIXED_VALUE = "LEGACY_IGNORED_WITH_FIXED_VALUE";
+    static final String IDENTITY_UPPERCASE = "IDENTITY_UPPERCASE";
     static final String IDENTITY_TRANSFORM_UNSUPPORTED = "IDENTITY_TRANSFORM_UNSUPPORTED";
     static final String DISCOUNT_CODE_NOT_IN_KEY = "DISCOUNT_CODE_NOT_IN_KEY";
     static final String BASE_PRICE_FIELD_MISSING = "BASE_PRICE_FIELD_MISSING";
@@ -159,6 +166,8 @@ final class LegacyConfigTranslator {
     private static final int MAX_COMPARE_VALUE = 500;
     /** {@code source_organisation.code}. */
     private static final int MAX_SUPPLIER_CODE = 50;
+    /** {@code identity_supplier_fixed_value} / {@code identity_supplier_group_fixed_value} zijn varchar(50) (022-1). */
+    private static final int MAX_IDENTITY_FIXED_VALUE = 50;
     /** {@code import_definition.description}. */
     private static final int MAX_DEFINITION_NAME = 200;
 
@@ -176,11 +185,16 @@ final class LegacyConfigTranslator {
                          FilterOutcome outcome, boolean caseSensitive) {
     }
 
-    /** De door legacy bepaalde inhoud van een revisie; {@code descriptionField}/{@code discountField} mogen null zijn. */
+    /**
+     * De door legacy bepaalde inhoud van een revisie; {@code descriptionField}/{@code discountField} mogen null zijn.
+     * Sinds S6: precies één van {@code supplierField}/{@code supplierFixedValue} en van {@code groupField}/
+     * {@code groupFixedValue} is gevuld, en {@code identityUppercase} is altijd {@code true} (legacy {@code Upper()}).
+     */
     record PlannedRevision(String charset, String delimiter, boolean hasHeader, int headerLineNumber,
                            IdentityProfileKind identityProfileKind, String supplierField, String groupField,
                            String referenceField, String discountField, String basePriceField,
-                           String descriptionField, List<PlannedMapping> mappings, List<PlannedFilter> filters) {
+                           String descriptionField, String supplierFixedValue, String groupFixedValue,
+                           boolean identityUppercase, List<PlannedMapping> mappings, List<PlannedFilter> filters) {
 
         PlannedRevision {
             mappings = List.copyOf(mappings);
@@ -195,9 +209,12 @@ final class LegacyConfigTranslator {
      * @param definitionName     de naam voor {@code import_definition.description}
      * @param revision           de geplande revisie, of {@code null} als ze niet op te bouwen is (dan is er een
      *                           blokkerend item)
+     * @param supplierFixedValue de vaste waarde van PSIMPDEF 9 (S6), ook als de revisie elders blokkeert; of null
+     * @param groupFixedValue    idem voor PSIMPDEF 10
      */
     record Translation(List<Item> items, String supplierCode, String libraryNumber, String definitionCode,
-                       String definitionName, String definitionContentHash, PlannedRevision revision) {
+                       String definitionName, String definitionContentHash, PlannedRevision revision,
+                       String supplierFixedValue, String groupFixedValue) {
 
         boolean blocking() {
             return items.stream().anyMatch(item -> BLOCKING.equals(item.status()));
@@ -209,6 +226,9 @@ final class LegacyConfigTranslator {
     private final UUID credentialRef;
     private final List<Item> items = new ArrayList<>();
     private boolean revisionBlocked;
+    /** S6: de vaste waarde van PSIMPDEF 9/10 zoals vertaald (ook als de revisie elders blokkeert), of null. */
+    private String supplierFixedValue;
+    private String groupFixedValue;
 
     private LegacyConfigTranslator(JsonNode bundle, String charsetWhenUndeclared, UUID credentialRef) {
         this.bundle = bundle;
@@ -279,7 +299,8 @@ final class LegacyConfigTranslator {
             revision = null;
         }
         return new Translation(List.copyOf(items), supplierCode, libraryNumber, definitionCode, definitionName,
-                present ? bundle.path("definitionContentHash").asText(null) : null, revision);
+                present ? bundle.path("definitionContentHash").asText(null) : null, revision, supplierFixedValue,
+                groupFixedValue);
     }
 
     // --- INDET ----------------------------------------------------------------------------------------------------
@@ -577,8 +598,10 @@ final class LegacyConfigTranslator {
             }
         }
 
-        String supplier = identityColumn(byNumber, LINE_SUPPLIER, "identitySupplierField", true);
-        String group = identityColumn(byNumber, LINE_GROUP, "identitySupplierGroupField", true);
+        IdentitySource supplier = identitySource(byNumber, LINE_SUPPLIER, "identitySupplierField",
+                "identitySupplierFixedValue");
+        IdentitySource group = identitySource(byNumber, LINE_GROUP, "identitySupplierGroupField",
+                "identitySupplierGroupFixedValue");
         String reference = identityColumn(byNumber, LINE_REFERENCE, "identitySupplierReferenceField", true);
         String discount = null;
         if (profile == IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE) {
@@ -587,6 +610,10 @@ final class LegacyConfigTranslator {
             add("PSIMPDEF#" + LINE_DISCOUNT, NOT_MIGRATED, DISCOUNT_CODE_NOT_IN_KEY, null,
                     "ArtImp_Key_Korting is not Y, so the discount code is not part of the identity");
         }
+        // S6: legacy zet leverancier, groep en referentie (9-11) altijd in hoofdletters (Prg_1170 r.733-815, ook een
+        // vaste "Waarde"); een gemigreerde revisie krijgt daarom altijd identity_uppercase=true (design par. 5).
+        add("PSIMPDEF:identityUppercase", MIGRATED, IDENTITY_UPPERCASE, "revision.identityUppercase=true",
+                "legacy puts fields 9-11 in upper case (Upper()); so does CatalogImport before the identity is built");
         String basePrice = basePrice(byNumber);
         String description = description(byNumber);
         if (decimalComma) {
@@ -649,8 +676,57 @@ final class LegacyConfigTranslator {
             return null;
         }
         boolean hasHeader = skipHeader > 0;
-        return new PlannedRevision(charset, delimiter, hasHeader, hasHeader ? skipHeader : 1, profile, supplier,
-                group, reference, discount, basePrice, description, mappings, filters);
+        return new PlannedRevision(charset, delimiter, hasHeader, hasHeader ? skipHeader : 1, profile,
+                supplier.column(), group.column(), reference, discount, basePrice, description, supplier.fixedValue(),
+                group.fixedValue(), true, mappings, filters);
+    }
+
+    /** Leverancier of groep: precies één van bronkolom of vaste waarde (S6). */
+    private record IdentitySource(String column, String fixedValue) {
+    }
+
+    /**
+     * PSIMPDEF 9/10 (S6, design par. 5): een vaste "Waarde" wordt {@code identity_*_fixed_value}; anders zoals
+     * {@link #identityColumn}. Legacy negeert bij een vaste waarde de kolom, prefix/suffix en CALC van die regel
+     * ({@code Prg_1170}: de kolomtak loopt enkel als de waarde leeg is) - hier ook, maar zichtbaar in het rapport. De
+     * Prodis-controle doet {@code LegacyConfigApplyService}; zonder Prodis-bron blijft het item hieronder staan.
+     *
+     * @return {@code null} als de regel niet te vertalen is (er is dan een blokkerend item)
+     */
+    private IdentitySource identitySource(Map<Integer, List<JsonNode>> byNumber, int number, String target,
+                                          String fixedTarget) {
+        List<JsonNode> rows = byNumber.get(number);
+        String value = rows == null || rows.size() != 1 ? "" : rows.get(0).path("value").asText("");
+        if (value.isEmpty()) {
+            String column = identityColumn(byNumber, number, target, true);
+            return column == null ? null : new IdentitySource(column, null);
+        }
+        String element = "PSIMPDEF#" + number;
+        String fixed = value.trim();
+        if (fixed.isEmpty()) {
+            add(element, BLOCKING, IDENTITY_FIELD_MISSING, null, "field " + number + " has a blank fixed value");
+            return null;
+        }
+        if (fixed.length() > MAX_IDENTITY_FIXED_VALUE) {
+            add(element, BLOCKING, IDENTITY_FIXED_VALUE_TOO_LONG, null, "the fixed value of field " + number
+                    + " is longer than " + MAX_IDENTITY_FIXED_VALUE + " characters");
+            return null;
+        }
+        JsonNode line = rows.get(0);
+        if (line.path("column").asInt() > 0 || hasTransform(line) || hasSubstring(line)) {
+            add(element, NOT_MIGRATED, LEGACY_IGNORED_WITH_FIXED_VALUE, null, "field " + number + " has a fixed "
+                    + "value; legacy ignores its column and transformation then, and so does CatalogImport");
+        }
+        add(element, MIGRATED, IDENTITY_FIXED_VALUE, "revision." + fixedTarget + "=" + fixed, null);
+        if (number == LINE_SUPPLIER) {
+            supplierFixedValue = fixed;
+        } else {
+            groupFixedValue = fixed;
+        }
+        // Vervangen door LegacyConfigApplyService als de Prodis-bron geconfigureerd is (zoals INDET:Supplier, S5).
+        add(element, WARNING, PRODIS_REFERENCE_NOT_VERIFIED, null, "fixed value " + fixed + " of field " + number
+                + " is not verified: the Prodis database is not configured");
+        return new IdentitySource(null, fixed);
     }
 
     private static boolean governed(int number) {
@@ -681,7 +757,8 @@ final class LegacyConfigTranslator {
         String value = line.path("value").asText("");
         if (!value.isEmpty()) {
             add(element, BLOCKING, IDENTITY_FIXED_VALUE_UNSUPPORTED, null, "field " + number
-                    + " has the fixed value '" + value + "'; a fixed identity value is not supported until S6");
+                    + " has the fixed value '" + value + "'; a fixed identity value is only supported for the "
+                    + "supplier and the supplier group (fields 9 and 10)");
             return null;
         }
         if (hasTransform(line) || hasSubstring(line)) {

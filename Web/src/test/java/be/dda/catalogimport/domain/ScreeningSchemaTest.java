@@ -160,6 +160,85 @@ class ScreeningSchemaTest {
         assertThatCode(() -> revisions.saveAndFlush(revision)).doesNotThrowAnyException();
     }
 
+    // --- Legacy-config S6: vaste leverancier/groep en hoofdletters (changeset 022) ------------------------------
+
+    @Test
+    void keepsExistingRevisionsValidWithUppercaseOffAndNoFixedValues() {
+        ImportDefinitionRevision revision = scenario("S6DEF").revision();
+
+        Map<String, Object> row = jdbc.queryForMap("select identity_uppercase, identity_supplier_fixed_value, "
+                + "identity_supplier_group_fixed_value from import_definition_revision where id = ?", revision.getId());
+        assertThat(row.get("identity_uppercase")).isEqualTo(false);
+        assertThat(row.get("identity_supplier_fixed_value")).isNull();
+        assertThat(row.get("identity_supplier_group_fixed_value")).isNull();
+        // Een insert zonder de nieuwe kolommen (zoals elke rij van vóór 022) voldoet: default false, kolommen gevuld.
+        ImportDefinition definition = definition("S6RAW");
+        jdbc.update("insert into import_definition_revision (import_definition_id, revision_number, status, "
+                + "access_version, access_config_hash, structure_version, structure_config_hash, "
+                + "record_rules_version, record_rules_config_hash, composite_config_hash, "
+                + "identity_profile_kind, identity_supplier_field, identity_supplier_group_field, "
+                + "identity_supplier_reference_field, structure_delimiter, created_at, created_by, updated_at) "
+                + "values (?, 9, 'SUPERSEDED', 1, 'a', 1, 'b', 1, 'c', 'd', 'THREE_PART', 'S', 'G', 'R', ';', "
+                + "current_timestamp, 'test', current_timestamp)", definition.getId());
+        assertThat(jdbc.queryForObject("select identity_uppercase from import_definition_revision "
+                + "where import_definition_id = ? and revision_number = 9", Boolean.class, definition.getId()))
+                .isFalse();
+    }
+
+    @Test
+    void persistsAFixedSupplierAndGroupWithUppercaseInsteadOfTheColumns() {
+        ImportDefinitionRevision revision = newRevision(definition("S6FIX"), 1);
+        revision.setIdentitySupplierField(null);
+        revision.setIdentitySupplierFixedValue("ACME");
+        revision.setIdentitySupplierGroupField(null);
+        revision.setIdentitySupplierGroupFixedValue("GRP-A");
+        revision.setIdentityUppercase(true);
+
+        ImportDefinitionRevision found = revisions.findById(revisions.saveAndFlush(revision).getId()).orElseThrow();
+
+        assertThat(found.getIdentitySupplierField()).isNull();
+        assertThat(found.getIdentitySupplierFixedValue()).isEqualTo("ACME");
+        assertThat(found.getIdentitySupplierGroupField()).isNull();
+        assertThat(found.getIdentitySupplierGroupFixedValue()).isEqualTo("GRP-A");
+        assertThat(found.isIdentityUppercase()).isTrue();
+    }
+
+    @Test
+    void requiresExactlyOneOfColumnOrFixedValuePerIdentityPart() {
+        ImportDefinition definition = definition("S6ONE");
+        ImportDefinitionRevision bothSupplier = newRevision(definition, 1);
+        bothSupplier.setIdentitySupplierFixedValue("ACME");
+        ImportDefinitionRevision noSupplier = newRevision(definition, 2);
+        noSupplier.setIdentitySupplierField(null);
+        ImportDefinitionRevision bothGroup = newRevision(definition, 3);
+        bothGroup.setIdentitySupplierGroupFixedValue("GRP");
+        ImportDefinitionRevision noGroup = newRevision(definition, 4);
+        noGroup.setIdentitySupplierGroupField(null);
+        ImportDefinitionRevision blankFixed = newRevision(definition, 5);
+        blankFixed.setIdentitySupplierField(null);
+        blankFixed.setIdentitySupplierFixedValue("   ");
+
+        for (ImportDefinitionRevision invalid : List.of(bothSupplier, noSupplier, bothGroup, noGroup, blankFixed)) {
+            assertThatThrownBy(() -> revisions.saveAndFlush(invalid))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        }
+        // Ook rechtstreeks in SQL, met de naam van de check.
+        assertThatThrownBy(() -> jdbc.update("update import_definition_revision set identity_supplier_fixed_value = "
+                + "'ACME' where id = ?", scenario("S6SQL").revision().getId()))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_import_definition_revision_supplier_source");
+    }
+
+    @Test
+    void rejectsAFixedValueLongerThanFiftyCharacters() {
+        ImportDefinitionRevision revision = newRevision(definition("S6LEN"), 1);
+        revision.setIdentitySupplierField(null);
+        revision.setIdentitySupplierFixedValue("X".repeat(51));
+
+        assertThatThrownBy(() -> revisions.saveAndFlush(revision))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
     @Test
     void rejectsAnUnsupportedFormatAndUnknownEnumeratedSourceConfiguration() {
         ImportDefinition definition = definition("REVFMT");

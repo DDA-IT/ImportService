@@ -117,6 +117,10 @@ public class RevisionCopier {
         copy.setIdentitySupplierGroupField(source.getIdentitySupplierGroupField());
         copy.setIdentitySupplierReferenceField(source.getIdentitySupplierReferenceField());
         copy.setIdentityDiscountCodeField(source.getIdentityDiscountCodeField());
+        // Legacy-config S6: vaste leverancier/groep en hoofdletters horen bij de identiteit en gaan letterlijk mee.
+        copy.setIdentitySupplierFixedValue(source.getIdentitySupplierFixedValue());
+        copy.setIdentitySupplierGroupFixedValue(source.getIdentitySupplierGroupFixedValue());
+        copy.setIdentityUppercase(source.isIdentityUppercase());
         copy.setStructureFormat(source.getStructureFormat());
         copy.setStructureCharset(source.getStructureCharset());
         copy.setStructureDelimiter(source.getStructureDelimiter());

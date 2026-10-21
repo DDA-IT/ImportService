@@ -64,13 +64,37 @@ final class RevisionFieldRules {
         if (command.identityProfileKind() != null) {
             revision.setIdentityProfileKind(command.identityProfileKind());
         }
+        // Legacy-config S6 (M3): leverancier en groep komen uit precies één van kolom of vaste waarde. Een lege tekst
+        // wist (zoals bij de optionele velden), zodat wie overstapt de andere bron uitdrukkelijk wist; blijft er daarna
+        // geen bron over, dan volgt dezelfde 400 als vroeger (SUPPLIER_FIELD_REQUIRED). Nooit een stille wissel.
         if (command.supplierField() != null) {
-            revision.setIdentitySupplierField(
-                    SetupInput.requireText(command.supplierField(), "supplierField", SetupService.MAX_FIELD_REFERENCE_LENGTH));
+            revision.setIdentitySupplierField(SetupInput.optionalText(command.supplierField(), "supplierField",
+                    SetupService.MAX_FIELD_REFERENCE_LENGTH));
+        }
+        if (command.supplierFixedValue() != null) {
+            revision.setIdentitySupplierFixedValue(SetupInput.optionalText(command.supplierFixedValue(),
+                    "supplierFixedValue", SetupService.MAX_IDENTITY_FIXED_VALUE_LENGTH));
         }
         if (command.supplierGroupField() != null) {
-            revision.setIdentitySupplierGroupField(SetupInput.requireText(command.supplierGroupField(),
+            revision.setIdentitySupplierGroupField(SetupInput.optionalText(command.supplierGroupField(),
                     "supplierGroupField", SetupService.MAX_FIELD_REFERENCE_LENGTH));
+        }
+        if (command.supplierGroupFixedValue() != null) {
+            revision.setIdentitySupplierGroupFixedValue(SetupInput.optionalText(command.supplierGroupFixedValue(),
+                    "supplierGroupFixedValue", SetupService.MAX_IDENTITY_FIXED_VALUE_LENGTH));
+        }
+        // Enkel het deel dat het verzoek noemt: een verzoek dat de identiteit niet aanraakt, beoordeelt ze ook niet
+        // (zelfde gedrag als vóór S6; de databasecheck blijft het vangnet).
+        if (command.supplierField() != null || command.supplierFixedValue() != null) {
+            requireOneSource(revision.getIdentitySupplierField(), revision.getIdentitySupplierFixedValue(),
+                    "supplierField", "supplierFixedValue");
+        }
+        if (command.supplierGroupField() != null || command.supplierGroupFixedValue() != null) {
+            requireOneSource(revision.getIdentitySupplierGroupField(), revision.getIdentitySupplierGroupFixedValue(),
+                    "supplierGroupField", "supplierGroupFixedValue");
+        }
+        if (command.identityUppercase() != null) {
+            revision.setIdentityUppercase(command.identityUppercase());
         }
         if (command.supplierReferenceField() != null) {
             revision.setIdentitySupplierReferenceField(SetupInput.requireText(command.supplierReferenceField(),
@@ -138,21 +162,73 @@ final class RevisionFieldRules {
      */
     record IdentityBefore(IdentityProfileKind profileKind, String supplierField,
                                   String supplierGroupField, String supplierReferenceField,
-                                  String discountCodeField, int canonicalisationVersion) {
+                                  String discountCodeField, int canonicalisationVersion,
+                                  String supplierFixedValue, String supplierGroupFixedValue,
+                                  boolean identityUppercase) {
 
         static IdentityBefore of(ImportDefinitionRevision revision) {
             return new IdentityBefore(revision.getIdentityProfileKind(), revision.getIdentitySupplierField(),
                     revision.getIdentitySupplierGroupField(), revision.getIdentitySupplierReferenceField(),
-                    revision.getIdentityDiscountCodeField(), revision.getRecordCanonicalisationVersion());
+                    revision.getIdentityDiscountCodeField(), revision.getRecordCanonicalisationVersion(),
+                    revision.getIdentitySupplierFixedValue(), revision.getIdentitySupplierGroupFixedValue(),
+                    revision.isIdentityUppercase());
         }
 
-        /** R-REV-X3: het profiel of een van de vier identiteitsvelden verschilt van de huidige waarde. */
+        /**
+         * R-REV-X3: het profiel of een van de vier identiteitsvelden verschilt van de huidige waarde. Sinds
+         * legacy-config S6 ook een vaste leverancier/groep of de hoofdletterschakelaar: elk van die drie verandert de
+         * canonieke identiteitstekst.
+         */
         boolean identityChangedIn(ImportDefinitionRevision revision) {
             return profileKind != revision.getIdentityProfileKind()
                     || !Objects.equals(supplierField, revision.getIdentitySupplierField())
                     || !Objects.equals(supplierGroupField, revision.getIdentitySupplierGroupField())
                     || !Objects.equals(supplierReferenceField, revision.getIdentitySupplierReferenceField())
-                    || !Objects.equals(discountCodeField, revision.getIdentityDiscountCodeField());
+                    || !Objects.equals(discountCodeField, revision.getIdentityDiscountCodeField())
+                    || !Objects.equals(supplierFixedValue, revision.getIdentitySupplierFixedValue())
+                    || !Objects.equals(supplierGroupFixedValue, revision.getIdentitySupplierGroupFixedValue())
+                    || identityUppercase != revision.isIdentityUppercase();
+        }
+
+        /** Legacy-config S6: de vaste leverancier, of de vorm waarin ze gecontroleerd wordt, wijzigt. */
+        boolean supplierFixedValueChangedIn(ImportDefinitionRevision revision) {
+            return !Objects.equals(supplierFixedValue, revision.getIdentitySupplierFixedValue())
+                    || identityUppercase != revision.isIdentityUppercase();
+        }
+
+        /** Legacy-config S6: de vaste groep, haar leverancier of de vorm waarin ze gecontroleerd wordt, wijzigt. */
+        boolean groupFixedValueChangedIn(ImportDefinitionRevision revision) {
+            return !Objects.equals(supplierGroupFixedValue, revision.getIdentitySupplierGroupFixedValue())
+                    || supplierFixedValueChangedIn(revision);
+        }
+    }
+
+    /**
+     * Legacy-config S6 (beslissing M3): leverancier en groep komen elk uit precies één van bronkolom of vaste waarde —
+     * dezelfde regel als de databasechecks {@code ck_import_definition_revision_supplier_source}/{@code _group_source}
+     * (changeset 022-2), hier vóór het flushen zodat het een leesbare 400 wordt.
+     * <ul>
+     *   <li>geen van beide → {@code SUPPLIER_FIELD_REQUIRED} / {@code SUPPLIER_GROUP_FIELD_REQUIRED} (zelfde code als
+     *       vóór S6);</li>
+     *   <li>beide → {@code SUPPLIER_FIXED_VALUE_INVALID} / {@code SUPPLIER_GROUP_FIXED_VALUE_INVALID}.</li>
+     * </ul>
+     */
+    static void requireOneIdentitySource(ImportDefinitionRevision revision) {
+        requireOneSource(revision.getIdentitySupplierField(), revision.getIdentitySupplierFixedValue(),
+                "supplierField", "supplierFixedValue");
+        requireOneSource(revision.getIdentitySupplierGroupField(), revision.getIdentitySupplierGroupFixedValue(),
+                "supplierGroupField", "supplierGroupFixedValue");
+    }
+
+    private static void requireOneSource(String field, String fixedValue, String fieldName, String fixedName) {
+        if (field == null && fixedValue == null) {
+            throw new BadRequestException(SetupInput.fieldCode(fieldName, "REQUIRED"), fieldName
+                    + " must not be blank (or give " + fixedName + ")");
+        }
+        if (field != null && fixedValue != null) {
+            throw new BadRequestException(SetupInput.fieldCode(fixedName, "INVALID"), fieldName + " and "
+                    + fixedName + " are mutually exclusive: exactly one of a source field or a fixed value "
+                    + "determines this identity part (send \"\" to clear the other one)");
         }
     }
 

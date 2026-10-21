@@ -38,6 +38,11 @@ public class SourceStructureConfigFactory {
     public static final String CODE_FIELD_REFERENCE_KIND_INVALID = "CONFIG_FIELD_REFERENCE_KIND_INVALID";
     public static final String CODE_HEADER_REFERENCE_INCONSISTENT = "CONFIG_HEADER_REFERENCE_INCONSISTENT";
     public static final String CODE_IDENTITY_FIELD_MISSING = "CONFIG_IDENTITY_FIELD_MISSING";
+    /**
+     * Legacy-config S6 (M3): leverancier of groep heeft zowel een bronkolom als een vaste waarde. Precies één van beide
+     * mag; de databasecheck weert het al, dit is het vangnet vóór er één byte gelezen is.
+     */
+    public static final String CODE_IDENTITY_SOURCE_CONFLICT = "CONFIG_IDENTITY_SOURCE_CONFLICT";
     public static final String CODE_DISCOUNT_FIELD_MISSING = "CONFIG_DISCOUNT_FIELD_MISSING";
     public static final String CODE_PRICE_FIELD_MISSING = "CONFIG_PRICE_FIELD_MISSING";
     public static final String CODE_COLUMN_COUNT_INVALID = "CONFIG_COLUMN_COUNT_INVALID";
@@ -201,12 +206,17 @@ public class SourceStructureConfigFactory {
             }
         });
 
-        // S9: elke identiteitskolom apart
+        // S9: elke identiteitskolom apart. Leverancier en groep (legacy-config S6, M3): precies één van kolom of vaste
+        // waarde. Een vaste waarde levert een geslaagde uitkomst ZONDER kolom (value == null).
         IdentityProfileKind identityProfileKind = revision.getIdentityProfileKind();
+        String supplierFixed = trimToNull(revision.getIdentitySupplierFixedValue());
+        String groupFixed = trimToNull(revision.getIdentitySupplierGroupFixedValue());
         Outcome<String> supplier = problems.branch(REVISION_FIELD_SUPPLIER,
-                () -> identityField(revision.getIdentitySupplierField(), "identity_supplier_field"));
+                () -> identitySource(revision.getIdentitySupplierField(), supplierFixed, "identity_supplier_field",
+                        "identity_supplier_fixed_value"));
         Outcome<String> group = problems.branch(REVISION_FIELD_SUPPLIER_GROUP,
-                () -> identityField(revision.getIdentitySupplierGroupField(), "identity_supplier_group_field"));
+                () -> identitySource(revision.getIdentitySupplierGroupField(), groupFixed,
+                        "identity_supplier_group_field", "identity_supplier_group_fixed_value"));
         Outcome<String> reference = problems.branch(REVISION_FIELD_SUPPLIER_REFERENCE,
                 () -> identityField(revision.getIdentitySupplierReferenceField(),
                         "identity_supplier_reference_field"));
@@ -259,7 +269,8 @@ public class SourceStructureConfigFactory {
             config = new SourceStructureConfig(format, charset, delimiter.value(), quote, hasHeader,
                     headerLineNumber, referenceKind, expectedColumnCount, identityProfileKind, supplier.value(),
                     group.value(), reference.value(), discount.value(), price.value(), description,
-                    canonicalisationVersion, pricePolicy);
+                    canonicalisationVersion, pricePolicy, supplier.value() == null ? supplierFixed : null,
+                    group.value() == null ? groupFixed : null, revision.isIdentityUppercase());
         }
 
         // S15: steunt op S6; de bovengrens steunt op S8. Elke gedeclareerde kolom apart, in de volgorde
@@ -303,8 +314,13 @@ public class SourceStructureConfigFactory {
                                                       Outcome<String> price, String description,
                                                       String currency) {
         List<DeclaredField> fields = new ArrayList<>(7);
-        fields.add(new DeclaredField(REVISION_FIELD_SUPPLIER, supplier));
-        fields.add(new DeclaredField(REVISION_FIELD_SUPPLIER_GROUP, group));
+        // Een vaste leverancier of groep (legacy-config S6) declareert geen kolom: geen indexcontrole.
+        if (supplier.failed() || supplier.value() != null) {
+            fields.add(new DeclaredField(REVISION_FIELD_SUPPLIER, supplier));
+        }
+        if (group.failed() || group.value() != null) {
+            fields.add(new DeclaredField(REVISION_FIELD_SUPPLIER_GROUP, group));
+        }
         fields.add(new DeclaredField(REVISION_FIELD_SUPPLIER_REFERENCE, reference));
         if (identityProfileKind == IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE
                 && (discount.failed() || discount.value() != null)) {
@@ -415,6 +431,26 @@ public class SourceStructureConfigFactory {
             throw blocked(CODE_IDENTITY_FIELD_MISSING, "No source field configured for " + column);
         }
         return field;
+    }
+
+    /**
+     * Leverancier of groep (legacy-config S6, beslissing M3): precies één van bronkolom of vaste waarde. Geen van
+     * beide → {@value #CODE_IDENTITY_FIELD_MISSING} (zoals vóór S6); beide → {@value #CODE_IDENTITY_SOURCE_CONFLICT}
+     * (de databasecheck {@code ck_import_definition_revision_*_source} weert dat al; dit is het vangnet). Nooit stil
+     * een van beide kiezen: dat zou de identiteit van elke aanbieding bepalen.
+     *
+     * @return de bronkolom, of {@code null} wanneer de vaste waarde de waarde levert
+     */
+    private static String identitySource(String field, String fixedValue, String column, String fixedColumn) {
+        String trimmedField = trimToNull(field);
+        if (trimmedField != null && fixedValue != null) {
+            throw blocked(CODE_IDENTITY_SOURCE_CONFLICT, column + " and " + fixedColumn + " are both set; exactly "
+                    + "one of a source field or a fixed value determines this identity part");
+        }
+        if (fixedValue != null) {
+            return null;
+        }
+        return identityField(field, column);
     }
 
     private static void requireColumnIndex(String field, Integer expectedColumnCount) {

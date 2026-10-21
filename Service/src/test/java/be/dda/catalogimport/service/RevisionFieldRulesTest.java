@@ -19,6 +19,10 @@ class RevisionFieldRulesTest {
         String delimiter;
         String quoteChar;
         String supplierField;
+        String supplierFixedValue;
+        String supplierGroupField;
+        String supplierGroupFixedValue;
+        Boolean identityUppercase;
         String discountCodeField;
         String basePriceField;
         String descriptionField;
@@ -38,9 +42,10 @@ class RevisionFieldRulesTest {
 
         UpdateRevisionCommand build() {
             return new UpdateRevisionCommand(delimiter, quoteChar, null, null, null, null, null, kind,
-                    supplierField, null, null, discountCodeField, basePriceField,
+                    supplierField, supplierGroupField, null, discountCodeField, basePriceField,
                     descriptionField, null, canonicalisationVersion, creation, maxCritical, maxRejected, bulk,
-                    deviation, severity, zeroAllowed, negativeAllowed, tolerance, changeReason, acknowledge, null);
+                    deviation, severity, zeroAllowed, negativeAllowed, tolerance, changeReason, acknowledge, null,
+                    supplierFixedValue, supplierGroupFixedValue, identityUppercase);
         }
     }
 
@@ -227,6 +232,10 @@ class RevisionFieldRulesTest {
         assertIdentityChanged(r -> r.setIdentitySupplierReferenceField("OTHER"));
         assertIdentityChanged(r -> r.setIdentityDiscountCodeField("OTHER"));
         assertIdentityChanged(r -> r.setIdentityProfileKind(IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE));
+        // Legacy-config S6: vaste waarden en hoofdletters veranderen de canonieke identiteit evengoed.
+        assertIdentityChanged(r -> r.setIdentitySupplierFixedValue("ACME"));
+        assertIdentityChanged(r -> r.setIdentitySupplierGroupFixedValue("GRP"));
+        assertIdentityChanged(r -> r.setIdentityUppercase(true));
     }
 
     private static void assertIdentityChanged(Consumer<ImportDefinitionRevision> change) {
@@ -262,5 +271,55 @@ class RevisionFieldRulesTest {
 
         revision.setIdentitySupplierField("OTHER");
         RevisionFieldRules.requireIdentityChangeAcknowledged(revision, before, cmd(c -> c.acknowledge = true));
+    }
+
+    // --- Legacy-config S6: precies één van kolom of vaste waarde (M3) ----------------------------------------
+
+    @Test
+    void switchingToAFixedValueRequiresClearingTheColumnExplicitly() {
+        ImportDefinitionRevision revision = columns();
+
+        // Enkel een vaste waarde: de kolom blijft, dus twee bronnen -> 400, nooit een stille wissel.
+        assertCode(() -> RevisionFieldRules.applyScalars(columns(), cmd(c -> c.supplierFixedValue = "ACME")),
+                "SUPPLIER_FIXED_VALUE_INVALID");
+        assertCode(() -> RevisionFieldRules.applyScalars(columns(), cmd(c -> c.supplierGroupFixedValue = "GRP")),
+                "SUPPLIER_GROUP_FIXED_VALUE_INVALID");
+
+        RevisionFieldRules.applyScalars(revision, cmd(c -> {
+            c.supplierField = "";
+            c.supplierFixedValue = " ACME ";
+            c.identityUppercase = true;
+        }));
+        assertThat(revision.getIdentitySupplierField()).isNull();
+        assertThat(revision.getIdentitySupplierFixedValue()).isEqualTo("ACME");
+        assertThat(revision.isIdentityUppercase()).isTrue();
+
+        // En terug: de vaste waarde wissen en een kolom geven.
+        RevisionFieldRules.applyScalars(revision, cmd(c -> {
+            c.supplierField = "LEV";
+            c.supplierFixedValue = "";
+        }));
+        assertThat(revision.getIdentitySupplierField()).isEqualTo("LEV");
+        assertThat(revision.getIdentitySupplierFixedValue()).isNull();
+    }
+
+    @Test
+    void clearingBothSourcesOrATooLongFixedValueIsRefused() {
+        assertCode(() -> RevisionFieldRules.applyScalars(columns(), cmd(c -> c.supplierField = "")),
+                "SUPPLIER_FIELD_REQUIRED");
+        assertCode(() -> RevisionFieldRules.applyScalars(columns(), cmd(c -> c.supplierGroupField = " ")),
+                "SUPPLIER_GROUP_FIELD_REQUIRED");
+        assertCode(() -> RevisionFieldRules.applyScalars(columns(), cmd(c -> {
+            c.supplierField = "";
+            c.supplierFixedValue = "X".repeat(51);
+        })), "SUPPLIER_FIXED_VALUE_TOO_LONG");
+    }
+
+    private static ImportDefinitionRevision columns() {
+        ImportDefinitionRevision revision = revision();
+        revision.setIdentitySupplierField("LEV");
+        revision.setIdentitySupplierGroupField("GRP");
+        revision.setIdentitySupplierReferenceField("REF");
+        return revision;
     }
 }

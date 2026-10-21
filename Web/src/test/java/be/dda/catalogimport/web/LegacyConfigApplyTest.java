@@ -288,7 +288,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         apply(id, fingerprint, REASON).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("LEGACY_APPLY_BLOCKED"))
                 .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString(
-                        "IDENTITY_FIXED_VALUE_UNSUPPORTED")));
+                        "IDENTITY_TRANSFORM_UNSUPPORTED")));
         assertThat(receiptRow(id).get("status")).isEqualTo("RECEIVED");
     }
 
@@ -344,7 +344,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         // Een drempel is van de mens: telt niet als handmatige wijziging en gaat mee in de kopie.
         setup.updateRevision(first, new SetupService.UpdateRevisionCommand(null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null, null, null, null, new BigDecimal("20"),
-                null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null));
         setup.activateRevision(first, ACTOR);
 
         line(bundle, 9).put("column", 13);   // identiteit wijzigt
@@ -400,7 +400,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
                 .longValue();
         setup.updateRevision(editedRevision, new SetupService.UpdateRevisionCommand(null, null, null, null, null,
                 null, null, null, null, null, null, null, null, "6", null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null));
         setup.activateRevision(editedRevision, ACTOR);
         line(edited, 26).put("column", 17);
         assertThat(blockingCodes(previewBody(receive(edited)))).containsExactly("MANUAL_CHANGES_SINCE_MIGRATION");

@@ -12,6 +12,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Zet één geparste bronregel om in een kandidaat met haar aanbiedingsidentiteit en vingerafdrukken
@@ -81,6 +82,16 @@ import java.util.List;
  * versie 2 blijven {@code price_fingerprint}, {@code combined_fingerprint} en {@code identity_hash}
  * <b>byte-identiek</b> voor een revisie zonder muntveld en een koppeling zonder vaste valuta.
  * {@code SOURCE} en {@code LINK_DEFAULT} schrijven de code zelf en zijn dus wél zichtbaar in de delta.
+ *
+ * <h2>Vaste leverancier/groep en hoofdletters (legacy-config S6)</h2>
+ * <b>Business rule.</b> Een revisie kan de leverancier en/of de groep vastleggen voor elke regel (legacy PSIMPDEF 9/10
+ * met een vaste "Waarde") en kan de identiteitsdelen in hoofdletters zetten, zoals legacy {@code Upper()} doet
+ * ({@code Prg_1170} r.733-815), zodat {@code abc} en {@code ABC} één aanbieding zijn. <b>Technisch.</b> De vaste waarde
+ * vervangt de kolomwaarde vóór de canonicalisatie; met {@code identity_uppercase} gaan leverancier, groep en referentie in
+ * hoofdletters ({@code Locale.ROOT}), ook een vaste waarde en de gestagede waarden. De kortingscode blijft ongewijzigd, zoals
+ * in legacy (beslissingslog 2026-10-21 "Legacy-config S6: hoofdletters zoals legacy"). Er komt
+ * <b>geen</b> canonicalisatieversie 3 (zie hierboven): een revisie zonder vaste waarde en zonder hoofdletters levert
+ * byte-identiek dezelfde {@code identity_hash} als vóór S6.
  */
 public final class CandidateNormaliser {
 
@@ -122,6 +133,9 @@ public final class CandidateNormaliser {
      */
     public static final int CANONICALISATION_VERSION_WITH_FIELDS =
             ImportMappingConfigFactory.CANONICALISATION_VERSION_WITH_COMPONENTS;
+
+    /** Veldnaam in een regelprobleem op een vaste leverancier/groep van de revisie (legacy-config S6). */
+    static final String FIXED_VALUE_FIELD = "identity_fixed_value";
 
     /** De doelveldcode van de omschrijving; die wordt door de revisiekolom bepaald (R-STR-06). */
     private static final String DESCRIPTION_FIELD_CODE = RevisionOwnedField.DESCRIPTION.name();
@@ -242,12 +256,19 @@ public final class CandidateNormaliser {
             // een aanbiedingsidentiteit uit afgeleid wordt.
             MappedRecord mapped = mapper.map(row, mappingConfig);
 
-            String supplier = identityComponent(row, config.supplierField(), row.value(
-                    position(row, config.supplierField())));
-            String group = identityComponent(row, config.supplierGroupField(), row.value(
-                    position(row, config.supplierGroupField())));
+            // Legacy-config S6: een vaste leverancier/groep geldt voor elke regel (de fabriek garandeert precies één
+            // van kolom of vaste waarde); hoofdletters vóór de canonicalisatie, zoals legacy Upper().
+            boolean uppercase = config.identityUppercase();
+            String supplier = config.supplierField() == null
+                    ? fixedIdentityComponent(row, config.supplierFixedValue(), uppercase)
+                    : identityComponent(row, config.supplierField(), row.value(
+                            position(row, config.supplierField())), uppercase);
+            String group = config.supplierGroupField() == null
+                    ? fixedIdentityComponent(row, config.supplierGroupFixedValue(), uppercase)
+                    : identityComponent(row, config.supplierGroupField(), row.value(
+                            position(row, config.supplierGroupField())), uppercase);
             String reference = identityComponent(row, config.supplierReferenceField(), row.value(
-                    position(row, config.supplierReferenceField())));
+                    position(row, config.supplierReferenceField())), uppercase);
 
             String discountCode = null;
             DiscountCodeState discountState = DiscountCodeState.NOT_USED;
@@ -262,6 +283,8 @@ public final class CandidateNormaliser {
                     throw new ScreeningBlockedException(CODE_CONFIG_DISCOUNT_FIELD_MISSING,
                             "Discount code column '" + field + "' is not present in the source");
                 }
+                // Bewust NIET in hoofdletters, ook niet met identity_uppercase: legacy zet veld 23 niet in hoofdletters
+                // (Prg_1170 r.768/863; beslissingslog 2026-10-21 "Legacy-config S6: hoofdletters zoals legacy").
                 String raw = trim(row.value(discountPosition));
                 requireLength(raw, field, MAX_IDENTITY_LENGTH);
                 discountCode = raw;
@@ -581,14 +604,36 @@ public final class CandidateNormaliser {
         return position;
     }
 
-    private static String identityComponent(ParsedRow row, String field, String raw) {
+    private static String identityComponent(ParsedRow row, String field, String raw, boolean uppercase) {
         String value = trim(raw);
         if (value.isEmpty()) {
             throw new ImportValueException(CODE_IDENTITY_COMPONENT_EMPTY, field, raw,
                     "Identity component '" + field + "' is empty on line " + row.lineNumber());
         }
+        if (uppercase) {
+            value = upper(value);
+        }
+        // Ná de hoofdletteromzetting: die kan een tekst langer maken (bv. "ß" → "SS") en de staging is varchar(200).
         requireLength(value, field, MAX_IDENTITY_LENGTH);
         return value;
+    }
+
+    /**
+     * Een vaste leverancier of groep van de revisie (legacy-config S6). De fabriek heeft ze al getrimd en weert een
+     * lege waarde; ze wordt hier enkel nog in hoofdletters gezet en op lengte gecontroleerd, net als een bronwaarde.
+     */
+    private static String fixedIdentityComponent(ParsedRow row, String fixedValue, boolean uppercase) {
+        return identityComponent(row, FIXED_VALUE_FIELD, fixedValue, uppercase);
+    }
+
+    /**
+     * Legacy {@code Upper()} ({@code Prg_1170} r.733-815) op een identiteitsdeel: {@link Locale#ROOT}, zodat de
+     * omzetting niet van de systeemtaal afhangt (bv. Turks "i"). Geen andere normalisatie en géén nieuwe
+     * canonicalisatieversie: het versienummer staat vooraan in elke canonieke tekst (zie de klassedocumentatie), en
+     * een revisie zonder {@code identity_uppercase} blijft byte-identiek.
+     */
+    private static String upper(String value) {
+        return value.toUpperCase(Locale.ROOT);
     }
 
     private static void requireLength(String value, String field, int maxLength) {

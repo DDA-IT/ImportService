@@ -691,17 +691,30 @@ public class ImportMappingConfigFactory {
         if (owned == null || !isDeterminedByRevision(revision, owned)) {
             return;
         }
-        throw blocked(CODE_FIELD_MAPPING_DUPLICATES_REVISION, code, owned.revisionColumn(),
+        // Legacy-config S6: bij een vaste leverancier/groep is de vaste-waardekolom de bepalende revisiekolom.
+        String column = owned.fixedValueColumn() != null && fixedValueOf(revision, owned) != null
+                ? owned.fixedValueColumn() : owned.revisionColumn();
+        throw blocked(CODE_FIELD_MAPPING_DUPLICATES_REVISION, code, column,
                 "Target field '" + code + "' is already determined by revision column '"
-                        + owned.revisionColumn() + "'; remove either the mapping or the revision column "
+                        + column + "'; remove either the mapping or the revision column "
                         + "instead of keeping two sources for the same value");
+    }
+
+    private static String fixedValueOf(ImportDefinitionRevision revision, RevisionOwnedField owned) {
+        return switch (owned) {
+            case SUPPLIER -> revision.getIdentitySupplierFixedValue();
+            case SUPPLIER_GROUP -> revision.getIdentitySupplierGroupFixedValue();
+            default -> null;
+        };
     }
 
     private static boolean isDeterminedByRevision(ImportDefinitionRevision revision,
                                                   RevisionOwnedField owned) {
         return switch (owned) {
-            case SUPPLIER -> revision.getIdentitySupplierField() != null;
-            case SUPPLIER_GROUP -> revision.getIdentitySupplierGroupField() != null;
+            case SUPPLIER -> revision.getIdentitySupplierField() != null
+                    || revision.getIdentitySupplierFixedValue() != null;
+            case SUPPLIER_GROUP -> revision.getIdentitySupplierGroupField() != null
+                    || revision.getIdentitySupplierGroupFixedValue() != null;
             case SUPPLIER_REFERENCE -> revision.getIdentitySupplierReferenceField() != null;
             case DISCOUNT_CODE -> revision.getIdentityDiscountCodeField() != null;
             case BASE_PRICE -> revision.getRecordBasePriceField() != null;
@@ -838,8 +851,11 @@ public class ImportMappingConfigFactory {
      * latere fase de identiteit volledig uit mappings kan opbouwen.
      */
     private static void verifyIdentityClasses(ImportDefinitionRevision revision, List<FieldMapping> fields) {
-        boolean strongFromRevision = revision.getIdentitySupplierField() != null
-                && revision.getIdentitySupplierGroupField() != null
+        // Legacy-config S6: een vaste leverancier/groep is evengoed een deel van de sterke identiteit van de revisie.
+        boolean strongFromRevision = (revision.getIdentitySupplierField() != null
+                || revision.getIdentitySupplierFixedValue() != null)
+                && (revision.getIdentitySupplierGroupField() != null
+                || revision.getIdentitySupplierGroupFixedValue() != null)
                 && revision.getIdentitySupplierReferenceField() != null;
         boolean strongFromMapping = fields.stream()
                 .anyMatch(field -> field.identityClass() == IdentityClass.STRONG);

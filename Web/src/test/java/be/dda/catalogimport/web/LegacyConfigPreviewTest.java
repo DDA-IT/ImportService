@@ -21,8 +21,8 @@ import org.springframework.http.MediaType;
  * <h2>Business rule → wat hier bewezen wordt</h2>
  * <ul>
  *   <li>PREVIEW schrijft niets en is deterministisch (zelfde fingerprint bij dezelfde toestand en keuzes).</li>
- *   <li>De onaangepaste golden fixture is in S2 BLOCKED met precies: sleutelprofiel (afwezige {@code ArtImp_Key_*} =
- *       N), vaste waarde op 10, prefix op 11, en geen bibliotheekcode.</li>
+ *   <li>De onaangepaste golden fixture is sinds S6 BLOCKED met precies: sleutelprofiel (afwezige {@code ArtImp_Key_*} =
+ *       N), prefix op 11, en geen bibliotheekcode; de vaste waarde op 10 wordt een vaste groep (S6).</li>
  *   <li>Een afgeleide bundel is APPLICABLE en plant organisatie, definitie, revisie, koppeling en taak.</li>
  *   <li>Ontbrekende definitie, charset, separator, wisselkoers en libraryCode volgen de vertaalregels.</li>
  *   <li>403 zonder MANAGE vóór 404.</li>
@@ -33,19 +33,26 @@ import org.springframework.http.MediaType;
 class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
 
     @Test
-    void theUnchangedGoldenFixtureIsBlockedWithExactlyTheS2Codes() throws Exception {
+    void theUnchangedGoldenFixtureIsBlockedWithExactlyTheS6Codes() throws Exception {
         ObjectNode golden = golden();
         long id = receive(golden);
 
         String body = previewBody(id);
 
+        // S6: de vaste waarde GRP-A op lijn 10 blokkeert niet meer; enkel nog sleutelprofiel, prefix op 11 en bibliotheek.
         assertThat((String) JsonPath.read(body, "$.report.outcome")).isEqualTo("BLOCKED");
         assertThat(blockingCodes(body)).containsExactly("IDENTITY_PROFILE_UNSUPPORTED", "IDENTITY_PROFILE_UNSUPPORTED",
-                "IDENTITY_PROFILE_UNSUPPORTED", "IDENTITY_FIXED_VALUE_UNSUPPORTED", "IDENTITY_TRANSFORM_UNSUPPORTED",
-                "LIBRARY_CODE_NOT_RESOLVED");
+                "IDENTITY_PROFILE_UNSUPPORTED", "IDENTITY_TRANSFORM_UNSUPPORTED", "LIBRARY_CODE_NOT_RESOLVED");
         assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.status == 'BLOCKING')].element"))
                 .containsExactly("INDET:ArtImp_Key_Lev", "INDET:ArtImp_Key_RefLev", "INDET:ArtImp_Key_LevGrp",
-                        "PSIMPDEF#10", "PSIMPDEF#11", "INDET:ArtImp_BibNr");
+                        "PSIMPDEF#11", "INDET:ArtImp_BibNr");
+        // Lijn 10: vaste groep (zonder Prodis-bron niet geverifieerd), en altijd hoofdletters.
+        assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.element == 'PSIMPDEF#10')].code"))
+                .containsExactly("IDENTITY_FIXED_VALUE", "PRODIS_REFERENCE_NOT_VERIFIED");
+        assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.code == 'IDENTITY_FIXED_VALUE')].target"))
+                .containsExactly("revision.identitySupplierGroupFixedValue=GRP-A");
+        assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.code == 'IDENTITY_UPPERCASE')].target"))
+                .containsExactly("revision.identityUppercase=true");
         // Wat wel vertaald wordt, staat in het rapport; nooit het secret.
         assertThat(codes(body, "MIGRATED")).contains("DELIMITER", "CHARSET", "HEADER", "BASE_PRICE", "DESCRIPTION");
         assertThat(codes(body, "WARNING")).contains("PRODIS_REFERENCE_NOT_VERIFIED", "MAP_MISS_NO_FALLBACK",
@@ -57,7 +64,7 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
         // Met een bibliotheekcode valt enkel LIBRARY_CODE_NOT_RESOLVED weg.
         String withLibrary = previewBody(id, "libraryCode", "LIB-GOLDEN");
         assertThat(blockingCodes(withLibrary)).doesNotContain("LIBRARY_CODE_NOT_RESOLVED")
-                .contains("IDENTITY_FIXED_VALUE_UNSUPPORTED", "IDENTITY_TRANSFORM_UNSUPPORTED");
+                .contains("IDENTITY_TRANSFORM_UNSUPPORTED");
     }
 
     @Test

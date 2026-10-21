@@ -207,6 +207,7 @@ class ImportIssueCatalogTest {
                 SourceStructureConfigFactory.CODE_FIELD_REFERENCE_KIND_INVALID,
                 SourceStructureConfigFactory.CODE_HEADER_REFERENCE_INCONSISTENT,
                 SourceStructureConfigFactory.CODE_IDENTITY_FIELD_MISSING,
+                SourceStructureConfigFactory.CODE_IDENTITY_SOURCE_CONFLICT,
                 SourceStructureConfigFactory.CODE_PRICE_FIELD_MISSING,
                 SourceStructureConfigFactory.CODE_COLUMN_COUNT_INVALID,
                 SourceStructureConfigFactory.CODE_FIELD_REFERENCE_INVALID,

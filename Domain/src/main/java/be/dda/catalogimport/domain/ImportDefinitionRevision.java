@@ -123,13 +123,45 @@ public class ImportDefinitionRevision {
     @Column(name = "identity_profile_kind", nullable = false, length = 40)
     private IdentityProfileKind identityProfileKind;
 
-    /** Bronveld/-pad dat de leverancier levert. Altijd verplicht gemapt. */
-    @Column(name = "identity_supplier_field", nullable = false, length = 200)
+    /**
+     * Bronveld/-pad dat de leverancier levert, of {@code null} wanneer {@link #identitySupplierFixedValue} de
+     * leverancier vastlegt. Precies één van beide is gevuld (databasecheck
+     * {@code ck_import_definition_revision_supplier_source}, changeset 022-2; beslissingslog M3). Vóór S6 was deze
+     * kolom altijd verplicht gemapt.
+     */
+    @Column(name = "identity_supplier_field", length = 200)
     private String identitySupplierField;
 
-    /** Bronveld/-pad dat de leveranciersgroep levert. Altijd verplicht gemapt. */
-    @Column(name = "identity_supplier_group_field", nullable = false, length = 200)
+    /**
+     * Bronveld/-pad dat de leveranciersgroep levert, of {@code null} wanneer
+     * {@link #identitySupplierGroupFixedValue} de groep vastlegt. Precies één van beide is gevuld
+     * ({@code ck_import_definition_revision_group_source}).
+     */
+    @Column(name = "identity_supplier_group_field", length = 200)
     private String identitySupplierGroupField;
+
+    /**
+     * Vaste leverancier voor élke regel van de levering (legacy PSIMPDEF 9 met een vaste "Waarde"): de businesscode
+     * {@code supplier.number} uit de Prodis-database, nooit een Prodis-id (legacy-config S6). {@code null} = de
+     * leverancier komt uit {@link #identitySupplierField}.
+     */
+    @Column(name = "identity_supplier_fixed_value", length = 50)
+    private String identitySupplierFixedValue;
+
+    /**
+     * Vaste leveranciersgroep voor élke regel (legacy PSIMPDEF 10 met een vaste "Waarde"): de groepscode
+     * ({@code supplier_group.group_name} in Prodis). {@code null} = de groep komt uit {@link #identitySupplierGroupField}.
+     */
+    @Column(name = "identity_supplier_group_fixed_value", length = 50)
+    private String identitySupplierGroupFixedValue;
+
+    /**
+     * Zet de identiteitsdelen in hoofdletters ({@code Locale.ROOT}) vóór de canonicalisatie, zoals legacy
+     * {@code Upper()} doet ({@code Prg_1170} r.733-815). Default {@code false}: bestaande revisies houden exact hun
+     * identiteit. Een gemigreerde revisie krijgt altijd {@code true} (design par. 5).
+     */
+    @Column(name = "identity_uppercase", nullable = false)
+    private boolean identityUppercase;
 
     /** Bronveld/-pad dat de leveranciersreferentie levert. Altijd verplicht gemapt. */
     @Column(name = "identity_supplier_reference_field", nullable = false, length = 200)
@@ -503,6 +535,30 @@ public class ImportDefinitionRevision {
 
     public void setIdentitySupplierGroupField(String identitySupplierGroupField) {
         this.identitySupplierGroupField = identitySupplierGroupField;
+    }
+
+    public String getIdentitySupplierFixedValue() {
+        return identitySupplierFixedValue;
+    }
+
+    public void setIdentitySupplierFixedValue(String identitySupplierFixedValue) {
+        this.identitySupplierFixedValue = identitySupplierFixedValue;
+    }
+
+    public String getIdentitySupplierGroupFixedValue() {
+        return identitySupplierGroupFixedValue;
+    }
+
+    public void setIdentitySupplierGroupFixedValue(String identitySupplierGroupFixedValue) {
+        this.identitySupplierGroupFixedValue = identitySupplierGroupFixedValue;
+    }
+
+    public boolean isIdentityUppercase() {
+        return identityUppercase;
+    }
+
+    public void setIdentityUppercase(boolean identityUppercase) {
+        this.identityUppercase = identityUppercase;
     }
 
     public String getIdentitySupplierReferenceField() {

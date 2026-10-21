@@ -4,7 +4,9 @@ import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.List;
 
 /**
  * De configuratiehash van één laag van een {@code ImportDefinitionRevision} (businessanalyse §14.14).
@@ -73,14 +75,43 @@ public final class RevisionConfigHashes {
                 String.valueOf(revision.getStructureHeaderLineNumber()),
                 revision.getStructureFieldReferenceKind(),
                 String.valueOf(revision.getStructureExpectedColumnCount())));
-        revision.setRecordRulesConfigHash(hash("record", revision.getIdentityProfileKind().name(),
-                revision.getIdentitySupplierField(), revision.getIdentitySupplierGroupField(),
-                revision.getIdentitySupplierReferenceField(),
+        List<String> record = new ArrayList<>(List.of(revision.getIdentityProfileKind().name(),
+                String.valueOf(revision.getIdentitySupplierField()),
+                String.valueOf(revision.getIdentitySupplierGroupField()),
+                String.valueOf(revision.getIdentitySupplierReferenceField()),
                 String.valueOf(revision.getIdentityDiscountCodeField()),
-                revision.getRecordBasePriceField(), String.valueOf(revision.getRecordDescriptionField()),
+                String.valueOf(revision.getRecordBasePriceField()),
+                String.valueOf(revision.getRecordDescriptionField()),
                 String.valueOf(revision.getRecordCurrencyField()),
                 String.valueOf(revision.getRecordCanonicalisationVersion())));
+        record.addAll(identityExtensions(revision));
+        revision.setRecordRulesConfigHash(hash("record", record.toArray(String[]::new)));
         revision.setCompositeConfigHash(hash("composite", revision.getAccessConfigHash(),
                 revision.getStructureConfigHash(), revision.getRecordRulesConfigHash()));
+    }
+
+    /**
+     * De identiteitsuitbreidingen van legacy-config S6 ({@code docs/design/legacy-config-bundle-design.md} par. 5 "Bouw
+     * van de configuratiehash"): vaste leverancier, vaste groep en hoofdletters. Ze komen <b>enkel</b> in de canonieke
+     * tekst als ze niet de default hebben ({@code null} / {@code false}), en dan achteraan en met hun naam als
+     * voorvoegsel. Zo blijft de hash van elke revisie zonder deze uitbreidingen byte-identiek aan die van vóór S6
+     * ({@code RevisionConfigHashesParityTest}), en kan een vaste waarde nooit samenvallen met een kolomnaam of met de
+     * andere vaste waarde.
+     * <p>
+     * Een {@code null}-kolom naast een vaste waarde schrijft hierboven de tekst {@code "null"} (zoals vóór S6 al voor
+     * de kortingscode); de vaste waarde erachter maakt die configuratie toch uniek.
+     */
+    private static List<String> identityExtensions(ImportDefinitionRevision revision) {
+        List<String> parts = new ArrayList<>(3);
+        if (revision.getIdentitySupplierFixedValue() != null) {
+            parts.add("identitySupplierFixedValue=" + revision.getIdentitySupplierFixedValue());
+        }
+        if (revision.getIdentitySupplierGroupFixedValue() != null) {
+            parts.add("identitySupplierGroupFixedValue=" + revision.getIdentitySupplierGroupFixedValue());
+        }
+        if (revision.isIdentityUppercase()) {
+            parts.add("identityUppercase=true");
+        }
+        return parts;
     }
 }
