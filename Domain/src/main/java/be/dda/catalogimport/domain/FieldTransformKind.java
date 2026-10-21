@@ -39,5 +39,11 @@ public enum FieldTransformKind {
     DIVIDE,
 
     /** De waarde delen door een andere kolom en met 100 vermenigvuldigen. */
-    PERCENTAGE
+    PERCENTAGE,
+
+    /** Hoofdletters ({@code Locale.ROOT}); geen instellingen (legacy CALC 15, S8b). */
+    UPPER,
+
+    /** Deeltekst vanaf een 1-gebaseerde positie, met optionele lengte (legacy Positie/Lengte, S8b). */
+    SUBSTRING
 }

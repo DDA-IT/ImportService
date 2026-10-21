@@ -591,7 +591,69 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(codes(preview, "NOT_MIGRATED")).contains("LEGACY_MAP_UNUSED");
     }
 
+    /**
+     * S8b: CALC 15 wordt UPPER en Positie/Lengte wordt SUBSTRING (MID: positie 0 wordt 1, lengte 0 wordt 500); geen
+     * {@code LEGACY_CALC_15_NOT_MIGRATED}/{@code LEGACY_SUBSTRING_NOT_MIGRATED} meer. Een tweede APPLY van dezelfde inhoud
+     * is {@code DEFINITION_UNCHANGED}.
+     */
+    @Test
+    void calcFifteenAndPositionLengthAreMigratedAndASecondApplyIsUnchanged() throws Exception {
+        ObjectNode bundle = applicable();
+        line(bundle, 37).put("calculation", "15");
+        line(bundle, 33).put("calculation", "").put("position", 3).put("length", 0);
+        long id = receive(bundle);
+
+        String preview = previewBody(id, "libraryCode", "LIB-S8B");
+        assertThat(blockingCodes(preview)).isEmpty();
+        assertThat(preview).doesNotContain("LEGACY_CALC_15_NOT_MIGRATED").doesNotContain("LEGACY_SUBSTRING_NOT_MIGRATED")
+                .doesNotContain("TRANSFORM_CHAIN_UNSUPPORTED");
+        apply(id, JsonPath.read(preview, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8B")
+                .andExpect(status().isOk());
+
+        long definitionId = definitionId(supplier(bundle), "VROOAM2");
+        long revisionId = ((Number) revisionRows(definitionId).get(0).get("id")).longValue();
+        assertThat(mappingOf(revisionId, "VKP5_PCT")).isEqualTo("UPPER|decimalSeparator=,");
+        assertThat(mappingOf(revisionId, "VKP1_PCT")).isEqualTo("SUBSTRING|start=3;length=500;decimalSeparator=,");
+
+        ((ObjectNode) bundle.get("interface").get("header")).put("info", "tweede export s8b");
+        long second = receive(bundle);
+        String again = previewBody(second, "libraryCode", "LIB-S8B");
+        assertThat(codes(again, "MIGRATED")).contains("DEFINITION_UNCHANGED");
+        apply(second, JsonPath.read(again, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8B")
+                .andExpect(status().isOk());
+        assertThat(revisionRows(definitionId)).hasSize(1);
+    }
+
+    /** S8b: een substring naast een andere bewerking blijft {@code TRANSFORM_CHAIN_UNSUPPORTED} tot S8c; nooit stil half. */
+    @Test
+    void aSubstringCombinedWithAnotherOperationStaysUnsupportedUntilTheChain() throws Exception {
+        ObjectNode bundle = applicable();
+        line(bundle, 37).put("prefix", "X-").put("position", 2).put("length", 4);
+        line(bundle, 33).put("calculation", "15").put("position", 1).put("length", 2);
+        String preview = previewBody(receive(bundle), "libraryCode", "LIB-S8B2");
+
+        assertThat(blockingCodes(preview)).isEmpty();
+        assertThat(codes(preview, "WARNING")).contains("TRANSFORM_CHAIN_UNSUPPORTED");
+        assertThat(codes(preview, "MIGRATED")).doesNotContain("MAPPING");
+    }
+
+    /** S8b: Positie/Lengte op de basisprijs (26) blijft blokkeren. */
+    @Test
+    void aSubstringOnTheBasePriceStillBlocks() throws Exception {
+        ObjectNode bundle = applicable();
+        line(bundle, 26).put("position", 2).put("length", 3);
+        assertThat(blockingCodes(previewBody(receive(bundle), "libraryCode", "LIB-S8B3")))
+                .containsExactly("BASE_PRICE_TRANSFORM_UNSUPPORTED");
+    }
+
     // --- Hulp -----------------------------------------------------------------------------------------------------
+
+    /** S8b: soort en configuratie van één mapping als {@code SOORT|config}. */
+    private String mappingOf(long revisionId, String targetFieldCode) {
+        return jdbc.queryForObject("select transform_kind || '|' || coalesce(transform_config, '') from "
+                + "import_field_mapping where definition_revision_id = ? and target_field_code = ?", String.class,
+                revisionId, targetFieldCode);
+    }
 
     /** S8a: de vertaalrijen van één mapping als {@code volgnummer:bron>doel}, op volgnummer. */
     private List<String> valueMap(long revisionId, String targetFieldCode) {

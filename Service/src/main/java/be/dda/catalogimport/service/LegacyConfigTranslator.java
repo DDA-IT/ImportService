@@ -108,6 +108,8 @@ final class LegacyConfigTranslator {
     static final String LEGACY_FILL_NOT_MIGRATED = "LEGACY_FILL_NOT_MIGRATED";
     static final String LEGACY_XML_PATH_NOT_MIGRATED = "LEGACY_XML_PATH_NOT_MIGRATED";
     static final String TRANSFORM_CHAIN_UNSUPPORTED = "TRANSFORM_CHAIN_UNSUPPORTED";
+    /** S8b: Positie/Lengte van een mapping-regel is negatief; geen betekenis in legacy {@code MID}. */
+    static final String LEGACY_SUBSTRING_INVALID = "LEGACY_SUBSTRING_INVALID";
     static final String TRANSFORM_VALUE_NOT_EXPRESSIBLE = "TRANSFORM_VALUE_NOT_EXPRESSIBLE";
     static final String LEGACY_CALC_VALUE_INVALID = "LEGACY_CALC_VALUE_INVALID";
     static final String CALC_ROUNDING_MAY_DIFFER = "CALC_ROUNDING_MAY_DIFFER";
@@ -867,18 +869,26 @@ final class LegacyConfigTranslator {
         String suffix = line.path("suffix").asText("");
         String calculation = line.path("calculation").asText("");
         int column = line.path("column").asInt();
+        boolean substring = hasSubstring(line);
         int operations = (value.isEmpty() ? 0 : 1) + (prefix.isEmpty() ? 0 : 1) + (suffix.isEmpty() ? 0 : 1)
                 + (calculation.isEmpty() ? 0 : 1);
-        if (operations > 1) {
+        if (substring && !value.isEmpty() && operations == 1) {
+            // Een vaste waarde negeert Positie/Lengte in legacy; het correcte gedrag hoort bij S8c (keten).
+            add(element, WARNING, LEGACY_SUBSTRING_NOT_MIGRATED, null, "field " + number + " reads position "
+                    + line.path("position").asInt() + "/length " + line.path("length").asInt()
+                    + " next to a fixed value; not supported yet, the mapping to " + target + " is not created");
+            return null;
+        }
+        if (operations + (substring ? 1 : 0) > 1) {
             add(element, WARNING, TRANSFORM_CHAIN_UNSUPPORTED, null, "field " + number + " combines "
-                    + transformDescription(line) + "; only one operation per mapping is supported (S8), the "
+                    + transformDescription(line) + "; only one operation per mapping is supported (S8c), the "
                     + "mapping to " + target + " is not created");
             return null;
         }
-        if (hasSubstring(line)) {
-            add(element, WARNING, LEGACY_SUBSTRING_NOT_MIGRATED, null, "field " + number + " reads position "
-                    + line.path("position").asInt() + "/length " + line.path("length").asInt()
-                    + "; a substring is not supported yet, the mapping to " + target + " is not created");
+        if (substring && (line.path("position").asInt() < 0 || line.path("length").asInt() < 0)) {
+            add(element, WARNING, LEGACY_SUBSTRING_INVALID, null, "field " + number + " has a negative position "
+                    + line.path("position").asInt() + " or length " + line.path("length").asInt()
+                    + "; the mapping to " + target + " is not created");
             return null;
         }
         boolean decimal = DECIMAL_TARGETS.contains(target);
@@ -912,8 +922,18 @@ final class LegacyConfigTranslator {
             }
             kind = prefix.isEmpty() ? FieldTransformKind.SUFFIX : FieldTransformKind.PREFIX;
             config = (prefix.isEmpty() ? "suffix=" : "prefix=") + text;
+        } else if (substring) {
+            // S8b: MID(v, pos 0->1, len 0->500) (Prg_1170 r.730); de buitenste Trim volgt in de canonicalisatie.
+            int position = line.path("position").asInt();
+            int length = line.path("length").asInt();
+            kind = FieldTransformKind.SUBSTRING;
+            config = "start=" + (position == 0 ? 1 : position) + ";length=" + (length == 0 ? 500 : length);
         } else if (!calculation.isEmpty()) {
             switch (calculation) {
+                case "15" -> {
+                    // S8b: Upper() op de waarde (taalonafhankelijk).
+                    kind = FieldTransformKind.UPPER;
+                }
                 case "1", "2", "3", "4" -> {
                     BigDecimal operand = decimalOrNull(line.path("calculationValue").asText(""));
                     if (operand == null || ("4".equals(calculation) && operand.signum() == 0)) {

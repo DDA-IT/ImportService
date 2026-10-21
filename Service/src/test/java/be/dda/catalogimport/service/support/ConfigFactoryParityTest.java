@@ -712,6 +712,23 @@ class ConfigFactoryParityTest {
                 "a percentage has both base and baseField; only one base is allowed");
         transform(t, "FT-percentage-base-zero", FieldTransformKind.PERCENTAGE, "base=0", null,
                 "a percentage of the fixed base 0 can never be computed");
+        // S8b: UPPER en SUBSTRING.
+        ok(t, "OK-upper", f -> f.first().setTransformKind(FieldTransformKind.UPPER));
+        ok(t, "OK-substring", f -> {
+            f.first().setTransformKind(FieldTransformKind.SUBSTRING);
+            f.first().setTransformConfig("start=2;length=3");
+        });
+        ok(t, "OK-substring-defaults", f -> f.first().setTransformKind(FieldTransformKind.SUBSTRING));
+        transform(t, "FT-upper-with-setting", FieldTransformKind.UPPER, "prefix=X", "prefix",
+                "setting 'prefix' is not used by this transformation or data type; it would silently have no effect");
+        transform(t, "FT-substring-start-zero", FieldTransformKind.SUBSTRING, "start=0", "0",
+                "setting 'start' must be 1 or higher");
+        transform(t, "FT-substring-length-zero", FieldTransformKind.SUBSTRING, "length=0", "0",
+                "setting 'length' must be 1 or higher");
+        transform(t, "FT-substring-length-not-a-number", FieldTransformKind.SUBSTRING, "length=x", "x",
+                "setting 'length' must be a whole number");
+        transform(t, "FT-substring-unknown-setting", FieldTransformKind.SUBSTRING, "start=2;end=4", "end",
+                "setting 'end' is not used by this transformation or data type; it would silently have no effect");
     }
 
     /**

@@ -8,6 +8,7 @@ import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -41,7 +42,7 @@ import java.util.regex.Pattern;
 public sealed interface FieldTransform
         permits FieldTransform.Unchanged, FieldTransform.Fixed, FieldTransform.Affix,
         FieldTransform.Concat, FieldTransform.Split, FieldTransform.Translate,
-        FieldTransform.Arithmetic, FieldTransform.Percentage {
+        FieldTransform.Arithmetic, FieldTransform.Percentage, FieldTransform.Upper, FieldTransform.Substring {
 
     /** De bewerking kon niet uitgevoerd worden op deze bronwaarde. */
     String CODE_TRANSFORM_FAILED = "TRANSFORM_FAILED";
@@ -96,6 +97,38 @@ public sealed interface FieldTransform
                 return null;
             }
             return prefix + value + suffix;
+        }
+    }
+
+    /** Hoofdletters met {@link Locale#ROOT} (taalonafhankelijk; legacy CALC 15). {@code null} blijft {@code null}. */
+    record Upper() implements FieldTransform {
+
+        @Override
+        public String apply(String value, String fieldName, SourceValues sources) {
+            return value == null ? null : value.toUpperCase(Locale.ROOT);
+        }
+    }
+
+    /**
+     * Deeltekst vanaf een 1-gebaseerde positie, met optionele lengte (legacy {@code MID}, Prg_1170 r.730). Een start
+     * voorbij het einde geeft {@code ""} (aanname S8, beslissing 2026-10-21); een lengte voorbij het einde geeft de
+     * rest. De buitenste trim volgt in de canonicalisatie van {@code FieldValueMapper}.
+     *
+     * @param length {@code null} = de rest
+     */
+    record Substring(int start, Integer length) implements FieldTransform {
+
+        @Override
+        public String apply(String value, String fieldName, SourceValues sources) {
+            if (value == null) {
+                return null;
+            }
+            int from = start - 1;
+            if (from >= value.length()) {
+                return "";
+            }
+            int to = length == null ? value.length() : (int) Math.min((long) from + length, value.length());
+            return value.substring(from, to);
         }
     }
 
@@ -285,7 +318,34 @@ public sealed interface FieldTransform
                     settings.flag("caseSensitive", false));
             case ADD, SUBTRACT, MULTIPLY, DIVIDE -> arithmetic(kind, settings, fieldCode, format);
             case PERCENTAGE -> percentage(settings, fieldCode, format);
+            case UPPER -> new Upper();
+            case SUBSTRING -> substring(settings, fieldCode);
         };
+    }
+
+    /** S8b: {@code start} (default 1, >= 1) en {@code length} (optioneel, >= 1; leeg = de rest). */
+    private static FieldTransform substring(MappingSettings settings, String fieldCode) {
+        int start = positive(settings, "start", fieldCode, 1);
+        Integer length = settings.get("length") == null || settings.get("length").isEmpty() ? null
+                : Integer.valueOf(positive(settings, "length", fieldCode, 1));
+        return new Substring(start, length);
+    }
+
+    private static int positive(MappingSettings settings, String key, String fieldCode, int defaultValue) {
+        String value = settings.get(key);
+        if (value == null || value.isEmpty()) {
+            return defaultValue;
+        }
+        int parsed;
+        try {
+            parsed = Integer.parseInt(value);
+        } catch (NumberFormatException notANumber) {
+            throw invalid(fieldCode, value, "setting '" + key + "' must be a whole number");
+        }
+        if (parsed < 1) {
+            throw invalid(fieldCode, value, "setting '" + key + "' must be 1 or higher");
+        }
+        return parsed;
     }
 
     /**

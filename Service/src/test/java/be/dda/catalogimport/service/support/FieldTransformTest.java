@@ -206,6 +206,52 @@ class FieldTransformTest {
                 .endsWith("value map row 7 has no source value");
     }
 
+    // --- Legacy-config S8b: UPPER en SUBSTRING -----------------------------------------------------
+
+    @Test
+    void upperCasesLanguageIndependentlyAndLeavesAMissingValueMissing() {
+        assertThat(apply(FieldTransformKind.UPPER, null, "abc-1")).isEqualTo("ABC-1");
+        assertThat(apply(FieldTransformKind.UPPER, null, "")).isEmpty();
+        assertThat(apply(FieldTransformKind.UPPER, null, null)).isNull();
+        // Locale.ROOT: een Turkse i wordt nooit een i met punt, ongeacht de standaardtaal van de JVM.
+        java.util.Locale previous = java.util.Locale.getDefault();
+        try {
+            java.util.Locale.setDefault(java.util.Locale.forLanguageTag("tr-TR"));
+            assertThat(apply(FieldTransformKind.UPPER, null, "title")).isEqualTo("TITLE");
+        } finally {
+            java.util.Locale.setDefault(previous);
+        }
+        assertThat(configCodeOf(FieldTransformKind.UPPER, "prefix=X"))
+                .isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+    }
+
+    @Test
+    void takesASubstringFromAOneBasedStartWithAnOptionalLength() {
+        assertThat(apply(FieldTransformKind.SUBSTRING, "start=2;length=3", "ABCDEF")).isEqualTo("BCD");
+        assertThat(apply(FieldTransformKind.SUBSTRING, "start=3", "ABCDEF")).isEqualTo("CDEF");
+        assertThat(apply(FieldTransformKind.SUBSTRING, "length=2", "ABCDEF")).isEqualTo("AB");
+        assertThat(apply(FieldTransformKind.SUBSTRING, null, "ABCDEF")).isEqualTo("ABCDEF");
+        assertThat(apply(FieldTransformKind.SUBSTRING, "start=1;length=500", "ABCDEF")).isEqualTo("ABCDEF");
+        // Grenzen: laatste teken, lengte voorbij het einde, start precies op/voorbij het einde.
+        assertThat(apply(FieldTransformKind.SUBSTRING, "start=6;length=1", "ABCDEF")).isEqualTo("F");
+        assertThat(apply(FieldTransformKind.SUBSTRING, "start=5;length=99", "ABCDEF")).isEqualTo("EF");
+        assertThat(apply(FieldTransformKind.SUBSTRING, "start=7", "ABCDEF")).isEmpty();
+        assertThat(apply(FieldTransformKind.SUBSTRING, "start=50;length=2", "ABCDEF")).isEmpty();
+        assertThat(apply(FieldTransformKind.SUBSTRING, "start=2", "")).isEmpty();
+        assertThat(apply(FieldTransformKind.SUBSTRING, "start=2;length=2147483647", "ABCDEF")).isEqualTo("BCDEF");
+        // Ontbrekend blijft ontbrekend.
+        assertThat(apply(FieldTransformKind.SUBSTRING, "start=2", null)).isNull();
+    }
+
+    @Test
+    void refusesAnInvalidSubstringConfiguration() {
+        for (String config : List.of("start=0", "start=-1", "length=0", "length=-3", "start=x", "length=1,5",
+                "start=2;stop=3")) {
+            assertThat(configCodeOf(FieldTransformKind.SUBSTRING, config)).as(config)
+                    .isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+        }
+    }
+
     // --- Helpers -----------------------------------------------------------------------------------
 
     private static FieldTransform.MapEntry entry(int sequence, String source, String target) {

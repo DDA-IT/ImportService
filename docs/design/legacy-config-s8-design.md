@@ -1,7 +1,7 @@
 # Legacy-config S8 — maptabel, transformatieketen, Include/Exclude, PSIMPEXCL
 
-> **Status: VOORSTEL (2026-10-21), denker-zwaar; S8a gebouwd (2026-10-21, zie "Uitwerking S8a" in §2a).** Verfijnt
-> `legacy-config-bundle-design.md` §8 rij S8 en `legacy-config-migratie-design.md` LM-2. S8b–S8e kunnen starten; **S8f wacht
+> **Status: VOORSTEL (2026-10-21), denker-zwaar; S8a en S8b gebouwd (2026-10-21, zie "Uitwerking S8a" in §2a en "Uitwerking S8b" in §2b).** Verfijnt
+> `legacy-config-bundle-design.md` §8 rij S8 en `legacy-config-migratie-design.md` LM-2. S8c–S8e kunnen starten; **S8f wacht
 > op V2**, **S8g wacht op V1** (§5).
 > Bronnen: `LegacyConfigTranslator`, `FieldTransform`, `FieldValueMapper`, `MappingSettings`, `ImportMappingConfigFactory`,
 > `RecordFilterEvaluator`, `RevisionCopier`, `LegacyRevisionContent`, Liquibase 004; Legacy-vault `Prg_1170` r.370-480,
@@ -71,6 +71,23 @@ r.2582-2687, enkel als `NOT >SkipExcludes`, r.395), niet in `Prg_1171`.
   (r.730); start voorbij het einde → `""` (aanname). Positie/Lengte op 9–11/26 blijft blokkeren.
 - Legacy doet geen impliciete `Upper()` op doelvelden 12/33-37/40/43/219/221: UPPER enkel voor expliciete CALC 15.
 - `LEGACY_SUBSTRING_NOT_MIGRATED` en `LEGACY_CALC_15_NOT_MIGRATED` verdwijnen voor mapping-regels.
+
+**Uitwerking S8b (gebouwd 2026-10-21; bouwer-gemiddeld).**
+- *Model:* `FieldTransformKind` + `UPPER`, `SUBSTRING` (additief, geen Liquibase: `transform_kind` heeft geen check, 004-2 r.205).
+  `FieldTransform.Upper` (`toUpperCase(Locale.ROOT)`, null blijft null, geen instellingen: een onbekende instelling is
+  `CONFIG_TRANSFORM_INVALID` via `verifyFullyUsed`) en `FieldTransform.Substring(start, length)`; de buitenste Trim van MID volgt
+  in de canonicalisatie van `FieldValueMapper` (die trimt altijd, dus gelijk aan legacy `MID` + `Trim`). `start` default 1 (>= 1),
+  `length` optioneel (>= 1, leeg = rest); een niet-getal, 0 of negatief is `CONFIG_TRANSFORM_INVALID` (ook in collect-modus B', geen
+  aparte code). Start voorbij het einde → `""` (beslissing 2026-10-21); lengte voorbij het einde → de rest; null blijft null.
+- *Migratie:* CALC 15 → `UPPER`; Positie/Lengte → `SUBSTRING` met `start=<pos, 0→1>;length=<len, 0→500>` (legacy `MID`).
+  Enkel zonder andere bewerking op de regel; substring naast prefix/suffix/andere CALC (ook CALC 15) of CALC 15 naast iets
+  anders blijft `TRANSFORM_CHAIN_UNSUPPORTED` tot S8c (boodschap noemt nu "(S8c)"). Positie/Lengte naast een vaste `Waarde` blijft
+  `LEGACY_SUBSTRING_NOT_MIGRATED` (S8c bepaalt het legacy-gedrag "vaste waarde negeert de rest"). Nieuw: WARNING
+  `LEGACY_SUBSTRING_INVALID` bij negatieve Positie/Lengte (mapping vervalt). Op identiteit 9-11, basisprijs 26 en omschrijving 4
+  blijft Positie/Lengte blokkeren/vervallen zoals voorheen. `LEGACY_CALC_15_NOT_MIGRATED` en `LEGACY_SUBSTRING_NOT_MIGRATED`
+  verdwijnen voor mapping-regels die zo vertaald worden.
+- *Hashes/API:* `LegacyRevisionContent` ongewijzigd (soort en config staan al in de mappingtekst; bestaande revisies byte-identiek);
+  de setup-API gebruikt de bestaande `transformKind`/`transformConfig`-velden. Een tweede APPLY geeft `DEFINITION_UNCHANGED`.
 
 ### 2c. Transformatieketen (S8c, `024-field-transform-step.sql`)
 - Legacy-volgorde per regel (r.730-732, r.1039-1115): MID op ruwe waarde → Trim → enkel indien niet leeg
@@ -144,7 +161,7 @@ Steeds: tweemaal dezelfde APPLY → `DEFINITION_UNCHANGED`.
 | Sub-slice | Lagen | Trap | Extra tests | Klaar als |
 |---|---|---|---|---|
 | S8a maptabel (**gebouwd 2026-10-21**) | Liquibase 023, alle lagen | bouwer-zwaar | `ImportFieldValueMapTest`; `run-full-tests.ps1 -Tests ScreeningSchemaTest,SetupApiFlowTest,DeliveryScreeningFlowTest` | 2000 sleutels migreren; `values=` werkt nog; kopie (opvolger, sjabloon, migratie) draagt rijen mee; pariteit byte-identiek |
-| S8b UPPER/SUBSTRING | Domain, Service | bouwer-gemiddeld | — | CALC 15 en Positie/Lengte op mapping-regels gemigreerd |
+| S8b UPPER/SUBSTRING (**gebouwd 2026-10-21**) | Domain, Service | bouwer-gemiddeld | — | CALC 15 en Positie/Lengte op mapping-regels gemigreerd |
 | S8c keten + AFFIX | Liquibase 024, alle lagen | bouwer-zwaar | `SetupApiFlowTest`, `DeliveryScreeningFlowTest` | prefix+suffix+CALC 7 = legacy; lege invoer blijft leeg; grammaticafouten blokkeren in B' |
 | S8d MAP_CONTAINS | Service | bouwer-gemiddeld | — | eerste treffer per KEY-volgorde, hoofdletterongevoelig |
 | S8e Include/Exclude | Service | bouwer-gemiddeld | `RecordFilterEvaluatorTest` | codes 1–6; twee includes = EN |
