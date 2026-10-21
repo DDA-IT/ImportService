@@ -7,6 +7,9 @@ import be.dda.catalogimport.domain.FieldDataType;
 import be.dda.catalogimport.domain.FieldOwner;
 import be.dda.catalogimport.domain.FieldTransformKind;
 import be.dda.catalogimport.domain.FieldValueKind;
+import be.dda.catalogimport.domain.FilterNullBehaviour;
+import be.dda.catalogimport.domain.FilterOperator;
+import be.dda.catalogimport.domain.FilterOutcome;
 import be.dda.catalogimport.domain.IdentityClass;
 import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
@@ -14,6 +17,8 @@ import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
 import be.dda.catalogimport.domain.ImportFieldMapping;
 import be.dda.catalogimport.domain.ImportFieldTransformStep;
 import be.dda.catalogimport.domain.ImportFieldValueMap;
+import be.dda.catalogimport.domain.ImportRecordFilter;
+import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedFilter;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedMapping;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedRevision;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedStep;
@@ -184,6 +189,45 @@ class LegacyRevisionContentParityTest {
         assertThat(LegacyRevisionContent.ofRevision(revision, List.of(mapping), List.of(), rows,
                 List.of(new ImportFieldTransformStep(other, 1, FieldTransformKind.UPPER, null))))
                 .isEqualTo(LegacyRevisionContent.ofRevision(revision, List.of(mapping), List.of(), rows));
+    }
+
+    /**
+     * S8e: een filter draagt zijn null-gedrag mee in de inhoud. Een S2-include ({@code INCLUDE EQUALS}, null
+     * {@code EXCLUDE}) hasht zoals de geschreven rij (dus byte-identiek aan een vóór S8e gemigreerde revisie: de hash van
+     * {@code ofRevision} is niet gewijzigd); een uitsluiting met {@code COMPARE_AS_EMPTY} is een andere inhoud.
+     */
+    @Test
+    void theFilterNullBehaviourCountsInThePlannedAndTheWrittenContent() {
+        ImportDefinitionRevision revision = s2MigratedRevision();
+        PlannedRevision include = planned(new PlannedFilter(1, "6", FilterOperator.EQUALS, "BENL", FilterOutcome.INCLUDE,
+                true, FilterNullBehaviour.EXCLUDE));
+        ImportRecordFilter written = new ImportRecordFilter(revision, 1, "6", FilterOperator.EQUALS, "BENL",
+                FilterOutcome.INCLUDE);
+        written.setCaseSensitive(true);
+        written.setNullBehaviour(FilterNullBehaviour.EXCLUDE);
+
+        assertThat(LegacyRevisionContent.ofPlanned(include, revision.getStructureFormat(),
+                code -> Criticality.NON_CRITICAL)).isEqualTo(LegacyRevisionContent.ofRevision(revision, List.of(),
+                List.of(written), List.of()));
+
+        PlannedRevision exclude = planned(new PlannedFilter(1, "6", FilterOperator.EQUALS, "BENL", FilterOutcome.EXCLUDE,
+                true, FilterNullBehaviour.COMPARE_AS_EMPTY));
+        ImportRecordFilter writtenExclude = new ImportRecordFilter(revision, 1, "6", FilterOperator.EQUALS, "BENL",
+                FilterOutcome.EXCLUDE);
+        writtenExclude.setCaseSensitive(true);
+        writtenExclude.setNullBehaviour(FilterNullBehaviour.COMPARE_AS_EMPTY);
+        String plannedExclude = LegacyRevisionContent.ofPlanned(exclude, revision.getStructureFormat(),
+                code -> Criticality.NON_CRITICAL);
+        assertThat(plannedExclude).isEqualTo(LegacyRevisionContent.ofRevision(revision, List.of(),
+                List.of(writtenExclude), List.of()));
+        assertThat(plannedExclude).isNotEqualTo(LegacyRevisionContent.ofPlanned(planned(new PlannedFilter(1, "6",
+                FilterOperator.EQUALS, "BENL", FilterOutcome.EXCLUDE, true, FilterNullBehaviour.EXCLUDE)),
+                revision.getStructureFormat(), code -> Criticality.NON_CRITICAL));
+    }
+
+    private static PlannedRevision planned(PlannedFilter filter) {
+        return new PlannedRevision("UTF-8", ";", true, 1, IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE, "3", "4", "1",
+                "5", "7", "2", null, null, true, List.of(), List.of(filter));
     }
 
     private static ImportDefinitionRevision s2MigratedRevision() {

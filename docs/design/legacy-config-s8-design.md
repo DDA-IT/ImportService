@@ -1,8 +1,8 @@
 # Legacy-config S8 — maptabel, transformatieketen, Include/Exclude, PSIMPEXCL
 
-> **Status: VOORSTEL (2026-10-21), denker-zwaar; S8a, S8b, S8c en S8d gebouwd (2026-10-21, zie "Uitwerking S8a" in §2a,
-> "Uitwerking S8b" in §2b, "Uitwerking S8c" in §2c en "Uitwerking S8d" in §2d).** Verfijnt
-> `legacy-config-bundle-design.md` §8 rij S8 en `legacy-config-migratie-design.md` LM-2. S8e kan starten; S8f (V2 = A)
+> **Status: VOORSTEL (2026-10-21), denker-zwaar; S8a, S8b, S8c, S8d en S8e gebouwd (2026-10-21, zie "Uitwerking S8a" in
+> §2a, "Uitwerking S8b" in §2b, "Uitwerking S8c" in §2c, "Uitwerking S8d" in §2d en "Uitwerking S8e" in §2e).** Verfijnt
+> `legacy-config-bundle-design.md` §8 rij S8 en `legacy-config-migratie-design.md` LM-2. S8f (V2 = A)
 > en S8g (V1 = B) zijn beslist (beslissingslog 2026-10-21) (§5).
 > Bronnen: `LegacyConfigTranslator`, `FieldTransform`, `FieldValueMapper`, `MappingSettings`, `ImportMappingConfigFactory`,
 > `RecordFilterEvaluator`, `RevisionCopier`, `LegacyRevisionContent`, Liquibase 004; Legacy-vault `Prg_1170` r.370-480,
@@ -203,6 +203,34 @@ r.2582-2687, enkel als `NOT >SkipExcludes`, r.395), niet in `Prg_1171`.
 - Verdwijnen: `INCLUDE_FILTER_COMBINATION_UNSUPPORTED`, `INCLUDE_EXCLUDE_CODE_NOT_MIGRATED` (codes 2–6). Nieuw: WARNING
   `INCLUDE_EXCLUDE_SUBSTRING_NOT_MIGRATED`; filter op regel met vaste `Waarde` gemeld. Blijft: `INCLUDE_FILTER_WITHOUT_COLUMN`.
 
+**Uitwerking S8e (gebouwd 2026-10-21; bouwer-gemiddeld; geen Liquibase, geen schemawijziging).**
+- *Legacy geverifieerd* (ruwe bron `Prg_1170.xml` r.18681-18701, functie `Verwerken(>Include/Exclude, >Value, >SKIP)`, vault
+  `Prg_1170_Import_Art_Import_PSIMPORT.md` r.940-941 en r.974-983): `{0,101}` is de `>Value` (de MID van de kolom, Positie 0 -> 1,
+  Lengte 0 -> 100), `{564,8}` de vergelijkgegevens van de regel; de zes expressies staan zoals de tabel hierboven
+  (code 3: `InStr(v, d)=1`, code 4: `InStr(Flip(v), Flip(d))=1`, code 5: `InStr(Trim(v), Trim(d))=0`, code 6: `InStr(Trim(v),
+  Trim(d))>0 AND v<>''`); `SKIP` is de OR ervan. Alle operatoren (`BEGINS_WITH`, `ENDS_WITH`, `CONTAINS`, `NOT_EQUALS`,
+  `NOT_CONTAINS`) en alle drie de null-gedragingen bestonden al in `FilterOperator` en `RecordFilterEvaluator`: geen
+  domeinwijziging. `import_record_filter.operator`/`null_behaviour` hebben geen aanvullende checks buiten de bestaande enums.
+- *Vertaling* (`LegacyConfigTranslator.includeExcludeFilters`; alle rijen `caseSensitive=true`, `trim=true`,
+  `missing_column_behaviour=BLOCK`): 1 -> INCLUDE EQUALS (null `EXCLUDE`); 2 -> EXCLUDE EQUALS (`COMPARE_AS_EMPTY`); 3 -> EXCLUDE
+  BEGINS_WITH, 4 -> EXCLUDE ENDS_WITH (beide `COMPARE_AS_EMPTY`, WARNING `LEGACY_FILTER_PADDING_UNVERIFIED`: legacy vergelijkt
+  ongetrimd op een opgevuld Alpha-veld, wij trimmen beide kanten); 5 -> INCLUDE CONTAINS (null `EXCLUDE`); 6 -> EXCLUDE
+  CONTAINS (`COMPARE_AS_EMPTY`; de `v<>''`-bewaking volgt uit het vergelijken van `''` met een niet-lege vergelijkwaarde).
+  `PlannedFilter` kreeg een `nullBehaviour`; `LegacyConfigApplyService` geeft het door en `LegacyRevisionContent.ofPlanned`
+  hasht het (bestaande revisies hebben `EXCLUDE`: byte-identiek, letterlijke pre-S8e-hash in `LegacyRevisionContentParityTest`).
+- *EN tussen includes:* tellen de vertaalbare include-regels (codes 1 en 5) twee of meer, dan wordt elke include een
+  EXCLUDE `NOT_EQUALS` (code 1) of `NOT_CONTAINS` (code 5) met null `EXCLUDE`; bij één include blijft het de S2-rij. Een
+  include-regel die niet vertaald kon worden (zonder kolom, Positie/Lengte, lege waarde) telt niet mee. De volgorde van de
+  filterrijen is de regelvolgorde (veldnummer).
+- *Rapport:* `INCLUDE_FILTER_COMBINATION_UNSUPPORTED` (BLOCKING) en `INCLUDE_EXCLUDE_CODE_NOT_MIGRATED` voor codes 2-6
+  verdwijnen (de laatste blijft voor een onbekende code, ook >= 7). Nieuw: WARNING `INCLUDE_EXCLUDE_SUBSTRING_NOT_MIGRATED`
+  (Positie/Lengte op de regel; de filter wordt niet gemaakt, alle records blijven in scope zoals bij
+  `INCLUDE_FILTER_WITHOUT_COLUMN`), WARNING `INCLUDE_EXCLUDE_WITH_FIXED_VALUE` (de regel heeft een vaste `Waarde`: legacy
+  vergelijkt dan `''`, wij de bronkolom; de filter wordt wel gemaakt) en `LEGACY_FILTER_PADDING_UNVERIFIED`. Een blanco
+  vergelijkwaarde is nu `INCLUDE_FILTER_EMPTY_VALUE_NOT_MIGRATED` (was enkel een lege tekenreeks) voor alle codes.
+  `INCLUDE_FILTER_WITHOUT_COLUMN` blijft (nu met de code in de melding). De MIGRATED-regel `RECORD_FILTER` noemt uitkomst
+  en operator. Een tweede APPLY geeft `DEFINITION_UNCHANGED`.
+
 ### 2f. PSIMPEXCL (S8f, `025-record-filter-match-group.sql`, na V2)
 - Legacy (r.2640-2686): vijf exacte opzoekingen op de verwerkte ARIMP-waarden (leverancier/groep/referentie in hoofdletters,
   kortingscode niet; `''` = letterlijk leeg). Rij `(l,g,k,r)` sluit uit als: `l≠''`, g=k=r=`''` → leverancier=l;
@@ -239,7 +267,7 @@ Steeds: tweemaal dezelfde APPLY → `DEFINITION_UNCHANGED`.
 | S8b UPPER/SUBSTRING (**gebouwd 2026-10-21**) | Domain, Service | bouwer-gemiddeld | — | CALC 15 en Positie/Lengte op mapping-regels gemigreerd |
 | S8c keten + AFFIX (**gebouwd 2026-10-21**) | Liquibase 024, alle lagen | bouwer-zwaar | `SetupApiFlowTest`, `DeliveryScreeningFlowTest` | prefix+suffix+CALC 7 = legacy; lege invoer blijft leeg; grammaticafouten blokkeren in B' |
 | S8d MAP_CONTAINS (**gebouwd 2026-10-21**) | Service | bouwer-gemiddeld | — | eerste treffer per KEY-volgorde, hoofdletterongevoelig |
-| S8e Include/Exclude | Service | bouwer-gemiddeld | `RecordFilterEvaluatorTest` | codes 1–6; twee includes = EN |
+| S8e Include/Exclude (**gebouwd 2026-10-21**) | Service | bouwer-gemiddeld | `RecordFilterEvaluatorTest` | codes 1–6; twee includes = EN |
 | S8f PSIMPEXCL (na V2) | Liquibase 025, alle lagen | bouwer-zwaar | `RecordFilterEvaluatorTest`, `SetupApiFlowTest` | vijf vormen + dode rijen; `Skip_Excludes` |
 | S8g onMiss (na V1) | Service, catalogus | bouwer-gemiddeld | — | volgens V1 |
 

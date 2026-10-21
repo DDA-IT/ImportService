@@ -1,7 +1,6 @@
 package be.dda.catalogimport.service;
 
 import be.dda.catalogimport.domain.Criticality;
-import be.dda.catalogimport.domain.FilterNullBehaviour;
 import be.dda.catalogimport.domain.FilterStage;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldMapping;
@@ -80,7 +79,7 @@ final class LegacyRevisionContent {
         planned.filters().stream().sorted(Comparator.comparingInt(PlannedFilter::sequence)).forEach(filter ->
                 parts.addAll(filter(filter.sequence(), FilterStage.SOURCE_FIELD.name(), filter.sourceReference(),
                         filter.operator().name(), filter.compareValue(), filter.outcome().name(),
-                        filter.caseSensitive(), true, FilterNullBehaviour.EXCLUDE.name(),
+                        filter.caseSensitive(), true, filter.nullBehaviour().name(),
                         MissingColumnBehaviour.BLOCK.name())));
         return RevisionConfigHashes.hash(LAYER, parts.toArray(String[]::new));
     }

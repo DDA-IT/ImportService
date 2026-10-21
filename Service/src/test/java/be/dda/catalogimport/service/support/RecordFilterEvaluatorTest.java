@@ -203,6 +203,74 @@ class RecordFilterEvaluatorTest {
         assertThat(evaluate(row("NLNL", "EOL"), exclude).inScope()).isFalse();
     }
 
+    // --- S8e: de Include/Exclude-codes 1-6 van legacy (Prg_1170 r.18681-18701) ---------------------
+
+    /**
+     * Elke code zoals {@code LegacyConfigTranslator} ze vertaalt (hoofdlettergevoelig, getrimd): per voorbeeldwaarde het
+     * legacy-resultaat ({@code true} = legacy slaat de waarde NIET over, dus in scope). De vergelijkwaarde is {@code BE}.
+     */
+    @Test
+    void theMigratedLegacyCodesGiveTheLegacyResultPerExampleValue() {
+        String[] values = {"BE", "BENL", "NLBE", "NL", "XBEX", "be", "", "  BE  "};
+        // Legacy-uitkomst per waarde (zelfde volgorde als values), na Trim waar legacy trimt.
+        boolean[] code1 = {true, false, false, false, false, false, false, true};     // Trim(v) = Trim(d)
+        boolean[] code2 = {false, true, true, true, true, true, true, false};         // niet Trim(v) = Trim(d)
+        boolean[] code3 = {false, false, true, true, true, true, true, false};        // niet begint met d
+        boolean[] code4 = {false, true, false, true, true, true, true, false};        // niet eindigt op d
+        boolean[] code5 = {true, true, true, false, true, false, false, true};        // v bevat d
+        boolean[] code6 = {false, false, false, true, false, true, true, false};      // niet (bevat d en v<>'')
+        for (int i = 0; i < values.length; i++) {
+            String value = values[i];
+            assertThat(migrated(FilterOperator.EQUALS, FilterOutcome.INCLUDE, FilterNullBehaviour.EXCLUDE, value))
+                    .as("code 1 for '%s'", value).isEqualTo(code1[i]);
+            assertThat(migrated(FilterOperator.EQUALS, FilterOutcome.EXCLUDE, FilterNullBehaviour.COMPARE_AS_EMPTY, value))
+                    .as("code 2 for '%s'", value).isEqualTo(code2[i]);
+            assertThat(migrated(FilterOperator.BEGINS_WITH, FilterOutcome.EXCLUDE, FilterNullBehaviour.COMPARE_AS_EMPTY,
+                    value)).as("code 3 for '%s'", value).isEqualTo(code3[i]);
+            assertThat(migrated(FilterOperator.ENDS_WITH, FilterOutcome.EXCLUDE, FilterNullBehaviour.COMPARE_AS_EMPTY,
+                    value)).as("code 4 for '%s'", value).isEqualTo(code4[i]);
+            assertThat(migrated(FilterOperator.CONTAINS, FilterOutcome.INCLUDE, FilterNullBehaviour.EXCLUDE, value))
+                    .as("code 5 for '%s'", value).isEqualTo(code5[i]);
+            assertThat(migrated(FilterOperator.CONTAINS, FilterOutcome.EXCLUDE, FilterNullBehaviour.COMPARE_AS_EMPTY,
+                    value)).as("code 6 for '%s'", value).isEqualTo(code6[i]);
+        }
+    }
+
+    /**
+     * Twee includes = EN (De Morgan): elke include wordt een EXCLUDE NOT_EQUALS/NOT_CONTAINS met null {@code EXCLUDE}. In
+     * scope enkel als beide includes gelden, een lege waarde voldoet aan geen enkele; één include blijft een include.
+     */
+    @Test
+    void twoIncludesBecomeAnAndViaTheNegatedExcludes() {
+        RecordFilter culture = filter(1, CULTURE, FilterOperator.NOT_EQUALS, "BENL", FilterOutcome.EXCLUDE, true, true,
+                FilterNullBehaviour.EXCLUDE, MissingColumnBehaviour.BLOCK);
+        RecordFilter status = filter(2, STATUS, FilterOperator.NOT_CONTAINS, "ACT", FilterOutcome.EXCLUDE, true, true,
+                FilterNullBehaviour.EXCLUDE, MissingColumnBehaviour.BLOCK);
+
+        assertThat(evaluate(row("BENL", "ACTIVE"), culture, status).inScope()).isTrue();
+        assertThat(evaluate(row("BEFR", "ACTIVE"), culture, status).inScope()).isFalse();
+        assertThat(evaluate(row("BENL", "EOL"), culture, status).inScope()).isFalse();
+        assertThat(evaluate(row("benl", "ACTIVE"), culture, status).inScope()).isFalse();
+        assertThat(evaluate(row("", "ACTIVE"), culture, status).inScope()).isFalse();
+        assertThat(evaluate(row("BENL", ""), culture, status).inScope()).isFalse();
+        // Dezelfde twee regels als OF-includes zouden BEFR/ACTIVE wél toelaten: dat is het verschil met vóór S8e.
+        RecordFilter cultureInclude = filter(1, CULTURE, FilterOperator.EQUALS, "BENL", FilterOutcome.INCLUDE, true,
+                true, FilterNullBehaviour.EXCLUDE, MissingColumnBehaviour.BLOCK);
+        RecordFilter statusInclude = filter(2, STATUS, FilterOperator.CONTAINS, "ACT", FilterOutcome.INCLUDE, true,
+                true, FilterNullBehaviour.EXCLUDE, MissingColumnBehaviour.BLOCK);
+        assertThat(evaluate(row("BEFR", "ACTIVE"), cultureInclude, statusInclude).inScope()).isTrue();
+        // Eén include blijft ongewijzigd.
+        assertThat(evaluate(row("BENL", "EOL"), cultureInclude).inScope()).isTrue();
+        assertThat(evaluate(row("BEFR", "EOL"), cultureInclude).inScope()).isFalse();
+    }
+
+    /** Het migratie-filter op de CULTURE-kolom met vergelijkwaarde {@code BE}: {@code true} = in scope. */
+    private static boolean migrated(FilterOperator operator, FilterOutcome outcome, FilterNullBehaviour nullBehaviour,
+                                    String value) {
+        return evaluate(row(value), filter(1, CULTURE, operator, "BE", outcome, true, true, nullBehaviour,
+                MissingColumnBehaviour.BLOCK)).inScope();
+    }
+
     // --- Helpers ----------------------------------------------------------------------------------
 
     private static boolean includes(FilterOperator operator, String compareValue, String sourceValue) {

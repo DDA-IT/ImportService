@@ -1455,7 +1455,7 @@ public class LegacyConfigApplyService {
         for (PlannedFilter filter : planned.filters()) {
             setup.addFilter(revisionId, new SetupService.CreateFilterCommand(filter.sequence(),
                     filter.sourceReference(), filter.operator(), filter.compareValue(), filter.outcome(),
-                    filter.caseSensitive(), null, null, null, null), actor);
+                    filter.caseSensitive(), null, filter.nullBehaviour(), null, null), actor);
         }
     }
 

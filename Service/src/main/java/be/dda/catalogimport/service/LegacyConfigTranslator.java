@@ -7,6 +7,7 @@ import static be.dda.catalogimport.service.LegacyConfigReport.WARNING;
 
 import be.dda.catalogimport.domain.FieldTransformKind;
 import be.dda.catalogimport.domain.FieldValueKind;
+import be.dda.catalogimport.domain.FilterNullBehaviour;
 import be.dda.catalogimport.domain.FilterOperator;
 import be.dda.catalogimport.domain.FilterOutcome;
 import be.dda.catalogimport.domain.IdentityProfileKind;
@@ -136,7 +137,14 @@ final class LegacyConfigTranslator {
     static final String INCLUDE_FILTER_EMPTY_VALUE_NOT_MIGRATED = "INCLUDE_FILTER_EMPTY_VALUE_NOT_MIGRATED";
     static final String INCLUDE_FILTER_WITHOUT_COLUMN = "INCLUDE_FILTER_WITHOUT_COLUMN";
     static final String INCLUDE_EXCLUDE_CODE_NOT_MIGRATED = "INCLUDE_EXCLUDE_CODE_NOT_MIGRATED";
+    /** Sinds S8e niet meer gezet (twee includes = EN via De Morgan); de constante blijft voor oudere rapporten. */
     static final String INCLUDE_FILTER_COMBINATION_UNSUPPORTED = "INCLUDE_FILTER_COMBINATION_UNSUPPORTED";
+    /** S8e: Positie/Lengte op een Include/Exclude-regel (legacy neemt de MID van de waarde); de filter wordt niet gemaakt. */
+    static final String INCLUDE_EXCLUDE_SUBSTRING_NOT_MIGRATED = "INCLUDE_EXCLUDE_SUBSTRING_NOT_MIGRATED";
+    /** S8e: een Include/Exclude-regel met vaste Waarde; legacy vergelijkt dan {@code ''}, wij de bronkolom. */
+    static final String INCLUDE_EXCLUDE_WITH_FIXED_VALUE = "INCLUDE_EXCLUDE_WITH_FIXED_VALUE";
+    /** S8e: codes 3 en 4 vergelijken in legacy ongetrimd op een opgevuld Alpha-veld; de padding is niet geverifieerd. */
+    static final String LEGACY_FILTER_PADDING_UNVERIFIED = "LEGACY_FILTER_PADDING_UNVERIFIED";
     static final String LEGACY_EXCLUDES_NOT_MIGRATED = "LEGACY_EXCLUDES_NOT_MIGRATED";
 
     // --- Legacy-gegevens ------------------------------------------------------------------------------------------
@@ -229,7 +237,7 @@ final class LegacyConfigTranslator {
 
     /** Eén gepland recordfilter, met precies wat {@code SetupService.addFilter} krijgt. */
     record PlannedFilter(int sequence, String sourceReference, FilterOperator operator, String compareValue,
-                         FilterOutcome outcome, boolean caseSensitive) {
+                         FilterOutcome outcome, boolean caseSensitive, FilterNullBehaviour nullBehaviour) {
     }
 
     /**
@@ -690,18 +698,18 @@ final class LegacyConfigTranslator {
 
         List<PlannedMapping> mappings = new ArrayList<>();
         List<PlannedFilter> filters = new ArrayList<>();
-        List<JsonNode> includeLines = new ArrayList<>();
+        List<JsonNode> filterLines = new ArrayList<>();
         for (Map.Entry<Integer, List<JsonNode>> entry : byNumber.entrySet()) {
             int number = entry.getKey();
             for (JsonNode line : entry.getValue()) {
                 ignoredAttributes(number, line);
                 String includeExclude = line.path("includeExclude").asText("");
-                if ("1".equals(includeExclude)) {
-                    includeLines.add(line);
+                if (FILTER_CODES.contains(includeExclude)) {
+                    filterLines.add(line);
                 } else if (!includeExclude.isEmpty() && !"0".equals(includeExclude)) {
                     add("PSIMPDEF#" + number, WARNING, INCLUDE_EXCLUDE_CODE_NOT_MIGRATED, null,
-                            "Include/Exclude code " + includeExclude + " is not migrated; records it filtered in "
-                                    + "legacy are not filtered");
+                            "Include/Exclude code " + includeExclude + " is unknown (legacy knows 1-6) and is not "
+                                    + "migrated; records it filtered in legacy are not filtered");
                 }
                 if (identityOrRecordLine(number)) {
                     continue;
@@ -721,17 +729,7 @@ final class LegacyConfigTranslator {
                 }
             }
         }
-        if (includeLines.size() > 1) {
-            add("PSIMPDEF:includeExclude", BLOCKING, INCLUDE_FILTER_COMBINATION_UNSUPPORTED, null,
-                    includeLines.size() + " lines use Include/Exclude 1; legacy requires each of them to match, "
-                            + "CatalogImport include filters match when any one does");
-            revisionBlocked = true;
-        } else if (includeLines.size() == 1) {
-            PlannedFilter filter = includeFilter(includeLines.get(0));
-            if (filter != null) {
-                filters.add(filter);
-            }
-        }
+        filters.addAll(includeExcludeFilters(filterLines));
         mapsUsage(definition, mappings);
 
         if (delimiter == null || charset == null || skipHeader == null || profile == null || supplier == null
@@ -1152,24 +1150,103 @@ final class LegacyConfigTranslator {
         }
     }
 
-    private PlannedFilter includeFilter(JsonNode line) {
+    /** Include/Exclude-codes van legacy ({@code Prg_1170} r.18681-18701, expressies 119-124). */
+    private static final Set<String> FILTER_CODES = Set.of("1", "2", "3", "4", "5", "6");
+
+    /** Eén vertaalbare Include/Exclude-regel (S8e): code, bronkolom en vergelijkwaarde. */
+    private record FilterDraft(int number, String code, int column, String data) {
+        boolean include() {
+            return "1".equals(code) || "5".equals(code);
+        }
+    }
+
+    /**
+     * Include/Exclude 1-6 (S8e, design par. 2e). Legacy zet per regel {@code Verwerken=FALSE} zodra de code de waarde
+     * overslaat ({@code Prg_1170} r.940-941), dus elke regel sluit zelfstandig uit en meerdere includes zijn een EN.
+     * Bij één include blijft de include-rij ({@code INCLUDE EQUALS}/{@code CONTAINS}, S2); bij twee of meer wordt elke
+     * include via De Morgan een {@code EXCLUDE NOT_EQUALS}/{@code NOT_CONTAINS} met null-gedrag {@code EXCLUDE}
+     * (een lege waarde voldoet nooit aan een include). De rijen zijn hoofdlettergevoelig zoals Magic.
+     */
+    private List<PlannedFilter> includeExcludeFilters(List<JsonNode> lines) {
+        List<FilterDraft> drafts = new ArrayList<>();
+        for (JsonNode line : lines) {
+            FilterDraft draft = filterDraft(line);
+            if (draft != null) {
+                drafts.add(draft);
+            }
+        }
+        boolean combined = drafts.stream().filter(FilterDraft::include).count() > 1;
+        List<PlannedFilter> planned = new ArrayList<>();
+        for (FilterDraft draft : drafts) {
+            String element = "PSIMPDEF#" + draft.number();
+            String column = String.valueOf(draft.column());
+            int sequence = planned.size() + 1;
+            PlannedFilter filter = switch (draft.code()) {
+                case "1" -> combined
+                        ? new PlannedFilter(sequence, column, FilterOperator.NOT_EQUALS, draft.data(),
+                                FilterOutcome.EXCLUDE, true, FilterNullBehaviour.EXCLUDE)
+                        : new PlannedFilter(sequence, column, FilterOperator.EQUALS, draft.data(),
+                                FilterOutcome.INCLUDE, true, FilterNullBehaviour.EXCLUDE);
+                case "5" -> combined
+                        ? new PlannedFilter(sequence, column, FilterOperator.NOT_CONTAINS, draft.data(),
+                                FilterOutcome.EXCLUDE, true, FilterNullBehaviour.EXCLUDE)
+                        : new PlannedFilter(sequence, column, FilterOperator.CONTAINS, draft.data(),
+                                FilterOutcome.INCLUDE, true, FilterNullBehaviour.EXCLUDE);
+                case "2" -> new PlannedFilter(sequence, column, FilterOperator.EQUALS, draft.data(),
+                        FilterOutcome.EXCLUDE, true, FilterNullBehaviour.COMPARE_AS_EMPTY);
+                case "3" -> new PlannedFilter(sequence, column, FilterOperator.BEGINS_WITH, draft.data(),
+                        FilterOutcome.EXCLUDE, true, FilterNullBehaviour.COMPARE_AS_EMPTY);
+                case "4" -> new PlannedFilter(sequence, column, FilterOperator.ENDS_WITH, draft.data(),
+                        FilterOutcome.EXCLUDE, true, FilterNullBehaviour.COMPARE_AS_EMPTY);
+                default -> new PlannedFilter(sequence, column, FilterOperator.CONTAINS, draft.data(),
+                        FilterOutcome.EXCLUDE, true, FilterNullBehaviour.COMPARE_AS_EMPTY);
+            };
+            add(element, MIGRATED, "RECORD_FILTER", "import_record_filter " + filter.outcome() + " "
+                    + filter.operator() + " column " + column, combined && draft.include()
+                            ? "Include/Exclude " + draft.code() + " with several include lines: every line must "
+                                    + "match (AND), so each is stored as the negated EXCLUDE"
+                            : null);
+            if ("3".equals(draft.code()) || "4".equals(draft.code())) {
+                add(element, WARNING, LEGACY_FILTER_PADDING_UNVERIFIED, null, "Include/Exclude " + draft.code()
+                        + " on field " + draft.number() + " compares untrimmed in legacy on a padded Alpha value; "
+                        + "CatalogImport trims both sides, so a value with leading spaces may be filtered "
+                        + "differently");
+            }
+            planned.add(filter);
+        }
+        return planned;
+    }
+
+    /** @return {@code null} als de regel niet te vertalen is (er is dan een waarschuwing en de filter ontbreekt) */
+    private FilterDraft filterDraft(JsonNode line) {
         int number = line.path("number").asInt();
         String element = "PSIMPDEF#" + number;
+        String code = line.path("includeExclude").asText("");
         String data = line.path("includeExcludeData").asText("");
         int column = line.path("column").asInt();
         if (column <= 0) {
-            add(element, WARNING, INCLUDE_FILTER_WITHOUT_COLUMN, null, "Include/Exclude 1 on field " + number
-                    + " has no source column; the filter is not created and every record is in scope");
+            add(element, WARNING, INCLUDE_FILTER_WITHOUT_COLUMN, null, "Include/Exclude " + code + " on field "
+                    + number + " has no source column; the filter is not created and every record is in scope");
             return null;
         }
-        if (data.isEmpty() || data.length() > MAX_COMPARE_VALUE) {
-            add(element, WARNING, INCLUDE_FILTER_EMPTY_VALUE_NOT_MIGRATED, null, "Include/Exclude 1 on field "
-                    + number + " has no usable compare value; the filter is not created and every record is in "
-                    + "scope");
+        if (hasSubstring(line)) {
+            add(element, WARNING, INCLUDE_EXCLUDE_SUBSTRING_NOT_MIGRATED, null, "Include/Exclude " + code
+                    + " on field " + number + " compares a part (Position/Length) of the value; that is not "
+                    + "supported, the filter is not created and every record is in scope");
             return null;
         }
-        add(element, MIGRATED, "RECORD_FILTER", "import_record_filter INCLUDE EQUALS column " + column, null);
-        return new PlannedFilter(1, String.valueOf(column), FilterOperator.EQUALS, data, FilterOutcome.INCLUDE, true);
+        if (data.isBlank() || data.length() > MAX_COMPARE_VALUE) {
+            add(element, WARNING, INCLUDE_FILTER_EMPTY_VALUE_NOT_MIGRATED, null, "Include/Exclude " + code
+                    + " on field " + number + " has no usable compare value; the filter is not created and every "
+                    + "record is in scope");
+            return null;
+        }
+        if (!line.path("value").asText("").isEmpty()) {
+            add(element, WARNING, INCLUDE_EXCLUDE_WITH_FIXED_VALUE, null, "field " + number + " has a fixed value "
+                    + "and an Include/Exclude; legacy then compares an empty value, CatalogImport compares source "
+                    + "column " + column);
+        }
+        return new FilterDraft(number, code, column, data);
     }
 
     private void ignoredAttributes(int number, JsonNode line) {

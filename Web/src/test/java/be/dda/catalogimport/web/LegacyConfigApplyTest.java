@@ -807,6 +807,126 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(steps(revisionId, "VKP5_PCT")).containsExactly("1:AFFIX:prefix=P-");
     }
 
+    /**
+     * S8e: de codes 2-6 worden recordfilters (legacy {@code Prg_1170} r.18681-18701); één include (code 1) blijft de
+     * S2-include. Codes 3 en 4 melden de padding; {@code INCLUDE_EXCLUDE_CODE_NOT_MIGRATED} verdwijnt voor 2-6. Een
+     * tweede APPLY van dezelfde inhoud is {@code DEFINITION_UNCHANGED}.
+     */
+    @Test
+    void theIncludeExcludeCodesTwoToSixAreMigratedAndASecondApplyIsUnchanged() throws Exception {
+        ObjectNode bundle = applicable();
+        filterLine(line(bundle, 9), "2", "ACME");      // kolom 3
+        filterLine(line(bundle, 10), "3", "GR");       // kolom 4
+        filterLine(line(bundle, 11), "4", "-X");       // kolom 1
+        filterLine(line(bundle, 23), "6", "KC");       // kolom 5
+        filterLine(line(bundle, 26), "1", "9,50");     // kolom 7
+        line(bundle, 37).put("includeExclude", "0");   // de golden heeft hier al een include (code 1, ACME)
+        long id = receive(bundle);
+
+        String preview = previewBody(id, "libraryCode", "LIB-S8E");
+        assertThat(blockingCodes(preview)).isEmpty();
+        assertThat(preview).doesNotContain("INCLUDE_EXCLUDE_CODE_NOT_MIGRATED")
+                .doesNotContain("INCLUDE_FILTER_COMBINATION_UNSUPPORTED");
+        assertThat(codes(preview, "WARNING").stream().filter("LEGACY_FILTER_PADDING_UNVERIFIED"::equals).count())
+                .isEqualTo(2);
+        assertThat((List<String>) JsonPath.read(preview, "$.report.items[?(@.code == 'RECORD_FILTER')].target"))
+                .containsExactly("import_record_filter EXCLUDE EQUALS column 3",
+                        "import_record_filter EXCLUDE BEGINS_WITH column 4",
+                        "import_record_filter EXCLUDE ENDS_WITH column 1",
+                        "import_record_filter EXCLUDE CONTAINS column 5",
+                        "import_record_filter INCLUDE EQUALS column 7");
+        apply(id, JsonPath.read(preview, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8E")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.configurationFindings").isEmpty());
+
+        long definitionId = definitionId(supplier(bundle), "VROOAM2");
+        long revisionId = ((Number) revisionRows(definitionId).get(0).get("id")).longValue();
+        assertThat(filters(revisionId)).containsExactly(
+                "1:EXCLUDE:EQUALS:3:ACME:COMPARE_AS_EMPTY:true:true",
+                "2:EXCLUDE:BEGINS_WITH:4:GR:COMPARE_AS_EMPTY:true:true",
+                "3:EXCLUDE:ENDS_WITH:1:-X:COMPARE_AS_EMPTY:true:true",
+                "4:EXCLUDE:CONTAINS:5:KC:COMPARE_AS_EMPTY:true:true",
+                "5:INCLUDE:EQUALS:7:9,50:EXCLUDE:true:true");
+
+        ((ObjectNode) bundle.get("interface").get("header")).put("info", "tweede export s8e");
+        long second = receive(bundle);
+        String again = previewBody(second, "libraryCode", "LIB-S8E");
+        assertThat(codes(again, "MIGRATED")).contains("DEFINITION_UNCHANGED");
+        apply(second, JsonPath.read(again, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8E")
+                .andExpect(status().isOk());
+        assertThat(revisionRows(definitionId)).hasSize(1);
+        assertThat(filters(revisionId)).hasSize(5);
+    }
+
+    /**
+     * S8e: twee of meer include-regels (codes 1 en 5) zijn een EN: elke include wordt via De Morgan een EXCLUDE
+     * {@code NOT_EQUALS}/{@code NOT_CONTAINS} met null-gedrag {@code EXCLUDE}; {@code INCLUDE_FILTER_COMBINATION_UNSUPPORTED}
+     * blokkeert niet meer. Een tweede APPLY is {@code DEFINITION_UNCHANGED}.
+     */
+    @Test
+    void twoIncludeLinesBecomeAnAndOfNegatedExcludes() throws Exception {
+        ObjectNode bundle = applicable();
+        filterLine(line(bundle, 9), "1", "ACME");
+        filterLine(line(bundle, 26), "5", "9");
+        filterLine(line(bundle, 23), "2", "KC");
+        // De golden heeft op veld 37 al een include (code 1, ACME, kolom 9): dat is hier de derde include.
+        long id = receive(bundle);
+
+        String preview = previewBody(id, "libraryCode", "LIB-S8E2");
+        assertThat(blockingCodes(preview)).isEmpty();
+        assertThat(preview).doesNotContain("INCLUDE_FILTER_COMBINATION_UNSUPPORTED");
+        apply(id, JsonPath.read(preview, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8E2")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.configurationFindings").isEmpty());
+
+        long definitionId = definitionId(supplier(bundle), "VROOAM2");
+        long revisionId = ((Number) revisionRows(definitionId).get(0).get("id")).longValue();
+        assertThat(filters(revisionId)).containsExactly(
+                "1:EXCLUDE:NOT_EQUALS:3:ACME:EXCLUDE:true:true",
+                "2:EXCLUDE:EQUALS:5:KC:COMPARE_AS_EMPTY:true:true",
+                "3:EXCLUDE:NOT_CONTAINS:7:9:EXCLUDE:true:true",
+                "4:EXCLUDE:NOT_EQUALS:9:ACME:EXCLUDE:true:true");
+
+        ((ObjectNode) bundle.get("interface").get("header")).put("info", "tweede export s8e2");
+        long second = receive(bundle);
+        String again = previewBody(second, "libraryCode", "LIB-S8E2");
+        assertThat(codes(again, "MIGRATED")).contains("DEFINITION_UNCHANGED");
+        apply(second, JsonPath.read(again, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8E2")
+                .andExpect(status().isOk());
+        assertThat(revisionRows(definitionId)).hasSize(1);
+    }
+
+    /**
+     * S8e: Positie/Lengte op een filterregel is niet te migreren (WARNING, geen filter), een filterregel met vaste
+     * {@code Waarde} wordt gemeld (legacy vergelijkt dan {@code ''}), een regel zonder kolom blijft
+     * {@code INCLUDE_FILTER_WITHOUT_COLUMN} en een onbekende code (7) blijft niet gemigreerd. Het ene include dat wel
+     * overblijft blijft een gewone include.
+     */
+    @Test
+    void unsupportedFilterLinesAreReportedAndNeverCreatedSilently() throws Exception {
+        ObjectNode bundle = applicable();
+        filterLine(line(bundle, 33), "1", "ACME").put("position", 2).put("length", 3);  // substring
+        filterLine(line(bundle, 26), "1", "9,50");                                      // blijft
+        filterLine(line(bundle, 37), "2", "X").put("value", "12,5");                    // vaste waarde
+        ObjectNode withoutColumn = line(bundle, 37).deepCopy();                         // zonder kolom
+        withoutColumn.put("number", 40).put("column", 0).put("value", "");
+        filterLine(withoutColumn, "5", "Y");
+        ((com.fasterxml.jackson.databind.node.ArrayNode) bundle.get("definition").get("lines")).add(withoutColumn);
+        filterLine(line(bundle, 23), "7", "KC");                                        // onbekende code
+        long id = receive(bundle);
+
+        String preview = previewBody(id, "libraryCode", "LIB-S8E3");
+        assertThat(blockingCodes(preview)).isEmpty();
+        assertThat(codes(preview, "WARNING")).contains("INCLUDE_EXCLUDE_SUBSTRING_NOT_MIGRATED",
+                "INCLUDE_EXCLUDE_WITH_FIXED_VALUE", "INCLUDE_FILTER_WITHOUT_COLUMN", "INCLUDE_EXCLUDE_CODE_NOT_MIGRATED");
+        apply(id, JsonPath.read(preview, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8E3")
+                .andExpect(status().isOk());
+
+        long revisionId = ((Number) revisionRows(definitionId(supplier(bundle), "VROOAM2")).get(0).get("id"))
+                .longValue();
+        assertThat(filters(revisionId)).containsExactly(
+                "1:INCLUDE:EQUALS:7:9,50:EXCLUDE:true:true",
+                "2:EXCLUDE:EQUALS:9:X:COMPARE_AS_EMPTY:true:true");
+    }
+
     // --- Hulp -----------------------------------------------------------------------------------------------------
 
     /** S8b: soort en configuratie van één mapping als {@code SOORT|config}. */
@@ -830,6 +950,19 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
                 + "from import_field_value_map v join import_field_mapping m on m.id = v.mapping_id "
                 + "where m.definition_revision_id = ? and m.target_field_code = ? order by v.sequence_number",
                 String.class, revisionId, targetFieldCode);
+    }
+
+    /** S8e: zet Include/Exclude-code en -gegevens op een regel van de bundel. */
+    private static ObjectNode filterLine(ObjectNode line, String code, String data) {
+        return line.put("includeExclude", code).put("includeExcludeData", data);
+    }
+
+    /** S8e: de filters van een revisie als {@code volgnr:uitkomst:operator:kolom:waarde:null-gedrag:case:trim}. */
+    private List<String> filters(long revisionId) {
+        return jdbc.queryForList("select sequence_number || ':' || outcome || ':' || operator || ':' || "
+                + "source_reference || ':' || compare_value || ':' || null_behaviour || ':' || case_sensitive || ':' "
+                + "|| trim_before_compare from import_record_filter where definition_revision_id = ? "
+                + "order by sequence_number", String.class, revisionId);
     }
 
     private static List<Object> concurrently(int count, Callable<Object> task) throws Exception {
