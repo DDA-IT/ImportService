@@ -211,8 +211,13 @@ rollback enkel zolang geen rij een vaste waarde heeft.
 - Bewaard wordt de businesscode zoals gegeven (setup) of zoals legacy ze heeft (migratie, bv. `grp-a`); de
   hoofdletteromzetting gebeurt bij de screening. Geen Prodis-id, geen cross-DB-FK.
 
-**023-field-value-map** (S8; was 022) `import_field_value_map`: `mapping_id` FK, `sequence`, `source_value` varchar(50),
-`target_value` varchar(50); uniek `(mapping_id, source_value)`; vervangt `transform_config varchar(1000)` voor MAP.
+**023-field-value-map.sql** (S8a; was 022; **gebouwd 2026-10-21**, `legacy-config-s8-design.md` par. 2a) changeset **023-1**
+`import_field_value_map`: id; `mapping_id` FK → `import_field_mapping` (geen cascade: `SetupService.deleteMapping` verwijdert
+eerst de rijen); `sequence_number` int > 0; `source_value` varchar(50) not null en niet blanco; `target_value` varchar(50) not
+null (`''` toegelaten); `created_at`/`created_by`/`created_by_subject` met koppelcheck zoals 007-4; uniek
+`(mapping_id, source_value)` en `(mapping_id, sequence_number)`. Additief: **naast** `values=` in `transform_config` (dat blijft
+werken), niet in de plaats ervan; een MAP gebruikt precies één van beide (`CONFIG_TRANSFORM_INVALID` anders). De
+hoofdlettergevoeligheid blijft de instelling `caseSensitive` van de mapping.
 
 ## 5. Vertaalregels bundel → CatalogImport
 
@@ -234,7 +239,7 @@ rollback enkel zolang geen rij een vaste waarde heeft.
 | 26 / 4 | `record_base_price_field` / `record_description_field`; prefix/suffix/CALC op 26 → `BASE_PRICE_TRANSFORM_UNSUPPORTED` (blokkeert) | B |
 | 33-37, 40, 43, 12, 219, 221 | mapping met de catalogcode uit `legacy-config-migratie-design.md` §1; één prefix, één suffix of CALC 1-4/A; combinatie → `TRANSFORM_CHAIN_UNSUPPORTED` (rapport, mapping vervalt) | B |
 | `position`/`length` ≠ 0, CALC 8/11/12/13/14/15 | rapport per regel (`LEGACY_CALC_<n>_NOT_MIGRATED`) | N / U later |
-| CALC 7 + maps | v1: MAP als het in 1000 tekens past; altijd WARNING `MAP_MISS_NO_FALLBACK` | B / U (S8) |
+| CALC 7 + maps | S8a: MAP met `transform_config` `caseSensitive=true` (plus de notatie) en de vertaalrijen in `import_field_value_map`: vereniging van alle NUMMERs, volgorde (NUMMER, KEY), sleutel en waarde getrimd, lege sleutel valt weg, laagste NUMMER wint (WARNING `MAP_KEY_AMBIGUOUS`); sleutel of waarde > 50 tekens → WARNING `MAP_ENTRY_TOO_LONG` (nooit afgekapt, mapping vervalt); geen sleutels → `MAP_EMPTY`; altijd WARNING `MAP_MISS_NO_FALLBACK` (tot V1). `MAP_TOO_LARGE` en `TRANSFORM_VALUE_NOT_EXPRESSIBLE` (maps) verdwijnen. Sjabloon en gedeelde definitie (S7) dragen dezelfde rijen (`RevisionCopier.copyMappingChildren`) | B (S8a gebouwd) |
 | Include/Exclude 1 | `import_record_filter` INCLUDE/EQUALS; andere codes in rapport | B |
 | `excludes` | rapport (S8) | U |
 | INHEAD-planning | rapport; taak `MANUAL` "Legacy <interface>" | N |
@@ -436,7 +441,7 @@ doorgaan na fout), canary-test (secret `canary-…` nergens in logs, `sync-error
 | S5 | ImportService: Web-config, Dao, Service, Web | Alleen-lezen Prodis-bron; validatie leverancier/bibliotheek in PREVIEW/APPLY; automatische `libraryCode`; keuze-endpoints (naar voren gehaald uit S6) | bouwer-zwaar | `…-Dtest=ProdisReferenceDaoTest,ProdisReadOnlyDatabaseConfigurationTest,ProdisReferenceUnavailableTest,ProdisReferenceHttpTest,LegacyConfigProdisReferenceTest,LegacyConfigPreviewTest,LegacyConfigApplyTest,PermissionCoverageTest` | Contexten starten zonder config; 503 bij onbereikbaar |
 | S6 (na M3; gebouwd 2026-10-21) | ImportService: Liquibase 022, alle lagen | Vaste leverancier/groep + `identity_uppercase`; migratie gebruikt de Prodis-bron (S5); zie §5 "Uitwerking S6" | bouwer-zwaar | `mvn -pl Service -am test -Dtest='be.dda.catalogimport.service.**' -Dsurefire.failIfNoSpecifiedTests=false` (o.a. `IdentityFixedValueTest`, `RevisionConfigHashesParityTest`, `LegacyRevisionContentParityTest`, `ConfigFactoryParityTest`, `RevisionFieldRulesTest`) + `mvn -pl Web -am test -Dtest=IdentityFixedValueHttpTest,IdentityFixedValueNotConfiguredHttpTest,LegacyConfigPreviewTest,LegacyConfigApplyTest,LegacyConfigProdisReferenceTest -Dsurefire.failIfNoSpecifiedTests=false` + `scripts/test/run-full-tests.ps1 -Tests ScreeningSchemaTest,SetupApiFlowTest,DeliveryScreeningFlowTest,...` (vaste codes: schoon schema) | Bestaande hashes byte-identiek; uppercase = PSARF-identiteit (9-11; kortingscode ongewijzigd) |
 | S7 (na M1; gebouwd 2026-10-21) | ImportService: Domain, Dao, Service (geen Liquibase) | Altijd sjabloon + gedeelde definitie (A2), dedup per (leverancier, hash of code), `sharedWith`, `planned.template`, `SHARED_DEFINITION_DIVERGED`, `TEMPLATE_NOT_UPDATED`, scopeconflict in de preview; zie §5 "Uitwerking S7" | bouwer-zwaar | `mvn -pl Web -am test -Dtest=LegacyConfigSharedDefinitionTest,TemplateGuardTest,TemplateReuseTest,LegacyConfigApplyTest,LegacyConfigPreviewTest,LegacyConfigProdisReferenceTest,TemplateMaterialisationTest -Dsurefire.failIfNoSpecifiedTests=false` | Drie identieke interfaces → één sjabloon + één gedeelde definitie + drie koppelingen/taken, ongeacht volgorde; guard 006-5 intact; wizard-hergebruik werkt |
-| S8 | ImportService | 023 maptabel, PSIMPEXCL, transformatieketen (LM-2) | bouwer-zwaar | gericht per klasse | — |
+| S8 | ImportService | 023 maptabel, PSIMPEXCL, transformatieketen (LM-2); opgeknipt in S8a–S8g (`legacy-config-s8-design.md` par. 4; S8a gebouwd 2026-10-21) | bouwer-zwaar | gericht per klasse | — |
 | S9 | Frontend | Ontvangsten, rapport, APPLY-dialoog | bouwer-gemiddeld | `npx vitest run src/test/LegacyConfig*` | — |
 
 **Parallel:** S3 kan technisch naast S2 (andere repo, contract vast in S0), maar AGENT.md laat zware taken niet parallel lopen:

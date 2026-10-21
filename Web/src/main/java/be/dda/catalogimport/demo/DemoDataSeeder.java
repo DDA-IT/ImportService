@@ -91,7 +91,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         RevisionView revision = setup.createRevision(definition.id(), demoRevision());
         // Eén kritieke koppelreferentie: ze toont de referentiecontrole zonder extra configuratie.
         setup.addMapping(revision.id(), new CreateMappingCommand("EAN", "ean", 1, null, null, null, null,
-                false, null, null, null, null, null, null, null, CREATED_BY));
+                false, null, null, null, null, null, null, null, CREATED_BY, null));
         setup.activateRevision(revision.id(), CREATED_BY);
         LinkView link = setup.createLink(new CreateLinkCommand(definition.id(), LINK_CODE, "Demo koppeling",
                 ORGANISATION_CODE, LIBRARY_CODE, null, null));

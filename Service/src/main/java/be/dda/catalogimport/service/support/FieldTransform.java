@@ -5,6 +5,8 @@ import be.dda.catalogimport.service.support.ImportValueRules.DecimalCodes;
 import be.dda.catalogimport.service.support.ImportValueRules.DecimalFormat;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -237,6 +239,35 @@ public sealed interface FieldTransform
      */
     static FieldTransform of(FieldTransformKind kind, MappingSettings settings, String fieldCode,
                              DecimalFormat format) {
+        return of(kind, settings, List.of(), fieldCode, format);
+    }
+
+    /**
+     * Eén regel van de vertaaltabel van een mapping (legacy-config S8a, {@code import_field_value_map}).
+     *
+     * @param sequence de volgorde binnen de mapping; enkel voor de melding
+     */
+    record MapEntry(int sequence, String source, String target) {
+    }
+
+    /**
+     * Zoals {@link #of(FieldTransformKind, MappingSettings, String, DecimalFormat)}, met de vertaalrijen van deze
+     * mapping uit {@code import_field_value_map} (legacy-config S8a, {@code docs/design/legacy-config-s8-design.md}
+     * par. 2a). Een {@code MAP} gebruikt óf {@code values=} óf de rijen: beide, geen van beide, of (bij
+     * {@code caseSensitive=false}) twee rijen die enkel in hoofdletters verschillen, is {@code CONFIG_TRANSFORM_INVALID}.
+     * Rijen bij een andere soort zouden stil zonder effect blijven en zijn daarom ook een configuratiefout.
+     *
+     * @param valueMap de vertaalrijen van deze mapping, in volgorde; leeg als er geen zijn
+     */
+    static FieldTransform of(FieldTransformKind kind, MappingSettings settings, List<MapEntry> valueMap,
+                             String fieldCode, DecimalFormat format) {
+        if (kind != FieldTransformKind.MAP && !valueMap.isEmpty()) {
+            throw invalid(fieldCode, "it has " + valueMap.size() + " value map row(s) but transformation " + kind
+                    + " does not use a translation table; they would silently have no effect");
+        }
+        if (kind == FieldTransformKind.MAP && !valueMap.isEmpty()) {
+            return tableTranslation(settings, valueMap, fieldCode);
+        }
         return switch (kind) {
             case NONE -> new Unchanged();
             case FIXED_VALUE -> new Fixed(settings.require("value",
@@ -255,6 +286,44 @@ public sealed interface FieldTransform
             case ADD, SUBTRACT, MULTIPLY, DIVIDE -> arithmetic(kind, settings, fieldCode, format);
             case PERCENTAGE -> percentage(settings, fieldCode, format);
         };
+    }
+
+    /**
+     * S8a: de vertaling uit de rijen van {@code import_field_value_map}. Dezelfde regels als {@code values=}
+     * ({@link MappingSettings#table}): een bronwaarde is niet blanco en komt hoogstens één keer voor; een lege
+     * doelwaarde is toegelaten. Daarbovenop: zonder hoofdlettergevoeligheid mogen twee bronwaarden niet enkel in
+     * hoofdletters verschillen, anders hangt de vertaling af van welke rij toevallig eerst gevonden wordt.
+     */
+    private static FieldTransform tableTranslation(MappingSettings settings, List<MapEntry> valueMap,
+                                                   String fieldCode) {
+        if (settings.get("values") != null) {
+            throw invalid(fieldCode, "it has both values= and " + valueMap.size() + " value map row(s); a "
+                    + "translation has exactly one table");
+        }
+        boolean caseSensitive = settings.flag("caseSensitive", false);
+        Map<String, String> table = new LinkedHashMap<>();
+        Map<String, String> folded = new HashMap<>();
+        for (MapEntry entry : valueMap) {
+            String source = entry.source();
+            if (source == null || source.isBlank()) {
+                throw invalid(fieldCode, source, "value map row " + entry.sequence() + " has no source value");
+            }
+            if (entry.target() == null) {
+                throw invalid(fieldCode, source, "value map row " + entry.sequence() + " has no target value; use "
+                        + "an empty text to translate to empty");
+            }
+            if (table.putIfAbsent(source, entry.target()) != null) {
+                throw invalid(fieldCode, source, "source value '" + source + "' is translated more than once");
+            }
+            if (!caseSensitive) {
+                String other = folded.putIfAbsent(foldCase(source), source);
+                if (other != null) {
+                    throw invalid(fieldCode, source, "source values '" + other + "' and '" + source + "' differ "
+                            + "only in case while caseSensitive=false; which one translates would be undefined");
+                }
+            }
+        }
+        return new Translate(table, caseSensitive);
     }
 
     private static FieldTransform arithmetic(FieldTransformKind kind, MappingSettings settings,
@@ -335,9 +404,25 @@ public sealed interface FieldTransform
     }
 
     private static ScreeningBlockedException invalid(String fieldCode, String reason) {
+        return invalid(fieldCode, null, reason);
+    }
+
+    private static ScreeningBlockedException invalid(String fieldCode, String sourceValue, String reason) {
         return new ScreeningBlockedException(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID, fieldCode,
-                null, null, "Mapping for '" + fieldCode + "' has an invalid transform configuration: "
+                sourceValue, null, "Mapping for '" + fieldCode + "' has an invalid transform configuration: "
                 + reason);
+    }
+
+    /**
+     * Teken per teken dezelfde gelijkheid als {@link String#equalsIgnoreCase} (die {@link Translate} gebruikt): twee
+     * teksten met dezelfde gevouwen vorm worden zonder hoofdlettergevoeligheid als gelijk vertaald.
+     */
+    private static String foldCase(String text) {
+        StringBuilder folded = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            folded.append(Character.toLowerCase(Character.toUpperCase(text.charAt(i))));
+        }
+        return folded.toString();
     }
 
     private static String nullToEmpty(String value) {

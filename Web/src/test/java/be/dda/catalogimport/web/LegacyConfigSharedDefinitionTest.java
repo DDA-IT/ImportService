@@ -177,6 +177,13 @@ class LegacyConfigSharedDefinitionTest extends LegacyConfigS2TestBase {
                 templateRevision.get("id"))).isEqualTo(2);
         assertThat(count("select count(*) from import_record_filter where definition_revision_id = ?",
                 templateRevision.get("id"))).isEqualTo(1);
+        // S8a: sjabloon en gedeelde definitie dragen dezelfde vertaalrijen (de kopie via RevisionCopier neemt ze mee).
+        String valueMapSql = "select m.target_field_code || ':' || v.sequence_number || ':' || v.source_value || '>' "
+                + "|| v.target_value from import_field_value_map v join import_field_mapping m on m.id = v.mapping_id "
+                + "where m.definition_revision_id = ? order by m.target_field_code, v.sequence_number";
+        List<String> templateMap = jdbc.queryForList(valueMapSql, String.class, templateRevision.get("id"));
+        assertThat(templateMap).containsExactly("VKP1_PCT:1:DOOS>BOX", "VKP1_PCT:2:STK>PCE");
+        assertThat(jdbc.queryForList(valueMapSql, String.class, sharedRevision.get("id"))).isEqualTo(templateMap);
     }
 
     @Test

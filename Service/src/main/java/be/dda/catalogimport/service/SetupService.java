@@ -7,6 +7,7 @@ import be.dda.catalogimport.dao.ImportDefinitionRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.ImportFieldCatalogRepository;
 import be.dda.catalogimport.dao.ImportFieldMappingRepository;
+import be.dda.catalogimport.dao.ImportFieldValueMapRepository;
 import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
 import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
@@ -27,6 +28,7 @@ import be.dda.catalogimport.domain.ImportDefinitionBookmarkUsage;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
 import be.dda.catalogimport.domain.ImportFieldMapping;
+import be.dda.catalogimport.domain.ImportFieldValueMap;
 import be.dda.catalogimport.domain.ImportLink;
 import be.dda.catalogimport.domain.ImportRecordFilter;
 import be.dda.catalogimport.domain.ImportRevisionFieldCriticality;
@@ -44,6 +46,7 @@ import be.dda.catalogimport.service.support.SourceStructureConfigFactory;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -288,7 +291,19 @@ public class SetupService {
                                        String defaultValue, Boolean required, Integer maxLength,
                                        Integer decimalScale, Boolean zeroAllowed, Boolean negativeAllowed,
                                        FieldTransformKind transformKind, String transformConfig,
-                                       Criticality criticality, String createdBy) {
+                                       Criticality criticality, String createdBy,
+                                       List<ValueMapEntry> valueMap) {
+    }
+
+    /**
+     * Eén regel van de vertaaltabel van een {@code MAP}-mapping (legacy-config S8a, additief API-veld
+     * {@code valueMap[{source, target}]}; tabel {@code import_field_value_map}). De bronwaarde is verplicht, beide
+     * hoogstens {@value ImportFieldValueMap#MAX_VALUE_LENGTH} tekens en getrimd zoals {@code values=}; een lege
+     * doelwaarde ({@code ""}) vertaalt naar leeg. Een MAP gebruikt óf {@code values=} in {@code transformConfig}, óf
+     * {@code valueMap}: beide, geen van beide, of {@code valueMap} bij een andere soort geeft 400
+     * {@code CONFIG_TRANSFORM_INVALID} (dezelfde configuratievalidatie als de screening).
+     */
+    public record ValueMapEntry(String source, String target) {
     }
 
     public record CreateFilterCommand(Integer sequenceNumber, String sourceReference, FilterOperator operator,
@@ -356,8 +371,14 @@ public class SetupService {
     public record SetupWarning(String code, String field, String message) {
     }
 
+    /** @param valueMap de vertaalrijen (S8a, additief) in volgorde; leeg als de mapping er geen heeft */
     public record MappingView(long id, long revisionId, int sequenceNumber, String targetFieldCode,
-                              String sourceReference, String valueKind, String criticality) {
+                              String sourceReference, String valueKind, String criticality,
+                              List<ValueMapEntry> valueMap) {
+
+        public MappingView {
+            valueMap = valueMap == null ? List.of() : List.copyOf(valueMap);
+        }
     }
 
     public record FilterView(long id, long revisionId, int sequenceNumber, String sourceReference,
@@ -400,6 +421,7 @@ public class SetupService {
     private final ImportDefinitionRevisionRepository revisions;
     private final ImportFieldCatalogRepository fieldCatalog;
     private final ImportFieldMappingRepository fieldMappings;
+    private final ImportFieldValueMapRepository valueMaps;
     private final ImportRecordFilterRepository recordFilters;
     private final ImportRevisionFieldCriticalityRepository fieldCriticalities;
     private final ImportLinkRepository links;
@@ -421,8 +443,10 @@ public class SetupService {
                         ImportRevisionFieldCriticalityRepository fieldCriticalities, ImportLinkRepository links,
                         CatalogImportTaskRepository tasks, ImportDefinitionBookmarkRepository bookmarks,
                         ImportDefinitionBookmarkUsageRepository bookmarkUsages, SourceStateDao sourceStates,
-                        ChainConfigurationChecks checks, ProdisReferenceService prodis) {
+                        ChainConfigurationChecks checks, ProdisReferenceService prodis,
+                        ImportFieldValueMapRepository valueMaps) {
         this.organisations = organisations;
+        this.valueMaps = valueMaps;
         this.definitions = definitions;
         this.revisions = revisions;
         this.fieldCatalog = fieldCatalog;
@@ -1050,10 +1074,61 @@ public class SetupService {
         mapping.setCriticality(command.criticality());
         mapping.setCreatedBy(SetupInput.orDefault(actor.username(), DEFAULT_CREATED_BY));
         mapping.setCreatedBySubject(actor.subject());
+        List<ValueMapEntry> valueMap = valueMapInput(command.valueMap());
         ImportFieldMapping stored = fieldMappings.saveAndFlush(mapping);
+        // S8a: de vertaalrijen vóór de configuratievalidatie, zodat die de mapping volledig ziet (één transactie).
+        List<ImportFieldValueMap> rows = new ArrayList<>(valueMap.size());
+        for (int i = 0; i < valueMap.size(); i++) {
+            ImportFieldValueMap row = new ImportFieldValueMap(stored, i + 1, valueMap.get(i).source(),
+                    valueMap.get(i).target());
+            row.setCreatedBy(stored.getCreatedBy());
+            row.setCreatedBySubject(stored.getCreatedBySubject());
+            rows.add(row);
+        }
+        valueMaps.saveAll(rows);
+        valueMaps.flush();
         validateConfiguration(revision);
         return new MappingView(stored.getId(), revisionId, stored.getSequenceNumber(), targetFieldCode,
-                stored.getSourceReference(), stored.getValueKind().name(), stored.getCriticality().name());
+                stored.getSourceReference(), stored.getValueKind().name(), stored.getCriticality().name(),
+                valueMap);
+    }
+
+    /**
+     * S8a: de vertaalrijen uit het verzoek, getrimd zoals {@code values=} ({@code MappingSettings.table}). Weigert
+     * vóór het schrijven wat de databasechecks van 023-1 anders als 500 zouden geven: een lege of te lange bronwaarde,
+     * een ontbrekende of te lange doelwaarde, een dubbele bronwaarde. Of de rijen bij de transformatie passen (soort
+     * MAP, niet samen met {@code values=}, hoofdletterconflicten) beslist de configuratievalidatie.
+     */
+    private static List<ValueMapEntry> valueMapInput(List<ValueMapEntry> valueMap) {
+        if (valueMap == null || valueMap.isEmpty()) {
+            return List.of();
+        }
+        List<ValueMapEntry> entries = new ArrayList<>(valueMap.size());
+        Set<String> sources = new HashSet<>();
+        for (ValueMapEntry entry : valueMap) {
+            if (entry == null) {
+                throw new BadRequestException(SetupInput.fieldCode("valueMap", "INVALID"),
+                        "valueMap must not contain an empty entry");
+            }
+            String source = SetupInput.requireText(entry.source(), "valueMapSource",
+                    ImportFieldValueMap.MAX_VALUE_LENGTH);
+            if (entry.target() == null) {
+                throw new BadRequestException(SetupInput.fieldCode("valueMapTarget", "REQUIRED"),
+                        "valueMapTarget must not be null; use an empty text to translate '" + source
+                                + "' to empty");
+            }
+            String target = entry.target().trim();
+            if (target.length() > ImportFieldValueMap.MAX_VALUE_LENGTH) {
+                throw new BadRequestException(SetupInput.fieldCode("valueMapTarget", "TOO_LONG"),
+                        "valueMapTarget must be at most " + ImportFieldValueMap.MAX_VALUE_LENGTH + " characters");
+            }
+            if (!sources.add(source)) {
+                throw new BadRequestException(SetupInput.fieldCode("valueMapSource", "DUPLICATE"),
+                        "valueMap translates source value '" + source + "' more than once");
+            }
+            entries.add(new ValueMapEntry(source, target));
+        }
+        return List.copyOf(entries);
     }
 
     /**
@@ -1176,6 +1251,8 @@ public class SetupService {
                 .filter(row -> row.getDefinitionRevision().getId().equals(revision.getId()))
                 .orElseThrow(() -> new NotFoundException("MAPPING_NOT_FOUND", "Field mapping " + mappingId
                         + " does not exist in revision " + revisionId));
+        // S8a: eerst de vertaalrijen (geen cascade in het schema, changeset 023-1), als entiteit verwijderd.
+        valueMaps.deleteAll(valueMaps.findByMappingIdOrderBySequenceNumberAsc(mapping.getId()));
         fieldMappings.delete(mapping);
         fieldMappings.flush();
         requireBookmarkDeclarationsStillResolve(revisionId);

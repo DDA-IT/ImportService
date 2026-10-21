@@ -1,6 +1,7 @@
 package be.dda.catalogimport.service.support;
 
 import be.dda.catalogimport.dao.ImportFieldMappingRepository;
+import be.dda.catalogimport.dao.ImportFieldValueMapRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
 import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
 import be.dda.catalogimport.domain.Criticality;
@@ -14,6 +15,7 @@ import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
 import be.dda.catalogimport.domain.ImportFieldMapping;
+import be.dda.catalogimport.domain.ImportFieldValueMap;
 import be.dda.catalogimport.domain.ImportRecordFilter;
 import be.dda.catalogimport.domain.ImportRevisionFieldCriticality;
 import be.dda.catalogimport.domain.PriceControlModel;
@@ -32,7 +34,9 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.ResolverStyle;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -151,14 +155,28 @@ public class ImportMappingConfigFactory {
     private final ImportFieldMappingRepository mappings;
     private final ImportRecordFilterRepository filters;
     private final ImportRevisionFieldCriticalityRepository fieldCriticalities;
+    /** Legacy-config S8a: de vertaalrijen ({@code import_field_value_map}); {@code null} = deze fabriek leest er geen. */
+    private final ImportFieldValueMapRepository valueMaps;
 
     @Autowired
     public ImportMappingConfigFactory(ImportFieldMappingRepository mappings,
                                       ImportRecordFilterRepository filters,
-                                      ImportRevisionFieldCriticalityRepository fieldCriticalities) {
+                                      ImportRevisionFieldCriticalityRepository fieldCriticalities,
+                                      ImportFieldValueMapRepository valueMaps) {
         this.mappings = mappings;
         this.filters = filters;
         this.fieldCriticalities = fieldCriticalities;
+        this.valueMaps = valueMaps;
+    }
+
+    /**
+     * De fabriek zonder toegang tot de vertaalrijen (vorm van vóór legacy-config S8a). Een MAP-mapping zonder
+     * {@code values=} blokkeert dan met {@code CONFIG_TRANSFORM_INVALID}, nooit stil.
+     */
+    public ImportMappingConfigFactory(ImportFieldMappingRepository mappings,
+                                      ImportRecordFilterRepository filters,
+                                      ImportRevisionFieldCriticalityRepository fieldCriticalities) {
+        this(mappings, filters, fieldCriticalities, null);
     }
 
     /**
@@ -168,7 +186,7 @@ public class ImportMappingConfigFactory {
      */
     public ImportMappingConfigFactory(ImportFieldMappingRepository mappings,
                                       ImportRecordFilterRepository filters) {
-        this(mappings, filters, null);
+        this(mappings, filters, null, null);
     }
 
     /**
@@ -179,11 +197,17 @@ public class ImportMappingConfigFactory {
      */
     public ImportMappingConfig from(ImportDefinitionRevision revision, SourceStructureConfig structure) {
         Long revisionId = revision.getId();
-        // Stap B': mappings, filters en de kritiek-overrules van de revisie-eigen velden worden
-        // exact één keer per batch gelezen, vóór er één byte van het bronbestand gelezen is.
-        return from(revision, structure, mappings.findByRevisionIdWithTargetField(revisionId),
+        // Stap B': mappings, hun vertaalrijen (S8a), filters en de kritiek-overrules van de revisie-eigen velden
+        // worden exact één keer per batch gelezen, vóór er één byte van het bronbestand gelezen is.
+        List<ImportFieldMapping> mappingRows = mappings.findByRevisionIdWithTargetField(revisionId);
+        return from(revision, structure, mappingRows,
                 filters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId),
-                fieldCriticalities.findByDefinitionRevisionId(revisionId));
+                fieldCriticalities.findByDefinitionRevisionId(revisionId), valueMapRows(revisionId));
+    }
+
+    /** Eén query per revisie (S8a); zonder repository geen rijen. */
+    private List<ImportFieldValueMap> valueMapRows(Long revisionId) {
+        return valueMaps == null ? List.of() : valueMaps.findByRevisionId(revisionId);
     }
 
     /**
@@ -214,8 +238,22 @@ public class ImportMappingConfigFactory {
                                     List<ImportFieldMapping> mappingRows,
                                     List<ImportRecordFilter> filterRows,
                                     List<ImportRevisionFieldCriticality> criticalityRows) {
+        return from(revision, structure, mappingRows, filterRows, criticalityRows, List.of());
+    }
+
+    /**
+     * Dezelfde validatie, inclusief de vertaalrijen van de MAP-mappings (legacy-config S8a,
+     * {@code import_field_value_map}); additieve overload.
+     *
+     * @param valueMapRows de vertaalrijen van de mappings van deze revisie (gekoppeld op hun mapping)
+     */
+    public ImportMappingConfig from(ImportDefinitionRevision revision, SourceStructureConfig structure,
+                                    List<ImportFieldMapping> mappingRows,
+                                    List<ImportRecordFilter> filterRows,
+                                    List<ImportRevisionFieldCriticality> criticalityRows,
+                                    List<ImportFieldValueMap> valueMapRows) {
         return read(revision, StructureFacts.of(structure), structure, mappingRows, filterRows, criticalityRows,
-                ConfigProblemCollector.first());
+                valueMapRows, ConfigProblemCollector.first());
     }
 
     /**
@@ -240,8 +278,17 @@ public class ImportMappingConfigFactory {
                                      List<ImportFieldMapping> mappingRows,
                                      List<ImportRecordFilter> filterRows,
                                      List<ImportRevisionFieldCriticality> criticalityRows) {
+        return collect(revision, structure, mappingRows, filterRows, criticalityRows, List.of());
+    }
+
+    /** Idem, met de vertaalrijen van de MAP-mappings (S8a); additieve overload. */
+    public ConfigCheckReport collect(ImportDefinitionRevision revision, StructureFacts structure,
+                                     List<ImportFieldMapping> mappingRows,
+                                     List<ImportRecordFilter> filterRows,
+                                     List<ImportRevisionFieldCriticality> criticalityRows,
+                                     List<ImportFieldValueMap> valueMapRows) {
         ConfigProblemCollector problems = ConfigProblemCollector.all();
-        collectInto(revision, structure, mappingRows, filterRows, criticalityRows, problems);
+        collectInto(revision, structure, mappingRows, filterRows, criticalityRows, valueMapRows, problems);
         return problems.toReport();
     }
 
@@ -252,9 +299,10 @@ public class ImportMappingConfigFactory {
     public void collectInto(ImportDefinitionRevision revision, StructureFacts structure,
                             ConfigProblemCollector problems) {
         Long revisionId = revision.getId();
-        collectInto(revision, structure, mappings.findByRevisionIdWithTargetField(revisionId),
+        List<ImportFieldMapping> mappingRows = mappings.findByRevisionIdWithTargetField(revisionId);
+        collectInto(revision, structure, mappingRows,
                 filters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId),
-                fieldCriticalities.findByDefinitionRevisionId(revisionId), problems);
+                fieldCriticalities.findByDefinitionRevisionId(revisionId), valueMapRows(revisionId), problems);
     }
 
     /** De volledige controle op een reeds geladen configuratie, in een gedeelde collector. */
@@ -263,7 +311,17 @@ public class ImportMappingConfigFactory {
                             List<ImportRecordFilter> filterRows,
                             List<ImportRevisionFieldCriticality> criticalityRows,
                             ConfigProblemCollector problems) {
-        read(revision, structure, null, mappingRows, filterRows, criticalityRows, problems);
+        collectInto(revision, structure, mappingRows, filterRows, criticalityRows, List.of(), problems);
+    }
+
+    /** Idem, met de vertaalrijen van de MAP-mappings (S8a); additieve overload. */
+    public void collectInto(ImportDefinitionRevision revision, StructureFacts structure,
+                            List<ImportFieldMapping> mappingRows,
+                            List<ImportRecordFilter> filterRows,
+                            List<ImportRevisionFieldCriticality> criticalityRows,
+                            List<ImportFieldValueMap> valueMapRows,
+                            ConfigProblemCollector problems) {
+        read(revision, structure, null, mappingRows, filterRows, criticalityRows, valueMapRows, problems);
     }
 
     /**
@@ -279,7 +337,9 @@ public class ImportMappingConfigFactory {
                                             List<ImportFieldMapping> mappingRows,
                                             List<ImportRecordFilter> filterRows,
                                             List<ImportRevisionFieldCriticality> criticalityRows,
+                                            List<ImportFieldValueMap> valueMapRows,
                                             ConfigProblemCollector problems) {
+        ValueMapIndex valueMapIndex = ValueMapIndex.of(valueMapRows);
         List<ImportFieldMapping> active = mappingRows.stream()
                 .filter(ImportFieldMapping::isActive)
                 .toList();
@@ -289,7 +349,7 @@ public class ImportMappingConfigFactory {
         Map<RevisionCriticalityField, Criticality> overrules = readCriticalityOverrules(criticalityRows,
                 problems);
         // M3 (per rij)
-        List<FieldMapping> fields = readFields(revision, facts, active, problems);
+        List<FieldMapping> fields = readFields(revision, facts, active, valueMapIndex, problems);
         // M4 (per rij)
         List<RecordFilter> recordFilters = readFilters(facts, filterRows, problems);
         // M5: steunt op de identiteitskolommen van de revisie (S9)
@@ -421,6 +481,7 @@ public class ImportMappingConfigFactory {
     private static List<FieldMapping> readFields(ImportDefinitionRevision revision,
                                                  StructureFacts structure,
                                                  List<ImportFieldMapping> rows,
+                                                 ValueMapIndex valueMapIndex,
                                                  ConfigProblemCollector problems) {
         List<FieldMapping> fields = new ArrayList<>(rows.size());
         Set<String> targets = new LinkedHashSet<>();
@@ -485,7 +546,8 @@ public class ImportMappingConfigFactory {
                         : problems.branch(null, () -> readValueFormat(row, code, settings));
                 ValueFormat transformFormat = valueFormat.failed() ? ValueFormat.DEFAULT : valueFormat.value();
                 // M3k
-                transform = problems.branch(null, () -> readTransform(row, code, settings, transformFormat));
+                transform = problems.branch(null, () -> readTransform(row, code, settings,
+                        valueMapIndex.entriesOf(row), transformFormat));
                 // M3l
                 maxPercentage = problems.branch(null, () -> readMaxPercentage(row, code, settings));
                 // M3m
@@ -657,13 +719,48 @@ public class ImportMappingConfigFactory {
      * of onvolledige configuratie blokkeert; ze wordt nooit als "geen transformatie" behandeld.
      */
     private static FieldTransform readTransform(ImportFieldMapping row, String code,
-                                                MappingSettings settings, ValueFormat valueFormat) {
+                                                MappingSettings settings, List<FieldTransform.MapEntry> valueMap,
+                                                ValueFormat valueFormat) {
         if (row.getTransformKind() == null) {
             throw blocked(CODE_TRANSFORM_INVALID, code, null,
                     "Mapping for '" + code + "' has no transform kind; use NONE to state that there is no "
                             + "transformation");
         }
-        return FieldTransform.of(row.getTransformKind(), settings, code, valueFormat.decimal());
+        return FieldTransform.of(row.getTransformKind(), settings, valueMap, code, valueFormat.decimal());
+    }
+
+    /**
+     * Legacy-config S8a: de vertaalrijen per mapping, één keer per batch opgebouwd. Gekoppeld op het id van de mapping
+     * (rijen uit de database) en anders op de mapping zelf (een nog niet bewaarde configuratie, bv. in een test of een
+     * latere editor).
+     */
+    private record ValueMapIndex(Map<Long, List<FieldTransform.MapEntry>> byId,
+                                 Map<ImportFieldMapping, List<FieldTransform.MapEntry>> byInstance) {
+
+        static ValueMapIndex of(List<ImportFieldValueMap> rows) {
+            Map<Long, List<FieldTransform.MapEntry>> byId = new LinkedHashMap<>();
+            Map<ImportFieldMapping, List<FieldTransform.MapEntry>> byInstance = new IdentityHashMap<>();
+            for (ImportFieldValueMap row : rows) {
+                FieldTransform.MapEntry entry = new FieldTransform.MapEntry(row.getSequenceNumber(),
+                        row.getSourceValue(), row.getTargetValue());
+                ImportFieldMapping mapping = row.getMapping();
+                if (mapping.getId() != null) {
+                    byId.computeIfAbsent(mapping.getId(), id -> new ArrayList<>()).add(entry);
+                } else {
+                    byInstance.computeIfAbsent(mapping, key -> new ArrayList<>()).add(entry);
+                }
+            }
+            byId.values().forEach(entries -> entries.sort(Comparator.comparingInt(FieldTransform.MapEntry::sequence)));
+            byInstance.values().forEach(entries -> entries.sort(
+                    Comparator.comparingInt(FieldTransform.MapEntry::sequence)));
+            return new ValueMapIndex(byId, byInstance);
+        }
+
+        List<FieldTransform.MapEntry> entriesOf(ImportFieldMapping mapping) {
+            List<FieldTransform.MapEntry> entries = mapping.getId() != null ? byId.get(mapping.getId())
+                    : byInstance.get(mapping);
+            return entries == null ? List.of() : List.copyOf(entries);
+        }
     }
 
     /**

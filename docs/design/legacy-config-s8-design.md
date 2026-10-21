@@ -1,7 +1,8 @@
 # Legacy-config S8 — maptabel, transformatieketen, Include/Exclude, PSIMPEXCL
 
-> **Status: VOORSTEL (2026-10-21), denker-zwaar.** Verfijnt `legacy-config-bundle-design.md` §8 rij S8 en
-> `legacy-config-migratie-design.md` LM-2. S8a–S8e kunnen starten; **S8f wacht op V2**, **S8g wacht op V1** (§5).
+> **Status: VOORSTEL (2026-10-21), denker-zwaar; S8a gebouwd (2026-10-21, zie "Uitwerking S8a" in §2a).** Verfijnt
+> `legacy-config-bundle-design.md` §8 rij S8 en `legacy-config-migratie-design.md` LM-2. S8b–S8e kunnen starten; **S8f wacht
+> op V2**, **S8g wacht op V1** (§5).
 > Bronnen: `LegacyConfigTranslator`, `FieldTransform`, `FieldValueMapper`, `MappingSettings`, `ImportMappingConfigFactory`,
 > `RecordFilterEvaluator`, `RevisionCopier`, `LegacyRevisionContent`, Liquibase 004; Legacy-vault `Prg_1170` r.370-480,
 > r.700-1170, r.2582-2690, DS_0254, DS_0257; ruwe bron `C:\XPA48\Projects\PRODIS\Source\Prg_1170.xml` r.18681-18701.
@@ -36,6 +37,33 @@ r.2582-2687, enkel als `NOT >SkipExcludes`, r.395), niet in `Prg_1171`.
   Rijen één keer per batch gelezen; additieve overload van de fabriek.
 - Rapport: `MAP_TOO_LARGE`, `TRANSFORM_VALUE_NOT_EXPRESSIBLE` (maps) verdwijnen; `MAP_EMPTY`, `MAP_KEY_AMBIGUOUS`,
   `LEGACY_MAP_UNUSED`, `MAP_MISS_NO_FALLBACK` (tot V1) blijven.
+
+**Uitwerking S8a (gebouwd 2026-10-21; bouwer-zwaar).**
+- *Schema:* changeset `023-1` zoals hierboven, plus `check (sequence_number > 0)`, `check (length(btrim(source_value)) > 0)`
+  en koppelcheck `created_by_subject is null or created_by is not null`; geen cascade (de applicatie verwijdert de rijen vóór
+  hun mapping, als entiteit, zodat een in dezelfde transactie beheerde kopie nooit naar een verwijderde mapping wijst).
+- *Screening:* `ImportFieldValueMapRepository.findByRevisionId` (één query per revisie, `join fetch` van de mapping) in
+  `ImportMappingConfigFactory.from(revision, structure)` en `collectInto(revision, facts, problems)`; additieve overloads met
+  `valueMapRows` voor `from`/`collect`/`collectInto`; `FieldTransform.of(kind, settings, valueMap, ...)`. Bevindingen (M3k,
+  ook in collect-modus): beide tabellen, geen van beide (ongewijzigde boodschap), rijen bij een andere soort dan MAP (zouden
+  stil zonder effect blijven), dubbele of blanco bronwaarde, en bij `caseSensitive=false` twee bronwaarden die teken per teken
+  enkel in hoofdletters verschillen (zoals `equalsIgnoreCase`). De opzoeking zelf is die van `values=` (`Translate`).
+- *Inhoudshash:* `LegacyRevisionContent.ofRevision(revision, mappings, filters, valueMaps)` en `ofPlanned` voegen per mapping
+  `V, volgnummer, bron, doel` toe, enkel als er rijen zijn (letterlijke pre-S8a-hash met een `values=`-mapping in
+  `LegacyRevisionContentParityTest`). Een vóór S8a gemigreerde CALC 7-mapping plant nu een andere inhoud (rijen i.p.v.
+  `values=`), dus een opvolgende DRAFT bij een nieuwe APPLY, nooit `MANUAL_CHANGES_SINCE_MIGRATION`.
+- *Kopie:* `RevisionCopier.copyMappingChildren(saved, source)` (`saved` = de opgeslagen kopieën uit `saveAll`, gekoppeld op
+  doelveldcode; tekening = die van de gekopieerde mapping) in `RevisionSuccessorService`, `LegacyConfigApplyService`
+  (gedeelde definitie, S7) en `TemplateMaterialisationService`.
+- *Setup-API (additief):* `CreateMappingCommand.valueMap[{source, target}]` en `MappingView.valueMap` (ook in het
+  revisiedetail; leeg als er geen rijen zijn). Getrimd zoals `values=`; 400 `VALUE_MAP_SOURCE_REQUIRED`/`_TOO_LONG`/
+  `_DUPLICATE`, `VALUE_MAP_TARGET_REQUIRED`/`_TOO_LONG`, `VALUE_MAP_INVALID` (lege regel); de rest via de
+  configuratievalidatie (400 `CONFIG_TRANSFORM_INVALID`); niets bewaard bij een fout.
+- *Migratie:* CALC 7 → MAP met `caseSensitive=true` (+ notatie) en rijen in volgorde (NUMMER, KEY); sleutel en waarde getrimd;
+  langer dan 50 tekens → WARNING `MAP_ENTRY_TOO_LONG` (nieuw; mapping vervalt, nooit afgekapt); item `MAP_TABLE` met doel
+  `import_field_value_map`.
+- *Niet gewijzigd:* `values=` met `caseSensitive=false` en sleutels die enkel in hoofdletters verschillen blijft aanvaard
+  (bestaande configuraties); de hoofdletterregel geldt enkel voor de tabel.
 
 ### 2b. UPPER en SUBSTRING (S8b, enum additief, geen Liquibase — `transform_kind` heeft geen check, 004-2 r.205)
 - UPPER: `toUpperCase(Locale.ROOT)`, null blijft null.
@@ -115,7 +143,7 @@ Steeds: tweemaal dezelfde APPLY → `DEFINITION_UNCHANGED`.
 
 | Sub-slice | Lagen | Trap | Extra tests | Klaar als |
 |---|---|---|---|---|
-| S8a maptabel | Liquibase 023, alle lagen | bouwer-zwaar | `ImportFieldValueMapTest`; `run-full-tests.ps1 -Tests ScreeningSchemaTest,SetupApiFlowTest,DeliveryScreeningFlowTest` | 2000 sleutels migreren; `values=` werkt nog; kopie (opvolger, sjabloon, migratie) draagt rijen mee; pariteit byte-identiek |
+| S8a maptabel (**gebouwd 2026-10-21**) | Liquibase 023, alle lagen | bouwer-zwaar | `ImportFieldValueMapTest`; `run-full-tests.ps1 -Tests ScreeningSchemaTest,SetupApiFlowTest,DeliveryScreeningFlowTest` | 2000 sleutels migreren; `values=` werkt nog; kopie (opvolger, sjabloon, migratie) draagt rijen mee; pariteit byte-identiek |
 | S8b UPPER/SUBSTRING | Domain, Service | bouwer-gemiddeld | — | CALC 15 en Positie/Lengte op mapping-regels gemigreerd |
 | S8c keten + AFFIX | Liquibase 024, alle lagen | bouwer-zwaar | `SetupApiFlowTest`, `DeliveryScreeningFlowTest` | prefix+suffix+CALC 7 = legacy; lege invoer blijft leeg; grammaticafouten blokkeren in B' |
 | S8d MAP_CONTAINS | Service | bouwer-gemiddeld | — | eerste treffer per KEY-volgorde, hoofdletterongevoelig |

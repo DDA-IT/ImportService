@@ -6,6 +6,7 @@ import be.dda.catalogimport.dao.ImportDefinitionBookmarkValueRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.ImportFieldMappingRepository;
+import be.dda.catalogimport.dao.ImportFieldValueMapRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
 import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
@@ -20,11 +21,15 @@ import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.service.SetupService.FieldCriticalityView;
 import be.dda.catalogimport.service.SetupService.FilterView;
 import be.dda.catalogimport.service.SetupService.MappingView;
+import be.dda.catalogimport.service.SetupService.ValueMapEntry;
 import be.dda.catalogimport.service.TemplateBookmarkService.BookmarkView;
 import be.dda.catalogimport.service.TemplateBookmarkService.UsageView;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -133,6 +138,7 @@ public class SetupQueryService {
     private final ImportDefinitionBookmarkRepository bookmarks;
     private final ImportDefinitionBookmarkUsageRepository bookmarkUsages;
     private final ImportDefinitionBookmarkValueRepository bookmarkValues;
+    private final ImportFieldValueMapRepository valueMaps;
 
     public SetupQueryService(SourceOrganisationRepository organisations, ImportDefinitionRepository definitions,
                              ImportDefinitionRevisionRepository revisions,
@@ -140,7 +146,9 @@ public class SetupQueryService {
                              ImportRevisionFieldCriticalityRepository fieldCriticalities,
                              ImportDefinitionBookmarkRepository bookmarks,
                              ImportDefinitionBookmarkUsageRepository bookmarkUsages,
-                             ImportDefinitionBookmarkValueRepository bookmarkValues) {
+                             ImportDefinitionBookmarkValueRepository bookmarkValues,
+                             ImportFieldValueMapRepository valueMaps) {
+        this.valueMaps = valueMaps;
         this.organisations = organisations;
         this.definitions = definitions;
         this.revisions = revisions;
@@ -211,10 +219,16 @@ public class SetupQueryService {
             throw new NotFoundException("REVISION_NOT_FOUND", "Revision " + revisionId
                     + " does not belong to definition " + definitionId);
         }
+        // S8a: de vertaalrijen in één query voor de hele revisie, gekoppeld op mapping.
+        Map<Long, List<ValueMapEntry>> valueMapsByMapping = new LinkedHashMap<>();
+        valueMaps.findByRevisionId(revisionId).forEach(row -> valueMapsByMapping
+                .computeIfAbsent(row.getMapping().getId(), id -> new ArrayList<>())
+                .add(new ValueMapEntry(row.getSourceValue(), row.getTargetValue())));
         List<MappingView> mappingViews = fieldMappings.findByRevisionIdWithTargetField(revisionId).stream()
                 .map(mapping -> new MappingView(mapping.getId(), revisionId, mapping.getSequenceNumber(),
                         mapping.getTargetField().getCode(), mapping.getSourceReference(),
-                        mapping.getValueKind().name(), mapping.getCriticality().name()))
+                        mapping.getValueKind().name(), mapping.getCriticality().name(),
+                        valueMapsByMapping.get(mapping.getId())))
                 .toList();
         List<FilterView> filterViews =
                 recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId).stream()

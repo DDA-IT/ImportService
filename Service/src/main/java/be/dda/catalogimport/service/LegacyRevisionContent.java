@@ -5,15 +5,19 @@ import be.dda.catalogimport.domain.FilterNullBehaviour;
 import be.dda.catalogimport.domain.FilterStage;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldMapping;
+import be.dda.catalogimport.domain.ImportFieldValueMap;
 import be.dda.catalogimport.domain.ImportRecordFilter;
 import be.dda.catalogimport.domain.MissingColumnBehaviour;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedFilter;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedMapping;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedRevision;
+import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedValueMapEntry;
 import be.dda.catalogimport.service.support.RevisionConfigHashes;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 
 /**
@@ -32,6 +36,10 @@ import java.util.function.Function;
  * een verkeerde {@code DEFINITION_UNCHANGED} of {@code MANUAL_CHANGES_SINCE_MIGRATION} veroorzaken.
  * <p>
  * Canonieke opbouw via {@link RevisionConfigHashes#hash(String, String...)} (laag {@value #LAYER}).
+ * <p>
+ * <b>Legacy-config S8a.</b> De vertaalrijen van een mapping ({@code import_field_value_map}) volgen achter die mapping
+ * als {@code V, volgnummer, bron, doel}, <b>enkel als ze er zijn</b>: een revisie zonder vertaalrijen heeft exact
+ * dezelfde inhoudshash als vóór S8a (bewezen in {@code LegacyRevisionContentParityTest}).
  */
 final class LegacyRevisionContent {
 
@@ -52,11 +60,14 @@ final class LegacyRevisionContent {
                 planned.descriptionField());
         parts.addAll(identityExtensions(planned.supplierFixedValue(), planned.groupFixedValue(),
                 planned.identityUppercase()));
-        planned.mappings().stream().sorted(Comparator.comparing(PlannedMapping::targetCode)).forEach(mapping ->
-                parts.addAll(mapping(mapping.targetCode(), String.valueOf(mapping.valueKind()),
-                        mapping.sourceReference(), mapping.fixedValue(), String.valueOf(mapping.transformKind()),
-                        mapping.transformConfig(), null, null, false, null, null, false, false,
-                        String.valueOf(criticalityOf.apply(mapping.targetCode())), true, null)));
+        planned.mappings().stream().sorted(Comparator.comparing(PlannedMapping::targetCode)).forEach(mapping -> {
+            parts.addAll(mapping(mapping.targetCode(), String.valueOf(mapping.valueKind()),
+                    mapping.sourceReference(), mapping.fixedValue(), String.valueOf(mapping.transformKind()),
+                    mapping.transformConfig(), null, null, false, null, null, false, false,
+                    String.valueOf(criticalityOf.apply(mapping.targetCode())), true, null));
+            mapping.valueMap().stream().sorted(Comparator.comparingInt(PlannedValueMapEntry::sequence))
+                    .forEach(entry -> parts.addAll(valueMapEntry(entry.sequence(), entry.source(), entry.target())));
+        });
         planned.filters().stream().sorted(Comparator.comparingInt(PlannedFilter::sequence)).forEach(filter ->
                 parts.addAll(filter(filter.sequence(), FilterStage.SOURCE_FIELD.name(), filter.sourceReference(),
                         filter.operator().name(), filter.compareValue(), filter.outcome().name(),
@@ -65,8 +76,16 @@ final class LegacyRevisionContent {
         return RevisionConfigHashes.hash(LAYER, parts.toArray(String[]::new));
     }
 
+    /**
+     * @param valueMaps de vertaalrijen van de mappings van deze revisie (S8a), gekoppeld op {@code mapping.id}; leeg
+     *                  als er geen zijn
+     */
     static String ofRevision(ImportDefinitionRevision revision, List<ImportFieldMapping> mappings,
-                             List<ImportRecordFilter> filters) {
+                             List<ImportRecordFilter> filters, List<ImportFieldValueMap> valueMaps) {
+        Map<Long, List<ImportFieldValueMap>> valueMapsByMapping = new LinkedHashMap<>();
+        for (ImportFieldValueMap row : valueMaps) {
+            valueMapsByMapping.computeIfAbsent(row.getMapping().getId(), id -> new java.util.ArrayList<>()).add(row);
+        }
         List<String> parts = scalars(revision.getStructureFormat(), revision.getStructureCharset(),
                 revision.getStructureDelimiter(), revision.isStructureHasHeader(),
                 revision.getStructureHeaderLineNumber(), revision.getStructureFieldReferenceKind(),
@@ -76,12 +95,17 @@ final class LegacyRevisionContent {
                 revision.getRecordDescriptionField());
         parts.addAll(identityExtensions(revision.getIdentitySupplierFixedValue(),
                 revision.getIdentitySupplierGroupFixedValue(), revision.isIdentityUppercase()));
-        mappings.stream().sorted(Comparator.comparing(row -> row.getTargetField().getCode())).forEach(row ->
-                parts.addAll(mapping(row.getTargetField().getCode(), String.valueOf(row.getValueKind()),
-                        row.getSourceReference(), row.getFixedValue(), String.valueOf(row.getTransformKind()),
-                        row.getTransformConfig(), row.getExpectedPosition(), row.getDefaultValue(), row.isRequired(),
-                        row.getMaxLength(), row.getDecimalScale(), row.isZeroAllowed(), row.isNegativeAllowed(),
-                        String.valueOf(row.getCriticality()), row.isActive(), row.getBookmarkName())));
+        mappings.stream().sorted(Comparator.comparing(row -> row.getTargetField().getCode())).forEach(row -> {
+            parts.addAll(mapping(row.getTargetField().getCode(), String.valueOf(row.getValueKind()),
+                    row.getSourceReference(), row.getFixedValue(), String.valueOf(row.getTransformKind()),
+                    row.getTransformConfig(), row.getExpectedPosition(), row.getDefaultValue(), row.isRequired(),
+                    row.getMaxLength(), row.getDecimalScale(), row.isZeroAllowed(), row.isNegativeAllowed(),
+                    String.valueOf(row.getCriticality()), row.isActive(), row.getBookmarkName()));
+            valueMapsByMapping.getOrDefault(row.getId(), List.of()).stream()
+                    .sorted(Comparator.comparingInt(ImportFieldValueMap::getSequenceNumber))
+                    .forEach(entry -> parts.addAll(valueMapEntry(entry.getSequenceNumber(), entry.getSourceValue(),
+                            entry.getTargetValue())));
+        });
         filters.stream().sorted(Comparator.comparingInt(ImportRecordFilter::getSequenceNumber)).forEach(row ->
                 parts.addAll(filter(row.getSequenceNumber(), String.valueOf(row.getFilterStage()),
                         row.getSourceReference(), String.valueOf(row.getOperator()), row.getCompareValue(),
@@ -144,6 +168,11 @@ final class LegacyRevisionContent {
                 String.valueOf(required), String.valueOf(maxLength), String.valueOf(decimalScale),
                 String.valueOf(zeroAllowed), String.valueOf(negativeAllowed), criticality, String.valueOf(active),
                 String.valueOf(bookmarkName));
+    }
+
+    /** S8a: één vertaalrij, achter haar mapping. */
+    private static List<String> valueMapEntry(int sequence, String source, String target) {
+        return List.of("V", String.valueOf(sequence), source, target);
     }
 
     private static List<String> filter(int sequence, String stage, String source, String operator, String compare,

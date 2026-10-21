@@ -52,3 +52,5 @@ databaseChangeLog:
       file: db/changelog/021-legacy-config-definition-origin.sql
   - include:
       file: db/changelog/022-identity-fixed-and-uppercase.sql
+  - include:
+      file: db/changelog/023-field-value-map.sql

@@ -1000,7 +1000,8 @@ public class TemplateMaterialisationService {
             applyValues(templateRevision, declarations, values, revision, link, mappings, filters, actor,
                     appliedDefinition, appliedLink, warnings);
 
-            fieldMappings.saveAll(mappings.values());
+            // Legacy-config S8a: de vertaalrijen van de sjabloonmappings gaan mee, direct na het opslaan.
+            revisionCopier.copyMappingChildren(fieldMappings.saveAll(mappings.values()), templateRevision);
             recordFilters.saveAll(filters.values());
             copyFieldCriticalities(revision, templateRevision, actor);
             copyLinkScopeDeclarations(revision, declarations, actor);

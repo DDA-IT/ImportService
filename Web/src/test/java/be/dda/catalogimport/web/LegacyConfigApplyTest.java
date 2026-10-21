@@ -137,14 +137,22 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(templateRevisions.get(0).get("status")).isEqualTo("DRAFT");
         assertThat(revision.get("based_on_revision_id")).isEqualTo(templateRevisions.get(0).get("id"));
 
-        // Mappings: 33 met MAP (alle PSIMPDEFMAP-regels, gesorteerd) en DecimalComma; 37 als bronkolom.
+        // Mappings: 33 met MAP en DecimalComma; 37 als bronkolom. S8a: de PSIMPDEFMAP-regels (gesorteerd op NUMMER,
+        // KEY) staan in import_field_value_map, transform_config draagt enkel nog de instellingen.
         List<Map<String, Object>> mappings = jdbc.queryForList("select target_field_code, value_kind, "
                 + "source_reference, transform_kind, transform_config from import_field_mapping "
                 + "where definition_revision_id = ? order by target_field_code", revisionId);
         assertThat(mappings).hasSize(2);
         assertThat(mappings.get(0)).containsEntry("target_field_code", "VKP1_PCT")
                 .containsEntry("source_reference", "8").containsEntry("transform_kind", "MAP")
-                .containsEntry("transform_config", "values=DOOS>BOX|STK>PCE;caseSensitive=true;decimalSeparator=,");
+                .containsEntry("transform_config", "caseSensitive=true;decimalSeparator=,");
+        assertThat(valueMap(revisionId, "VKP1_PCT")).containsExactly("1:DOOS>BOX", "2:STK>PCE");
+        assertThat(jdbc.queryForList("select v.created_by from import_field_value_map v join import_field_mapping m "
+                + "on m.id = v.mapping_id where m.definition_revision_id = ?", String.class, revisionId))
+                .containsOnly(USER);
+        // S7: het sjabloon draagt dezelfde rijen (de gedeelde definitie is er een kopie van).
+        assertThat(valueMap(((Number) templateRevisions.get(0).get("id")).longValue(), "VKP1_PCT"))
+                .containsExactly("1:DOOS>BOX", "2:STK>PCE");
         assertThat(mappings.get(1)).containsEntry("target_field_code", "VKP5_PCT")
                 .containsEntry("source_reference", "9").containsEntry("transform_kind", "NONE")
                 .containsEntry("transform_config", "decimalSeparator=,");
@@ -380,9 +388,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(active.get("status")).isEqualTo("ACTIVE");
         assertThat(active.get("identity_supplier_field")).isEqualTo("3");
         assertThat(active.get("record_base_price_field")).isEqualTo("7");
-        assertThat(jdbc.queryForObject("select transform_config from import_field_mapping where "
-                + "definition_revision_id = ? and target_field_code = 'VKP1_PCT'", String.class, first))
-                .contains("STK>PCE");
+        assertThat(valueMap(first, "VKP1_PCT")).containsExactly("1:DOOS>BOX", "2:STK>PCE");
         Map<String, Object> successor = revisions.get(1);
         long successorId = ((Number) successor.get("id")).longValue();
         assertThat(successor.get("status")).isEqualTo("DRAFT");
@@ -391,9 +397,8 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(successor.get("record_base_price_field")).isEqualTo("17");
         assertThat(successor.get("change_reason")).isEqualTo(REASON);
         assertThat((BigDecimal) successor.get("price_deviation_percent")).isEqualByComparingTo("20");
-        assertThat(jdbc.queryForObject("select transform_config from import_field_mapping where "
-                + "definition_revision_id = ? and target_field_code = 'VKP1_PCT'", String.class, successorId))
-                .contains("STK>PCS");
+        // S8a: de opvolger kreeg eerst de kopie van de rijen, daarna overschreef APPLY de mapping met de nieuwe tabel.
+        assertThat(valueMap(successorId, "VKP1_PCT")).containsExactly("1:DOOS>BOX", "2:STK>PCS");
         assertThat(count("select count(*) from import_record_filter where definition_revision_id = ?", successorId))
                 .isEqualTo(1);
         assertThat(count("select count(*) from legacy_config_revision_origin ro join import_definition_revision r "
@@ -524,7 +529,77 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
                 null), ACTOR)).hasMessageContaining("not found");
     }
 
+    /**
+     * S8a: een PSIMPDEFMAP van 2000 sleutels (ook met {@code ;}, {@code |} en {@code >}, en sleutels die over twee NUMMERs
+     * dubbel voorkomen) wordt één MAP-mapping met 2000 vertaalrijen; geen {@code MAP_TOO_LARGE} of
+     * {@code TRANSFORM_VALUE_NOT_EXPRESSIBLE} meer. Laagste NUMMER wint, {@code MAP_KEY_AMBIGUOUS} blijft gemeld. Een
+     * tweede APPLY van dezelfde inhoud is {@code DEFINITION_UNCHANGED}.
+     */
+    @Test
+    void aMapOfTwoThousandKeysIsMigratedIntoTheValueMapAndASecondApplyIsUnchanged() throws Exception {
+        ObjectNode bundle = applicable();
+        com.fasterxml.jackson.databind.node.ArrayNode maps = (com.fasterxml.jackson.databind.node.ArrayNode)
+                bundle.get("definition").get("maps");
+        maps.removeAll();
+        for (int i = 1; i <= 2000; i++) {
+            String key = i == 1 ? "A;B" : i == 2 ? "C|D" : i == 3 ? "E>F" : "K" + i;
+            maps.addObject().put("number", 7).put("key", key).put("value", "V" + i + (i == 1 ? "|;" : ""))
+                    .put("reserveAlpha", "");
+        }
+        // Dezelfde sleutel onder een hogere NUMMER met een andere waarde: legacy neemt de laagste NUMMER.
+        maps.addObject().put("number", 8).put("key", "K10").put("value", "ANDERS").put("reserveAlpha", "");
+        long id = receive(bundle);
+
+        String preview = previewBody(id, "libraryCode", "LIB-2000");
+        assertThat(blockingCodes(preview)).isEmpty();
+        assertThat(preview).doesNotContain("MAP_TOO_LARGE").doesNotContain("TRANSFORM_VALUE_NOT_EXPRESSIBLE");
+        assertThat(codes(preview, "WARNING")).contains("MAP_MISS_NO_FALLBACK", "MAP_KEY_AMBIGUOUS");
+        assertThat(codes(preview, "MIGRATED")).contains("MAP_TABLE");
+        apply(id, JsonPath.read(preview, "$.previewFingerprint"), REASON, "libraryCode", "LIB-2000")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.configurationFindings").isEmpty());
+
+        long definitionId = definitionId(supplier(bundle), "VROOAM2");
+        long revisionId = ((Number) revisionRows(definitionId).get(0).get("id")).longValue();
+        List<String> rows = valueMap(revisionId, "VKP1_PCT");
+        assertThat(rows).hasSize(2000);
+        assertThat(rows.subList(0, 3)).containsExactly("1:A;B>V1|;", "2:C|D>V2", "3:E>F>V3");
+        // Volgorde (NUMMER, KEY) tekstueel: K10 komt na A;B, C|D en E>F; de laagste NUMMER wint.
+        assertThat(rows).contains("4:K10>V10").noneMatch(row -> row.endsWith(">ANDERS"));
+        assertThat(jdbc.queryForObject("select transform_config from import_field_mapping where "
+                + "definition_revision_id = ? and target_field_code = 'VKP1_PCT'", String.class, revisionId))
+                .isEqualTo("caseSensitive=true;decimalSeparator=,");
+
+        // Tweemaal dezelfde inhoud: geen nieuwe revisie.
+        ((ObjectNode) bundle.get("interface").get("header")).put("info", "tweede export 2000");
+        long second = receive(bundle);
+        String again = previewBody(second, "libraryCode", "LIB-2000");
+        assertThat(codes(again, "MIGRATED")).contains("DEFINITION_UNCHANGED");
+        apply(second, JsonPath.read(again, "$.previewFingerprint"), REASON, "libraryCode", "LIB-2000")
+                .andExpect(status().isOk());
+        assertThat(revisionRows(definitionId)).hasSize(1);
+        assertThat(valueMap(revisionId, "VKP1_PCT")).hasSize(2000);
+    }
+
+    /** S8a: een PSIMPDEFMAP-sleutel langer dan legacy toelaat (50) wordt nooit afgekapt: de mapping vervalt, gemeld. */
+    @Test
+    void aMapKeyLongerThanFiftyCharactersIsNeverTruncated() throws Exception {
+        ObjectNode bundle = applicable();
+        ((ObjectNode) bundle.get("definition").get("maps").get(0)).put("key", "X".repeat(51));
+        String preview = previewBody(receive(bundle), "libraryCode", "LIB-LONG");
+
+        assertThat(codes(preview, "WARNING")).contains("MAP_ENTRY_TOO_LONG");
+        assertThat(codes(preview, "NOT_MIGRATED")).contains("LEGACY_MAP_UNUSED");
+    }
+
     // --- Hulp -----------------------------------------------------------------------------------------------------
+
+    /** S8a: de vertaalrijen van één mapping als {@code volgnummer:bron>doel}, op volgnummer. */
+    private List<String> valueMap(long revisionId, String targetFieldCode) {
+        return jdbc.queryForList("select v.sequence_number || ':' || v.source_value || '>' || v.target_value "
+                + "from import_field_value_map v join import_field_mapping m on m.id = v.mapping_id "
+                + "where m.definition_revision_id = ? and m.target_field_code = ? order by v.sequence_number",
+                String.class, revisionId, targetFieldCode);
+    }
 
     private static List<Object> concurrently(int count, Callable<Object> task) throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(count);

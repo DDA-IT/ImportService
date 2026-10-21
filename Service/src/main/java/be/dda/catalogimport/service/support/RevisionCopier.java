@@ -4,6 +4,7 @@ import be.dda.catalogimport.dao.ImportDefinitionBookmarkRepository;
 import be.dda.catalogimport.dao.ImportDefinitionBookmarkUsageRepository;
 import be.dda.catalogimport.dao.ImportDefinitionBookmarkValueRepository;
 import be.dda.catalogimport.dao.ImportFieldMappingRepository;
+import be.dda.catalogimport.dao.ImportFieldValueMapRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
 import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
 import be.dda.catalogimport.domain.ImportDefinition;
@@ -12,9 +13,12 @@ import be.dda.catalogimport.domain.ImportDefinitionBookmarkUsage;
 import be.dda.catalogimport.domain.ImportDefinitionBookmarkValue;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldMapping;
+import be.dda.catalogimport.domain.ImportFieldValueMap;
 import be.dda.catalogimport.domain.ImportRecordFilter;
 import be.dda.catalogimport.domain.ImportRevisionFieldCriticality;
 import be.dda.catalogimport.domain.RevisionStatus;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,19 +71,22 @@ public class RevisionCopier {
     private final ImportDefinitionBookmarkRepository bookmarks;
     private final ImportDefinitionBookmarkUsageRepository usages;
     private final ImportDefinitionBookmarkValueRepository bookmarkValues;
+    private final ImportFieldValueMapRepository valueMaps;
 
     public RevisionCopier(ImportFieldMappingRepository fieldMappings,
                           ImportRecordFilterRepository recordFilters,
                           ImportRevisionFieldCriticalityRepository fieldCriticalities,
                           ImportDefinitionBookmarkRepository bookmarks,
                           ImportDefinitionBookmarkUsageRepository usages,
-                          ImportDefinitionBookmarkValueRepository bookmarkValues) {
+                          ImportDefinitionBookmarkValueRepository bookmarkValues,
+                          ImportFieldValueMapRepository valueMaps) {
         this.fieldMappings = fieldMappings;
         this.recordFilters = recordFilters;
         this.fieldCriticalities = fieldCriticalities;
         this.bookmarks = bookmarks;
         this.usages = usages;
         this.bookmarkValues = bookmarkValues;
+        this.valueMaps = valueMaps;
     }
 
     /**
@@ -201,6 +208,45 @@ public class RevisionCopier {
             copies.put(row.getTargetField().getCode(), copy);
         }
         return copies;
+    }
+
+    /**
+     * De kindrijen van de mappings van {@code source} - vandaag de vertaalrijen ({@code import_field_value_map},
+     * legacy-config S8a) - naar de <b>al opgeslagen</b> kopieën {@code saved} (de uitkomst van {@code saveAll} op
+     * {@link #copyMappings}). Aan te roepen door elke aanroeper van {@link #copyMappings}, direct na {@code saveAll}:
+     * zonder deze stap zou een gekopieerde MAP-mapping haar tabel verliezen en {@code CONFIG_TRANSFORM_INVALID} worden.
+     * <p>
+     * Gekoppeld op doelveldcode (uniek per revisie, {@code uk_import_field_mapping_target}); letterlijk mee: volgnummer,
+     * bron- en doelwaarde. De audittekening is die van de kopie van de mapping ({@code created_by}/{@code _subject}),
+     * dus dezelfde handeling als de mapping zelf. Eén leesquery voor de hele bronrevisie; de rijen worden direct
+     * opgeslagen.
+     *
+     * @param saved  de opgeslagen kopieën van de mappings (met id)
+     * @param source de bronrevisie
+     * @return het aantal gekopieerde vertaalrijen
+     */
+    public int copyMappingChildren(Collection<ImportFieldMapping> saved, ImportDefinitionRevision source) {
+        Map<String, ImportFieldMapping> byTarget = new LinkedHashMap<>();
+        for (ImportFieldMapping copy : saved) {
+            byTarget.put(copy.getTargetField().getCode(), copy);
+        }
+        List<ImportFieldValueMap> copies = new ArrayList<>();
+        for (ImportFieldValueMap row : valueMaps.findByRevisionId(source.getId())) {
+            String target = row.getMapping().getTargetField().getCode();
+            ImportFieldMapping mapping = byTarget.get(target);
+            if (mapping == null) {
+                // copyMappings kopieert elke mapping; ontbreekt er een, dan is er tussen beide stappen iets misgelopen.
+                throw new IllegalStateException("Value map rows of mapping '" + target + "' in revision "
+                        + source.getId() + " have no copied mapping to go to");
+            }
+            ImportFieldValueMap copy = new ImportFieldValueMap(mapping, row.getSequenceNumber(),
+                    row.getSourceValue(), row.getTargetValue());
+            copy.setCreatedBy(mapping.getCreatedBy());
+            copy.setCreatedBySubject(mapping.getCreatedBySubject());
+            copies.add(copy);
+        }
+        valueMaps.saveAll(copies);
+        return copies.size();
     }
 
     /**

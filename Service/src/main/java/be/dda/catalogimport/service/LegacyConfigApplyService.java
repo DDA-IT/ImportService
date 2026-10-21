@@ -15,6 +15,7 @@ import be.dda.catalogimport.dao.ImportDefinitionRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
 import be.dda.catalogimport.dao.ImportFieldCatalogRepository;
 import be.dda.catalogimport.dao.ImportFieldMappingRepository;
+import be.dda.catalogimport.dao.ImportFieldValueMapRepository;
 import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
 import be.dda.catalogimport.dao.LegacyConfigDefinitionOriginRepository;
@@ -283,6 +284,8 @@ public class LegacyConfigApplyService {
     private final ImportDefinitionRepository definitions;
     private final ImportDefinitionRevisionRepository revisions;
     private final ImportFieldMappingRepository fieldMappings;
+    /** S8a: de vertaalrijen van de mappings, voor de inhoudshash ({@link LegacyRevisionContent}). */
+    private final ImportFieldValueMapRepository valueMaps;
     private final ImportRecordFilterRepository recordFilters;
     private final ImportFieldCatalogRepository fieldCatalog;
     private final ImportLinkRepository links;
@@ -312,8 +315,10 @@ public class LegacyConfigApplyService {
                                     CatalogImportTaskRepository tasks, ExternalCredentialRepository credentials,
                                     SetupService setup, RevisionSuccessorService successors,
                                     RevisionCopier revisionCopier, ChainConfigurationChecks checks,
-                                    ProdisReferenceService prodis, Clock clock) {
+                                    ProdisReferenceService prodis, Clock clock,
+                                    ImportFieldValueMapRepository valueMaps) {
         this.receipts = receipts;
+        this.valueMaps = valueMaps;
         this.origins = origins;
         this.definitionOrigins = definitionOrigins;
         this.revisionOrigins = revisionOrigins;
@@ -1037,7 +1042,8 @@ public class LegacyConfigApplyService {
         }
         String latestHash = LegacyRevisionContent.ofRevision(latest,
                 fieldMappings.findByRevisionIdWithTargetField(latest.getId()),
-                recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(latest.getId()));
+                recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(latest.getId()),
+                valueMaps.findByRevisionId(latest.getId()));
         rows.add("latestContent:" + latestHash);
         if (!latestHash.equals(storedHash)) {
             items.add(new Item(element, BLOCKING, MANUAL_CHANGES_SINCE_MIGRATION, "revision.id=" + latest.getId(),
@@ -1391,7 +1397,9 @@ public class LegacyConfigApplyService {
         ImportDefinitionRevision source = revisions.findById(templateRevisionId).orElseThrow();
         ImportDefinitionRevision copy = revisions.saveAndFlush(revisionCopier.copyRevision(source, shared, 1, source,
                 reason, actor.username(), actor.subject()));
-        fieldMappings.saveAll(revisionCopier.copyMappings(copy, source, actor.username(), actor.subject()).values());
+        // S8a: de vertaalrijen van de mappings gaan mee (de gedeelde definitie draagt dezelfde maptabel als het sjabloon).
+        revisionCopier.copyMappingChildren(fieldMappings.saveAll(revisionCopier.copyMappings(copy, source,
+                actor.username(), actor.subject()).values()), source);
         recordFilters.saveAll(revisionCopier.copyFilters(copy, source, actor.username(), actor.subject()).values());
         revisionCopier.copyFieldCriticalities(copy, source, actor.username(), actor.subject());
         fieldMappings.flush();
@@ -1410,7 +1418,8 @@ public class LegacyConfigApplyService {
         ImportDefinitionRevision revision = revisions.findById(revisionId).orElseThrow();
         String written = LegacyRevisionContent.ofRevision(revision,
                 fieldMappings.findByRevisionIdWithTargetField(revisionId),
-                recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId));
+                recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId),
+                valueMaps.findByRevisionId(revisionId));
         if (!written.equals(plannedContentHash)) {
             throw new IllegalStateException("Legacy-config receipt " + receipt.getId()
                     + ": the written revision " + revisionId + " does not match the planned content");
@@ -1427,9 +1436,13 @@ public class LegacyConfigApplyService {
             revisions.saveAndFlush(revision);
         }
         for (PlannedMapping mapping : planned.mappings()) {
+            // S8a: de vertaalrijen van een CALC 7-mapping in dezelfde aanroep (de validatie ziet de volledige mapping).
+            List<SetupService.ValueMapEntry> valueMap = mapping.valueMap().stream()
+                    .map(entry -> new SetupService.ValueMapEntry(entry.source(), entry.target())).toList();
             setup.addMapping(revisionId, new SetupService.CreateMappingCommand(mapping.targetCode(),
                     mapping.sourceReference(), null, mapping.valueKind(), null, mapping.fixedValue(), null, null,
-                    null, null, null, null, mapping.transformKind(), mapping.transformConfig(), null, null), actor);
+                    null, null, null, null, mapping.transformKind(), mapping.transformConfig(), null, null,
+                    valueMap), actor);
         }
         for (PlannedFilter filter : planned.filters()) {
             setup.addFilter(revisionId, new SetupService.CreateFilterCommand(filter.sequence(),

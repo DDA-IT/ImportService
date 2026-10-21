@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import be.dda.catalogimport.domain.FieldTransformKind;
 import be.dda.catalogimport.service.support.ImportValueRules.DecimalFormat;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -124,7 +126,120 @@ class FieldTransformTest {
                 .isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
     }
 
+    // --- Legacy-config S8a: vertaaltabel uit import_field_value_map --------------------------------
+
+    /** Dezelfde vertaling als {@code values=}, maar uit de rijen; ook tekens die {@code values=} niet kan dragen. */
+    @Test
+    void translatesThroughTheValueMapRowsIncludingCharactersValuesCannotExpress() {
+        List<FieldTransform.MapEntry> rows = List.of(entry(1, "A;1", "ALFA|1"), entry(2, "B>2", "BRAVO;2"),
+                entry(3, "LEEG", ""));
+
+        assertThat(applyTable("caseSensitive=true", rows, "A;1")).isEqualTo("ALFA|1");
+        assertThat(applyTable("caseSensitive=true", rows, "B>2")).isEqualTo("BRAVO;2");
+        // Een lege doelwaarde is een vertaling naar leeg, geen ontbrekende vertaling.
+        assertThat(applyTable("caseSensitive=true", rows, "LEEG")).isEmpty();
+        // Ontbrekend blijft ontbrekend; de standaardwaarde (R-REC-03) kan nog gelden.
+        assertThat(applyTable("caseSensitive=true", rows, null)).isNull();
+    }
+
+    /** R-REC-08 geldt ook voor de tabel: een miss verwerpt de regel en valt nooit terug op de bronwaarde. */
+    @Test
+    void aValueOutsideTheValueMapRejectsTheRowAndIsNeverPassedThrough() {
+        List<FieldTransform.MapEntry> rows = List.of(entry(1, "a", "ALFA"));
+
+        assertThat(applyTable(null, rows, "A")).isEqualTo("ALFA");
+        assertThatThrownBy(() -> applyTable("caseSensitive=true", rows, "A"))
+                .isInstanceOf(ImportValueException.class)
+                .extracting(failure -> ((ImportValueException) failure).getCode())
+                .isEqualTo(FieldTransform.CODE_MAPPING_VALUE_UNKNOWN);
+    }
+
+    /** Legacy CALC 7 met een grote PSIMPDEFMAP: 2000 sleutels, elke sleutel vertaalt, een onbekende niet. */
+    @Test
+    void translatesTwoThousandKeys() {
+        List<FieldTransform.MapEntry> rows = new ArrayList<>();
+        for (int i = 1; i <= 2000; i++) {
+            rows.add(entry(i, "K" + i, "V" + i));
+        }
+
+        for (int i = 1; i <= 2000; i++) {
+            assertThat(applyTable("caseSensitive=true", rows, "K" + i)).isEqualTo("V" + i);
+        }
+        assertThat(codeOfTable("caseSensitive=true", rows, "K2001"))
+                .isEqualTo(FieldTransform.CODE_MAPPING_VALUE_UNKNOWN);
+    }
+
+    @Test
+    void refusesAValueMapThatDoesNotFitTheTransformation() {
+        List<FieldTransform.MapEntry> rows = List.of(entry(1, "A", "1"));
+
+        // Beide tabellen, of de rijen bij een andere soort: nooit stil een van beide negeren.
+        assertThat(tableConfigFailure(FieldTransformKind.MAP, "values=A>1", rows).getMessage())
+                .endsWith("it has both values= and 1 value map row(s); a translation has exactly one table");
+        assertThat(tableConfigFailure(FieldTransformKind.PREFIX, "prefix=X", rows).getMessage())
+                .endsWith("it has 1 value map row(s) but transformation PREFIX does not use a translation table; "
+                        + "they would silently have no effect");
+        // Geen van beide: dezelfde melding als vóór S8a.
+        assertThat(tableConfigFailure(FieldTransformKind.MAP, null, List.of()).getMessage())
+                .endsWith("setting 'values' is required: a translation needs its table of source and target values");
+    }
+
+    @Test
+    void refusesValueMapRowsThatWouldMakeTheTranslationAmbiguous() {
+        ScreeningBlockedException caseConflict = tableConfigFailure(FieldTransformKind.MAP, null,
+                List.of(entry(1, "ab", "1"), entry(2, "AB", "2")));
+        assertThat(caseConflict.getCode()).isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+        assertThat(caseConflict.getSourceValue()).isEqualTo("AB");
+        assertThat(caseConflict.getMessage()).endsWith("source values 'ab' and 'AB' differ only in case while "
+                + "caseSensitive=false; which one translates would be undefined");
+        // Hoofdlettergevoelig zijn het twee verschillende sleutels.
+        assertThat(applyTable("caseSensitive=true", List.of(entry(1, "ab", "1"), entry(2, "AB", "2")), "AB"))
+                .isEqualTo("2");
+        // Teken per teken zoals equalsIgnoreCase: 'ß' en "ss" zijn geen hoofdlettervariant van elkaar.
+        assertThat(applyTable(null, List.of(entry(1, "straße", "1"), entry(2, "STRASSE", "2")), "strasse"))
+                .isEqualTo("2");
+
+        assertThat(tableConfigFailure(FieldTransformKind.MAP, "caseSensitive=true",
+                List.of(entry(1, "A", "1"), entry(2, "A", "2"))).getMessage())
+                .endsWith("source value 'A' is translated more than once");
+        assertThat(tableConfigFailure(FieldTransformKind.MAP, null, List.of(entry(7, " ", "1"))).getMessage())
+                .endsWith("value map row 7 has no source value");
+    }
+
     // --- Helpers -----------------------------------------------------------------------------------
+
+    private static FieldTransform.MapEntry entry(int sequence, String source, String target) {
+        return new FieldTransform.MapEntry(sequence, source, target);
+    }
+
+    private String applyTable(String config, List<FieldTransform.MapEntry> rows, String value) {
+        MappingSettings settings = MappingSettings.parse(FIELD, config);
+        FieldTransform transform = FieldTransform.of(FieldTransformKind.MAP, settings, rows, FIELD, SCALE_TWO);
+        settings.verifyFullyUsed();
+        return transform.apply(value, FIELD, columns);
+    }
+
+    private String codeOfTable(String config, List<FieldTransform.MapEntry> rows, String value) {
+        try {
+            applyTable(config, rows, value);
+            throw new AssertionError("expected the row to be rejected");
+        } catch (ImportValueException rejected) {
+            return rejected.getCode();
+        }
+    }
+
+    private static ScreeningBlockedException tableConfigFailure(FieldTransformKind kind, String config,
+                                                                List<FieldTransform.MapEntry> rows) {
+        try {
+            MappingSettings settings = MappingSettings.parse(FIELD, config);
+            FieldTransform.of(kind, settings, rows, FIELD, SCALE_TWO);
+            settings.verifyFullyUsed();
+            throw new AssertionError("expected the configuration to block the delivery");
+        } catch (ScreeningBlockedException blocked) {
+            assertThat(blocked.getCode()).isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+            return blocked;
+        }
+    }
 
     private String apply(FieldTransformKind kind, String config, String value) {
         MappingSettings settings = MappingSettings.parse(FIELD, config);

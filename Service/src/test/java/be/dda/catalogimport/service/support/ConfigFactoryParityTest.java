@@ -16,6 +16,7 @@ import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
 import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
 import be.dda.catalogimport.domain.ImportFieldMapping;
+import be.dda.catalogimport.domain.ImportFieldValueMap;
 import be.dda.catalogimport.domain.ImportRecordFilter;
 import be.dda.catalogimport.domain.ImportRevisionFieldCriticality;
 import be.dda.catalogimport.domain.MissingColumnBehaviour;
@@ -84,6 +85,40 @@ class ConfigFactoryParityTest {
         assertThat(TABLE).anyMatch(row -> row.id().equals("OK-base") && row.code() == null);
     }
 
+    /**
+     * S8a, stap B' in collect-modus: een fout in de vertaalrijen is een eigen bevinding {@code CONFIG_TRANSFORM_INVALID}
+     * naast de onafhankelijke fouten van andere rijen, met dezelfde boodschap als de eerste worp.
+     */
+    @Test
+    void aValueMapFindingIsReportedInCollectModeNextToOtherFindings() {
+        Fixture fixture = new Fixture();
+        fixture.first().setTransformKind(FieldTransformKind.MAP);
+        fixture.valueMap("ab", "1", "AB", "2");
+        fixture.firstFilter().setFilterStage(null);
+
+        ConfigProblemCollector problems = ConfigProblemCollector.all();
+        StructureFacts facts = STRUCTURE.collectInto(fixture.revision, fixture.linkCurrency, problems);
+        MAPPING.collectInto(fixture.revision, facts, fixture.mappings, fixture.filters, fixture.criticalities,
+                fixture.valueMaps, problems);
+        ConfigCheckReport report = problems.toReport();
+
+        assertThat(report.findings()).extracting(ConfigFinding::code).contains(TRANSFORM, FILTER);
+        assertThat(report.findings()).filteredOn(finding -> TRANSFORM.equals(finding.code())).singleElement()
+                .satisfies(finding -> {
+                    assertThat(finding.fieldName()).isEqualTo("E_SUPPLIER");
+                    assertThat(finding.sourceValue()).isEqualTo("AB");
+                    assertThat(finding.message()).isEqualTo(tc("E_SUPPLIER") + "source values 'ab' and 'AB' "
+                            + "differ only in case while caseSensitive=false; which one translates would be undefined");
+                });
+        // Dezelfde rij zonder vertaalrijen-overload: de rijen ontbreken, dus "geen van beide".
+        ConfigCheckReport withoutRows = MAPPING.collect(fixture.revision,
+                StructureFacts.of(fixture.deriveStructure()), fixture.mappings, fixture.filters,
+                fixture.criticalities);
+        assertThat(withoutRows.findings()).filteredOn(finding -> TRANSFORM.equals(finding.code())).singleElement()
+                .extracting(ConfigFinding::message).asString().endsWith("setting 'values' is required: a translation "
+                        + "needs its table of source and target values");
+    }
+
     @Test
     void rowIdsAreUnique() {
         Set<String> seen = new HashSet<>();
@@ -144,8 +179,9 @@ class ConfigFactoryParityTest {
         try {
             SourceStructureConfig structure = fixture.structure != null ? fixture.structure
                     : STRUCTURE.from(fixture.revision, fixture.linkCurrency);
+            // S8a: de overload met vertaalrijen; zonder rijen exact de vorige aanroep.
             MAPPING.from(fixture.revision, structure, fixture.mappings, fixture.filters,
-                    fixture.criticalities);
+                    fixture.criticalities, fixture.valueMaps);
         } catch (ScreeningBlockedException blocked) {
             thrown = blocked;
         }
@@ -204,6 +240,7 @@ class ConfigFactoryParityTest {
         transformSettingsRows(t);
         valueFormatRows(t);
         transformKindRows(t);
+        valueMapRows(t);
         maxPercentageRows(t);
         sourceRows(t);
         priceComponentAndFilterRows(t);
@@ -677,6 +714,52 @@ class ConfigFactoryParityTest {
                 "a percentage of the fixed base 0 can never be computed");
     }
 
+    /**
+     * Legacy-config S8a: de vertaalrijen ({@code import_field_value_map}) van een MAP-mapping, via
+     * {@link FieldTransform#of(FieldTransformKind, MappingSettings, List, String, ImportValueRules.DecimalFormat)}.
+     * Toegevoegde rijen; de bestaande rijen (o.a. {@code FT-map-values-missing}: geen van beide) zijn ongewijzigd.
+     */
+    private static void valueMapRows(List<Row> t) {
+        ok(t, "OK-translate-value-map", f -> {
+            f.first().setTransformKind(FieldTransformKind.MAP);
+            f.first().setTransformConfig("caseSensitive=true");
+            f.valueMap("A;1", "ALFA|1", "B>2", "", "a;1", "alfa");
+        });
+        blocked(t, "FT-value-map-and-values", f -> {
+            f.first().setTransformKind(FieldTransformKind.MAP);
+            f.first().setTransformConfig("values=A>1");
+            f.valueMap("B", "2");
+        }, TRANSFORM, "E_SUPPLIER", null, tc("E_SUPPLIER")
+                + "it has both values= and 1 value map row(s); a translation has exactly one table");
+        blocked(t, "FT-value-map-on-another-kind", f -> {
+            f.first().setTransformKind(FieldTransformKind.PREFIX);
+            f.first().setTransformConfig("prefix=X");
+            f.valueMap("B", "2");
+        }, TRANSFORM, "E_SUPPLIER", null, tc("E_SUPPLIER") + "it has 1 value map row(s) but transformation "
+                + "PREFIX does not use a translation table; they would silently have no effect");
+        blocked(t, "FT-value-map-case-conflict", f -> {
+            f.first().setTransformKind(FieldTransformKind.MAP);
+            f.valueMap("ab", "1", "AB", "2");
+        }, TRANSFORM, "E_SUPPLIER", "AB", tc("E_SUPPLIER") + "source values 'ab' and 'AB' differ only in case "
+                + "while caseSensitive=false; which one translates would be undefined");
+        blocked(t, "FT-value-map-source-twice", f -> {
+            f.first().setTransformKind(FieldTransformKind.MAP);
+            f.first().setTransformConfig("caseSensitive=true");
+            f.valueMap("A", "1", "A", "2");
+        }, TRANSFORM, "E_SUPPLIER", "A", tc("E_SUPPLIER") + "source value 'A' is translated more than once");
+        blocked(t, "FT-value-map-blank-source", f -> {
+            f.first().setTransformKind(FieldTransformKind.MAP);
+            f.valueMap(" ", "1");
+        }, TRANSFORM, "E_SUPPLIER", " ", tc("E_SUPPLIER") + "value map row 1 has no source value");
+        // De rijen hangen aan hun mapping: rijen van een andere mapping tellen niet mee.
+        blocked(t, "FT-value-map-of-another-mapping-does-not-count", f -> {
+            f.first().setTransformKind(FieldTransformKind.MAP);
+            f.valueMaps.add(new ImportFieldValueMap(mapping(f.revision, 2, supporting("E_OTHER"), "X"), 1, "A",
+                    "1"));
+        }, TRANSFORM, "E_SUPPLIER", null, tc("E_SUPPLIER")
+                + "setting 'values' is required: a translation needs its table of source and target values");
+    }
+
     private static void transform(List<Row> t, String id, FieldTransformKind kind, String config,
                                   String source, String reason) {
         blocked(t, id, f -> {
@@ -887,6 +970,8 @@ class ConfigFactoryParityTest {
         final List<ImportFieldMapping> mappings = new ArrayList<>();
         final List<ImportRecordFilter> filters = new ArrayList<>();
         final List<ImportRevisionFieldCriticality> criticalities = new ArrayList<>();
+        /** S8a: de vertaalrijen; leeg in de basisrevisie. */
+        final List<ImportFieldValueMap> valueMaps = new ArrayList<>();
 
         Fixture() {
             mappings.add(mapping(revision, 1, supporting("E_SUPPLIER"), "E_LEV"));
@@ -895,6 +980,13 @@ class ConfigFactoryParityTest {
 
         ImportFieldMapping first() {
             return mappings.get(0);
+        }
+
+        /** Vertaalrijen op de eerste mapping, als paren bron, doel, in volgorde. */
+        void valueMap(String... pairs) {
+            for (int i = 0; i < pairs.length; i += 2) {
+                valueMaps.add(new ImportFieldValueMap(first(), valueMaps.size() + 1, pairs[i], pairs[i + 1]));
+            }
         }
 
         ImportRecordFilter firstFilter() {

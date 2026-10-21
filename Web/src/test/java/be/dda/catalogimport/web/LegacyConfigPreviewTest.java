@@ -104,6 +104,10 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
         assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.code == 'IDENTITY_PROFILE')].target"))
                 .containsExactly("revision.identityProfileKind=FOUR_PART_WITH_DISCOUNT_CODE");
         assertThat(codes(body, "WARNING")).contains("PRODIS_REFERENCE_NOT_VERIFIED", "MAP_MISS_NO_FALLBACK");
+        // S8a: CALC 7 gaat naar de maptabel; de grens van transform_config bestaat voor maps niet meer.
+        assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.code == 'MAP_TABLE')].target"))
+                .containsExactly("import_field_value_map");
+        assertThat(body).doesNotContain("MAP_TOO_LARGE").doesNotContain("TRANSFORM_VALUE_NOT_EXPRESSIBLE");
 
         // Een andere keuze geeft een ander rapport en dus een andere fingerprint.
         assertThat(fingerprint(id, "libraryCode", "LIB-OTHER"))
