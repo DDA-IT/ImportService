@@ -65,7 +65,14 @@ Test: G=geldig, O=ontbrekend, D=dubbel, X=ongeldig, B=grensgeval.
 - R-REC-06 te lange waarde → rij verwerpen, nooit afkappen (`VALUE_TOO_LONG`, alle gemapte velden).
 - R-REC-07 transformaties (sealed `FieldTransform`): vaste waarde, prefix/suffix, concat, split, map,
   +,-,×,÷, percentage; geen vrije expressie; `TRANSFORM_FAILED`, `TRANSFORM_DIVIDE_BY_ZERO`.
-- R-REC-08 map-miss valt nooit terug op de oorspronkelijke waarde: `MAPPING_VALUE_UNKNOWN`.
+- R-REC-08 map-miss valt nooit *stil* terug op de oorspronkelijke waarde: standaard (`onMiss=REJECT`) is een miss
+  `MAPPING_VALUE_UNKNOWN` (rij verworpen). **Aangepast (legacy-config S8g, beslissing V1 = B, `docs/decisions.md`
+  2026-10-21):** een MAP-mapping mag uitdrukkelijk `onMiss=KEEP_SOURCE` dragen (opt-in per mapping, enkel op `MAP`; ook als
+  stap in een `CHAIN`; ongeldig op elke andere soort, ook `MAP_CONTAINS`, die altijd verwerpt). De bronwaarde (bij een
+  keten: de invoer van die stap) gaat dan ongewijzigd door en elke doorgelaten waarde geeft een WARNING
+  `MAPPING_VALUE_PASSED_THROUGH` (recordniveau, `DeliveryEffect.NONE`, nooit blokkerend; de levering krijgt
+  `VALID_WITH_WARNINGS`). Daarna volgt de gewone typecontrole (R-REC-01/04): een niet-numerieke waarde op een getalveld wordt
+  verworpen met het bestaande typeprobleem, nooit stil 0. De legacy-migratie zet `onMiss=KEEP_SOURCE` enkel voor CALC 7.
 - R-REC-09 canonicalisatie: enkel encodingnormalisatie, buitenste trim, onzichtbare control characters
   weg; geen case-folding, geen leading-zero-verwijdering.
 

@@ -520,6 +520,72 @@ class FieldTransformTest {
         });
     }
 
+    // --- Legacy-config S8g: onMiss=KEEP_SOURCE (beslissing V1 = B) ----------------------------------
+
+    /** Opt-in: de bronwaarde gaat door en wordt per regel gemeld; een treffer en REJECT blijven ongewijzigd. */
+    @Test
+    void keepSourcePassesAMissThroughAndReportsItWhileRejectStillRejects() {
+        List<FieldTransform.MapEntry> rows = List.of(entry(1, "A", "ALFA"));
+
+        assertThat(applyTable("caseSensitive=true;onMiss=KEEP_SOURCE", rows, "A")).isEqualTo("ALFA");
+        assertThat(columns.passed).isEmpty();
+        assertThat(applyTable("caseSensitive=true;onMiss=KEEP_SOURCE", rows, "Z9")).isEqualTo("Z9");
+        assertThat(columns.passed).containsExactly(FIELD + ":Z9");
+        // Ontbrekend blijft ontbrekend, zonder melding.
+        assertThat(applyTable("onMiss=KEEP_SOURCE", rows, null)).isNull();
+        assertThat(columns.passed).hasSize(1);
+
+        assertThat(codeOfTable("caseSensitive=true;onMiss=REJECT", rows, "Z9"))
+                .isEqualTo(FieldTransform.CODE_MAPPING_VALUE_UNKNOWN);
+        assertThat(codeOfTable("caseSensitive=true", rows, "Z9")).isEqualTo(FieldTransform.CODE_MAPPING_VALUE_UNKNOWN);
+        assertThat(columns.passed).hasSize(1);
+    }
+
+    @Test
+    void keepSourceWorksWithTheInlineValuesToo() {
+        assertThat(apply(FieldTransformKind.MAP, "values=A>ALFA;onMiss=KEEP_SOURCE", "Q")).isEqualTo("Q");
+        assertThat(columns.passed).containsExactly(FIELD + ":Q");
+        assertThat(codeOf(FieldTransformKind.MAP, "values=A>ALFA;onMiss=REJECT", "Q"))
+                .isEqualTo(FieldTransform.CODE_MAPPING_VALUE_UNKNOWN);
+    }
+
+    /** Alleen MAP kent onMiss; elke andere soort (ook MAP_CONTAINS) en een onbekende waarde is een configuratiefout. */
+    @Test
+    void onMissIsOnlyValidOnMapAndOnlyWithAKnownValue() {
+        assertThat(configCodeOf(FieldTransformKind.MAP, "values=A>1;onMiss=SKIP"))
+                .isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+        assertThat(configCodeOf(FieldTransformKind.MAP, "values=A>1;onMiss=keep_source"))
+                .isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+        assertThat(configCodeOf(FieldTransformKind.PREFIX, "prefix=X;onMiss=KEEP_SOURCE"))
+                .isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+        assertThat(configCodeOf(FieldTransformKind.UPPER, "onMiss=KEEP_SOURCE"))
+                .isEqualTo(ImportMappingConfigFactory.CODE_TRANSFORM_INVALID);
+        assertThat(tableConfigFailure(FieldTransformKind.MAP_CONTAINS, "onMiss=KEEP_SOURCE",
+                List.of(entry(1, "ROOD", "R"))).getMessage()).contains("setting 'onMiss' is not used");
+    }
+
+    /** In een keten krijgt de MAP-stap de instelling; de invoer van die stap gaat door, hier na substring en affix. */
+    @Test
+    void keepSourceInAChainStepPassesTheInputOfThatStepThrough() {
+        List<FieldTransform.MapEntry> rows = List.of(entry(1, "P-A", "ALFA"));
+        List<FieldTransform.Step> steps = List.of(step(1, FieldTransformKind.SUBSTRING, "start=2"),
+                step(2, FieldTransformKind.AFFIX, "prefix=P-"), step(3, FieldTransformKind.MAP, "onMiss=KEEP_SOURCE"));
+
+        assertThat(applyChain(steps, rows, "XA")).isEqualTo("ALFA");
+        assertThat(columns.passed).isEmpty();
+        assertThat(applyChain(steps, rows, "XB")).isEqualTo("P-B");
+        assertThat(columns.passed).containsExactly(FIELD + ":P-B");
+        // Zonder opt-in verwerpt de MAP-stap.
+        List<FieldTransform.Step> rejecting = List.of(step(1, FieldTransformKind.MAP, null));
+        assertThatThrownBy(() -> applyChain(rejecting, rows, "XB")).isInstanceOf(ImportValueException.class);
+        // De keten zelf draagt de instelling niet.
+        assertBlocked(() -> {
+            MappingSettings settings = MappingSettings.parse(FIELD, "onMiss=KEEP_SOURCE");
+            FieldTransform.of(FieldTransformKind.CHAIN, settings, rows, rejecting, FIELD, SCALE_TWO);
+            settings.verifyFullyUsed();
+        });
+    }
+
     // --- Helpers -----------------------------------------------------------------------------------
 
     private static FieldTransform.Step step(int number, FieldTransformKind kind, String config) {
@@ -622,6 +688,14 @@ class FieldTransformTest {
     private static final class Columns implements FieldTransform.SourceValues {
 
         private final Map<String, String> values = new LinkedHashMap<>();
+        /** Elke doorgelaten tabelmiss als {@code veld:waarde} (S8g). */
+        private final List<String> passed = new ArrayList<>();
+
+        @Override
+        public void passedThrough(String fieldName, String value, String message) {
+            assertThat(message).contains("onMiss=KEEP_SOURCE");
+            passed.add(fieldName + ":" + value);
+        }
 
         private Columns with(String reference, String value) {
             values.put(reference, value);

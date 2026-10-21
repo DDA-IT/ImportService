@@ -148,7 +148,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(mappings.get(0)).containsEntry("target_field_code", "VKP1_PCT")
                 .containsEntry("source_reference", "8").containsEntry("transform_kind", "CHAIN")
                 .containsEntry("transform_config", "decimalSeparator=,");
-        assertThat(steps(revisionId, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true");
+        assertThat(steps(revisionId, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true;onMiss=KEEP_SOURCE");
         assertThat(jdbc.queryForList("select s.created_by from import_field_transform_step s join import_field_mapping "
                 + "m on m.id = s.mapping_id where m.definition_revision_id = ?", String.class, revisionId))
                 .containsOnly(USER);
@@ -160,7 +160,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(valueMap(((Number) templateRevisions.get(0).get("id")).longValue(), "VKP1_PCT"))
                 .containsExactly("1:DOOS>BOX", "2:STK>PCE");
         assertThat(steps(((Number) templateRevisions.get(0).get("id")).longValue(), "VKP1_PCT"))
-                .containsExactly("1:MAP:caseSensitive=true");
+                .containsExactly("1:MAP:caseSensitive=true;onMiss=KEEP_SOURCE");
         assertThat(mappings.get(1)).containsEntry("target_field_code", "VKP5_PCT")
                 .containsEntry("source_reference", "9").containsEntry("transform_kind", "NONE")
                 .containsEntry("transform_config", "decimalSeparator=,");
@@ -406,7 +406,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(active.get("identity_supplier_field")).isEqualTo("3");
         assertThat(active.get("record_base_price_field")).isEqualTo("7");
         assertThat(valueMap(first, "VKP1_PCT")).containsExactly("1:DOOS>BOX", "2:STK>PCE");
-        assertThat(steps(first, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true");
+        assertThat(steps(first, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true;onMiss=KEEP_SOURCE");
         Map<String, Object> successor = revisions.get(1);
         long successorId = ((Number) successor.get("id")).longValue();
         assertThat(successor.get("status")).isEqualTo("DRAFT");
@@ -418,7 +418,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         // S8a: de opvolger kreeg eerst de kopie van de rijen, daarna overschreef APPLY de mapping met de nieuwe tabel.
         assertThat(valueMap(successorId, "VKP1_PCT")).containsExactly("1:DOOS>BOX", "2:STK>PCS");
         // S8c: idem voor de ketenstappen (kopie, verwijderd als entiteit, opnieuw geschreven): precies één MAP-stap.
-        assertThat(steps(successorId, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true");
+        assertThat(steps(successorId, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true;onMiss=KEEP_SOURCE");
         // S8f: de opvolger kreeg eerst de kopie van de filters (met hun groep), daarna schreef APPLY ze opnieuw: de
         // groep volgt de nieuwe leverancierskolom 13, de actieve revisie houdt kolom 3.
         assertThat(filters(first)).contains("2:EXCLUDE:EQUALS:3:9999:COMPARE_AS_EMPTY:false:true:1");
@@ -581,8 +581,9 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         String preview = previewBody(id, "libraryCode", "LIB-2000");
         assertThat(blockingCodes(preview)).isEmpty();
         assertThat(preview).doesNotContain("MAP_TOO_LARGE").doesNotContain("TRANSFORM_VALUE_NOT_EXPRESSIBLE");
-        assertThat(codes(preview, "WARNING")).contains("MAP_MISS_NO_FALLBACK", "MAP_KEY_AMBIGUOUS");
-        assertThat(codes(preview, "MIGRATED")).contains("MAP_TABLE");
+        // S8g (V1 = B): CALC 7 laat de bronwaarde door (onMiss=KEEP_SOURCE); de WARNING MAP_MISS_NO_FALLBACK vervalt.
+        assertThat(codes(preview, "WARNING")).contains("MAP_KEY_AMBIGUOUS").doesNotContain("MAP_MISS_NO_FALLBACK");
+        assertThat(codes(preview, "MIGRATED")).contains("MAP_TABLE", "MAP_MISS_KEEPS_SOURCE");
         apply(id, JsonPath.read(preview, "$.previewFingerprint"), REASON, "libraryCode", "LIB-2000")
                 .andExpect(status().isOk()).andExpect(jsonPath("$.configurationFindings").isEmpty());
 
@@ -596,7 +597,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(jdbc.queryForObject("select transform_config from import_field_mapping where "
                 + "definition_revision_id = ? and target_field_code = 'VKP1_PCT'", String.class, revisionId))
                 .isEqualTo("decimalSeparator=,");
-        assertThat(steps(revisionId, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true");
+        assertThat(steps(revisionId, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true;onMiss=KEEP_SOURCE");
 
         // Tweemaal dezelfde inhoud: geen nieuwe revisie.
         ((ObjectNode) bundle.get("interface").get("header")).put("info", "tweede export 2000");
@@ -685,7 +686,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
                 "3:UPPER:");
         assertThat(mappingOf(revisionId, "VKP1_PCT")).isEqualTo("CHAIN|decimalSeparator=,");
         assertThat(steps(revisionId, "VKP1_PCT")).containsExactly("1:AFFIX:prefix=P-;suffix=-S",
-                "2:MAP:caseSensitive=true");
+                "2:MAP:caseSensitive=true;onMiss=KEEP_SOURCE");
         assertThat(valueMap(revisionId, "VKP1_PCT")).containsExactly("1:DOOS>BOX", "2:STK>PCE");
         long templateRevisionId = ((Number) revisionRows(definitionId(supplier(bundle), "VROOAM2-SJ")).get(0)
                 .get("id")).longValue();
@@ -759,6 +760,8 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(preview).doesNotContain("LEGACY_CALC_14_NOT_MIGRATED");
         assertThat(codes(preview, "WARNING")).contains("MAP_CONTAINS_MISS_NOT_EMPTY");
         assertThat(codes(preview, "NOT_MIGRATED")).contains("MAP_CONTAINS_ROW_NOT_MIGRATED");
+        // S8g: de CALC 7 in dezelfde definitie laat door (informatief), CALC 14 blijft verwerpen (WARNING hierboven).
+        assertThat(codes(preview, "MIGRATED")).contains("MAP_MISS_KEEPS_SOURCE");
         assertThat((List<String>) JsonPath.read(preview, "$.report.items[?(@.code == 'MAPPING')].target"))
                 .contains("VKP5_PCT <- column 9 CHAIN MAP_CONTAINS");
         apply(id, JsonPath.read(preview, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8D")
@@ -767,7 +770,9 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         long definitionId = definitionId(supplier(bundle), "VROOAM2");
         long revisionId = ((Number) revisionRows(definitionId).get(0).get("id")).longValue();
         assertThat(mappingOf(revisionId, "VKP5_PCT")).isEqualTo("CHAIN|decimalSeparator=,");
+        // CALC 14 krijgt nooit onMiss: een miss blijft MAPPING_VALUE_UNKNOWN.
         assertThat(steps(revisionId, "VKP5_PCT")).containsExactly("1:MAP_CONTAINS:");
+        assertThat(steps(revisionId, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true;onMiss=KEEP_SOURCE");
         assertThat(valueMap(revisionId, "VKP5_PCT")).containsExactly("1:A-GROEN>G", "2:B-ROOD>R");
         // CALC 7: de vereniging van alle NUMMERs, ook de rijen van de CALC 14-regel (legacy r.1009-1054).
         assertThat(valueMap(revisionId, "VKP1_PCT")).containsExactly("1:DOOS>BOX", "2:STK>PCE", "3:A-GROEN>G",

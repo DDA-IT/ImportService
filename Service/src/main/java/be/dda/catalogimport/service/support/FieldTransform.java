@@ -52,6 +52,17 @@ public sealed interface FieldTransform
     String CODE_TRANSFORM_DIVIDE_BY_ZERO = "TRANSFORM_DIVIDE_BY_ZERO";
     /** De bronwaarde staat niet in de vertaaltabel; er wordt nooit op de bronwaarde teruggevallen. */
     String CODE_MAPPING_VALUE_UNKNOWN = "MAPPING_VALUE_UNKNOWN";
+    /**
+     * De bronwaarde staat niet in de vertaaltabel en de mapping heeft {@code onMiss=KEEP_SOURCE} (S8g, beslissing V1 = B
+     * van 2026-10-21): de waarde gaat ongewijzigd door en dit wordt per regel gemeld (WARNING, nooit blokkerend).
+     */
+    String CODE_MAPPING_VALUE_PASSED_THROUGH = "MAPPING_VALUE_PASSED_THROUGH";
+    /** De instelling {@code onMiss} van een MAP-mapping: wat er bij een bronwaarde buiten de tabel gebeurt. */
+    String SETTING_ON_MISS = "onMiss";
+    /** {@code onMiss}-waarde: de regel verwerpen (standaard, R-REC-08). */
+    String ON_MISS_REJECT = "REJECT";
+    /** {@code onMiss}-waarde: de bronwaarde doorlaten met een melding (legacy CALC 7). */
+    String ON_MISS_KEEP_SOURCE = "KEEP_SOURCE";
 
     /** Toegang tot de overige kolommen van dezelfde bronregel (samenvoegen, delen door een kolom). */
     interface SourceValues {
@@ -61,6 +72,13 @@ public sealed interface FieldTransform
 
         /** De ruwe kolomwaarde, of {@code null} wanneer de kolom in deze regel ontbreekt. */
         String value(String reference);
+
+        /**
+         * Een bronwaarde ging bij een tabelmiss ongewijzigd door ({@code onMiss=KEEP_SOURCE}). De standaard doet niets;
+         * {@code FieldValueMapper} legt er een melding van vast ({@link #CODE_MAPPING_VALUE_PASSED_THROUGH}).
+         */
+        default void passedThrough(String fieldName, String value, String message) {
+        }
     }
 
     /**
@@ -240,13 +258,22 @@ public sealed interface FieldTransform
     }
 
     /**
-     * Vertaaltabel (R-REC-08). Een bronwaarde die niet in de tabel staat verwerpt de regel; ze valt
+     * Vertaaltabel (R-REC-08). Een bronwaarde die niet in de tabel staat verwerpt de regel, tenzij de mapping uitdrukkelijk
+     * {@code onMiss=KEEP_SOURCE} heeft (S8g, beslissing V1 = B 2026-10-21): dan gaat de bronwaarde ongewijzigd door en
+     * wordt elke doorgelaten waarde gemeld ({@link #CODE_MAPPING_VALUE_PASSED_THROUGH}). Zonder die opt-in valt ze
      * <b>nooit</b> terug op de oorspronkelijke waarde.
+     *
+     * @param keepSource {@code true} = laat de bronwaarde bij een miss door (met melding)
      */
-    record Translate(Map<String, String> values, boolean caseSensitive) implements FieldTransform {
+    record Translate(Map<String, String> values, boolean caseSensitive, boolean keepSource)
+            implements FieldTransform {
 
         public Translate {
             values = Map.copyOf(values);
+        }
+
+        public Translate(Map<String, String> values, boolean caseSensitive) {
+            this(values, caseSensitive, false);
         }
 
         @Override
@@ -262,6 +289,11 @@ public sealed interface FieldTransform
                         break;
                     }
                 }
+            }
+            if (translated == null && keepSource) {
+                sources.passedThrough(fieldName, value, fieldName + ": '" + value + "' is not in the translation table "
+                        + "of this mapping; the source value is passed through unchanged (onMiss=KEEP_SOURCE)");
+                return value;
             }
             if (translated == null) {
                 throw new ImportValueException(CODE_MAPPING_VALUE_UNKNOWN, fieldName, value,
@@ -438,7 +470,7 @@ public sealed interface FieldTransform
                     settings.integer("index", "a split needs the 1-based part it keeps"));
             case MAP -> new Translate(
                     settings.table("values", "a translation needs its table of source and target values"),
-                    settings.flag("caseSensitive", false));
+                    settings.flag("caseSensitive", false), keepSource(settings, fieldCode));
             case ADD, SUBTRACT, MULTIPLY, DIVIDE -> arithmetic(kind, settings, fieldCode, format);
             case PERCENTAGE -> percentage(settings, fieldCode, format);
             case UPPER -> new Upper();
@@ -578,6 +610,7 @@ public sealed interface FieldTransform
                     + "translation has exactly one table");
         }
         boolean caseSensitive = settings.flag("caseSensitive", false);
+        boolean keepSource = keepSource(settings, fieldCode);
         Map<String, String> table = new LinkedHashMap<>();
         Map<String, String> folded = new HashMap<>();
         for (MapEntry entry : valueMap) {
@@ -600,7 +633,24 @@ public sealed interface FieldTransform
                 }
             }
         }
-        return new Translate(table, caseSensitive);
+        return new Translate(table, caseSensitive, keepSource);
+    }
+
+    /**
+     * S8g: {@code onMiss=REJECT} (standaard) of {@code onMiss=KEEP_SOURCE}, enkel op {@code MAP}. Op elke andere soort wordt
+     * de instelling niet gelezen, zodat {@code verifyFullyUsed} ze als {@code CONFIG_TRANSFORM_INVALID} weigert (ook op
+     * {@code MAP_CONTAINS}, dat bij een miss altijd verwerpt). Een andere waarde is een configuratiefout.
+     */
+    private static boolean keepSource(MappingSettings settings, String fieldCode) {
+        String value = settings.get(SETTING_ON_MISS);
+        if (value == null || value.isEmpty() || ON_MISS_REJECT.equals(value)) {
+            return false;
+        }
+        if (ON_MISS_KEEP_SOURCE.equals(value)) {
+            return true;
+        }
+        throw invalid(fieldCode, value, "setting '" + SETTING_ON_MISS + "' must be " + ON_MISS_REJECT + " or "
+                + ON_MISS_KEEP_SOURCE);
     }
 
     /**

@@ -55,8 +55,10 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
                 .containsExactly("revision.identityUppercase=true");
         // Wat wel vertaald wordt, staat in het rapport; nooit het secret.
         assertThat(codes(body, "MIGRATED")).contains("DELIMITER", "CHARSET", "HEADER", "BASE_PRICE", "DESCRIPTION");
-        assertThat(codes(body, "WARNING")).contains("PRODIS_REFERENCE_NOT_VERIFIED", "MAP_MISS_NO_FALLBACK",
-                "DECIMAL_COMMA_BASE_PRICE");
+        assertThat(codes(body, "WARNING")).contains("PRODIS_REFERENCE_NOT_VERIFIED", "DECIMAL_COMMA_BASE_PRICE")
+                .doesNotContain("MAP_MISS_NO_FALLBACK");
+        // S8g (V1 = B): CALC 7 laat een bronwaarde buiten de tabel door; informatief, geen waarschuwing meer.
+        assertThat(codes(body, "MIGRATED")).contains("MAP_MISS_KEEPS_SOURCE");
         assertThat(codes(body, "NOT_MIGRATED")).contains("SCHEDULE_NOT_MIGRATED", "CONNECTION_NOT_MIGRATED",
                 "SECRET_LABEL_OMITTED", "DISCOUNT_CODE_NOT_IN_KEY");
         // S8f: PSIMPEXCL wordt gemigreerd (LEGACY_EXCLUDES_NOT_MIGRATED verdwijnt); met een geblokkeerde identiteit
@@ -106,7 +108,9 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
                         "revision.identitySupplierReferenceField=1", "revision.identityDiscountCodeField=5");
         assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.code == 'IDENTITY_PROFILE')].target"))
                 .containsExactly("revision.identityProfileKind=FOUR_PART_WITH_DISCOUNT_CODE");
-        assertThat(codes(body, "WARNING")).contains("PRODIS_REFERENCE_NOT_VERIFIED", "MAP_MISS_NO_FALLBACK");
+        assertThat(codes(body, "WARNING")).contains("PRODIS_REFERENCE_NOT_VERIFIED")
+                .doesNotContain("MAP_MISS_NO_FALLBACK");
+        assertThat(codes(body, "MIGRATED")).contains("MAP_MISS_KEEPS_SOURCE");
         // S8a: CALC 7 gaat naar de maptabel; de grens van transform_config bestaat voor maps niet meer.
         assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.code == 'MAP_TABLE')].target"))
                 .containsExactly("import_field_value_map");

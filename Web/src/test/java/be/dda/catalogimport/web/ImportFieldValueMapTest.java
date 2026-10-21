@@ -170,6 +170,14 @@ class ImportFieldValueMapTest {
         refused(revisionId, onPrefix, "CONFIG_TRANSFORM_INVALID", "does not use a translation table");
         refused(revisionId, mapMapping("E_SUPPLIER", "eenheid", null, "ab", "1", "AB", "2"),
                 "CONFIG_TRANSFORM_INVALID", "differ only in case while caseSensitive=false");
+        // S8g: onMiss kent enkel MAP; MAP_CONTAINS (verwerpt altijd) en andere soorten weigeren het, ook een onbekende waarde.
+        ObjectNode onMissOnContains = mapMapping("E_SUPPLIER", "eenheid", "onMiss=KEEP_SOURCE", "B", "2");
+        onMissOnContains.put("transformKind", "MAP_CONTAINS");
+        refused(revisionId, onMissOnContains, "CONFIG_TRANSFORM_INVALID", "setting 'onMiss' is not used");
+        ObjectNode onMissOnPrefix = mapping("E_SUPPLIER", "eenheid", "PREFIX", "prefix=X;onMiss=KEEP_SOURCE");
+        refused(revisionId, onMissOnPrefix, "CONFIG_TRANSFORM_INVALID", "setting 'onMiss' is not used");
+        refused(revisionId, mapMapping("E_SUPPLIER", "eenheid", "onMiss=SKIP", "B", "2"), "CONFIG_TRANSFORM_INVALID",
+                "setting 'onMiss' must be REJECT or KEEP_SOURCE");
         // Onbruikbare rijen: vóór het schrijven (anders een databasefout).
         refused(revisionId, mapMapping("E_SUPPLIER", "eenheid", "caseSensitive=true", "A", "1", " A ", "2"),
                 "VALUE_MAP_SOURCE_DUPLICATE", "more than once");
@@ -272,6 +280,28 @@ class ImportFieldValueMapTest {
         List<String> tableFingerprints = fingerprints(tableBatch);
         assertThat(tableFingerprints).hasSize(3).doesNotContainNull();
         assertThat(tableFingerprints).isEqualTo(fingerprints(valuesBatch));
+    }
+
+    /**
+     * S8g (beslissing V1 = B): met {@code onMiss=KEEP_SOURCE} gaat een bronwaarde buiten de tabel ongewijzigd door en geeft
+     * die regel een WARNING {@code MAPPING_VALUE_PASSED_THROUGH}; zonder die opt-in verwerpt de regel (R-REC-08).
+     */
+    @Test
+    void screensAMapMissThroughWithAWarningWhenTheMappingKeepsTheSource() throws Exception {
+        Chain keeping = chain("SCRKEEP", mapMapping("E_SUPPLIER", "eenheid", "caseSensitive=true;onMiss=KEEP_SOURCE",
+                "K1", "V1", "K2", "V2"));
+        long batch = batchId(upload(keeping.taskId(), "REF-K", HEADER
+                + "ACME;G1;R1;1,50;Boormachine;EUR;K1\n" + "ACME;G1;R2;2,25;Schroevendraaier;EUR;K9999\n")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("SCREENED"))
+                .andExpect(jsonPath("$.rawRecordCount").value(2))
+                .andExpect(jsonPath("$.validRecordCount").value(2))
+                .andExpect(jsonPath("$.rejectedRecordCount").value(0)));
+
+        assertThat(jdbc.queryForList("select issue_code || ':' || severity || ':' || source_value || ':' || row_number "
+                + "from import_row_issue where batch_id = ? and issue_code = ?", String.class, batch,
+                FieldTransform.CODE_MAPPING_VALUE_PASSED_THROUGH)).containsExactly(
+                "MAPPING_VALUE_PASSED_THROUGH:WARNING:K9999:3");
     }
 
     // --- Hulp --------------------------------------------------------------------------------------------------

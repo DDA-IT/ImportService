@@ -88,7 +88,9 @@ class ImportIssueCatalogTest {
             "PHASE2_NO_COMPLETENESS_CONTRACT",
             // Bouwstap 3d: de componentcode van de basisprijs in import_candidate_price. Een waarde in
             // een kolom, geen foutcode - ze belandt nooit in import_row_issue.
-            "BASE_PRICE");
+            "BASE_PRICE",
+            // Legacy-config S8g: de waarde van de MAP-instelling onMiss (naast REJECT), geen foutcode.
+            "KEEP_SOURCE");
 
     /** Een letterlijke foutcode in de broncode: minstens twee woorden in hoofdletters met underscores. */
     private static final Pattern SHOUTED_LITERAL = Pattern.compile("\"([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\"");
@@ -161,6 +163,26 @@ class ImportIssueCatalogTest {
      * {@code BLOCKING}: die ernst hoort bij een contract-, structuur- of drempelfout, die per definitie
      * de hele levering betreft.
      */
+    /**
+     * Legacy-config S8g (beslissing V1 = B): een doorgelaten tabelmiss is een WARNING op recordniveau, nooit blokkerend
+     * en nooit een verwerping (het record blijft geldig; de typecontrole erna verwerpt een niet-passende waarde).
+     */
+    @Test
+    void classifiesAPassedThroughMappingValueAsANonBlockingRecordWarning() {
+        IssueClassification classification =
+                ImportIssueCatalog.classify(FieldTransform.CODE_MAPPING_VALUE_PASSED_THROUGH);
+
+        assertThat(FieldTransform.CODE_MAPPING_VALUE_PASSED_THROUGH).isEqualTo("MAPPING_VALUE_PASSED_THROUGH");
+        assertThat(classification.severity()).isEqualTo(RowIssueSeverity.WARNING);
+        assertThat(classification.domain()).isEqualTo(IssueDomain.MAPPING_VALIDATION);
+        assertThat(classification.controlLevel()).isEqualTo(ControlLevel.RECORD);
+        assertThat(classification.defaultImpactScope()).isEqualTo(ImpactScope.RECORD);
+        assertThat(classification.deliveryEffect()).isEqualTo(DeliveryEffect.NONE);
+        // De onbekende-waarde-fout blijft een verwerping.
+        assertThat(ImportIssueCatalog.classify(FieldTransform.CODE_MAPPING_VALUE_UNKNOWN).severity())
+                .isEqualTo(RowIssueSeverity.ERROR);
+    }
+
     @Test
     void severityAndControlLevelAgreeWithTheImpactScope() {
         ImportIssueCatalog.all().forEach((code, classification) -> {

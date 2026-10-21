@@ -80,7 +80,7 @@ public final class FieldValueMapper {
      * @param values   per {@code target_field_code} de canonieke doelwaarde; {@code null} betekent
      *                 <b>werkelijk ontbrekend</b> en is iets anders dan {@code ""} (gemapt maar leeg).
      *                 Dat onderscheid gaat tot in de vingerafdruk mee (par. 3.5)
-     * @param notices  informatieve vaststellingen (vandaag enkel toegepaste standaardwaarden); ze
+     * @param notices  informatieve vaststellingen (toegepaste standaardwaarden en doorgelaten tabelmisses, S8g); ze
      *                 verwerpen de regel niet
      */
     public record MappedRecord(Map<String, String> values, List<Notice> notices) {
@@ -111,7 +111,7 @@ public final class FieldValueMapper {
         }
         Map<String, String> values = new LinkedHashMap<>();
         List<Notice> notices = new ArrayList<>();
-        RowValues sources = new RowValues(row);
+        RowValues sources = new RowValues(row, notices);
         for (FieldMapping field : config.fields()) {
             values.put(field.targetFieldCode(), value(row, field, sources, notices));
         }
@@ -306,7 +306,14 @@ public final class FieldValueMapper {
     }
 
     /** De overige kolommen van dezelfde bronregel, voor samenvoegen en rekenen met een andere kolom. */
-    private record RowValues(ParsedRow row) implements FieldTransform.SourceValues {
+    private record RowValues(ParsedRow row, List<Notice> notices) implements FieldTransform.SourceValues {
+
+        /** Een bronwaarde ging bij een tabelmiss door (S8g, {@code onMiss=KEEP_SOURCE}): niet blokkerend, wel gemeld. */
+        @Override
+        public void passedThrough(String fieldName, String value, String message) {
+            notices.add(new Notice(row.lineNumber(), FieldTransform.CODE_MAPPING_VALUE_PASSED_THROUGH, fieldName,
+                    value, message));
+        }
 
         @Override
         public boolean hasColumn(String reference) {

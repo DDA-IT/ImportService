@@ -816,6 +816,27 @@ class ConfigFactoryParityTest {
             f.first().setTransformConfig("caseSensitive=true");
             f.valueMap("A;1", "ALFA|1", "B>2", "", "a;1", "alfa");
         });
+        // S8g: onMiss=KEEP_SOURCE enkel op MAP (met rijen of values=); elders of met een onbekende waarde een fout.
+        ok(t, "OK-translate-value-map-keep-source", f -> {
+            f.first().setTransformKind(FieldTransformKind.MAP);
+            f.first().setTransformConfig("caseSensitive=true;onMiss=KEEP_SOURCE");
+            f.valueMap("A", "1");
+        });
+        ok(t, "OK-translate-values-keep-source", f -> {
+            f.first().setTransformKind(FieldTransformKind.MAP);
+            f.first().setTransformConfig("values=A>1;onMiss=KEEP_SOURCE");
+        });
+        blocked(t, "FT-on-miss-on-map-contains", f -> {
+            f.first().setTransformKind(FieldTransformKind.MAP_CONTAINS);
+            f.first().setTransformConfig("onMiss=KEEP_SOURCE");
+            f.valueMap("A", "1");
+        }, TRANSFORM, "E_SUPPLIER", "onMiss", tc("E_SUPPLIER") + "setting 'onMiss' is not used by this "
+                + "transformation or data type; it would silently have no effect");
+        blocked(t, "FT-on-miss-unknown-value", f -> {
+            f.first().setTransformKind(FieldTransformKind.MAP);
+            f.first().setTransformConfig("values=A>1;onMiss=PASS");
+        }, TRANSFORM, "E_SUPPLIER", "PASS", tc("E_SUPPLIER")
+                + "setting 'onMiss' must be REJECT or KEEP_SOURCE");
         blocked(t, "FT-value-map-and-values", f -> {
             f.first().setTransformKind(FieldTransformKind.MAP);
             f.first().setTransformConfig("values=A>1");

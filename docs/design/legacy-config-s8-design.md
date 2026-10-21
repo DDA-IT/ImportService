@@ -1,8 +1,8 @@
 # Legacy-config S8 — maptabel, transformatieketen, Include/Exclude, PSIMPEXCL
 
-> **Status: VOORSTEL (2026-10-21), denker-zwaar; S8a, S8b, S8c, S8d, S8e en S8f gebouwd (2026-10-21, zie "Uitwerking S8a"
-> in §2a, "Uitwerking S8b" in §2b, "Uitwerking S8c" in §2c, "Uitwerking S8d" in §2d, "Uitwerking S8e" in §2e en
-> "Uitwerking S8f" in §2f).** Verfijnt
+> **Status: S8 VOLLEDIG GEBOUWD (2026-10-21), denker-zwaar; S8a, S8b, S8c, S8d, S8e, S8f en S8g gebouwd (zie "Uitwerking S8a"
+> in §2a, "Uitwerking S8b" in §2b, "Uitwerking S8c" in §2c, "Uitwerking S8d" in §2d, "Uitwerking S8e" in §2e,
+> "Uitwerking S8f" in §2f en "Uitwerking S8g" in §2g).** Verfijnt
 > `legacy-config-bundle-design.md` §8 rij S8 en `legacy-config-migratie-design.md` LM-2. S8f (V2 = A)
 > en S8g (V1 = B) zijn beslist (beslissingslog 2026-10-21) (§5).
 > Bronnen: `LegacyConfigTranslator`, `FieldTransform`, `FieldValueMapper`, `MappingSettings`, `ImportMappingConfigFactory`,
@@ -22,7 +22,7 @@ r.2582-2687, enkel als `NOT >SkipExcludes`, r.395), niet in `Prg_1171`.
 | MAP_CONTAINS (CALC 14) | S8d | gebruikt de tabel |
 | Include/Exclude-codes 2–6 en EN tussen include-regels | S8e | zonder schemawijziging uit te drukken |
 | PSIMPEXCL + `Skip_Excludes` | S8f, na V2 | vraagt een EN-combinatie over kolommen |
-| Terugval bij map-miss | S8g, na V1 | botst met R-REC-08 |
+| Terugval bij map-miss | S8g (gebouwd, V1 = B) | gemelde aanpassing van R-REC-08 |
 | Transformaties op identiteit 9–11, CALC 8/11/12/13 | nee | Q4/Q5/Q9 en systeemgrens; blokkerende codes blijven |
 | CALC 9/10 en Include/Exclude met Positie/Lengte | nee (aanname) | klein vervolg |
 
@@ -38,7 +38,7 @@ r.2582-2687, enkel als `NOT >SkipExcludes`, r.395), niet in `Prg_1171`.
   geen van beide, of (bij `caseSensitive=false`) sleutels die enkel in hoofdletters verschillen → `CONFIG_TRANSFORM_INVALID`.
   Rijen één keer per batch gelezen; additieve overload van de fabriek.
 - Rapport: `MAP_TOO_LARGE`, `TRANSFORM_VALUE_NOT_EXPRESSIBLE` (maps) verdwijnen; `MAP_EMPTY`, `MAP_KEY_AMBIGUOUS`,
-  `LEGACY_MAP_UNUSED`, `MAP_MISS_NO_FALLBACK` (tot V1) blijven.
+  `LEGACY_MAP_UNUSED` blijven; `MAP_MISS_NO_FALLBACK` vervalt sinds S8g (zie §2g).
 
 **Uitwerking S8a (gebouwd 2026-10-21; bouwer-zwaar).**
 - *Schema:* changeset `023-1` zoals hierboven, plus `check (sequence_number > 0)`, `check (length(btrim(source_value)) > 0)`
@@ -292,6 +292,38 @@ r.2582-2687, enkel als `NOT >SkipExcludes`, r.395), niet in `Prg_1171`.
   over 81 rijen x 192 records per variant (FOUR_PART, THREE_PART, zonder regel 23, vaste leverancier/groep), op records
   met een niet-lege leverancier en referentie.
 
+### 2g. Map-miss (S8g, geen schema, na V1 = B)
+- Legacy: CALC 7 laat de bronwaarde door (r.1054); CALC 14 geeft `''`. R-REC-08 (`fase3-rules-design.md`, aangepast) verbood
+  terugvallen; beslissing V1 = B (beslissingslog 2026-10-21) maakt het een opt-in per MAP-mapping.
+
+**Uitwerking S8g (gebouwd 2026-10-21; bouwer-gemiddeld; geen Liquibase, geen schemawijziging).**
+- *Instelling:* `onMiss=REJECT` (standaard) of `onMiss=KEEP_SOURCE` in `transform_config` van een `MAP` (ook van de MAP-stap in
+  een `CHAIN`, nooit op de keten zelf), met `values=` én met de maptabel. `FieldTransform.Translate` kreeg een component
+  `keepSource` (de oude tweeparameterconstructor blijft, `false`). De instelling wordt enkel door `MAP` gelezen: op elke
+  andere soort (ook `MAP_CONTAINS`) weigert `verifyFullyUsed` ze als `CONFIG_TRANSFORM_INVALID` (ook in collect-modus B'); een
+  andere waarde dan `REJECT`/`KEEP_SOURCE` (hoofdlettergevoelig) is eveneens `CONFIG_TRANSFORM_INVALID`.
+- *Screening:* bij een miss met `KEEP_SOURCE` geeft `Translate` de invoerwaarde van die stap terug en meldt ze dat via de
+  nieuwe `default`-methode `SourceValues.passedThrough` (no-op voor andere implementaties); `FieldValueMapper` legt er een
+  `Notice` van vast (zelfde kanaal als `VALUE_DEFAULT_APPLIED`), dat `CandidateNormaliser`/`RecordScreeningCore` als
+  regelprobleem bewaart. Alleen een geldige (niet verworpen) regel houdt haar meldingen, net als bij de standaardwaarde;
+  een door de typecontrole verworpen regel krijgt enkel het typeprobleem. Daarna de gewone typecontrole: een niet-numerieke
+  doorgelaten waarde op een DECIMAL/INTEGER-veld wordt `VALUE_TYPE_MISMATCH` (bestaande code), nooit 0; `null` blijft `null`
+  (geen miss, geen melding).
+- *Catalogus:* `MAPPING_VALUE_PASSED_THROUGH` (`FieldTransform.CODE_MAPPING_VALUE_PASSED_THROUGH`): **WARNING**,
+  `MAPPING_VALIDATION`, `RECORD`/`RECORD`, `DeliveryEffect.NONE` (keuze: INFO zoals `VALUE_DEFAULT_APPLIED` is een afwijking
+  zonder bronwaarde-risico; hier komt de waarde niet uit de tabel maar uit de bron en hoort ze in de beoordeling thuis, dus
+  `VALID_WITH_WARNINGS`; nooit ERROR: de regel blijft geldig en telt niet in `rejected_record_count`). `KEEP_SOURCE` staat in
+  `ImportIssueCatalogTest.NOT_ISSUE_CODES` (de waarde van de instelling, geen foutcode).
+- *Migratie:* CALC 7 → MAP met `caseSensitive=true;onMiss=KEEP_SOURCE`; de WARNING `MAP_MISS_NO_FALLBACK` vervalt (constante
+  blijft voor oudere rapporten) en wordt vervangen door het informatieve rapportitem `MAP_MISS_KEEPS_SOURCE` (status MIGRATED,
+  met de uitleg dat de bronwaarde doorgaat en per regel gemeld wordt). CALC 14 ongewijzigd: geen `onMiss`, WARNING
+  `MAP_CONTAINS_MISS_NOT_EMPTY` blijft.
+- *Hashes/API/kopie:* `LegacyRevisionContent` ongewijzigd (`transform_config` zit al in de mapping-/staptekst; bestaande
+  revisies byte-identiek, `LegacyRevisionContentParityTest` slaagt ongewijzigd). Een vóór S8g gemigreerde CALC 7-mapping plant nu
+  een andere inhoud (config met `onMiss`), dus een opvolgende DRAFT bij een nieuwe APPLY, nooit
+  `MANUAL_CHANGES_SINCE_MIGRATION`. Een tweede APPLY geeft `DEFINITION_UNCHANGED`. Setup-API: ongewijzigd, `onMiss` zit in
+  `transformConfig`; een onjuiste waarde of soort is 400 `CONFIG_TRANSFORM_INVALID`. Frontend-woordenlijst: S9.
+
 ## 3. Hashes, kopie, API, screening
 - `RevisionConfigHashes` omvat geen mappings/filters: ongewijzigd.
 - `LegacyRevisionContent`: per mapping achteraan `T,n,kind,config` (stappen) en `V,seq,bron,doel` (maprijen), per filter
@@ -317,10 +349,10 @@ Steeds: tweemaal dezelfde APPLY → `DEFINITION_UNCHANGED`.
 | S8d MAP_CONTAINS (**gebouwd 2026-10-21**) | Service | bouwer-gemiddeld | — | eerste treffer per KEY-volgorde, hoofdletterongevoelig |
 | S8e Include/Exclude (**gebouwd 2026-10-21**) | Service | bouwer-gemiddeld | `RecordFilterEvaluatorTest` | codes 1–6; twee includes = EN |
 | S8f PSIMPEXCL (**gebouwd 2026-10-21**) | Liquibase 025, alle lagen | bouwer-zwaar | `RecordFilterEvaluatorTest`, `SetupApiFlowTest` | vijf vormen + dode rijen; `Skip_Excludes` |
-| S8g onMiss (na V1) | Service, catalogus | bouwer-gemiddeld | — | volgens V1 |
+| S8g onMiss (**gebouwd 2026-10-21**) | Service, catalogus | bouwer-gemiddeld | `ImportIssueCatalogTest` | opt-in `onMiss=KEEP_SOURCE`, melding, CALC 14 blijft verwerpen |
 
 ## 5. Vragen voor de mens
-- **V1 — Map-miss (blokkeert S8g).** Legacy CALC 7 laat de bronwaarde door (r.1054); CALC 14 geeft `''` (op een percentage stil 0,
+- **V1 — Map-miss (beslist: B; S8g gebouwd).** Legacy CALC 7 laat de bronwaarde door (r.1054); CALC 14 geeft `''` (op een percentage stil 0,
   r.778); R-REC-08 verbiedt terugvallen. (A) altijd verwerpen; (B) opt-in `onMiss=KEEP_SOURCE` per MAP-mapping, migratie zet het
   enkel voor CALC 7, melding `MAPPING_VALUE_PASSED_THROUGH`, typecontrole verwerpt niet-numeriek (nooit stil 0), CALC 14 blijft
   verwerpen; (C) legacy volledig volgen. **Advies B** (gemelde aanpassing R-REC-08).

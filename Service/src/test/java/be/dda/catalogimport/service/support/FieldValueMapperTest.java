@@ -218,6 +218,44 @@ class FieldValueMapperTest {
                 .isEqualTo(FieldTransform.CODE_MAPPING_VALUE_UNKNOWN);
     }
 
+    /** S8g (V1 = B): opt-in doorlaten met een WARNING-melding; daarna de gewone typecontrole, nooit een stille 0. */
+    @Test
+    void passesAMapMissThroughWithANoticeWhenTheMappingKeepsTheSource() {
+        ImportMappingConfig config = config(text("E_SUPPLIER", ARTICLE_COLUMN, IdentityClass.NONE, mapping -> {
+            mapping.setTransformKind(FieldTransformKind.MAP);
+            mapping.setTransformConfig("values=A>ALFA;onMiss=KEEP_SOURCE");
+        }));
+
+        FieldValueMapper.MappedRecord hit = mapper.map(row("A", "", "", ""), config);
+        assertThat(hit.value("E_SUPPLIER")).isEqualTo("ALFA");
+        assertThat(hit.notices()).isEmpty();
+        FieldValueMapper.MappedRecord miss = mapper.map(row("Z", "", "", ""), config);
+        assertThat(miss.value("E_SUPPLIER")).isEqualTo("Z");
+        assertThat(miss.notices()).singleElement().satisfies(notice -> {
+            assertThat(notice.code()).isEqualTo(FieldTransform.CODE_MAPPING_VALUE_PASSED_THROUGH);
+            assertThat(notice.rowNumber()).isEqualTo(12);
+            assertThat(notice.sourceValue()).isEqualTo("Z");
+        });
+    }
+
+    @Test
+    void rejectsAPassedThroughValueThatIsNotANumberOnADecimalField() {
+        ImportMappingConfig keeping = config(decimal(2, "values=A>1,50;onMiss=KEEP_SOURCE", mapping ->
+                mapping.setTransformKind(FieldTransformKind.MAP)));
+        ImportMappingConfig rejecting = config(decimal(2, "values=A>1,50", mapping ->
+                mapping.setTransformKind(FieldTransformKind.MAP)));
+
+        // De vertaling levert een punt-decimaal op; een doorgelaten getal blijft een getal met de notatie van het veld.
+        assertThat(mapper.map(row("", "A", "", ""), keeping).value("E_AMOUNT")).isEqualTo("1.50");
+        FieldValueMapper.MappedRecord passed = mapper.map(row("", "12.5", "", ""), keeping);
+        assertThat(passed.value("E_AMOUNT")).isEqualTo("12.50");
+        assertThat(passed.notices()).singleElement()
+                .satisfies(notice -> assertThat(notice.code()).isEqualTo("MAPPING_VALUE_PASSED_THROUGH"));
+        // Een doorgelaten tekst op een getalveld wordt verworpen met het bestaande typeprobleem, nooit 0.
+        assertThat(codeOf(keeping, row("", "abc", "", ""))).isEqualTo(FieldValueMapper.CODE_VALUE_TYPE_MISMATCH);
+        assertThat(codeOf(rejecting, row("", "abc", "", ""))).isEqualTo(FieldTransform.CODE_MAPPING_VALUE_UNKNOWN);
+    }
+
     @Test
     void rejectsARowWhoseTransformationDividesByZero() {
         ImportMappingConfig config = config(decimal(2, "operandField=" + ARTICLE_COLUMN, mapping ->

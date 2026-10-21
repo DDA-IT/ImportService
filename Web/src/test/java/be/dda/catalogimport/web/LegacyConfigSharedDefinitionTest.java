@@ -195,7 +195,7 @@ class LegacyConfigSharedDefinitionTest extends LegacyConfigS2TestBase {
                 + "|| coalesce(s.transform_config, '') from import_field_transform_step s join import_field_mapping m "
                 + "on m.id = s.mapping_id where m.definition_revision_id = ? order by m.target_field_code, s.step_number";
         List<String> templateSteps = jdbc.queryForList(stepSql, String.class, templateRevision.get("id"));
-        assertThat(templateSteps).containsExactly("VKP1_PCT:1:MAP:caseSensitive=true");
+        assertThat(templateSteps).containsExactly("VKP1_PCT:1:MAP:caseSensitive=true;onMiss=KEEP_SOURCE");
         assertThat(jdbc.queryForList(stepSql, String.class, sharedRevision.get("id"))).isEqualTo(templateSteps);
     }
 

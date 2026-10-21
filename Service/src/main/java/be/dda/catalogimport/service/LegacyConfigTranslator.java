@@ -62,8 +62,10 @@ import java.util.UUID;
  *       r.1009-1054): alle regels vormen één tabel, bij een dubbele sleutel wint de laagste NUMMER
  *       ({@value #MAP_KEY_AMBIGUOUS}). Sinds S8a staat die tabel in {@code import_field_value_map} (geen grens van
  *       1000 tekens, geen onuitdrukbare {@code ;|>} meer), hoofdlettergevoelig ({@code caseSensitive=true}, aanname
- *       design S8 par. 2a). Een miss geeft in legacy de bronwaarde, bij ons een fout: altijd
- *       {@value #MAP_MISS_NO_FALLBACK}.</li>
+ *       design S8 par. 2a). Een miss geeft in legacy de bronwaarde; sinds S8g (V1 = B) zet de
+ *       migratie {@code onMiss=KEEP_SOURCE}: de bronwaarde gaat door en wordt per regel gemeld
+ *       ({@code MAPPING_VALUE_PASSED_THROUGH}); het rapport noemt dit informatief
+ *       ({@value #MAP_MISS_KEEPS_SOURCE}).</li>
  *   <li><b>Include/Exclude 1:</b> filter {@code INCLUDE}/{@code EQUALS} op de kolom van de regel. Meer dan één
  *       include-regel blokkeert: legacy combineert ze (elke regel moet kloppen), onze INCLUDE-filters staan in
  *       OF-verhouding.</li>
@@ -129,7 +131,10 @@ final class LegacyConfigTranslator {
     static final String TRANSFORM_VALUE_NOT_EXPRESSIBLE = "TRANSFORM_VALUE_NOT_EXPRESSIBLE";
     static final String LEGACY_CALC_VALUE_INVALID = "LEGACY_CALC_VALUE_INVALID";
     static final String CALC_ROUNDING_MAY_DIFFER = "CALC_ROUNDING_MAY_DIFFER";
+    /** Tot S8g: een CALC 7-miss werd verworpen. Blijft als constante voor oudere rapporten; wordt niet meer gemeld. */
     static final String MAP_MISS_NO_FALLBACK = "MAP_MISS_NO_FALLBACK";
+    /** S8g (V1 = B): CALC 7 migreert met {@code onMiss=KEEP_SOURCE}; informatief, de bronwaarde gaat bij een miss door. */
+    static final String MAP_MISS_KEEPS_SOURCE = "MAP_MISS_KEEPS_SOURCE";
     static final String MAP_EMPTY = "MAP_EMPTY";
     static final String MAP_KEY_AMBIGUOUS = "MAP_KEY_AMBIGUOUS";
     /** S8a: een PSIMPDEFMAP-sleutel of -waarde langer dan de 50 tekens van legacy (DS_0254); nooit afgekapt. */
@@ -1030,10 +1035,12 @@ final class LegacyConfigTranslator {
                         return null;
                     }
                     kind = FieldTransformKind.MAP;
-                    config = "caseSensitive=true";
+                    config = "caseSensitive=true;onMiss=KEEP_SOURCE";
                     valueMap = table;
-                    add(element, WARNING, MAP_MISS_NO_FALLBACK, null, "legacy keeps the source value when a key "
-                            + "is not in PSIMPDEFMAP; CatalogImport rejects the value (MAPPING_VALUE_UNKNOWN)");
+                    add(element, MIGRATED, MAP_MISS_KEEPS_SOURCE, null, "legacy keeps the source value when a key "
+                            + "is not in PSIMPDEFMAP; the mapping has onMiss=KEEP_SOURCE, so the source value is passed "
+                            + "through unchanged and every such row is reported (MAPPING_VALUE_PASSED_THROUGH); a "
+                            + "non-numeric value on a number field is still rejected");
                 }
                 case "14" -> {
                     // S8d: enkel de rijen van de eigen NUMMER; legacy geeft '' bij een miss, wij verwerpen (V1 = B).

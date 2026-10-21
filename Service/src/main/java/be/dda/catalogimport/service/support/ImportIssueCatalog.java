@@ -447,6 +447,12 @@ public final class ImportIssueCatalog {
         put(catalogue, FieldValueMapper.CODE_VALUE_DEFAULT_APPLIED, RowIssueSeverity.INFO,
                 IssueDomain.MAPPING_VALIDATION, ControlLevel.RECORD, ImpactScope.RECORD,
                 DeliveryEffect.NONE);
+        // S8g (beslissing V1 = B, 2026-10-21): een bronwaarde buiten de tabel die dankzij onMiss=KEEP_SOURCE ongewijzigd
+        // doorgaat (legacy CALC 7). WARNING en niet INFO: de waarde komt niet uit de tabel maar uit de bron en moet in de
+        // beoordeling zichtbaar zijn (validation_result VALID_WITH_WARNINGS). Nooit ERROR/blokkerend: de regel blijft geldig;
+        // de typecontrole erna verwerpt een waarde die niet bij het doelveld past.
+        put(catalogue, FieldTransform.CODE_MAPPING_VALUE_PASSED_THROUGH, RowIssueSeverity.WARNING,
+                IssueDomain.MAPPING_VALIDATION, ControlLevel.RECORD, ImpactScope.RECORD, DeliveryEffect.NONE);
         for (String code : new String[] {
                 ImportValueRules.CODE_PRICE_MISSING,
                 ImportValueRules.CODE_PRICE_UNREADABLE,
