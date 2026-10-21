@@ -94,6 +94,10 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
         assertThat((String) JsonPath.read(body, "$.report.planned.task.name"))
                 .isEqualTo("Legacy " + interfaceCode(bundle));
         assertThat((List<String>) JsonPath.read(body, "$.report.sharedWith")).isEmpty();
+        // S7 (A2): de preview plant ook het sjabloon van de gedeelde definitie.
+        assertThat((String) JsonPath.read(body, "$.report.planned.template.action")).isEqualTo("CREATE");
+        assertThat((String) JsonPath.read(body, "$.report.planned.template.code")).isEqualTo("VROOAM2-SJ");
+        assertThat((Object) JsonPath.read(body, "$.report.planned.template.id")).isNull();
         assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.code == 'IDENTITY_FIELD')].target"))
                 .containsExactly("revision.identitySupplierField=3", "revision.identitySupplierGroupField=4",
                         "revision.identitySupplierReferenceField=1", "revision.identityDiscountCodeField=5");

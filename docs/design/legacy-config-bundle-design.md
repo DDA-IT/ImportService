@@ -4,7 +4,7 @@
 > `docs/decisions.md` ("focus, bron, secrets, definities" en "datasync-aanpak, Prodis-DB lezen, sjablonen"). Verfijnt
 > `legacy-config-migratie-design.md` en vervangt `prodis-db-publicatie-en-datasync-design.md` §4 (envelopversleuteling en
 > bestandstransport zijn door de mens vervangen door push over TLS). Open bij de mens: **M1–M3** (§9). S0 kan starten;
-> S1 na M2; S6 na M3; S7 na M1. Niets gebouwd, niets getest.
+> S1 na M2; S6 na M3; S7 na M1. Stand van de bouw: zie §8.
 
 ## 0. Tegenstrijdigheden en gevolgen
 
@@ -189,7 +189,8 @@ open ontvangst met rijslot lezen, dan de laatste ontvangst; een race op de open-
 **021-legacy-config-definition-origin.sql** (S2; changesets heten 020-3/020-4 zoals hieronder, maar staan in een nieuw bestand omdat
 020 al gecommit was; beslissingslog 2026-10-20 "Legacy-config S2")
 - **020-3 `legacy_config_definition_origin`:** env, dossier, `definition_content_hash`, `supplier_code`, `legacy_definition_codes`
-  (tekst, voor het rapport); `template_definition_id` FK null, `import_definition_id` FK; uniek `(env, dossier, supplier_code, definition_content_hash)`;
+  (tekst, voor het rapport; sinds S7 de gesorteerde, kommagescheiden codes van de leden); `template_definition_id` FK null (sinds S7
+  altijd gevuld bij een nieuwe groep: het sjabloon), `import_definition_id` FK (sinds S7: de gedeelde definitie); uniek `(env, dossier, supplier_code, definition_content_hash)`;
   `created_at`/`updated_at`. Een definitie met zo'n rij is "gemigreerd"; zonder is ze handmatig en nooit migratiedoel. Bij een gewijzigde
   legacy-definitie wordt de hash ter plaatse bijgewerkt (historiek in 020-4).
 - **020-4 `legacy_config_revision_origin`:** `revision_id` uniek FK, `receipt_id` FK, `definition_content_hash` ("kwam de laatste revisie uit de migratie"),
@@ -217,7 +218,7 @@ rollback enkel zolang geen rij een vaste waarde heeft.
 
 | Bundel | Doel (code) | Status |
 |---|---|---|
-| `definition.code` / `description` | `ImportDefinition(code, description)` `OWN_DEFINITION`; codeconflict met niet-gemigreerde definitie → `DEFINITION_CODE_CONFLICT_MANUAL` (blokkeert, tenzij `definitionCodeOverride`) | B |
+| `definition.code` / `description` | `ImportDefinition(code, description)` `OWN_DEFINITION` (sinds S7 de gedeelde definitie, `based_on` het sjabloon `<code>-SJ`); codeconflict met een andere definitie → `DEFINITION_CODE_CONFLICT_MANUAL`, met de sjablooncode → `TEMPLATE_CODE_CONFLICT_MANUAL` (beide blokkeren, tenzij `definitionCodeOverride`, sinds S7 hoogstens 47 tekens) | B |
 | `updateFile` / `replacementCode` / `deleteCode` | rapport `LEGACY_CONTROL_CODE_NOT_MIGRATED` | N |
 | INDET `Supplier` | `SourceOrganisation` find-or-create (`SUPPLIER`, code = `Supplier.number`); bron van de definitie en `import_link.supplier_organisation`. S5 (Prodis geconfigureerd en bereikbaar): exact één `supplier.number` vereist, anders `PRODIS_SUPPLIER_NOT_FOUND` / `PRODIS_SUPPLIER_AMBIGUOUS` (blokkeert; `number` is in Prodis niet uniek); een **nieuwe** organisatie krijgt `supplier.name` (leeg → plaatshouder + WARNING `PRODIS_SUPPLIER_NAME_EMPTY`; > 200 tekens → `PRODIS_SUPPLIER_NAME_TOO_LONG`, nooit afgekapt), een bestaande wordt nooit hernoemd (`SOURCE_ORGANISATION_NAME_KEPT`). Zonder of met onbereikbare Prodis: WARNING `PRODIS_REFERENCE_NOT_VERIFIED`, plaatshouder "Leverancier &lt;nr&gt;" | B (S5 gebouwd) |
 | `ArtImp_BibNr` | `import_link.library_code` = `supplier_catalog.scope_key` (A3); nooit het ruwe `ArtImp_BibNr`; label afwezig → `LIBRARY_NOT_DECLARED` (blokkeert). S5 (Prodis geverifieerd, nieuwe koppeling): zonder `libraryCode` de `scope_key` als precies één **`scope_key`** van die leverancier een rij heeft met `legacy_number` = `ArtImp_BibNr` (exact, getrimd; historiekrijen van dezelfde `scope_key` tellen als één); 0 of > 1 → `LIBRARY_CODE_NOT_RESOLVED` (blokkeert) met de kandidaten (bij 0: alle bibliotheken van de leverancier) in `planned.link.libraryCandidates` en in de boodschap; een gegeven `libraryCode` moet een `scope_key` van die leverancier zijn, anders `LIBRARY_CODE_NOT_IN_PRODIS` (blokkeert, met kandidaten); een andere bibliotheek dan de legacy-match → WARNING `LIBRARY_CODE_NOT_LEGACY_MATCH`. Prodis niet geconfigureerd of onbereikbaar: gedrag S2 (`libraryCode` uit de body + WARNING `PRODIS_REFERENCE_NOT_VERIFIED`; zonder → `LIBRARY_CODE_NOT_RESOLVED`) | B (S5 gebouwd) |
@@ -261,6 +262,38 @@ een handmatige definitie wordt nooit migratiedoel.
 sjabloon buiten scope, 2026-09-23 keuze 4). Gedeelde definitie die in één interface wijzigt → `SHARED_DEFINITION_DIVERGED`
 (blokkeert; loskoppelen latere slice). Rapport toont `sharedWith`.
 
+**Uitwerking S7 (gebouwd 2026-10-21; beslissingslog "Legacy-config S7: gedeelde definities", A2):**
+- **Altijd sjabloon + gedeelde definitie**, ook bij één interface: APPLY van de eerste interface van een groep maakt een
+  `REUSABLE_TEMPLATE` `<code>-SJ` (revisie 1 DRAFT met de gemigreerde inhoud, via `SetupService` zoals S2; de mens activeert) en de
+  gedeelde `OWN_DEFINITION` `<code>` met `based_on_definition_id` = het sjabloon en revisie 1 als kopie via `RevisionCopier`
+  (`based_on_revision_id` = de sjabloonrevisie). De materialisatieroute past niet (weigert een DRAFT-sjabloon, A4); door
+  `based_on_revision_id` herkent `TemplateMaterialisationService.resolveReuse` de gedeelde definitie wél zodra het sjabloon
+  ACTIVE is (`REUSE_DEFINITION`). Beide revisies worden na het schrijven tegen de geplande inhoudshash gecontroleerd. 020-3 krijgt
+  beide id's; 020-4 enkel de revisie van de gedeelde definitie. Het sjabloon krijgt nooit een koppeling (006-5, getest).
+- **Groep herkennen (nieuwe interface):** eerst 020-3 op `(env, dossier, Supplier, definitionContentHash)`, anders een 020-3-rij
+  van dezelfde leverancier waarvan `legacy_definition_codes` de legacy-code bevat. Op hash gevonden en de geplande inhoud
+  (`LegacyRevisionContent`, dus ook de INDET-instellingen structuur/identiteit) = de `migrated_content_hash` van de laatst gemigreerde
+  revisie → enkel koppeling + taak (`planned.definition.action=REUSE`, `revisionAction=UNCHANGED`, item `SHARED_DEFINITION`);
+  andere geplande inhoud of enkel op code gevonden → `SHARED_DEFINITION_DIVERGED`. `definitionCodeOverride` wordt dan niet gebruikt
+  (WARNING `DEFINITION_CODE_OVERRIDE_NOT_USED`).
+- **Latere wijziging (bekende interface, (i)):** zijn er andere leden (herkomsten met een koppeling op de gedeelde definitie), dan
+  volgt de gedeelde definitie de S2-regels enkel als élk ander lid in zijn **laatste** ontvangst (ongeacht status) dezelfde nieuwe
+  `definitionContentHash` heeft; anders, of als enkel de interface-instellingen van dit lid wijzigden (zelfde
+  `definitionContentHash`, andere geplande inhoud), `SHARED_DEFINITION_DIVERGED`. Het sjabloon blijft ongemoeid (NOT_MIGRATED
+  `TEMPLATE_NOT_UPDATED`); de 020-3-hash schuift ter plaatse mee; leden die daarna komen krijgen `DEFINITION_UNCHANGED`. Heeft de
+  nieuwe inhoud al een **andere** groep van dezelfde leverancier → `SHARED_DEFINITION_DIVERGED` (een koppeling verhuist nooit; de
+  020-3-sleutel is bezet). Zonder andere leden: exact S2.
+- **Zelfde bibliotheek:** een nieuwe koppeling op de gedeelde definitie met dezelfde leverancier en `libraryCode` als een bestaande
+  koppeling → `LINK_SCOPE_CONFLICT_MANUAL` al in de preview (`uk_import_link_scope`).
+- **`sharedWith`:** de andere leden plus de interfaces waarvan de laatste ontvangst (niet `DISCARDED`) in dezelfde omgeving/dossier
+  dezelfde `definitionContentHash` en (uit `bundle_json`) dezelfde `Supplier` heeft; gesorteerd. Staat in het rapport en dus in de
+  `previewFingerprint`. Nieuw rapportveld (additief) `planned.template{action CREATE|REUSE|NONE, id, code, revisionId}`; `NONE` = een
+  vóór S7 gemigreerde definitie zonder sjabloon (testdata, geen datamigratie).
+- **Gelijktijdig:** twee leden van een nieuwe groep tegelijk → de unieke codes (`uk_source_organisation_code`,
+  `uk_import_definition_code`, `uk_legacy_config_definition_origin`) laten er één winnen; de ander krijgt 409
+  (`SOURCE_ORGANISATION_CODE_IN_USE`/`DEFINITION_CODE_IN_USE`), schrijft niets en sluit na een nieuwe preview aan.
+- `SHARED_DEFINITION_NOT_SUPPORTED` vervalt. Loskoppelen tot een eigen definitie: niet in S7 (eigen ontwerp later).
+
 **Configuratiehash:** nieuwe revisiekolommen tellen in `RevisionConfigHashes` enkel mee als ze niet de default hebben; bestaande
 hashes blijven byte-identiek (byte-vergelijkingstest).
 
@@ -292,7 +325,7 @@ hashes blijven byte-identiek (byte-vergelijkingstest).
   zette ze wél in hoofdletters met WARNING `DISCOUNT_CODE_UPPERCASED`; beide zijn teruggedraaid.
 
 **Rapport (PREVIEW = APPLY-resultaat):** `{receiptId, contentHash, outcome APPLICABLE|BLOCKED, planned{sourceOrganisation,
-definition, link{…, libraryCode, libraryCandidates[{scopeKey, catalogName, legacyNumber, status}]}, task, credential}, sharedWith,
+definition, link{…, libraryCode, libraryCandidates[{scopeKey, catalogName, legacyNumber, status}]}, task, credential, template (S7)}, sharedWith,
 items[{element:"PSIMPDEF#9", status: MIGRATED|NOT_MIGRATED|WARNING|BLOCKING, code, target, message}],
 prodisReference VERIFIED|UNAVAILABLE|NOT_CONFIGURED}`; `previewFingerprint` = SHA-256 over het canonieke rapport + id's/versies van
 geraakte bestaande rijen + (S5) de gelezen Prodis-rijen (leverancier: `number|name`; alle bibliotheekrijen van die leverancier:
@@ -402,7 +435,7 @@ doorgaan na fout), canary-test (secret `canary-…` nergens in logs, `sync-error
 | S4 | beide | Secret over TLS; credential bij ontvangst (SYSTEM-overload); canary-lektests aan beide kanten | bouwer-zwaar | `…-Dtest=LegacyConfigSecretLeakTest,CredentialLeakDetectionTest,CredentialHttpTest,ExternalCredentialSchemaTest` + `LegacyConfigExportJobTests` | Canary nergens behalve als ciphertext; geen tweede credential; `SECRETS_NOT_CONFIGURED` 409 |
 | S5 | ImportService: Web-config, Dao, Service, Web | Alleen-lezen Prodis-bron; validatie leverancier/bibliotheek in PREVIEW/APPLY; automatische `libraryCode`; keuze-endpoints (naar voren gehaald uit S6) | bouwer-zwaar | `…-Dtest=ProdisReferenceDaoTest,ProdisReadOnlyDatabaseConfigurationTest,ProdisReferenceUnavailableTest,ProdisReferenceHttpTest,LegacyConfigProdisReferenceTest,LegacyConfigPreviewTest,LegacyConfigApplyTest,PermissionCoverageTest` | Contexten starten zonder config; 503 bij onbereikbaar |
 | S6 (na M3; gebouwd 2026-10-21) | ImportService: Liquibase 022, alle lagen | Vaste leverancier/groep + `identity_uppercase`; migratie gebruikt de Prodis-bron (S5); zie §5 "Uitwerking S6" | bouwer-zwaar | `mvn -pl Service -am test -Dtest='be.dda.catalogimport.service.**' -Dsurefire.failIfNoSpecifiedTests=false` (o.a. `IdentityFixedValueTest`, `RevisionConfigHashesParityTest`, `LegacyRevisionContentParityTest`, `ConfigFactoryParityTest`, `RevisionFieldRulesTest`) + `mvn -pl Web -am test -Dtest=IdentityFixedValueHttpTest,IdentityFixedValueNotConfiguredHttpTest,LegacyConfigPreviewTest,LegacyConfigApplyTest,LegacyConfigProdisReferenceTest -Dsurefire.failIfNoSpecifiedTests=false` + `scripts/test/run-full-tests.ps1 -Tests ScreeningSchemaTest,SetupApiFlowTest,DeliveryScreeningFlowTest,...` (vaste codes: schoon schema) | Bestaande hashes byte-identiek; uppercase = PSARF-identiteit (9-11; kortingscode ongewijzigd) |
-| S7 (na M1) | ImportService: Service | Dedup per (leverancier, hash), gedeelde definitie, `sharedWith`, `SHARED_DEFINITION_DIVERGED` | bouwer-zwaar | `…-Dtest=LegacyConfigSharedDefinitionTest,TemplateGuardTest,TemplateReuseTest` | Drie identieke interfaces → één gedeelde set; guard 006-5 intact |
+| S7 (na M1; gebouwd 2026-10-21) | ImportService: Domain, Dao, Service (geen Liquibase) | Altijd sjabloon + gedeelde definitie (A2), dedup per (leverancier, hash of code), `sharedWith`, `planned.template`, `SHARED_DEFINITION_DIVERGED`, `TEMPLATE_NOT_UPDATED`, scopeconflict in de preview; zie §5 "Uitwerking S7" | bouwer-zwaar | `mvn -pl Web -am test -Dtest=LegacyConfigSharedDefinitionTest,TemplateGuardTest,TemplateReuseTest,LegacyConfigApplyTest,LegacyConfigPreviewTest,LegacyConfigProdisReferenceTest,TemplateMaterialisationTest -Dsurefire.failIfNoSpecifiedTests=false` | Drie identieke interfaces → één sjabloon + één gedeelde definitie + drie koppelingen/taken, ongeacht volgorde; guard 006-5 intact; wizard-hergebruik werkt |
 | S8 | ImportService | 023 maptabel, PSIMPEXCL, transformatieketen (LM-2) | bouwer-zwaar | gericht per klasse | — |
 | S9 | Frontend | Ontvangsten, rapport, APPLY-dialoog | bouwer-gemiddeld | `npx vitest run src/test/LegacyConfig*` | — |
 

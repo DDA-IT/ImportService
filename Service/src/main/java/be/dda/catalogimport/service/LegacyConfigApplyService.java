@@ -50,6 +50,7 @@ import be.dda.catalogimport.service.LegacyConfigReport.PlannedDefinition;
 import be.dda.catalogimport.service.LegacyConfigReport.PlannedLink;
 import be.dda.catalogimport.service.LegacyConfigReport.PlannedOrganisation;
 import be.dda.catalogimport.service.LegacyConfigReport.PlannedTask;
+import be.dda.catalogimport.service.LegacyConfigReport.PlannedTemplate;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedFilter;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedMapping;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedRevision;
@@ -57,6 +58,7 @@ import be.dda.catalogimport.service.LegacyConfigTranslator.Translation;
 import be.dda.catalogimport.service.ProdisReferenceService.Availability;
 import be.dda.catalogimport.service.ProdisReferenceService.LegacyLookup;
 import be.dda.catalogimport.service.support.ConfigFinding;
+import be.dda.catalogimport.service.support.RevisionCopier;
 import be.dda.catalogimport.service.support.RevisionConfigHashes;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -80,6 +82,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -107,7 +110,8 @@ import org.springframework.transaction.annotation.Transactional;
  *       leveringsconfiguratie (L5: hostsleutel verplicht); het item {@code CONNECTION_NOT_MIGRATED} geeft het voorstel
  *       (host, poort, map, login, {@code credentialRef}).</li>
  *   <li><b>Nieuwe interface:</b> {@code OWN_DEFINITION} met de legacy-code (of {@code definitionCodeOverride}),
- *       revisie 1 (DRAFT, canonicalisatieversie 2), koppeling {@code LEGACY-<interface>} met de door de mens
+ *       revisie 1 (DRAFT, canonicalisatieversie 2) - sinds S7 de gedeelde definitie van een sjabloon, of enkel een
+ *       koppeling op een bestaande gedeelde definitie (zie "Gedeelde definities" hieronder) -, koppeling {@code LEGACY-<interface>} met de door de mens
  *       gegeven {@code libraryCode} (nooit het ruwe {@code ArtImp_BibNr}; zonder: {@code LIBRARY_CODE_NOT_RESOLVED}),
  *       taak "Legacy &lt;interface&gt;".</li>
  *   <li><b>Bekende interface:</b> koppeling en taak worden nooit gewijzigd (een afwijking is
@@ -119,9 +123,31 @@ import org.springframework.transaction.annotation.Transactional;
  *       vertaalbare mappings en de filters overschrijft. APPLY geldt als R-REV-X3-bevestiging; de preview toont
  *       {@code IDENTITY_CHANGE}. De ACTIVE revisie wordt nooit aangeraakt.</li>
  *   <li><b>Conflicten:</b> een handmatige definitie is nooit een migratiedoel ({@code DEFINITION_CODE_CONFLICT_MANUAL},
- *       op te lossen met {@code definitionCodeOverride}); een definitie van een andere interface (zelfde leverancier en
- *       inhoud of code) blokkeert tot S7 ({@code SHARED_DEFINITION_NOT_SUPPORTED}); een bestaande koppelingscode of
- *       -scope ({@code LINK_CODE_CONFLICT_MANUAL}, {@code LINK_SCOPE_CONFLICT_MANUAL}).</li>
+ *       op te lossen met {@code definitionCodeOverride}; idem {@value #TEMPLATE_CODE_CONFLICT_MANUAL} voor de
+ *       sjablooncode); een bestaande koppelingscode of -scope ({@code LINK_CODE_CONFLICT_MANUAL},
+ *       {@code LINK_SCOPE_CONFLICT_MANUAL}, die laatste al in de preview).</li>
+ * </ul>
+ * <h2>Gedeelde definities (slice S7, beslissingslog 2026-10-21 "Legacy-config S7: gedeelde definities", A2)</h2>
+ * <ul>
+ *   <li><b>Groep</b> = (omgeving, dossier, INDET {@code Supplier}, {@code definitionContentHash}) = één rij in
+ *       {@code legacy_config_definition_origin} (020-3); ook herkend op dezelfde legacy-code onder dezelfde leverancier.
+ *       Nooit over leveranciers heen.</li>
+ *   <li><b>Eerste interface van een groep</b> (ook als ze alleen blijft): een {@code REUSABLE_TEMPLATE} (DRAFT,
+ *       code {@code <legacy-code>-SJ}, de mens activeert) met de gemigreerde inhoud, en een gedeelde
+ *       {@code OWN_DEFINITION} (legacy-code) {@code based_on} dat sjabloon, met revisie 1 als kopie van de
+ *       sjabloonrevisie via {@link RevisionCopier} ({@code based_on_revision} = de sjabloonrevisie; de
+ *       materialisatiewizard weigert een DRAFT-sjabloon). 020-3 draagt beide id's, 020-4 de revisie van de gedeelde
+ *       definitie. Het sjabloon krijgt nooit een koppeling (changeset 006-5).</li>
+ *   <li><b>Volgende interface</b> van de groep: enkel koppeling + taak op de gedeelde definitie, op voorwaarde dat haar
+ *       geplande inhoud (ook de interface-instellingen: structuur, identiteit) gelijk is aan de laatst gemigreerde
+ *       revisie; anders {@value #SHARED_DEFINITION_DIVERGED}. Dezelfde {@code libraryCode} als een ander lid →
+ *       {@code LINK_SCOPE_CONFLICT_MANUAL} ({@code uk_import_link_scope}).</li>
+ *   <li><b>Latere wijziging:</b> de gedeelde definitie volgt de S2-regels (opvolgende DRAFT, {@code OPEN_DRAFT_EXISTS},
+ *       {@code MANUAL_CHANGES_SINCE_MIGRATION}), maar enkel als élk ander lid in zijn laatste ontvangst dezelfde nieuwe
+ *       {@code definitionContentHash} heeft; anders {@value #SHARED_DEFINITION_DIVERGED}. Het sjabloon blijft ongemoeid
+ *       ({@value #TEMPLATE_NOT_UPDATED}). Loskoppelen tot een eigen definitie bestaat nog niet (latere slice).</li>
+ *   <li>{@code sharedWith}: de andere leden plus de interfaces waarvan de laatste ontvangst (niet {@code DISCARDED})
+ *       dezelfde leverancier en {@code definitionContentHash} heeft; staat in het rapport en dus in de fingerprint.</li>
  * </ul>
  * <h2>Prodis-controle (slice S5, design par. 5 en 6)</h2>
  * Via {@link ProdisReferenceService} (alleen-lezen Prodis-database), in PREVIEW en APPLY gelijk:
@@ -164,7 +190,14 @@ public class LegacyConfigApplyService {
     static final String LIBRARY_CODE_INVALID = "LIBRARY_CODE_INVALID";
     static final String DEFINITION_CODE_CONFLICT_MANUAL = "DEFINITION_CODE_CONFLICT_MANUAL";
     static final String DEFINITION_CODE_OVERRIDE_INVALID = "DEFINITION_CODE_OVERRIDE_INVALID";
-    static final String SHARED_DEFINITION_NOT_SUPPORTED = "SHARED_DEFINITION_NOT_SUPPORTED";
+    // S7: gedeelde definities.
+    static final String SHARED_DEFINITION = "SHARED_DEFINITION";
+    static final String SHARED_DEFINITION_DIVERGED = "SHARED_DEFINITION_DIVERGED";
+    static final String TEMPLATE_NOT_UPDATED = "TEMPLATE_NOT_UPDATED";
+    static final String TEMPLATE_CODE_CONFLICT_MANUAL = "TEMPLATE_CODE_CONFLICT_MANUAL";
+    static final String DEFINITION_CODE_OVERRIDE_NOT_USED = "DEFINITION_CODE_OVERRIDE_NOT_USED";
+    /** Code van het sjabloon: {@code <code van de gedeelde definitie>-SJ} (beslissingslog 2026-10-21 S7). */
+    static final String TEMPLATE_CODE_SUFFIX = "-SJ";
     static final String SOURCE_ORGANISATION_TYPE_CONFLICT = "SOURCE_ORGANISATION_TYPE_CONFLICT";
     static final String LINK_CODE_CONFLICT_MANUAL = "LINK_CODE_CONFLICT_MANUAL";
     static final String LINK_SCOPE_CONFLICT_MANUAL = "LINK_SCOPE_CONFLICT_MANUAL";
@@ -196,6 +229,8 @@ public class LegacyConfigApplyService {
 
     private static final int MAX_REASON_LENGTH = 500;
     private static final int MAX_DEFINITION_CODE = 50;
+    /** S7: ruimte voor {@value #TEMPLATE_CODE_SUFFIX} binnen {@code import_definition.code} (50). */
+    private static final int MAX_SHARED_DEFINITION_CODE = MAX_DEFINITION_CODE - TEMPLATE_CODE_SUFFIX.length();
     private static final int MAX_LIBRARY_CODE = 20;
     /** {@code source_organisation.name} ({@code SetupService}). */
     private static final int MAX_ORGANISATION_NAME = 200;
@@ -255,6 +290,7 @@ public class LegacyConfigApplyService {
     private final ExternalCredentialRepository credentials;
     private final SetupService setup;
     private final RevisionSuccessorService successors;
+    private final RevisionCopier revisionCopier;
     private final ChainConfigurationChecks checks;
     private final ProdisReferenceService prodis;
     private final Clock clock;
@@ -275,7 +311,8 @@ public class LegacyConfigApplyService {
                                     ImportFieldCatalogRepository fieldCatalog, ImportLinkRepository links,
                                     CatalogImportTaskRepository tasks, ExternalCredentialRepository credentials,
                                     SetupService setup, RevisionSuccessorService successors,
-                                    ChainConfigurationChecks checks, ProdisReferenceService prodis, Clock clock) {
+                                    RevisionCopier revisionCopier, ChainConfigurationChecks checks,
+                                    ProdisReferenceService prodis, Clock clock) {
         this.receipts = receipts;
         this.origins = origins;
         this.definitionOrigins = definitionOrigins;
@@ -291,6 +328,7 @@ public class LegacyConfigApplyService {
         this.credentials = credentials;
         this.setup = setup;
         this.successors = successors;
+        this.revisionCopier = revisionCopier;
         this.checks = checks;
         this.prodis = prodis;
         this.clock = clock;
@@ -362,7 +400,7 @@ public class LegacyConfigApplyService {
                         String definitionCode, String revisionAction, ImportDefinitionRevision basedOn,
                         ImportLink link, String linkCode, String libraryCode, Long taskId, String taskName,
                         LegacyConfigOrigin origin, LegacyConfigDefinitionOrigin definitionOrigin,
-                        String plannedContentHash) {
+                        String plannedContentHash, String templateCode, String legacyDefinitionCodes) {
     }
 
     private Plan plan(LegacyConfigReceipt receipt, ApplyOptions options) {
@@ -413,6 +451,11 @@ public class LegacyConfigApplyService {
         String taskAction;
         String taskName = NAME_PREFIX + interfaceCode;
         LegacyConfigDefinitionOrigin definitionOrigin = null;
+        // S7: de andere interfaces met een koppeling op de (gedeelde) definitie, en het sjabloon van de groep.
+        List<String> members = List.of();
+        String templateAction = ACTION_NONE;
+        String templateCode = null;
+        Long templateId = null;
 
         if (link != null) {
             // Bekende interface: koppeling, taak, organisatie en definitie bestaan en worden nooit gewijzigd.
@@ -457,6 +500,7 @@ public class LegacyConfigApplyService {
             }
             List<LegacyConfigDefinitionOrigin> owned =
                     definitionOrigins.findByImportDefinitionIdOrderByIdAsc(definition.getId());
+            members = memberInterfaces(definition.getId(), interfaceCode, rows);
             if (owned.isEmpty()) {
                 items.add(new Item("PLAN:definition", BLOCKING, DEFINITION_CODE_CONFLICT_MANUAL,
                         "import_definition.id=" + definition.getId(), "the definition of this link has no migration "
@@ -464,12 +508,25 @@ public class LegacyConfigApplyService {
             } else {
                 definitionOrigin = owned.get(0);
                 rows.add("definitionOrigin:" + definitionOrigin.getId() + ":" + definitionOrigin.getUpdatedAt());
+                templateId = definitionOrigin.getTemplateDefinitionId();
             }
-            sharedCheck(items, rows, environment, dossier, supplierCode, definitionHash, definition.getId());
-            if (planned != null) {
-                RevisionDecision decision = revisionDecision(definition, planned, plannedHash, items, rows);
-                revisionAction = decision.action();
-                basedOn = decision.basedOn();
+            boolean otherGroup = otherGroupCheck(items, rows, environment, dossier, supplierCode, definitionHash,
+                    definitionOrigin);
+            if (planned != null && !otherGroup && definitionOrigin != null) {
+                LastMigrated lastMigrated = lastMigrated(definition);
+                boolean diverged = lastMigrated != null && !plannedHash.equals(lastMigrated.hash())
+                        && !members.isEmpty()
+                        && membersDiverge(items, rows, receipt, definitionOrigin, definition, members);
+                if (!diverged) {
+                    RevisionDecision decision = revisionDecision(definition, planned, plannedHash, items, rows);
+                    revisionAction = decision.action();
+                    basedOn = decision.basedOn();
+                }
+            }
+            if (ACTION_SUCCESSOR_DRAFT.equals(revisionAction) && templateId != null) {
+                items.add(new Item("PLAN:template", LegacyConfigReport.NOT_MIGRATED, TEMPLATE_NOT_UPDATED,
+                        "import_definition.id=" + templateId, "the template of this shared definition keeps its "
+                                + "content; only the shared definition gets a successor DRAFT"));
             }
         } else {
             // Nieuwe interface (of een herkomst zonder koppeling, bv. enkel een credential uit S4).
@@ -483,36 +540,93 @@ public class LegacyConfigApplyService {
                                     + " exists as " + organisation.getOrganisationType() + ", not as SUPPLIER"));
                 }
             }
-            definitionAction = ACTION_CREATE;
-            revisionAction = planned == null ? ACTION_NONE : ACTION_CREATE;
-            definitionCode = options.definitionCodeOverride() != null ? options.definitionCodeOverride()
-                    : translation.definitionCode();
-            if (options.definitionCodeOverride() != null
-                    && options.definitionCodeOverride().length() > MAX_DEFINITION_CODE) {
-                items.add(new Item("PLAN:definition", BLOCKING, DEFINITION_CODE_OVERRIDE_INVALID, null,
-                        "definitionCodeOverride is longer than " + MAX_DEFINITION_CODE + " characters"));
-            } else if (options.definitionCodeOverride() != null) {
-                items.add(new Item("PLAN:definition", WARNING, "DEFINITION_CODE_OVERRIDDEN",
-                        "import_definition.code=" + definitionCode, "the legacy code " + translation.definitionCode()
-                                + " is replaced by definitionCodeOverride"));
-            }
-            sharedCheck(items, rows, environment, dossier, supplierCode, definitionHash, null);
-            if (organisation != null && definitionCode != null) {
-                Optional<ImportDefinition> existing =
-                        definitions.findBySourceOrganisationIdAndCode(organisation.getId(), definitionCode);
-                if (existing.isPresent()) {
-                    ImportDefinition clash = existing.get();
-                    rows.add("definitionClash:" + clash.getId() + ":" + clash.getUpdatedAt());
-                    if (definitionOrigins.existsByImportDefinitionId(clash.getId())) {
-                        items.add(new Item("PLAN:definition", BLOCKING, SHARED_DEFINITION_NOT_SUPPORTED,
-                                "import_definition.id=" + clash.getId(), "definition " + definitionCode
-                                        + " of supplier " + supplierCode + " was already migrated for another "
-                                        + "interface; sharing a definition follows in S7"));
+            GroupMatch group = findGroup(environment, dossier, supplierCode, definitionHash,
+                    translation.definitionCode(), rows);
+            if (group != null) {
+                // S7: de groep bestaat al - enkel koppeling en taak op haar gedeelde definitie.
+                definitionOrigin = group.origin();
+                definition = definitions.findById(definitionOrigin.getImportDefinitionId()).orElseThrow();
+                rows.add("definition:" + definition.getId() + ":" + definition.getUpdatedAt());
+                definitionAction = ACTION_REUSE;
+                definitionCode = definition.getCode();
+                templateId = definitionOrigin.getTemplateDefinitionId();
+                members = memberInterfaces(definition.getId(), interfaceCode, rows);
+                if (options.definitionCodeOverride() != null
+                        && !options.definitionCodeOverride().equals(definition.getCode())) {
+                    items.add(new Item("PLAN:definition", WARNING, DEFINITION_CODE_OVERRIDE_NOT_USED,
+                            "import_definition.id=" + definition.getId(), "the interface joins the shared definition "
+                                    + definition.getCode() + "; definitionCodeOverride is not used"));
+                }
+                if (!group.byHash()) {
+                    items.add(new Item("PLAN:definition", BLOCKING, SHARED_DEFINITION_DIVERGED,
+                            "import_definition.id=" + definition.getId(), "legacy definition "
+                                    + translation.definitionCode() + " of supplier " + supplierCode
+                                    + " is already migrated as shared definition " + definition.getCode()
+                                    + " with other content" + describeMembers(members)
+                                    + "; detaching into an own definition follows in a later slice"));
+                } else if (planned != null) {
+                    LastMigrated lastMigrated = lastMigrated(definition);
+                    if (lastMigrated == null) {
+                        items.add(new Item("PLAN:definition", BLOCKING, MANUAL_CHANGES_SINCE_MIGRATION,
+                                "import_definition.id=" + definition.getId(), "the shared definition has no "
+                                        + "migrated revision; it is never overwritten"));
+                    } else if (plannedHash.equals(lastMigrated.hash())) {
+                        rows.add("lastMigrated:" + lastMigrated.revision().getId());
+                        revisionAction = ACTION_UNCHANGED;
+                        items.add(new Item("PLAN:definition", MIGRATED, SHARED_DEFINITION,
+                                "import_definition.id=" + definition.getId(), "the interface joins shared definition "
+                                        + definition.getCode() + describeMembers(members)
+                                        + "; only a link and a task are created"));
                     } else {
+                        rows.add("lastMigrated:" + lastMigrated.revision().getId());
+                        items.add(new Item("PLAN:definition", BLOCKING, SHARED_DEFINITION_DIVERGED,
+                                "import_definition.id=" + definition.getId(), "the legacy definition is the same, "
+                                        + "but this interface yields other content (interface settings such as "
+                                        + "structure or identity) than shared definition " + definition.getCode()
+                                        + describeMembers(members) + "; detaching follows in a later slice"));
+                    }
+                }
+            } else {
+                definitionAction = ACTION_CREATE;
+                revisionAction = planned == null ? ACTION_NONE : ACTION_CREATE;
+                definitionCode = options.definitionCodeOverride() != null ? options.definitionCodeOverride()
+                        : translation.definitionCode();
+                if (options.definitionCodeOverride() != null
+                        && options.definitionCodeOverride().length() > MAX_SHARED_DEFINITION_CODE) {
+                    items.add(new Item("PLAN:definition", BLOCKING, DEFINITION_CODE_OVERRIDE_INVALID, null,
+                            "definitionCodeOverride is longer than " + MAX_SHARED_DEFINITION_CODE
+                                    + " characters (the template code adds " + TEMPLATE_CODE_SUFFIX + ")"));
+                } else if (options.definitionCodeOverride() != null) {
+                    items.add(new Item("PLAN:definition", WARNING, "DEFINITION_CODE_OVERRIDDEN",
+                            "import_definition.code=" + definitionCode, "the legacy code "
+                                    + translation.definitionCode() + " is replaced by definitionCodeOverride"));
+                }
+                templateAction = ACTION_CREATE;
+                templateCode = definitionCode == null ? null : definitionCode + TEMPLATE_CODE_SUFFIX;
+                if (organisation != null && definitionCode != null) {
+                    Optional<ImportDefinition> existing =
+                            definitions.findBySourceOrganisationIdAndCode(organisation.getId(), definitionCode);
+                    if (existing.isPresent()) {
+                        ImportDefinition clash = existing.get();
+                        rows.add("definitionClash:" + clash.getId() + ":" + clash.getUpdatedAt());
                         items.add(new Item("PLAN:definition", BLOCKING, DEFINITION_CODE_CONFLICT_MANUAL,
-                                "import_definition.id=" + clash.getId(), "a manual definition " + definitionCode
-                                        + " already exists for supplier " + supplierCode + "; it is never a "
-                                        + "migration target. Choose another code with definitionCodeOverride"));
+                                "import_definition.id=" + clash.getId(), "a definition " + definitionCode
+                                        + " already exists for supplier " + supplierCode + " ("
+                                        + (definitionOrigins.existsByImportDefinitionId(clash.getId())
+                                        ? "migrated for another legacy definition" : "manual")
+                                        + "); it is never a migration target. Choose another code with "
+                                        + "definitionCodeOverride"));
+                    }
+                    Optional<ImportDefinition> templateClash =
+                            definitions.findBySourceOrganisationIdAndCode(organisation.getId(), templateCode);
+                    if (templateClash.isPresent()) {
+                        ImportDefinition clash = templateClash.get();
+                        rows.add("templateClash:" + clash.getId() + ":" + clash.getUpdatedAt());
+                        items.add(new Item("PLAN:template", BLOCKING, TEMPLATE_CODE_CONFLICT_MANUAL,
+                                "import_definition.id=" + clash.getId(), "a definition " + templateCode
+                                        + " already exists for supplier " + supplierCode + "; the template of the "
+                                        + "shared definition needs that code. Choose another code with "
+                                        + "definitionCodeOverride"));
                     }
                 }
             }
@@ -528,8 +642,40 @@ public class LegacyConfigApplyService {
                 items.add(new Item("PLAN:link", BLOCKING, LINK_CODE_CONFLICT_MANUAL,
                         "import_link.id=" + codeClash.get().getId(), "link code " + linkCode + " is already in use"));
             }
+            if (definition != null && organisation != null && libraryCode != null) {
+                // S7: uk_import_link_scope (definitie, leverancier, bibliotheek) - al in de preview, niet pas bij APPLY.
+                for (ImportLink other : links.findByImportDefinitionId(definition.getId())) {
+                    if (other.getLibraryCode().equals(libraryCode)
+                            && other.getSupplierOrganisation().getId().equals(organisation.getId())) {
+                        rows.add("linkScope:" + other.getId() + ":" + other.getUpdatedAt());
+                        items.add(new Item("PLAN:link", BLOCKING, LINK_SCOPE_CONFLICT_MANUAL,
+                                "import_link.id=" + other.getId(), "link " + other.getCode() + " of the shared "
+                                        + "definition " + definition.getCode() + " already uses library "
+                                        + libraryCode + " for supplier " + supplierCode
+                                        + "; two interfaces of one shared definition need different libraries"));
+                    }
+                }
+            }
             taskAction = ACTION_CREATE;
         }
+
+        PlannedTemplate plannedTemplate;
+        if (ACTION_CREATE.equals(templateAction)) {
+            plannedTemplate = new PlannedTemplate(ACTION_CREATE, null, templateCode, null);
+        } else if (templateId != null) {
+            ImportDefinition template = definitions.findById(templateId).orElseThrow();
+            rows.add("template:" + template.getId() + ":" + template.getUpdatedAt());
+            plannedTemplate = new PlannedTemplate(ACTION_REUSE, template.getId(), template.getCode(), null);
+        } else {
+            plannedTemplate = new PlannedTemplate(ACTION_NONE, null, null, null);
+        }
+        List<String> sharedWith = sharedWith(members, environment, dossier, supplierCode, definitionHash,
+                interfaceCode);
+        // 020-3 legacy_definition_codes: een interface alleen op haar definitie vervangt de code (S2); een groep
+        // verzamelt de legacy-codes van haar leden.
+        String legacyCodes = definitionOrigin == null || (link != null && members.isEmpty())
+                ? translation.definitionCode()
+                : mergeCodes(definitionOrigin.getLegacyDefinitionCodes(), translation.definitionCode());
 
         String organisationName = organisationName(items, organisation, prodisSupplier, supplierCode);
         boolean blocked = items.stream().anyMatch(item -> BLOCKING.equals(item.status()));
@@ -541,10 +687,10 @@ public class LegacyConfigApplyService {
                         revisionAction, basedOn == null ? null : basedOn.getId(), null),
                 new PlannedLink(linkAction, link == null ? null : link.getId(), linkCode, libraryCode,
                         libraryCandidates),
-                new PlannedTask(taskAction, taskId, taskName), plannedCredential);
+                new PlannedTask(taskAction, taskId, taskName), plannedCredential, plannedTemplate);
         LegacyConfigReport report = new LegacyConfigReport(receipt.getId(), receipt.getContentHash(),
                 receipt.getStatus().name(), blocked ? LegacyConfigReport.OUTCOME_BLOCKED
-                : LegacyConfigReport.OUTCOME_APPLICABLE, plannedSection, List.of(), items,
+                : LegacyConfigReport.OUTCOME_APPLICABLE, plannedSection, sharedWith, items,
                 availability.name());
         String fingerprint = fingerprint(report, rows);
         if (availability == Availability.UNAVAILABLE) {
@@ -556,7 +702,7 @@ public class LegacyConfigApplyService {
         return new Plan(report, fingerprint, translation, options, organisation, supplierCode, organisationName,
                 definition,
                 definitionCode, revisionAction, basedOn, link, linkCode, libraryCode, taskId, taskName, origin,
-                definitionOrigin, plannedHash);
+                definitionOrigin, plannedHash, templateCode, legacyCodes);
     }
 
     // --- Prodis-controle (S5) -------------------------------------------------------------------------------------
@@ -911,21 +1057,188 @@ public class LegacyConfigApplyService {
         return new RevisionDecision(ACTION_SUCCESSOR_DRAFT, latest);
     }
 
-    private void sharedCheck(List<Item> items, List<String> rows, String environment, String dossier,
-                             String supplierCode, String definitionHash, Long ownDefinitionId) {
-        if (supplierCode == null || definitionHash == null) {
-            return;
+    // --- Gedeelde definities (S7) ---------------------------------------------------------------------------------
+
+    /** Een bestaande groep (020-3-rij) en of ze op de inhoudshash of enkel op de legacy-code gevonden werd. */
+    private record GroupMatch(LegacyConfigDefinitionOrigin origin, boolean byHash) {
+    }
+
+    /**
+     * De groep van een nieuwe interface: eerst op (omgeving, dossier, leverancier, {@code definitionContentHash}), anders
+     * op dezelfde legacy-code onder dezelfde leverancier (beslissingslog 2026-10-21 S7). Nooit over leveranciers heen.
+     */
+    private GroupMatch findGroup(String environment, String dossier, String supplierCode, String definitionHash,
+                                 String legacyCode, List<String> rows) {
+        if (supplierCode == null) {
+            return null;
         }
-        definitionOrigins.findByOriginEnvironmentAndOriginDossierAndSupplierCodeAndDefinitionContentHash(
-                environment, dossier, supplierCode, definitionHash).ifPresent(shared -> {
-            rows.add("sharedOrigin:" + shared.getId() + ":" + shared.getUpdatedAt());
-            if (!shared.getImportDefinitionId().equals(ownDefinitionId)) {
-                items.add(new Item("PLAN:definition", BLOCKING, SHARED_DEFINITION_NOT_SUPPORTED,
-                        "import_definition.id=" + shared.getImportDefinitionId(), "another interface of supplier "
-                                + supplierCode + " already migrated this legacy definition (same content); sharing "
-                                + "a definition follows in S7"));
+        if (definitionHash != null) {
+            Optional<LegacyConfigDefinitionOrigin> byHash = definitionOrigins
+                    .findByOriginEnvironmentAndOriginDossierAndSupplierCodeAndDefinitionContentHash(environment,
+                            dossier, supplierCode, definitionHash);
+            if (byHash.isPresent()) {
+                rows.add("group:" + byHash.get().getId() + ":" + byHash.get().getUpdatedAt());
+                return new GroupMatch(byHash.get(), true);
             }
-        });
+        }
+        if (legacyCode == null) {
+            return null;
+        }
+        for (LegacyConfigDefinitionOrigin candidate : definitionOrigins
+                .findByOriginEnvironmentAndOriginDossierAndSupplierCodeOrderByIdAsc(environment, dossier, supplierCode)) {
+            if (codes(candidate.getLegacyDefinitionCodes()).contains(legacyCode)) {
+                rows.add("groupByCode:" + candidate.getId() + ":" + candidate.getUpdatedAt());
+                return new GroupMatch(candidate, false);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * De andere interfaces (codes, gesorteerd) waarvan de koppeling op deze definitie staat. Handmatige koppelingen
+     * (zonder herkomst) zijn geen interface en tellen niet mee.
+     */
+    private List<String> memberInterfaces(long definitionId, String interfaceCode, List<String> rows) {
+        List<Long> linkIds = links.findByImportDefinitionId(definitionId).stream().map(ImportLink::getId).toList();
+        if (linkIds.isEmpty()) {
+            return List.of();
+        }
+        List<String> members = new ArrayList<>();
+        for (LegacyConfigOrigin member : origins.findByImportLinkIdInOrderByInterfaceCodeAsc(linkIds)) {
+            if (!member.getInterfaceCode().equals(interfaceCode)) {
+                members.add(member.getInterfaceCode());
+                rows.add("member:" + member.getId() + ":" + member.getInterfaceCode() + ":" + member.getUpdatedAt());
+            }
+        }
+        return List.copyOf(members);
+    }
+
+    /**
+     * Een bekende interface waarvan de legacy-inhoud nu gelijk is aan die van een <b>andere</b> groep van dezelfde
+     * leverancier: ze kan niet verhuizen (een koppeling wordt nooit gewijzigd; loskoppelen is een latere slice) en de
+     * 020-3-hash kan niet ter plaatse naar een bezette sleutel.
+     *
+     * @return {@code true} als dat zo is (dan staat er een blokkerend item)
+     */
+    private boolean otherGroupCheck(List<Item> items, List<String> rows, String environment, String dossier,
+                                    String supplierCode, String definitionHash,
+                                    LegacyConfigDefinitionOrigin definitionOrigin) {
+        if (supplierCode == null || definitionHash == null || definitionOrigin == null
+                || definitionHash.equals(definitionOrigin.getDefinitionContentHash())) {
+            return false;
+        }
+        Optional<LegacyConfigDefinitionOrigin> other = definitionOrigins
+                .findByOriginEnvironmentAndOriginDossierAndSupplierCodeAndDefinitionContentHash(environment, dossier,
+                        supplierCode, definitionHash);
+        if (other.isEmpty() || other.get().getId().equals(definitionOrigin.getId())) {
+            return false;
+        }
+        rows.add("otherGroup:" + other.get().getId() + ":" + other.get().getUpdatedAt());
+        items.add(new Item("PLAN:definition", BLOCKING, SHARED_DEFINITION_DIVERGED,
+                "import_definition.id=" + other.get().getImportDefinitionId(), "the legacy definition of this "
+                        + "interface now equals the one of another shared definition of supplier " + supplierCode
+                        + "; an interface never moves to another definition (detaching follows in a later slice)"));
+        return true;
+    }
+
+    /**
+     * Bekende interface van een gedeelde definitie met nieuwe inhoud: enkel als élk ander lid in zijn laatste ontvangst
+     * dezelfde nieuwe {@code definitionContentHash} heeft, volgt de gedeelde definitie (S2-regels); anders
+     * {@value #SHARED_DEFINITION_DIVERGED}. Een gelijke {@code definitionContentHash} met andere geplande inhoud wil
+     * zeggen dat enkel de interface-instellingen van deze interface wijzigden: ook dat is een afwijking van de groep.
+     *
+     * @return {@code true} als de groep uiteenloopt (dan staat er een blokkerend item)
+     */
+    private boolean membersDiverge(List<Item> items, List<String> rows, LegacyConfigReceipt receipt,
+                                   LegacyConfigDefinitionOrigin definitionOrigin, ImportDefinition definition,
+                                   List<String> members) {
+        String newHash = receipt.getDefinitionContentHash();
+        String element = "PLAN:definition";
+        String target = "import_definition.id=" + definition.getId();
+        if (newHash == null || newHash.equals(definitionOrigin.getDefinitionContentHash())) {
+            items.add(new Item(element, BLOCKING, SHARED_DEFINITION_DIVERGED, target, "the legacy definition is "
+                    + "unchanged, but the interface settings (structure or identity) of " + receipt.getInterfaceCode()
+                    + " now differ from shared definition " + definition.getCode() + describeMembers(members)
+                    + "; detaching follows in a later slice"));
+            return true;
+        }
+        List<String> behind = new ArrayList<>();
+        for (String member : members) {
+            Optional<LegacyConfigReceipt> latest = receipts
+                    .findFirstByOriginEnvironmentAndOriginDossierAndInterfaceCodeOrderByIdDesc(
+                            receipt.getOriginEnvironment(), receipt.getOriginDossier(), member);
+            rows.add("memberReceipt:" + member + ":" + latest.map(LegacyConfigReceipt::getId).orElse(null));
+            if (latest.isEmpty() || !newHash.equals(latest.get().getDefinitionContentHash())) {
+                behind.add(member);
+            }
+        }
+        if (behind.isEmpty()) {
+            return false;
+        }
+        items.add(new Item(element, BLOCKING, SHARED_DEFINITION_DIVERGED, target, "only part of the interfaces "
+                + "of shared definition " + definition.getCode() + " deliver the new legacy content: "
+                + String.join(", ", behind) + " still deliver(s) the previous content; detaching follows in a "
+                + "later slice"));
+        return true;
+    }
+
+    /** De laatst gemigreerde revisie van een definitie en haar {@code migrated_content_hash} (020-4). */
+    private record LastMigrated(ImportDefinitionRevision revision, String hash) {
+    }
+
+    private LastMigrated lastMigrated(ImportDefinition definition) {
+        List<ImportDefinitionRevision> all = revisions.findByImportDefinitionIdOrderByRevisionNumberDesc(
+                definition.getId());
+        Map<Long, LegacyConfigRevisionOrigin> migrated = new LinkedHashMap<>();
+        revisionOrigins.findByRevisionIdIn(all.stream().map(ImportDefinitionRevision::getId).toList())
+                .forEach(row -> migrated.put(row.getRevisionId(), row));
+        return all.stream().filter(r -> migrated.containsKey(r.getId())).findFirst()
+                .map(r -> new LastMigrated(r, migrated.get(r.getId()).getMigratedContentHash())).orElse(null);
+    }
+
+    /**
+     * {@code sharedWith}: de andere leden plus de interfaces waarvan de laatste ontvangst (niet {@code DISCARDED}) dezelfde
+     * leverancier en {@code definitionContentHash} heeft; gesorteerd, zonder deze interface.
+     */
+    private List<String> sharedWith(List<String> members, String environment, String dossier, String supplierCode,
+                                    String definitionHash, String interfaceCode) {
+        Set<String> shared = new TreeSet<>(members);
+        if (supplierCode != null && definitionHash != null) {
+            for (LegacyConfigReceipt other
+                    : receipts.findLatestWithDefinitionContentHash(environment, dossier, definitionHash)) {
+                if (other.getInterfaceCode().equals(interfaceCode)
+                        || other.getStatus() == LegacyConfigReceiptStatus.DISCARDED) {
+                    continue;
+                }
+                if (supplierCode.equals(LegacyConfigTranslator.supplierOf(readBundle(other)))) {
+                    shared.add(other.getInterfaceCode());
+                }
+            }
+        }
+        return List.copyOf(shared);
+    }
+
+    private static Set<String> codes(String legacyDefinitionCodes) {
+        Set<String> codes = new TreeSet<>();
+        for (String code : legacyDefinitionCodes.split(",")) {
+            if (!code.isBlank()) {
+                codes.add(code.strip());
+            }
+        }
+        return codes;
+    }
+
+    /** De legacy-codes van een groep, gesorteerd en zonder dubbels, gescheiden door een komma (020-3). */
+    private static String mergeCodes(String existing, String added) {
+        Set<String> codes = codes(existing);
+        if (added != null && !added.isBlank()) {
+            codes.add(added.strip());
+        }
+        return String.join(",", codes);
+    }
+
+    private static String describeMembers(List<String> members) {
+        return members.isEmpty() ? "" : " (used by " + String.join(", ", members) + ")";
     }
 
     private static boolean identityDiffers(ImportDefinitionRevision latest, PlannedRevision planned) {
@@ -954,20 +1267,28 @@ public class LegacyConfigApplyService {
         }
 
         long definitionId;
+        Long templateId = null;
+        Long templateRevisionId = null;
+        Long revisionId = null;
         if (plan.definition() == null) {
+            // S7 (A2): altijd eerst het sjabloon met de gemigreerde inhoud, dan de gedeelde definitie als kopie ervan.
+            templateId = setup.createDefinition(new SetupService.CreateDefinitionCommand(organisation.getCode(),
+                    plan.templateCode(), translation.definitionName(), DefinitionUsageType.REUSABLE_TEMPLATE),
+                    actor).id();
+            // S6: de vaste waarden zijn in plan() al tegen Prodis gecontroleerd (of bewust "unverified", design par. 6);
+            // SetupService controleert ze daarom niet opnieuw.
+            templateRevisionId = setup.createRevision(templateId, createCommand(planned, reason), actor, false).id();
+            writeRevisionContent(templateRevisionId, planned, actor);
+            verifyWritten(receipt, templateRevisionId, plan.plannedContentHash());
             definitionId = setup.createDefinition(new SetupService.CreateDefinitionCommand(organisation.getCode(),
                     plan.definitionCode(), translation.definitionName(), DefinitionUsageType.OWN_DEFINITION),
                     actor).id();
+            revisionId = createSharedRevision(definitionId, templateId, templateRevisionId, reason, actor);
         } else {
             definitionId = plan.definition().getId();
         }
 
-        Long revisionId = null;
         switch (plan.revisionAction()) {
-            // S6: de vaste waarden zijn in plan() al tegen Prodis gecontroleerd (of bewust "unverified", design par. 6);
-            // SetupService controleert ze daarom niet opnieuw.
-            case ACTION_CREATE -> revisionId = setup.createRevision(definitionId, createCommand(planned, reason),
-                    actor, false).id();
             case ACTION_SUCCESSOR_DRAFT -> {
                 revisionId = successors.createSuccessor(plan.basedOn().getId(), reason, actor).id();
                 setup.updateRevision(revisionId, updateCommand(planned), false);
@@ -980,24 +1301,17 @@ public class LegacyConfigApplyService {
                         : recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId)) {
                     setup.deleteFilter(revisionId, filter.getId());
                 }
+                writeRevisionContent(revisionId, planned, actor);
             }
             default -> {
-                // UNCHANGED: geen nieuwe revisie.
+                // CREATE: hierboven (sjabloon + gedeelde definitie); UNCHANGED: geen nieuwe revisie.
             }
         }
 
         List<ConfigurationFinding> findings = List.of();
         if (revisionId != null) {
-            writeRevisionContent(revisionId, planned, actor);
-            ImportDefinitionRevision revision = revisions.findById(revisionId).orElseThrow();
-            String written = LegacyRevisionContent.ofRevision(revision,
-                    fieldMappings.findByRevisionIdWithTargetField(revisionId),
-                    recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId));
-            if (!written.equals(plan.plannedContentHash())) {
-                // Plan en uitvoering lopen uiteen: nooit een herkomstrij met een verkeerde inhoud (rollback).
-                throw new IllegalStateException("Legacy-config receipt " + receipt.getId()
-                        + ": the written revision does not match the planned content");
-            }
+            // 020-4 enkel op de revisie van de gedeelde definitie (het sjabloon is geen migratiedoel).
+            String written = verifyWritten(receipt, revisionId, plan.plannedContentHash());
             revisionOrigins.save(new LegacyConfigRevisionOrigin(revisionId, receipt.getId(),
                     translation.definitionContentHash(), written, now));
         }
@@ -1006,10 +1320,10 @@ public class LegacyConfigApplyService {
         if (definitionOrigin == null) {
             definitionOrigins.save(new LegacyConfigDefinitionOrigin(receipt.getOriginEnvironment(),
                     receipt.getOriginDossier(), organisation.getCode(), translation.definitionContentHash(),
-                    translation.definitionCode(), definitionId, now));
+                    plan.legacyDefinitionCodes(), templateId, definitionId, now));
         } else if (!definitionOrigin.getDefinitionContentHash().equals(translation.definitionContentHash())
-                || !definitionOrigin.getLegacyDefinitionCodes().equals(translation.definitionCode())) {
-            definitionOrigin.moveTo(translation.definitionContentHash(), translation.definitionCode(), now);
+                || !definitionOrigin.getLegacyDefinitionCodes().equals(plan.legacyDefinitionCodes())) {
+            definitionOrigin.moveTo(translation.definitionContentHash(), plan.legacyDefinitionCodes(), now);
             definitionOrigins.save(definitionOrigin);
         }
 
@@ -1048,7 +1362,8 @@ public class LegacyConfigApplyService {
                     .map(LegacyConfigApplyService::finding).toList();
         }
 
-        LegacyConfigReport report = withIds(plan.report(), organisation, definitionId, revisionId, linkId, taskId);
+        LegacyConfigReport report = withIds(plan.report(), organisation, definitionId, revisionId, linkId, taskId,
+                templateId, templateRevisionId);
         Map<String, Object> stored = new LinkedHashMap<>();
         stored.put("report", report);
         stored.put("previewFingerprint", plan.fingerprint());
@@ -1060,6 +1375,47 @@ public class LegacyConfigApplyService {
                 LegacyConfigReceiptStatus.APPLIED.name(), report.outcome(), report.planned(), report.sharedWith(),
                 report.items(), report.prodisReference());
         return new ApplyResult(applied, LegacyConfigReceiptStatus.APPLIED.name(), findings);
+    }
+
+    /**
+     * S7: revisie 1 van de gedeelde definitie als letterlijke kopie van de sjabloonrevisie via {@link RevisionCopier}
+     * (zoals de materialisatie, die een DRAFT-sjabloon weigert): {@code based_on_definition_id} = het sjabloon,
+     * {@code based_on_revision_id} = de sjabloonrevisie, zodat de materialisatiewizard de gedeelde definitie herkent
+     * ({@code REUSE_DEFINITION}) zodra de mens het sjabloon activeert.
+     */
+    private long createSharedRevision(long definitionId, long templateId, long templateRevisionId, String reason,
+                                      ActorIdentity actor) {
+        ImportDefinition shared = definitions.findById(definitionId).orElseThrow();
+        shared.setBasedOnDefinition(definitions.findById(templateId).orElseThrow());
+        definitions.saveAndFlush(shared);
+        ImportDefinitionRevision source = revisions.findById(templateRevisionId).orElseThrow();
+        ImportDefinitionRevision copy = revisions.saveAndFlush(revisionCopier.copyRevision(source, shared, 1, source,
+                reason, actor.username(), actor.subject()));
+        fieldMappings.saveAll(revisionCopier.copyMappings(copy, source, actor.username(), actor.subject()).values());
+        recordFilters.saveAll(revisionCopier.copyFilters(copy, source, actor.username(), actor.subject()).values());
+        revisionCopier.copyFieldCriticalities(copy, source, actor.username(), actor.subject());
+        fieldMappings.flush();
+        recordFilters.flush();
+        RevisionConfigHashes.applyAll(copy);
+        revisions.saveAndFlush(copy);
+        return copy.getId();
+    }
+
+    /**
+     * Plan en uitvoering mogen nooit uiteenlopen: anders nooit een herkomstrij met een verkeerde inhoud (rollback).
+     *
+     * @return de inhoudshash van de geschreven revisie ({@link LegacyRevisionContent})
+     */
+    private String verifyWritten(LegacyConfigReceipt receipt, long revisionId, String plannedContentHash) {
+        ImportDefinitionRevision revision = revisions.findById(revisionId).orElseThrow();
+        String written = LegacyRevisionContent.ofRevision(revision,
+                fieldMappings.findByRevisionIdWithTargetField(revisionId),
+                recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId));
+        if (!written.equals(plannedContentHash)) {
+            throw new IllegalStateException("Legacy-config receipt " + receipt.getId()
+                    + ": the written revision " + revisionId + " does not match the planned content");
+        }
+        return written;
     }
 
     /** Mappings en filters toevoegen via {@link SetupService} (die valideert); een TAB rechtstreeks (zie klasse). */
@@ -1116,7 +1472,8 @@ public class LegacyConfigApplyService {
     }
 
     private static LegacyConfigReport withIds(LegacyConfigReport report, SourceOrganisation organisation,
-                                              long definitionId, Long revisionId, long linkId, long taskId) {
+                                              long definitionId, Long revisionId, long linkId, long taskId,
+                                              Long templateId, Long templateRevisionId) {
         Planned planned = report.planned();
         Planned withIds = new Planned(
                 new PlannedOrganisation(planned.sourceOrganisation().action(), organisation.getId(),
@@ -1126,7 +1483,10 @@ public class LegacyConfigApplyService {
                         planned.definition().basedOnRevision(), revisionId),
                 new PlannedLink(planned.link().action(), linkId, planned.link().code(), planned.link().libraryCode(),
                         planned.link().libraryCandidates()),
-                new PlannedTask(planned.task().action(), taskId, planned.task().name()), planned.credential());
+                new PlannedTask(planned.task().action(), taskId, planned.task().name()), planned.credential(),
+                new PlannedTemplate(planned.template().action(),
+                        templateId != null ? templateId : planned.template().id(), planned.template().code(),
+                        templateRevisionId));
         return new LegacyConfigReport(report.receiptId(), report.contentHash(), report.receiptStatus(),
                 report.outcome(), withIds, report.sharedWith(), report.items(), report.prodisReference());
     }

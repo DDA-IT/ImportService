@@ -2,6 +2,8 @@ package be.dda.catalogimport.dao;
 
 import be.dda.catalogimport.domain.LegacyConfigOrigin;
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -29,4 +31,7 @@ public interface LegacyConfigOriginRepository extends JpaRepository<LegacyConfig
     Optional<LegacyConfigOrigin> findForUpdate(@Param("environment") String environment,
                                                @Param("dossier") String dossier,
                                                @Param("interfaceCode") String interfaceCode);
+
+    /** S7: de herkomsten (interfaces) van deze koppelingen, bv. alle leden van een gedeelde definitie. */
+    List<LegacyConfigOrigin> findByImportLinkIdInOrderByInterfaceCodeAsc(Collection<Long> importLinkIds);
 }

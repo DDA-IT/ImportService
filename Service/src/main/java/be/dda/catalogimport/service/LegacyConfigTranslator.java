@@ -253,6 +253,24 @@ final class LegacyConfigTranslator {
         return new LegacyConfigTranslator(bundle, charsetWhenUndeclared, credentialRef).run();
     }
 
+    /**
+     * S7 ({@code sharedWith}): de INDET {@code Supplier} van een bewaarde bundel, zonder vertaling; {@code null} als het
+     * label ontbreekt, leeg is of meer dan eens voorkomt (dezelfde waarde als {@link Translation#supplierCode()} zou
+     * geven, of geen).
+     */
+    static String supplierOf(JsonNode bundle) {
+        String found = null;
+        for (JsonNode detail : bundle.path("interface").path("details")) {
+            if (LABEL_SUPPLIER.equals(detail.path("label").asText())) {
+                if (found != null) {
+                    return null;
+                }
+                found = detail.path("value").asText("");
+            }
+        }
+        return found == null || found.isEmpty() || found.length() > MAX_SUPPLIER_CODE ? null : found;
+    }
+
     private Translation run() {
         String status = bundle.path("definitionStatus").asText();
         JsonNode definition = bundle.path("definition");

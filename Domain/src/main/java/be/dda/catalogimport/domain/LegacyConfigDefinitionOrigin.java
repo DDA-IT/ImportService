@@ -16,7 +16,9 @@ import java.time.Instant;
  * <p>
  * Groepssleutel ({@code originEnvironment}, {@code originDossier}, {@code supplierCode}, {@code definitionContentHash}),
  * uniek. Een definitie met zo'n rij is <b>gemigreerd</b>; een definitie zonder is handmatig en nooit een migratiedoel.
- * {@code templateDefinitionId} blijft {@code null} tot S7. Bij een gewijzigde legacy-definitie wordt de hash ter
+ * Sinds S7 (beslissingslog 2026-10-21 "Legacy-config S7: gedeelde definities", A2) is {@code importDefinitionId} de
+ * <b>gedeelde</b> {@code OWN_DEFINITION} van de groep en {@code templateDefinitionId} het {@code REUSABLE_TEMPLATE} waarop
+ * ze gebaseerd is; een rij uit S2 (vóór S7) heeft geen sjabloon. Bij een gewijzigde legacy-definitie wordt de hash ter
  * plaatse bijgewerkt ({@link #moveTo(String, String, Instant)}); de historiek per revisie staat in
  * {@link LegacyConfigRevisionOrigin}.
  */
@@ -72,6 +74,18 @@ public class LegacyConfigDefinitionOrigin {
         this.legacyDefinitionCodes = requiredText(legacyDefinitionCodes, "legacyDefinitionCodes");
         this.importDefinitionId = required(importDefinitionId, "importDefinitionId");
         this.createdAt = required(createdAt, "createdAt");
+    }
+
+    /**
+     * S7: een groep met haar sjabloon ({@code REUSABLE_TEMPLATE}) en haar gedeelde definitie ({@code OWN_DEFINITION}
+     * {@code based_on} dat sjabloon).
+     */
+    public LegacyConfigDefinitionOrigin(String originEnvironment, String originDossier, String supplierCode,
+                                        String definitionContentHash, String legacyDefinitionCodes,
+                                        Long templateDefinitionId, Long importDefinitionId, Instant createdAt) {
+        this(originEnvironment, originDossier, supplierCode, definitionContentHash, legacyDefinitionCodes,
+                importDefinitionId, createdAt);
+        this.templateDefinitionId = required(templateDefinitionId, "templateDefinitionId");
     }
 
     /**

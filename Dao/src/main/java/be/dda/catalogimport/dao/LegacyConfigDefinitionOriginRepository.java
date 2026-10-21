@@ -16,4 +16,11 @@ public interface LegacyConfigDefinitionOriginRepository extends JpaRepository<Le
     List<LegacyConfigDefinitionOrigin> findByImportDefinitionIdOrderByIdAsc(Long importDefinitionId);
 
     boolean existsByImportDefinitionId(Long importDefinitionId);
+
+    /**
+     * S7: de groepen van een leverancier in een omgeving/dossier, om een gedeelde definitie ook op de legacy-code te
+     * herkennen ({@code legacy_definition_codes}); vaste volgorde op id.
+     */
+    List<LegacyConfigDefinitionOrigin> findByOriginEnvironmentAndOriginDossierAndSupplierCodeOrderByIdAsc(
+            String originEnvironment, String originDossier, String supplierCode);
 }

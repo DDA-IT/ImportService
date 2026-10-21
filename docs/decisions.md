@@ -2774,3 +2774,21 @@ op 9/10 negeert kolom/prefix/suffix/CALC zoals legacy (`LEGACY_IGNORED_WITH_FIXE
 Prodis (400 onbekend, 503 onbereikbaar, WARNING niet geconfigureerd); migratie bij onbereikbare Prodis volgt het S5-patroon; groep
 gevalideerd per leverancier op `supplier_group.group_name`; bewaard zoals gegeven, gecontroleerd in effectieve vorm.
 **Bron:** mens / S6-bouwerrapport
+
+## 2026-10-21 — Legacy-config S7: gedeelde definities
+**Vraag:** Open punten van de S7-bouwer (laatkomer in een groep, latere legacy-wijziging, zelfde bibliotheek, loskoppelen).
+**Beslissing:**
+- **Laatkomer (A2):** elke migratie maakt altijd een `REUSABLE_TEMPLATE` (DRAFT) plus een gedeelde `OWN_DEFINITION` `based_on`
+  dat sjabloon, ook bij één interface. Een latere interface met dezelfde (env, dossier, leverancier, `definitionContentHash`) of
+  dezelfde legacy-code onder dezelfde leverancier krijgt enkel een koppeling + taak op die gedeelde definitie. **Herroept** uit het
+  blok "sjablonen" (2026-10-20) de zin "een definitie van één interface wordt `OWN_DEFINITION`" en wijzigt het S2-gedrag.
+  Nergens uitgerold; lokale testdata mag opnieuw opgebouwd worden.
+- **Latere wijziging (i):** de gedeelde definitie volgt de S2-regels (opvolgende DRAFT, `OPEN_DRAFT_EXISTS`,
+  `MANUAL_CHANGES_SINCE_MIGRATION`); het sjabloon blijft ongemoeid (rapportitem `TEMPLATE_NOT_UPDATED`); 020-3-hash ter plaatse
+  bijgewerkt. Heeft slechts een deel van de leden de nieuwe inhoud → BLOCKING `SHARED_DEFINITION_DIVERGED`.
+- **Zelfde bibliotheek:** twee leden met dezelfde `libraryCode` → BLOCKING `LINK_SCOPE_CONFLICT_MANUAL` al in de preview.
+- **Loskoppelen:** niet in S7; aparte latere slice met eigen ontwerp.
+- Aanvaard (bouwer): sjablooncode `<legacy-code>-SJ`, gedeelde definitie houdt de legacy-code; botsing met handmatige code →
+  BLOCKING; inhoud via `RevisionCopier` (materialisatieroute weigert DRAFT-sjablonen); ontvangsten met status DISCARDED tellen
+  niet mee voor `sharedWith`; nooit over leveranciers heen.
+**Bron:** mens / S7-bouwerrapport

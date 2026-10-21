@@ -42,8 +42,9 @@ import org.springframework.http.MediaType;
  *   <li>Zelfde inhoud → {@code DEFINITION_UNCHANGED}; gewijzigd met open DRAFT → {@code OPEN_DRAFT_EXISTS};
  *       gewijzigd na activatie → opvolgende DRAFT, ACTIVE ongemoeid, drempels uit de kopie, {@code IDENTITY_CHANGE};
  *       handmatig gewijzigd sinds de migratie → {@code MANUAL_CHANGES_SINCE_MIGRATION}.</li>
- *   <li>Conflicten: handmatige definitie (op te lossen met {@code definitionCodeOverride}), gedeelde definitie (S7),
- *       koppelingscode, organisatietype.</li>
+ *   <li>Conflicten: handmatige definitie (op te lossen met {@code definitionCodeOverride}), koppelingscode,
+ *       organisatietype. Sinds S7 (A2) is de definitie de gedeelde {@code OWN_DEFINITION} van een sjabloon
+ *       ({@code <code>-SJ}); het delen zelf: {@link LegacyConfigSharedDefinitionTest}.</li>
  * </ul>
  */
 class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
@@ -100,6 +101,12 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
                 definitionId);
         assertThat(definition.get("usage_type")).isEqualTo("OWN_DEFINITION");
         assertThat(definition.get("description")).isEqualTo("Golden fixture catalogus CSV");
+        // S7 (A2): altijd ook een sjabloon (DRAFT), waarop de gedeelde definitie gebaseerd is.
+        long templateId = definitionId(supplier, "VROOAM2-SJ");
+        assertThat(jdbc.queryForObject("select usage_type from import_definition where id = ?", String.class,
+                templateId)).isEqualTo("REUSABLE_TEMPLATE");
+        assertThat(((Number) definition.get("based_on_definition_id")).longValue()).isEqualTo(templateId);
+        assertThat(((Number) JsonPath.read(body, "$.report.planned.template.id")).longValue()).isEqualTo(templateId);
         assertThat(((Number) JsonPath.read(body, "$.report.planned.definition.id")).longValue())
                 .isEqualTo(definitionId);
 
@@ -125,6 +132,10 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(revision.get("change_reason")).isEqualTo(REASON);
         assertThat(revision.get("created_by")).isEqualTo(USER);
         long revisionId = ((Number) revision.get("id")).longValue();
+        List<Map<String, Object>> templateRevisions = revisionRows(templateId);
+        assertThat(templateRevisions).hasSize(1);
+        assertThat(templateRevisions.get(0).get("status")).isEqualTo("DRAFT");
+        assertThat(revision.get("based_on_revision_id")).isEqualTo(templateRevisions.get(0).get("id"));
 
         // Mappings: 33 met MAP (alle PSIMPDEFMAP-regels, gesorteerd) en DecimalComma; 37 als bronkolom.
         List<Map<String, Object>> mappings = jdbc.queryForList("select target_field_code, value_kind, "
@@ -177,6 +188,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(definitionOrigin.get("definition_content_hash"))
                 .isEqualTo(bundle.get("definitionContentHash").asText());
         assertThat(((Number) definitionOrigin.get("import_definition_id")).longValue()).isEqualTo(definitionId);
+        assertThat(((Number) definitionOrigin.get("template_definition_id")).longValue()).isEqualTo(templateId);
         Map<String, Object> revisionOrigin = jdbc.queryForMap("select * from legacy_config_revision_origin "
                 + "where revision_id = ?", revisionId);
         assertThat(((Number) revisionOrigin.get("receipt_id")).longValue()).isEqualTo(id);
@@ -442,21 +454,31 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
                 manual)).isZero();
     }
 
+    /**
+     * S7 vervangt de S2-blokkade {@code SHARED_DEFINITION_NOT_SUPPORTED}: zelfde inhoud → de gedeelde definitie (met
+     * dezelfde bibliotheek: scopeconflict, met een andere: toepasbaar); zelfde code met andere inhoud →
+     * {@code SHARED_DEFINITION_DIVERGED}. Uitgebreid in {@link LegacyConfigSharedDefinitionTest}.
+     */
     @Test
-    void aSecondInterfaceWithTheSameDefinitionIsBlockedUntilS7() throws Exception {
+    void aSecondInterfaceWithTheSameDefinitionJoinsTheSharedDefinition() throws Exception {
         ObjectNode first = applicable();
         previewAndApply(receive(first), "libraryCode", "LIB").andExpect(status().isOk());
 
         ObjectNode sameContent = first.deepCopy();
         interfaceCode(sameContent, interfaceCode(first) + "B");
-        assertThat(blockingCodes(previewBody(receive(sameContent), "libraryCode", "LIB")))
-                .contains("SHARED_DEFINITION_NOT_SUPPORTED");
+        long sameContentId = receive(sameContent);
+        assertThat(blockingCodes(previewBody(sameContentId, "libraryCode", "LIB")))
+                .containsExactly("LINK_SCOPE_CONFLICT_MANUAL");
+        String joined = previewBody(sameContentId, "libraryCode", "LIB-B");
+        assertThat(blockingCodes(joined)).isEmpty();
+        assertThat((String) JsonPath.read(joined, "$.report.planned.definition.action")).isEqualTo("REUSE");
 
         ObjectNode sameCodeOtherContent = first.deepCopy();
         interfaceCode(sameCodeOtherContent, interfaceCode(first) + "C");
         line(sameCodeOtherContent, 26).put("column", 27);
-        assertThat(blockingCodes(previewBody(receive(sameCodeOtherContent), "libraryCode", "LIB")))
-                .containsExactly("SHARED_DEFINITION_NOT_SUPPORTED");
+        assertThat(blockingCodes(previewBody(receive(sameCodeOtherContent), "libraryCode", "LIB-C")))
+                .containsExactly("SHARED_DEFINITION_DIVERGED");
+        assertThat(previewBody(sameContentId, "libraryCode", "LIB-B")).doesNotContain("SHARED_DEFINITION_NOT_SUPPORTED");
     }
 
     @Test

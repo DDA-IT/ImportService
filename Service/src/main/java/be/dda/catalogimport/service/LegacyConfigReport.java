@@ -22,7 +22,10 @@ import java.util.UUID;
  * @param receiptStatus de huidige status van de ontvangst (APPLY kan enkel op {@code RECEIVED})
  * @param outcome       {@value #OUTCOME_APPLICABLE} of {@value #OUTCOME_BLOCKED}
  * @param planned       wat APPLY zou doen (of deed)
- * @param sharedWith    andere interfaces die dezelfde definitie delen; in S2 altijd leeg (delen volgt in S7)
+ * @param sharedWith    (S7) de andere interfaces (codes, gesorteerd) die de gedeelde definitie delen of zullen delen: de
+ *                      interfaces waarvan de koppeling al op die definitie staat, plus die waarvan de laatste ontvangst
+ *                      (niet {@code DISCARDED}) dezelfde leverancier en {@code definitionContentHash} heeft; telt mee in
+ *                      de {@code previewFingerprint}
  * @param items         per legacy-element de uitkomst, in vaste volgorde
  * @param prodisReference (S5) of leverancier en bibliotheek tegen de alleen-lezen Prodis-database gecontroleerd zijn:
  *                      {@code VERIFIED}, {@code UNAVAILABLE} (geconfigureerd maar onbereikbaar; de fingerprint begint
@@ -75,14 +78,27 @@ public record LegacyConfigReport(long receiptId, String contentHash, String rece
 
     /**
      * @param sourceOrganisation leverancier (find-or-create)
-     * @param definition         eigen definitie: nieuw, opvolgende DRAFT of ongewijzigd
+     * @param definition         de gedeelde definitie ({@code OWN_DEFINITION}, S7): nieuw, hergebruikt, opvolgende DRAFT
+     *                           of ongewijzigd
      * @param link               koppeling (nieuw of hergebruikt, nooit gewijzigd)
      * @param task               MANUAL-taak (nieuw of hergebruikt, nooit gewijzigd)
      * @param credential         de overgenomen credential (S4), of {@code null} als de herkomst er geen heeft en deze
      *                           ontvangst geen secret droeg
+     * @param template           (S7, additief) het {@code REUSABLE_TEMPLATE} waarop de gedeelde definitie gebaseerd is
      */
     public record Planned(PlannedOrganisation sourceOrganisation, PlannedDefinition definition, PlannedLink link,
-                          PlannedTask task, PlannedCredential credential) {
+                          PlannedTask task, PlannedCredential credential, PlannedTemplate template) {
+    }
+
+    /**
+     * Het sjabloon van de groep (S7, beslissingslog 2026-10-21 "Legacy-config S7: gedeelde definities"): altijd
+     * {@code DRAFT}, door de mens te activeren; APPLY maakt het enkel aan ({@value #ACTION_CREATE}) en wijzigt het nooit
+     * ({@value #ACTION_REUSE}). {@value #ACTION_NONE}: de gedeelde definitie heeft geen sjabloon (gemigreerd vóór S7).
+     *
+     * @param code       {@code <legacy-code>-SJ}
+     * @param revisionId na APPLY: de (DRAFT-)sjabloonrevisie die APPLY aanmaakte, anders {@code null}
+     */
+    public record PlannedTemplate(String action, Long id, String code, Long revisionId) {
     }
 
     /**

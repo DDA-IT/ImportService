@@ -3,6 +3,7 @@ package be.dda.catalogimport.dao;
 import be.dda.catalogimport.domain.LegacyConfigReceipt;
 import be.dda.catalogimport.domain.LegacyConfigReceiptStatus;
 import jakarta.persistence.LockModeType;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -52,4 +53,17 @@ public interface LegacyConfigReceiptRepository extends JpaRepository<LegacyConfi
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from LegacyConfigReceipt r where r.id = :id")
     Optional<LegacyConfigReceipt> findByIdForUpdate(@Param("id") Long id);
+
+    /**
+     * S7 ({@code sharedWith}): per herkomst van deze omgeving/dossier de <b>laatste</b> ontvangst (hoogste id), als die
+     * deze {@code definitionContentHash} draagt; ongeacht status (de aanroeper laat {@code DISCARDED} weg), op
+     * interfacecode gesorteerd.
+     */
+    @Query("select r from LegacyConfigReceipt r where r.originEnvironment = :environment "
+            + "and r.originDossier = :dossier and r.definitionContentHash = :hash "
+            + "and r.id = (select max(l.id) from LegacyConfigReceipt l where l.originEnvironment = r.originEnvironment "
+            + "and l.originDossier = r.originDossier and l.interfaceCode = r.interfaceCode) order by r.interfaceCode")
+    List<LegacyConfigReceipt> findLatestWithDefinitionContentHash(@Param("environment") String environment,
+                                                                  @Param("dossier") String dossier,
+                                                                  @Param("hash") String definitionContentHash);
 }
