@@ -1,5 +1,6 @@
 package be.dda.catalogimport.web;
 
+import static be.dda.catalogimport.testsupport.TestActors.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -166,11 +167,20 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
 
         // Include/Exclude 1 op lijn 37 → INCLUDE EQUALS op kolom 9.
         List<Map<String, Object>> filters = jdbc.queryForList("select * from import_record_filter "
-                + "where definition_revision_id = ?", revisionId);
-        assertThat(filters).hasSize(1);
+                + "where definition_revision_id = ? order by sequence_number", revisionId);
+        assertThat(filters).hasSize(5);
         assertThat(filters.get(0)).containsEntry("source_reference", "9").containsEntry("operator", "EQUALS")
                 .containsEntry("compare_value", "ACME").containsEntry("outcome", "INCLUDE")
-                .containsEntry("case_sensitive", true);
+                .containsEntry("case_sensitive", true).containsEntry("match_group", null);
+        // S8f: de PSIMPEXCL-rij ('9999', '', '', 'REF-1') is de vorm "alle vier": een EN-groep op de kolommen van
+        // 9, 10, 23 en 11 (leverancier, groep en referentie hoofdletterongevoelig, de kortingscode niet).
+        assertThat(filters(revisionId)).containsExactly("1:INCLUDE:EQUALS:9:ACME:EXCLUDE:true:true:-",
+                "2:EXCLUDE:EQUALS:3:9999:COMPARE_AS_EMPTY:false:true:1",
+                "3:EXCLUDE:EQUALS:4::COMPARE_AS_EMPTY:false:true:1",
+                "4:EXCLUDE:EQUALS:5::COMPARE_AS_EMPTY:true:true:1",
+                "5:EXCLUDE:EQUALS:1:REF-1:COMPARE_AS_EMPTY:false:true:1");
+        assertThat(jdbc.queryForList("select created_by from import_record_filter where definition_revision_id = ?",
+                String.class, revisionId)).containsOnly(USER);
 
         // Koppeling en MANUAL-taak.
         Map<String, Object> link = jdbc.queryForMap("select * from import_link where code = ?", "LEGACY-" + iface);
@@ -409,8 +419,14 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         assertThat(valueMap(successorId, "VKP1_PCT")).containsExactly("1:DOOS>BOX", "2:STK>PCS");
         // S8c: idem voor de ketenstappen (kopie, verwijderd als entiteit, opnieuw geschreven): precies één MAP-stap.
         assertThat(steps(successorId, "VKP1_PCT")).containsExactly("1:MAP:caseSensitive=true");
-        assertThat(count("select count(*) from import_record_filter where definition_revision_id = ?", successorId))
-                .isEqualTo(1);
+        // S8f: de opvolger kreeg eerst de kopie van de filters (met hun groep), daarna schreef APPLY ze opnieuw: de
+        // groep volgt de nieuwe leverancierskolom 13, de actieve revisie houdt kolom 3.
+        assertThat(filters(first)).contains("2:EXCLUDE:EQUALS:3:9999:COMPARE_AS_EMPTY:false:true:1");
+        assertThat(filters(successorId)).containsExactly("1:INCLUDE:EQUALS:9:ACME:EXCLUDE:true:true:-",
+                "2:EXCLUDE:EQUALS:13:9999:COMPARE_AS_EMPTY:false:true:1",
+                "3:EXCLUDE:EQUALS:4::COMPARE_AS_EMPTY:false:true:1",
+                "4:EXCLUDE:EQUALS:5::COMPARE_AS_EMPTY:true:true:1",
+                "5:EXCLUDE:EQUALS:1:REF-1:COMPARE_AS_EMPTY:false:true:1");
         assertThat(count("select count(*) from legacy_config_revision_origin ro join import_definition_revision r "
                 + "on r.id = ro.revision_id where r.import_definition_id = ?", definitionId)).isEqualTo(2);
         assertThat(jdbc.queryForObject("select definition_content_hash from legacy_config_definition_origin "
@@ -439,6 +455,8 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         long migrated = ((Number) revisionRows(definitionId).get(0).get("id")).longValue();
         setup.activateRevision(migrated, ACTOR);
         long copy = successors.createSuccessor(migrated, "handmatige kopie", ACTOR).id();
+        // S8f: de handmatige opvolger (RevisionCopier) draagt de EN-groep letterlijk mee.
+        assertThat(filters(copy)).isEqualTo(filters(migrated)).anyMatch(row -> row.endsWith(":1"));
         setup.activateRevision(copy, ACTOR);
         line(copied, 26).put("column", 17);
         String preview = previewBody(receive(copied));
@@ -841,11 +859,15 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         long definitionId = definitionId(supplier(bundle), "VROOAM2");
         long revisionId = ((Number) revisionRows(definitionId).get(0).get("id")).longValue();
         assertThat(filters(revisionId)).containsExactly(
-                "1:EXCLUDE:EQUALS:3:ACME:COMPARE_AS_EMPTY:true:true",
-                "2:EXCLUDE:BEGINS_WITH:4:GR:COMPARE_AS_EMPTY:true:true",
-                "3:EXCLUDE:ENDS_WITH:1:-X:COMPARE_AS_EMPTY:true:true",
-                "4:EXCLUDE:CONTAINS:5:KC:COMPARE_AS_EMPTY:true:true",
-                "5:INCLUDE:EQUALS:7:9,50:EXCLUDE:true:true");
+                "1:EXCLUDE:EQUALS:3:ACME:COMPARE_AS_EMPTY:true:true:-",
+                "2:EXCLUDE:BEGINS_WITH:4:GR:COMPARE_AS_EMPTY:true:true:-",
+                "3:EXCLUDE:ENDS_WITH:1:-X:COMPARE_AS_EMPTY:true:true:-",
+                "4:EXCLUDE:CONTAINS:5:KC:COMPARE_AS_EMPTY:true:true:-",
+                "5:INCLUDE:EQUALS:7:9,50:EXCLUDE:true:true:-",
+                "6:EXCLUDE:EQUALS:3:9999:COMPARE_AS_EMPTY:false:true:1",
+                "7:EXCLUDE:EQUALS:4::COMPARE_AS_EMPTY:false:true:1",
+                "8:EXCLUDE:EQUALS:5::COMPARE_AS_EMPTY:true:true:1",
+                "9:EXCLUDE:EQUALS:1:REF-1:COMPARE_AS_EMPTY:false:true:1");
 
         ((ObjectNode) bundle.get("interface").get("header")).put("info", "tweede export s8e");
         long second = receive(bundle);
@@ -854,7 +876,7 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         apply(second, JsonPath.read(again, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8E")
                 .andExpect(status().isOk());
         assertThat(revisionRows(definitionId)).hasSize(1);
-        assertThat(filters(revisionId)).hasSize(5);
+        assertThat(filters(revisionId)).hasSize(9);
     }
 
     /**
@@ -880,10 +902,14 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         long definitionId = definitionId(supplier(bundle), "VROOAM2");
         long revisionId = ((Number) revisionRows(definitionId).get(0).get("id")).longValue();
         assertThat(filters(revisionId)).containsExactly(
-                "1:EXCLUDE:NOT_EQUALS:3:ACME:EXCLUDE:true:true",
-                "2:EXCLUDE:EQUALS:5:KC:COMPARE_AS_EMPTY:true:true",
-                "3:EXCLUDE:NOT_CONTAINS:7:9:EXCLUDE:true:true",
-                "4:EXCLUDE:NOT_EQUALS:9:ACME:EXCLUDE:true:true");
+                "1:EXCLUDE:NOT_EQUALS:3:ACME:EXCLUDE:true:true:-",
+                "2:EXCLUDE:EQUALS:5:KC:COMPARE_AS_EMPTY:true:true:-",
+                "3:EXCLUDE:NOT_CONTAINS:7:9:EXCLUDE:true:true:-",
+                "4:EXCLUDE:NOT_EQUALS:9:ACME:EXCLUDE:true:true:-",
+                "5:EXCLUDE:EQUALS:3:9999:COMPARE_AS_EMPTY:false:true:1",
+                "6:EXCLUDE:EQUALS:4::COMPARE_AS_EMPTY:false:true:1",
+                "7:EXCLUDE:EQUALS:5::COMPARE_AS_EMPTY:true:true:1",
+                "8:EXCLUDE:EQUALS:1:REF-1:COMPARE_AS_EMPTY:false:true:1");
 
         ((ObjectNode) bundle.get("interface").get("header")).put("info", "tweede export s8e2");
         long second = receive(bundle);
@@ -923,8 +949,122 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         long revisionId = ((Number) revisionRows(definitionId(supplier(bundle), "VROOAM2")).get(0).get("id"))
                 .longValue();
         assertThat(filters(revisionId)).containsExactly(
-                "1:INCLUDE:EQUALS:7:9,50:EXCLUDE:true:true",
-                "2:EXCLUDE:EQUALS:9:X:COMPARE_AS_EMPTY:true:true");
+                "1:INCLUDE:EQUALS:7:9,50:EXCLUDE:true:true:-",
+                "2:EXCLUDE:EQUALS:9:X:COMPARE_AS_EMPTY:true:true:-",
+                "3:EXCLUDE:EQUALS:3:9999:COMPARE_AS_EMPTY:false:true:1",
+                "4:EXCLUDE:EQUALS:4::COMPARE_AS_EMPTY:false:true:1",
+                "5:EXCLUDE:EQUALS:5::COMPARE_AS_EMPTY:true:true:1",
+                "6:EXCLUDE:EQUALS:1:REF-1:COMPARE_AS_EMPTY:false:true:1");
+    }
+
+    /**
+     * S8f (design par. 2f, V2 = A): elke PSIMPEXCL-rij wordt een EN-groep op de bronkolommen, in de vijf legacy-vormen;
+     * dode rijen worden gemeld en niet gemigreerd; {@code LEGACY_EXCLUDES_NOT_MIGRATED} verdwijnt. De gemigreerde DRAFT
+     * doorstaat de configuratievalidatie en een tweede APPLY is {@code DEFINITION_UNCHANGED}.
+     */
+    @Test
+    void theExcludesBecomeMatchGroupsInTheFiveLegacyFormsAndASecondApplyIsUnchanged() throws Exception {
+        ObjectNode bundle = applicable();
+        line(bundle, 37).put("includeExclude", "0");
+        excludes(bundle,
+                "9999", "", "", "",          // 1 enkel leverancier
+                "", "GRP-A", "", "",         // 2 enkel groep
+                "", "GRP-A", "kc", "",       // 3 groep + korting (kleine letters in de korting zijn geldig)
+                "", "", "KC", "REF-2",       // 4 groep ('') + korting + referentie
+                "9999", "GRP-A", "", "",     // dood: leverancier zonder referentie, met groep
+                "", "grp-a", "", "",         // dood: kleine letters in de groep
+                "9999", "", "", "REF-1");    // 5 alle vier
+        long id = receive(bundle);
+
+        String preview = previewBody(id, "libraryCode", "LIB-S8F");
+        assertThat(blockingCodes(preview)).isEmpty();
+        assertThat(preview).doesNotContain("LEGACY_EXCLUDES_NOT_MIGRATED");
+        assertThat((List<String>) JsonPath.read(preview,
+                "$.report.items[?(@.code == 'LEGACY_EXCLUDE_NEVER_MATCHES')].element"))
+                .containsExactly("PSIMPEXCL#5", "PSIMPEXCL#6");
+        assertThat((List<String>) JsonPath.read(preview, "$.report.items[?(@.code == 'RECORD_FILTER_GROUP')].target"))
+                .containsExactly("import_record_filter group 1: column 3 EQUALS '9999'",
+                        "import_record_filter group 2: column 4 EQUALS 'GRP-A'",
+                        "import_record_filter group 3: column 4 EQUALS 'GRP-A' AND column 5 EQUALS 'kc'",
+                        "import_record_filter group 4: column 4 EQUALS '' AND column 5 EQUALS 'KC' AND column 1 "
+                                + "EQUALS 'REF-2'",
+                        "import_record_filter group 5: column 3 EQUALS '9999' AND column 4 EQUALS '' AND column 5 "
+                                + "EQUALS '' AND column 1 EQUALS 'REF-1'");
+        apply(id, JsonPath.read(preview, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8F")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.configurationFindings").isEmpty());
+
+        long definitionId = definitionId(supplier(bundle), "VROOAM2");
+        long revisionId = ((Number) revisionRows(definitionId).get(0).get("id")).longValue();
+        assertThat(filters(revisionId)).containsExactly(
+                "1:EXCLUDE:EQUALS:3:9999:COMPARE_AS_EMPTY:false:true:1",
+                "2:EXCLUDE:EQUALS:4:GRP-A:COMPARE_AS_EMPTY:false:true:2",
+                "3:EXCLUDE:EQUALS:4:GRP-A:COMPARE_AS_EMPTY:false:true:3",
+                "4:EXCLUDE:EQUALS:5:kc:COMPARE_AS_EMPTY:true:true:3",
+                "5:EXCLUDE:EQUALS:4::COMPARE_AS_EMPTY:false:true:4",
+                "6:EXCLUDE:EQUALS:5:KC:COMPARE_AS_EMPTY:true:true:4",
+                "7:EXCLUDE:EQUALS:1:REF-2:COMPARE_AS_EMPTY:false:true:4",
+                "8:EXCLUDE:EQUALS:3:9999:COMPARE_AS_EMPTY:false:true:5",
+                "9:EXCLUDE:EQUALS:4::COMPARE_AS_EMPTY:false:true:5",
+                "10:EXCLUDE:EQUALS:5::COMPARE_AS_EMPTY:true:true:5",
+                "11:EXCLUDE:EQUALS:1:REF-1:COMPARE_AS_EMPTY:false:true:5");
+        // Het revisiedetail van de setup-API toont de groep (additief veld).
+        String detail = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/catalog-import/definitions/{definitionId}/revisions/{id}", definitionId,
+                                revisionId)
+                        .with(as(USER, Permission.READ)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat((List<Integer>) JsonPath.read(detail, "$.filters[*].matchGroup"))
+                .containsExactly(1, 2, 3, 3, 4, 4, 4, 5, 5, 5, 5);
+
+        ((ObjectNode) bundle.get("interface").get("header")).put("info", "tweede export s8f");
+        long second = receive(bundle);
+        String again = previewBody(second, "libraryCode", "LIB-S8F");
+        assertThat(codes(again, "MIGRATED")).contains("DEFINITION_UNCHANGED");
+        apply(second, JsonPath.read(again, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8F")
+                .andExpect(status().isOk());
+        assertThat(revisionRows(definitionId)).hasSize(1);
+        assertThat(filters(revisionId)).hasSize(11);
+    }
+
+    /** S8f: {@code Skip_Excludes=Y} (INDET): legacy past PSIMPEXCL niet toe, dus geen groep; gemeld, niet stil. */
+    @Test
+    void skipExcludesYesMigratesNoExclude() throws Exception {
+        ObjectNode bundle = applicable();
+        detail(bundle, "Skip_Excludes", "Y");
+        long id = receive(bundle);
+
+        String preview = previewBody(id, "libraryCode", "LIB-S8F2");
+        assertThat(blockingCodes(preview)).isEmpty();
+        assertThat(codes(preview, "NOT_MIGRATED")).contains("LEGACY_EXCLUDES_SKIPPED")
+                .doesNotContain("INTERFACE_SETTING_NOT_MIGRATED");
+        apply(id, JsonPath.read(preview, "$.previewFingerprint"), REASON, "libraryCode", "LIB-S8F2")
+                .andExpect(status().isOk());
+
+        long revisionId = ((Number) revisionRows(definitionId(supplier(bundle), "VROOAM2")).get(0).get("id"))
+                .longValue();
+        assertThat(filters(revisionId)).containsExactly("1:INCLUDE:EQUALS:9:ACME:EXCLUDE:true:true:-");
+    }
+
+    /**
+     * S8f: een vaste groep (S6) wordt bij de migratie geëvalueerd. Een rij die daardoor elk record uitsluit, blokkeert
+     * ({@code LEGACY_EXCLUDE_EXCLUDES_ALL}); een vergelijking die altijd klopt valt weg, een die nooit klopt maakt de rij
+     * dood.
+     */
+    @Test
+    void aFixedGroupIsEvaluatedAndARowThatExcludesEverythingBlocks() throws Exception {
+        ObjectNode bundle = applicable();
+        line(bundle, 10).put("column", 0).put("value", "grp-a");   // legacy zet de vaste groep in hoofdletters
+        excludes(bundle, "", "GRP-A", "KC", "", "", "GRP-B", "KC", "");
+        String preview = previewBody(receive(bundle), "libraryCode", "LIB-S8F3");
+        assertThat(blockingCodes(preview)).isEmpty();
+        assertThat((List<String>) JsonPath.read(preview, "$.report.items[?(@.code == 'RECORD_FILTER_GROUP')].target"))
+                .containsExactly("import_record_filter group 1: column 5 EQUALS 'KC'");
+        assertThat(codes(preview, "NOT_MIGRATED")).contains("LEGACY_EXCLUDE_NEVER_MATCHES");
+
+        excludes(bundle, "", "GRP-A", "", "");
+        String blocked = previewBody(receive(bundle), "libraryCode", "LIB-S8F3");
+        assertThat(blockingCodes(blocked)).containsExactly("LEGACY_EXCLUDE_EXCLUDES_ALL");
+        assertThat((String) JsonPath.read(blocked, "$.report.outcome")).isEqualTo("BLOCKED");
     }
 
     // --- Hulp -----------------------------------------------------------------------------------------------------
@@ -957,12 +1097,26 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
         return line.put("includeExclude", code).put("includeExcludeData", data);
     }
 
-    /** S8e: de filters van een revisie als {@code volgnr:uitkomst:operator:kolom:waarde:null-gedrag:case:trim}. */
+    /**
+     * S8e/S8f: de filters van een revisie als {@code volgnr:uitkomst:operator:kolom:waarde:null-gedrag:case:trim:groep}
+     * ({@code -} = geen groep).
+     */
     private List<String> filters(long revisionId) {
         return jdbc.queryForList("select sequence_number || ':' || outcome || ':' || operator || ':' || "
                 + "source_reference || ':' || compare_value || ':' || null_behaviour || ':' || case_sensitive || ':' "
-                + "|| trim_before_compare from import_record_filter where definition_revision_id = ? "
-                + "order by sequence_number", String.class, revisionId);
+                + "|| trim_before_compare || ':' || coalesce(cast(match_group as varchar), '-') "
+                + "from import_record_filter where definition_revision_id = ? order by sequence_number", String.class,
+                revisionId);
+    }
+
+    /** S8f: vervangt de PSIMPEXCL-rijen van de bundel door deze rijen (leverancier, groep, korting, referentie). */
+    private static void excludes(ObjectNode bundle, String... values) {
+        com.fasterxml.jackson.databind.node.ArrayNode rows =
+                ((ObjectNode) bundle.get("definition")).putArray("excludes");
+        for (int i = 0; i < values.length; i += 4) {
+            rows.addObject().put("supplier", values[i]).put("supplierGroup", values[i + 1])
+                    .put("discountCode", values[i + 2]).put("supplierReference", values[i + 3]);
+        }
     }
 
     private static List<Object> concurrently(int count, Callable<Object> task) throws Exception {

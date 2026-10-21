@@ -319,10 +319,29 @@ public class SetupService {
     public record ValueMapEntry(String source, String target) {
     }
 
+    /**
+     * @param matchGroup legacy-config S8f (additief API-veld, kolom {@code import_record_filter.match_group}): filterrijen
+     *                   met dezelfde groep vormen een EN-regel; {@code null} (of afwezig in JSON) = een losse rij zoals
+     *                   vroeger. Een groep is een positief getal (anders 400 {@code MATCH_GROUP_INVALID}) en een
+     *                   gegroepeerde rij is {@code EXCLUDE} met {@code nullBehaviour=COMPARE_AS_EMPTY} (anders 400
+     *                   {@code CONFIG_FILTER_INVALID}). Enkel in een groep mag een {@code EQUALS}-rij een lege
+     *                   {@code compareValue} hebben ({@code ""} = "de kolom is leeg", legacy PSIMPEXCL); elders blijft
+     *                   een lege vergelijkwaarde 400 {@code COMPARE_VALUE_REQUIRED}.
+     */
     public record CreateFilterCommand(Integer sequenceNumber, String sourceReference, FilterOperator operator,
                                       String compareValue, FilterOutcome outcome, Boolean caseSensitive,
                                       Boolean trimBeforeCompare, FilterNullBehaviour nullBehaviour,
-                                      MissingColumnBehaviour missingColumnBehaviour, String createdBy) {
+                                      MissingColumnBehaviour missingColumnBehaviour, String createdBy,
+                                      Integer matchGroup) {
+
+        /** De vorm van voor S8f: een losse rij. */
+        public CreateFilterCommand(Integer sequenceNumber, String sourceReference, FilterOperator operator,
+                                   String compareValue, FilterOutcome outcome, Boolean caseSensitive,
+                                   Boolean trimBeforeCompare, FilterNullBehaviour nullBehaviour,
+                                   MissingColumnBehaviour missingColumnBehaviour, String createdBy) {
+            this(sequenceNumber, sourceReference, operator, compareValue, outcome, caseSensitive, trimBeforeCompare,
+                    nullBehaviour, missingColumnBehaviour, createdBy, null);
+        }
     }
 
     /** @param fieldKey een sleutel uit {@link RevisionCriticalityField} */
@@ -398,8 +417,9 @@ public class SetupService {
         }
     }
 
+    /** @param matchGroup de EN-groep (S8f, additief), of {@code null} voor een losse rij */
     public record FilterView(long id, long revisionId, int sequenceNumber, String sourceReference,
-                             String operator, String compareValue, String outcome) {
+                             String operator, String compareValue, String outcome, Integer matchGroup) {
     }
 
     public record FieldCriticalityView(long revisionId, String fieldKey, String criticality) {
@@ -1218,11 +1238,22 @@ public class SetupService {
                     + " is already used in revision " + revisionId + "; the evaluation order would be "
                     + "undefined");
         }
-        ImportRecordFilter filter = new ImportRecordFilter(revision, sequenceNumber,
-                SetupInput.requireText(command.sourceReference(), "sourceReference", MAX_FIELD_REFERENCE_LENGTH),
-                SetupInput.require(command.operator(), "operator"),
-                SetupInput.requireText(command.compareValue(), "compareValue", 500),
-                SetupInput.require(command.outcome(), "outcome"));
+        Integer matchGroup = command.matchGroup();
+        if (matchGroup != null && matchGroup <= 0) {
+            throw new BadRequestException(SetupInput.fieldCode("matchGroup", "INVALID"),
+                    "matchGroup must be a positive number");
+        }
+        String sourceReference =
+                SetupInput.requireText(command.sourceReference(), "sourceReference", MAX_FIELD_REFERENCE_LENGTH);
+        FilterOperator operator = SetupInput.require(command.operator(), "operator");
+        // S8f: in een EN-groep betekent EQUALS '' "de kolom is leeg" (legacy PSIMPEXCL: '' is letterlijk leeg).
+        boolean emptyAllowed = matchGroup != null && operator == FilterOperator.EQUALS
+                && command.compareValue() != null && command.compareValue().isBlank();
+        String compareValue = emptyAllowed ? ""
+                : SetupInput.requireText(command.compareValue(), "compareValue", 500);
+        FilterOutcome outcome = SetupInput.require(command.outcome(), "outcome");
+        ImportRecordFilter filter = new ImportRecordFilter(revision, sequenceNumber, sourceReference, operator,
+                compareValue, outcome);
         if (command.caseSensitive() != null) {
             filter.setCaseSensitive(command.caseSensitive());
         }
@@ -1235,13 +1266,23 @@ public class SetupService {
         if (command.missingColumnBehaviour() != null) {
             filter.setMissingColumnBehaviour(command.missingColumnBehaviour());
         }
+        if (matchGroup != null && (filter.getOutcome() != FilterOutcome.EXCLUDE
+                || filter.getNullBehaviour() != FilterNullBehaviour.COMPARE_AS_EMPTY)) {
+            // Dezelfde regel als de configuratievalidatie (M4g) en changeset 025-1, voor het schrijven: anders zou de
+            // databasecheck de fout geven in plaats van een leesbare melding.
+            throw new BadRequestException(ImportMappingConfigFactory.CODE_FILTER_INVALID, "Record filter "
+                    + sequenceNumber + " belongs to match group " + matchGroup + " but is " + filter.getOutcome()
+                    + " with null behaviour " + filter.getNullBehaviour() + "; every rule of a match group is "
+                    + "EXCLUDE with nullBehaviour COMPARE_AS_EMPTY");
+        }
+        filter.setMatchGroup(matchGroup);
         filter.setCreatedBy(SetupInput.orDefault(actor.username(), DEFAULT_CREATED_BY));
         filter.setCreatedBySubject(actor.subject());
         ImportRecordFilter stored = recordFilters.saveAndFlush(filter);
         validateConfiguration(revision);
         return new FilterView(stored.getId(), revisionId, stored.getSequenceNumber(),
                 stored.getSourceReference(), stored.getOperator().name(), stored.getCompareValue(),
-                stored.getOutcome().name());
+                stored.getOutcome().name(), stored.getMatchGroup());
     }
 
     /**

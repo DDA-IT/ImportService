@@ -244,7 +244,7 @@ public class SetupQueryService {
                 recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId).stream()
                         .map(filter -> new FilterView(filter.getId(), revisionId, filter.getSequenceNumber(),
                                 filter.getSourceReference(), filter.getOperator().name(),
-                                filter.getCompareValue(), filter.getOutcome().name()))
+                                filter.getCompareValue(), filter.getOutcome().name(), filter.getMatchGroup()))
                         .toList();
         List<FieldCriticalityView> fieldCriticalityViews = fieldCriticalities.findByDefinitionRevisionId(revisionId)
                 .stream()

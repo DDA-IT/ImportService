@@ -9,7 +9,9 @@ import be.dda.catalogimport.domain.Criticality;
 import be.dda.catalogimport.domain.FieldDataType;
 import be.dda.catalogimport.domain.FieldOwner;
 import be.dda.catalogimport.domain.FieldValueKind;
+import be.dda.catalogimport.domain.FilterNullBehaviour;
 import be.dda.catalogimport.domain.FilterOperator;
+import be.dda.catalogimport.domain.FilterOutcome;
 import be.dda.catalogimport.domain.FilterStage;
 import be.dda.catalogimport.domain.IdentityClass;
 import be.dda.catalogimport.domain.IdentityProfileKind;
@@ -1122,6 +1124,7 @@ public class ImportMappingConfigFactory {
                                                   ConfigProblemCollector problems) {
         List<RecordFilter> filters = new ArrayList<>(rows.size());
         Set<Integer> sequences = new HashSet<>();
+        Set<Integer> failedGroups = new HashSet<>();
         for (ImportRecordFilter row : rows) {
             int findingsBefore = problems.findingCount();
             int sequence = row.getSequenceNumber();
@@ -1182,11 +1185,40 @@ public class ImportMappingConfigFactory {
                                     + " but has no value to compare with; that rule would match every record");
                 }
             });
+            // M4g (legacy-config S8f): een EN-groep heeft een positief nummer en enkel EXCLUDE-rijen met
+            // COMPARE_AS_EMPTY (changeset 025-1); een andere uitkomst of een lege waarde die op zich al beslist, zou de
+            // EN-betekenis van de groep breken.
+            Integer group = row.getMatchGroup();
+            problems.check(null, () -> {
+                if (group == null) {
+                    return;
+                }
+                if (group <= 0) {
+                    throw blocked(CODE_FILTER_INVALID, reference, String.valueOf(group),
+                            "Record filter " + sequence + " has match group " + group + "; a match group is a "
+                                    + "positive number");
+                }
+                if (row.getOutcome() != FilterOutcome.EXCLUDE
+                        || row.getNullBehaviour() != FilterNullBehaviour.COMPARE_AS_EMPTY) {
+                    throw blocked(CODE_FILTER_INVALID, reference, String.valueOf(group),
+                            "Record filter " + sequence + " belongs to match group " + group + " but is "
+                                    + row.getOutcome() + " with null behaviour " + row.getNullBehaviour()
+                                    + "; every rule of a match group is EXCLUDE with COMPARE_AS_EMPTY, otherwise "
+                                    + "the group is no longer one AND rule");
+                }
+            });
             if (problems.findingCount() == findingsBefore) {
                 filters.add(new RecordFilter(sequence, reference, row.getOperator(), compareValue,
                         row.getOutcome(), row.isCaseSensitive(), row.isTrimBeforeCompare(),
-                        row.getNullBehaviour(), row.getMissingColumnBehaviour()));
+                        row.getNullBehaviour(), row.getMissingColumnBehaviour(), group));
+            } else if (group != null) {
+                failedGroups.add(group);
             }
+        }
+        // S8f: een groep met een ongeldige rij valt volledig weg. Zonder die rij zou de rest van de groep méér
+        // uitsluiten dan de EN-regel; de bevinding blokkeert de levering toch al (ook in collect-modus).
+        if (!failedGroups.isEmpty()) {
+            filters.removeIf(filter -> filter.matchGroup() != null && failedGroups.contains(filter.matchGroup()));
         }
         return filters;
     }

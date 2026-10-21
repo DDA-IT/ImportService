@@ -52,6 +52,13 @@ class LegacyRevisionContentParityTest {
     private static final String PRE_S8C_WITH_VALUE_MAP_ROWS =
             "2cc2e14dd0e8fab18542dfcfd88c51116733264e01dcdb13410f44803351982f";
 
+    /**
+     * S8f: {@code ofRevision} van {@link #s2MigratedRevision()} met twee losse filters (een S8e-uitsluiting en een
+     * S2-include, {@link #s8eFilters}), berekend met de implementatie van voor S8f (commit 8833248).
+     */
+    private static final String PRE_S8F_WITH_FILTERS =
+            "8497b98a44f31966a30301e6d97ee5a91d82dce87ffbf69991ea5e474805f429";
+
     @Test
     void aRevisionMigratedBeforeS6KeepsItsContentHash() {
         assertThat(LegacyRevisionContent.ofRevision(preS6Revision(), List.of(), List.of(), List.of())).isEqualTo(PRE_S6);
@@ -223,6 +230,75 @@ class LegacyRevisionContentParityTest {
         assertThat(plannedExclude).isNotEqualTo(LegacyRevisionContent.ofPlanned(planned(new PlannedFilter(1, "6",
                 FilterOperator.EQUALS, "BENL", FilterOutcome.EXCLUDE, true, FilterNullBehaviour.EXCLUDE)),
                 revision.getStructureFormat(), code -> Criticality.NON_CRITICAL));
+    }
+
+    /** S8f: een revisie met losse filters (zonder groep) houdt byte voor byte haar inhoudshash. */
+    @Test
+    void aRevisionWithLooseFiltersKeepsItsContentHash() {
+        ImportDefinitionRevision revision = s2MigratedRevision();
+
+        assertThat(LegacyRevisionContent.ofRevision(revision, List.of(), s8eFilters(revision), List.of()))
+                .isEqualTo(PRE_S8F_WITH_FILTERS);
+    }
+
+    /**
+     * S8f: de EN-groep telt mee als {@code group=n}, gelijk in plan en geschreven rij; een andere groep of geen groep is
+     * een andere inhoud.
+     */
+    @Test
+    void theMatchGroupCountsInThePlannedAndTheWrittenContent() {
+        ImportDefinitionRevision revision = s2MigratedRevision();
+        PlannedRevision grouped = new PlannedRevision("UTF-8", ";", true, 1, IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE,
+                "3", "4", "1", "5", "7", "2", null, null, true, List.of(), List.of(
+                        new PlannedFilter(1, "3", FilterOperator.EQUALS, "ACME", FilterOutcome.EXCLUDE, false,
+                                FilterNullBehaviour.COMPARE_AS_EMPTY, 1),
+                        new PlannedFilter(2, "4", FilterOperator.EQUALS, "", FilterOutcome.EXCLUDE, false,
+                                FilterNullBehaviour.COMPARE_AS_EMPTY, 1)));
+        ImportRecordFilter first = groupedRow(revision, 1, "3", "ACME", 1);
+        ImportRecordFilter second = groupedRow(revision, 2, "4", "", 1);
+
+        String plannedHash = LegacyRevisionContent.ofPlanned(grouped, revision.getStructureFormat(),
+                code -> Criticality.NON_CRITICAL);
+        assertThat(plannedHash).isEqualTo(LegacyRevisionContent.ofRevision(revision, List.of(), List.of(first, second),
+                List.of()));
+
+        second.setMatchGroup(2);
+        assertThat(LegacyRevisionContent.ofRevision(revision, List.of(), List.of(first, second), List.of()))
+                .isNotEqualTo(plannedHash);
+        first.setMatchGroup(null);
+        second.setMatchGroup(null);
+        assertThat(LegacyRevisionContent.ofRevision(revision, List.of(), List.of(first, second), List.of()))
+                .isNotEqualTo(plannedHash);
+        // Zonder groep is het plan gelijk aan de losse rijen (de vorm van voor S8f).
+        PlannedRevision loose = new PlannedRevision("UTF-8", ";", true, 1, IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE,
+                "3", "4", "1", "5", "7", "2", null, null, true, List.of(), List.of(
+                        new PlannedFilter(1, "3", FilterOperator.EQUALS, "ACME", FilterOutcome.EXCLUDE, false,
+                                FilterNullBehaviour.COMPARE_AS_EMPTY),
+                        new PlannedFilter(2, "4", FilterOperator.EQUALS, "", FilterOutcome.EXCLUDE, false,
+                                FilterNullBehaviour.COMPARE_AS_EMPTY)));
+        assertThat(LegacyRevisionContent.ofPlanned(loose, revision.getStructureFormat(), code -> Criticality.NON_CRITICAL))
+                .isEqualTo(LegacyRevisionContent.ofRevision(revision, List.of(), List.of(first, second), List.of()));
+    }
+
+    private static ImportRecordFilter groupedRow(ImportDefinitionRevision revision, int sequence, String column,
+                                                 String value, Integer group) {
+        ImportRecordFilter row = new ImportRecordFilter(revision, sequence, column, FilterOperator.EQUALS, value,
+                FilterOutcome.EXCLUDE);
+        row.setNullBehaviour(FilterNullBehaviour.COMPARE_AS_EMPTY);
+        row.setMatchGroup(group);
+        return row;
+    }
+
+    private static List<ImportRecordFilter> s8eFilters(ImportDefinitionRevision revision) {
+        ImportRecordFilter exclude = new ImportRecordFilter(revision, 1, "6", FilterOperator.EQUALS, "BENL",
+                FilterOutcome.EXCLUDE);
+        exclude.setCaseSensitive(true);
+        exclude.setNullBehaviour(FilterNullBehaviour.COMPARE_AS_EMPTY);
+        ImportRecordFilter include = new ImportRecordFilter(revision, 2, "7", FilterOperator.CONTAINS, "EOL",
+                FilterOutcome.INCLUDE);
+        include.setCaseSensitive(true);
+        include.setNullBehaviour(FilterNullBehaviour.EXCLUDE);
+        return List.of(exclude, include);
     }
 
     private static PlannedRevision planned(PlannedFilter filter) {

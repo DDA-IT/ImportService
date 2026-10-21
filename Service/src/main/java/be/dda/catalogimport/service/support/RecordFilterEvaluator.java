@@ -3,8 +3,13 @@ package be.dda.catalogimport.service.support;
 import be.dda.catalogimport.domain.FilterOutcome;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.ParsedRow;
 import be.dda.catalogimport.service.support.ImportMappingConfig.RecordFilter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Past de recordfilters van een revisie toe op één geparste bronregel (ontwerp fase 3,
@@ -44,6 +49,18 @@ import java.util.Locale;
  * waarmee zowel "importeer deze twee deelcatalogi" als "maar nooit de EOL-artikelen" uitdrukbaar is.
  * De businessanalyse legt deze combinatie niet vast (par. 5.5.1 beschrijft enkel de zes operatoren
  * per rij); dit is de gedocumenteerde invulling.
+ *
+ * <h2>EN-groepen (legacy-config S8f, {@code match_group})</h2>
+ * Rijen met dezelfde {@code match_group} vormen samen één EN-regel: het record valt buiten de scope als <b>alle</b>
+ * rijen van de groep matchen (PSIMPEXCL, beslissingslog 2026-10-21 V2 = A). Zo'n rij is altijd {@code EXCLUDE} met
+ * {@code COMPARE_AS_EMPTY} (changeset 025-1, configuratievalidatie {@code CONFIG_FILTER_INVALID}). De groep wordt als
+ * één eenheid geëvalueerd op de plaats van haar rij met het laagste {@code sequence_number}; haar andere rijen worden op
+ * hun eigen plaats overgeslagen. Eerst wordt van elke rij van de groep de kolom gezocht: een ontbrekende kolom geeft,
+ * net als bij een losse rij, het {@code missing_column_behaviour} van die rij (R-FLT-03), ook als een andere rij van
+ * de groep niet zou matchen - een ontbrekende kolom blijft dus nooit stil. Daarna worden de waarden vergeleken; de
+ * eerste rij die niet matcht, beëindigt de groep zonder beslissing. Een matchende groep geeft
+ * {@link Decision.Kind#FILTERED_OUT} met het laagste volgnummer van de groep als beslissende rij. Rijen zonder groep
+ * gedragen zich exact zoals vóór S8f.
  *
  * <h2>Wat een uitgesloten record niet is</h2>
  * Uitsluiten is geen fout: {@link Decision.Kind#FILTERED_OUT} telt in {@code filtered_out_count} en
@@ -85,11 +102,33 @@ public final class RecordFilterEvaluator {
 
     private final List<RecordFilter> filters;
     private final boolean hasIncludeFilter;
+    /**
+     * S8f: per filterrij die een groep opent (de rij met het laagste volgnummer van haar groep) alle rijen van die
+     * groep, oplopend op volgnummer. Andere gegroepeerde rijen staan in {@link #grouped} en worden overgeslagen.
+     */
+    private final Map<RecordFilter, List<RecordFilter>> groupsByLead;
+    private final Map<RecordFilter, Boolean> grouped; // identiteitsset: twee gelijke rijen blijven twee rijen
 
     public RecordFilterEvaluator(List<RecordFilter> filters) {
         this.filters = List.copyOf(filters);
         this.hasIncludeFilter = this.filters.stream()
                 .anyMatch(filter -> filter.outcome() == FilterOutcome.INCLUDE);
+        Map<Integer, List<RecordFilter>> byGroup = new LinkedHashMap<>();
+        for (RecordFilter filter : this.filters) {
+            if (filter.matchGroup() != null) {
+                byGroup.computeIfAbsent(filter.matchGroup(), group -> new ArrayList<>()).add(filter);
+            }
+        }
+        Map<RecordFilter, List<RecordFilter>> leads = new IdentityHashMap<>();
+        Map<RecordFilter, Boolean> members = new IdentityHashMap<>();
+        for (List<RecordFilter> rows : byGroup.values()) {
+            List<RecordFilter> ordered = new ArrayList<>(rows);
+            ordered.sort(Comparator.comparingInt(RecordFilter::sequenceNumber)); // stabiel bij gelijke nummers
+            leads.put(ordered.get(0), List.copyOf(ordered));
+            rows.forEach(row -> members.put(row, Boolean.TRUE));
+        }
+        this.groupsByLead = leads;
+        this.grouped = members;
     }
 
     /** @return {@code true} wanneer er geen enkele filterrij is; het fase 2-gedrag blijft dan gelden */
@@ -109,6 +148,17 @@ public final class RecordFilterEvaluator {
         }
         boolean includeMatched = false;
         for (RecordFilter filter : filters) {
+            if (grouped.containsKey(filter)) {
+                List<RecordFilter> group = groupsByLead.get(filter);
+                if (group == null) {
+                    continue; // geëvalueerd op de plaats van de laagste rij van haar groep
+                }
+                Decision decision = evaluateGroup(row, group);
+                if (decision != null) {
+                    return decision;
+                }
+                continue;
+            }
             Integer position = row.positions().position(filter.sourceReference());
             if (position == null) {
                 return onMissingColumn(filter);
@@ -141,6 +191,49 @@ public final class RecordFilterEvaluator {
                     "No include filter of this import definition matches this record");
         }
         return IN_SCOPE;
+    }
+
+    /**
+     * S8f: één EN-groep. Eerst de kolommen (een ontbrekende kolom beslist altijd, R-FLT-03), dan de waarden; de eerste
+     * rij die niet matcht beëindigt de groep zonder beslissing.
+     *
+     * @return de beslissing, of {@code null} als de groep niet (volledig) matcht
+     */
+    private static Decision evaluateGroup(ParsedRow row, List<RecordFilter> group) {
+        List<Integer> positions = new ArrayList<>(group.size());
+        for (RecordFilter filter : group) {
+            Integer position = row.positions().position(filter.sourceReference());
+            if (position == null) {
+                return onMissingColumn(filter);
+            }
+            positions.add(position);
+        }
+        String leadRaw = null;
+        for (int i = 0; i < group.size(); i++) {
+            RecordFilter filter = group.get(i);
+            String raw = row.value(positions.get(i));
+            if (i == 0) {
+                leadRaw = raw;
+            }
+            String candidate = filter.trimBeforeCompare() ? trim(raw) : raw;
+            if (candidate == null || candidate.isEmpty()) {
+                Decision empty = onEmptyValue(filter, raw);
+                if (empty != null) {
+                    return empty;
+                }
+                candidate = "";
+            }
+            if (!matches(filter, candidate)) {
+                return null;
+            }
+        }
+        RecordFilter lead = group.get(0);
+        StringBuilder rules = new StringBuilder();
+        for (RecordFilter filter : group) {
+            rules.append(rules.isEmpty() ? "" : " and ").append(describe(filter));
+        }
+        return new Decision(Decision.Kind.FILTERED_OUT, lead.sequenceNumber(), lead.sourceReference(), leadRaw,
+                "Record matches every rule of exclude group " + lead.matchGroup() + ": " + rules);
     }
 
     /** Levert altijd een eindbeslissing op of blokkeert; nooit een stil "matcht niet" (R-FLT-03). */

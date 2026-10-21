@@ -84,6 +84,15 @@ public class ImportRecordFilter {
     @Column(name = "missing_column_behaviour", nullable = false, length = 20)
     private MissingColumnBehaviour missingColumnBehaviour = MissingColumnBehaviour.BLOCK;
 
+    /**
+     * Legacy-config S8f (changeset 025-1): rijen met dezelfde groep vormen samen een EN-regel - het record valt buiten
+     * de scope als <b>alle</b> rijen van de groep matchen (PSIMPEXCL, beslissingslog 2026-10-21 V2 = A). {@code null} =
+     * een losse rij, exact zoals voor S8f. Een gegroepeerde rij is altijd {@code EXCLUDE} met
+     * {@code COMPARE_AS_EMPTY} ({@code ck_import_record_filter_match_group_exclude}).
+     */
+    @Column(name = "match_group")
+    private Integer matchGroup;
+
     @Column(name = "created_at")
     private Instant createdAt;
 
@@ -200,6 +209,14 @@ public class ImportRecordFilter {
 
     public void setMissingColumnBehaviour(MissingColumnBehaviour missingColumnBehaviour) {
         this.missingColumnBehaviour = missingColumnBehaviour;
+    }
+
+    public Integer getMatchGroup() {
+        return matchGroup;
+    }
+
+    public void setMatchGroup(Integer matchGroup) {
+        this.matchGroup = matchGroup;
     }
 
     public Instant getCreatedAt() {

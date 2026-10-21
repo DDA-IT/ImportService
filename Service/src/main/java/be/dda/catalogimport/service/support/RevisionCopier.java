@@ -290,6 +290,7 @@ public class RevisionCopier {
             copy.setTrimBeforeCompare(row.isTrimBeforeCompare());
             copy.setNullBehaviour(row.getNullBehaviour());
             copy.setMissingColumnBehaviour(row.getMissingColumnBehaviour());
+            copy.setMatchGroup(row.getMatchGroup()); // S8f: de EN-groep gaat letterlijk mee
             copy.setCreatedBy(createdBy);
             copy.setCreatedBySubject(createdBySubject);
             copies.put(row.getSequenceNumber(), copy);

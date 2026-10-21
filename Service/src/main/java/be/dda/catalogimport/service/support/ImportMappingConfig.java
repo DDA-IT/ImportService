@@ -173,11 +173,22 @@ public record ImportMappingConfig(int canonicalisationVersion, List<FieldMapping
      * @param sourceReference        headernaam of 1-gebaseerde kolomindex van de bronkolom
      * @param nullBehaviour          wat een ontbrekende of lege <b>waarde</b> betekent
      * @param missingColumnBehaviour wat een ontbrekende <b>kolom</b> betekent
+     * @param matchGroup             legacy-config S8f: rijen met dezelfde groep vormen een EN-regel (altijd
+     *                               {@code EXCLUDE} met {@code COMPARE_AS_EMPTY}); {@code null} = een losse rij
      */
     public record RecordFilter(int sequenceNumber, String sourceReference, FilterOperator operator,
                                String compareValue, FilterOutcome outcome, boolean caseSensitive,
                                boolean trimBeforeCompare, FilterNullBehaviour nullBehaviour,
-                               MissingColumnBehaviour missingColumnBehaviour) {
+                               MissingColumnBehaviour missingColumnBehaviour, Integer matchGroup) {
+
+        /** De vorm van vóór S8f: een losse rij zonder groep. */
+        public RecordFilter(int sequenceNumber, String sourceReference, FilterOperator operator,
+                            String compareValue, FilterOutcome outcome, boolean caseSensitive,
+                            boolean trimBeforeCompare, FilterNullBehaviour nullBehaviour,
+                            MissingColumnBehaviour missingColumnBehaviour) {
+            this(sequenceNumber, sourceReference, operator, compareValue, outcome, caseSensitive, trimBeforeCompare,
+                    nullBehaviour, missingColumnBehaviour, null);
+        }
     }
 
     public ImportMappingConfig {

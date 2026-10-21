@@ -1,7 +1,8 @@
 # Legacy-config S8 — maptabel, transformatieketen, Include/Exclude, PSIMPEXCL
 
-> **Status: VOORSTEL (2026-10-21), denker-zwaar; S8a, S8b, S8c, S8d en S8e gebouwd (2026-10-21, zie "Uitwerking S8a" in
-> §2a, "Uitwerking S8b" in §2b, "Uitwerking S8c" in §2c, "Uitwerking S8d" in §2d en "Uitwerking S8e" in §2e).** Verfijnt
+> **Status: VOORSTEL (2026-10-21), denker-zwaar; S8a, S8b, S8c, S8d, S8e en S8f gebouwd (2026-10-21, zie "Uitwerking S8a"
+> in §2a, "Uitwerking S8b" in §2b, "Uitwerking S8c" in §2c, "Uitwerking S8d" in §2d, "Uitwerking S8e" in §2e en
+> "Uitwerking S8f" in §2f).** Verfijnt
 > `legacy-config-bundle-design.md` §8 rij S8 en `legacy-config-migratie-design.md` LM-2. S8f (V2 = A)
 > en S8g (V1 = B) zijn beslist (beslissingslog 2026-10-21) (§5).
 > Bronnen: `LegacyConfigTranslator`, `FieldTransform`, `FieldValueMapper`, `MappingSettings`, `ImportMappingConfigFactory`,
@@ -244,6 +245,53 @@ r.2582-2687, enkel als `NOT >SkipExcludes`, r.395), niet in `Prg_1171`.
   BLOCKING `LEGACY_EXCLUDE_EXCLUDES_ALL`; dode rij → `LEGACY_EXCLUDE_NEVER_MATCHES`; korting niet uitdrukbaar → WARNING
   `LEGACY_EXCLUDE_NOT_EXPRESSIBLE`; `Skip_Excludes=Y` → niet migreren, `LEGACY_EXCLUDES_SKIPPED`. `LEGACY_EXCLUDES_NOT_MIGRATED` verdwijnt.
 
+**Uitwerking S8f (gebouwd 2026-10-21; bouwer-zwaar).**
+- *Legacy geverifieerd* (vault `Prg_1170_Import_Art_Import_PSIMPORT.md`, taken "Check Excludes"/"Excludes", r.2582-2687):
+  vijf `Query`-links op `Import Definitie Excludes` (`Uniek_Key`), elk met `locate` van de verwerkte `ARIMP`-waarde of `''`
+  per deel; `ARIMP_Verwerken := FALSE` als één link treft. `ARIMP_Leverancier Nummer` is U7A, `Referentie` U25, de groep
+  wordt door `Upper()` in hoofdletters gezet (S6), `ARIMP_Korting Code` is Alpha 10 zonder `Upper()`.
+- *Schema:* changeset `025-1` zoals §2f (`ck_import_record_filter_match_group_positive`, `_match_group_exclude`).
+  Entiteit `ImportRecordFilter.matchGroup` (Integer); `ImportMappingConfig.RecordFilter` kreeg een component `matchGroup`
+  (de oude constructor blijft, met `null`).
+- *Evaluatie (`RecordFilterEvaluator`):* rijen zonder groep exact zoals voor S8f (ook de lijstvolgorde). Een groep wordt
+  één eenheid op de plaats van haar rij met het laagste `sequence_number`; haar andere rijen worden overgeslagen. Eerst
+  worden alle kolommen van de groep gezocht: een ontbrekende kolom geeft het `missing_column_behaviour` van die rij, ook
+  als een andere rij van de groep niet zou matchen (R-FLT-03, nooit stil). Daarna de waarden per rij (eigen trim en
+  hoofdlettergevoeligheid, lege waarde = `''`); de eerste rij die niet matcht beëindigt de groep zonder beslissing. Een
+  matchende groep geeft `FILTERED_OUT` met het laagste volgnummer, de bronkolom en -waarde van die rij en een boodschap
+  met alle rijen. Twee groepen staan in OF, zoals losse EXCLUDE-rijen.
+- *Configuratiefouten (`CONFIG_FILTER_INVALID`, M4g, ook collect-modus B'):* groep <= 0; een gegroepeerde rij die niet
+  `EXCLUDE` met `COMPARE_AS_EMPTY` is. Een groep met een ongeldige rij valt volledig weg uit de configuratie (zonder die
+  rij zou de rest meer uitsluiten); de bevinding blokkeert toch. Een lege `EQUALS`-waarde was in het model al toegelaten
+  (M4f).
+- *Inhoudshash:* `LegacyRevisionContent` voegt per filter `group=n` toe, enkel als de groep gezet is; letterlijke
+  pre-S8f-hash met twee losse filters in `LegacyRevisionContentParityTest`. `RevisionConfigHashes` ongewijzigd.
+- *Kopie:* `RevisionCopier.copyFilters` neemt `match_group` mee (opvolger, sjabloonmaterialisatie, gedeelde definitie S7).
+- *Setup-API (additief):* `CreateFilterCommand.matchGroup` en `FilterView.matchGroup` (ook in het revisiedetail; `null` =
+  losse rij). 400 `MATCH_GROUP_INVALID` (<= 0); 400 `CONFIG_FILTER_INVALID` als een gegroepeerde rij niet `EXCLUDE` met
+  `nullBehaviour=COMPARE_AS_EMPTY` is (vóór het schrijven, dus nooit een databasefout). **Verruiming:** enkel in een groep
+  mag een `EQUALS`-rij een lege `compareValue` hebben (`""` = "de kolom is leeg", nodig voor PSIMPEXCL `''`); elders blijft
+  een lege vergelijkwaarde 400 `COMPARE_VALUE_REQUIRED`. `CreateFilterCommand` kreeg een extra recordcomponent (de oude
+  constructor blijft); JSON zonder `matchGroup` blijft geldig.
+- *Migratie (`LegacyConfigTranslator.excludeGroups`):* per PSIMPEXCL-rij (in bundelvolgorde, element `PSIMPEXCL#n`) de vorm
+  uit §2f; delen getrimd. Termen in vaste volgorde leverancier, groep, korting, referentie; rijen achter de
+  Include/Exclude-filters, groepen genummerd vanaf 1. Lev/grp/ref op de bronkolom van de identiteit (`caseSensitive=false`;
+  de identiteitsregels hebben geen transformatie, die blokkeert, dus de getrimde bronkolom is de verwerkte legacy-waarde),
+  korting op de kolom van regel 23 (`caseSensitive=true`, ook bij THREE_PART), alle rijen `trim=true`,
+  `missing_column_behaviour=BLOCK`. Vaste leverancier/groep: `Upper(vast) = deel` → term valt weg (gemeld in het item),
+  anders dode rij. Regel 23: afwezig → korting altijd `''` (legacy schrijft het veld dan niet; aanname), vaste `Waarde` →
+  geëvalueerd zoals een vast deel, zonder kolom of met prefix/suffix/CALC/Positie-Lengte → `LEGACY_EXCLUDE_NOT_EXPRESSIBLE`.
+  Volgorde van de uitkomst per rij: dode vorm of kleine letters → vast deel nooit waar → korting niet uitdrukbaar → niets meer
+  te vergelijken (`LEGACY_EXCLUDE_EXCLUDES_ALL`, blokkeert de revisie) → MIGRATED `RECORD_FILTER_GROUP` (doel
+  `import_record_filter group n: column c EQUALS 'v' AND ...`). `Skip_Excludes` is een gestuurd INDET-label: `Y` →
+  `LEGACY_EXCLUDES_SKIPPED`, geen groepen. Is de identiteit zelf niet te vertalen (blokkerend), dan worden de rijen niet
+  beoordeeld (geen item). Identieke rijen worden identieke groepen (geen ontdubbeling; zelfde uitkomst). Een tweede APPLY
+  geeft `DEFINITION_UNCHANGED`; een vóór S8f gemigreerde revisie met PSIMPEXCL plant nu een andere inhoud (opvolgende DRAFT,
+  nooit `MANUAL_CHANGES_SINCE_MIGRATION`).
+- *Golden:* `LegacyExcludeMigrationTest` vergelijkt vertaling + evaluatie met een herimplementatie van de vijf opzoekingen
+  over 81 rijen x 192 records per variant (FOUR_PART, THREE_PART, zonder regel 23, vaste leverancier/groep), op records
+  met een niet-lege leverancier en referentie.
+
 ## 3. Hashes, kopie, API, screening
 - `RevisionConfigHashes` omvat geen mappings/filters: ongewijzigd.
 - `LegacyRevisionContent`: per mapping achteraan `T,n,kind,config` (stappen) en `V,seq,bron,doel` (maprijen), per filter
@@ -268,7 +316,7 @@ Steeds: tweemaal dezelfde APPLY → `DEFINITION_UNCHANGED`.
 | S8c keten + AFFIX (**gebouwd 2026-10-21**) | Liquibase 024, alle lagen | bouwer-zwaar | `SetupApiFlowTest`, `DeliveryScreeningFlowTest` | prefix+suffix+CALC 7 = legacy; lege invoer blijft leeg; grammaticafouten blokkeren in B' |
 | S8d MAP_CONTAINS (**gebouwd 2026-10-21**) | Service | bouwer-gemiddeld | — | eerste treffer per KEY-volgorde, hoofdletterongevoelig |
 | S8e Include/Exclude (**gebouwd 2026-10-21**) | Service | bouwer-gemiddeld | `RecordFilterEvaluatorTest` | codes 1–6; twee includes = EN |
-| S8f PSIMPEXCL (na V2) | Liquibase 025, alle lagen | bouwer-zwaar | `RecordFilterEvaluatorTest`, `SetupApiFlowTest` | vijf vormen + dode rijen; `Skip_Excludes` |
+| S8f PSIMPEXCL (**gebouwd 2026-10-21**) | Liquibase 025, alle lagen | bouwer-zwaar | `RecordFilterEvaluatorTest`, `SetupApiFlowTest` | vijf vormen + dode rijen; `Skip_Excludes` |
 | S8g onMiss (na V1) | Service, catalogus | bouwer-gemiddeld | — | volgens V1 |
 
 ## 5. Vragen voor de mens

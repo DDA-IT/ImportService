@@ -57,8 +57,11 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
         assertThat(codes(body, "MIGRATED")).contains("DELIMITER", "CHARSET", "HEADER", "BASE_PRICE", "DESCRIPTION");
         assertThat(codes(body, "WARNING")).contains("PRODIS_REFERENCE_NOT_VERIFIED", "MAP_MISS_NO_FALLBACK",
                 "DECIMAL_COMMA_BASE_PRICE");
-        assertThat(codes(body, "NOT_MIGRATED")).contains("LEGACY_EXCLUDES_NOT_MIGRATED", "SCHEDULE_NOT_MIGRATED",
-                "CONNECTION_NOT_MIGRATED", "SECRET_LABEL_OMITTED", "DISCOUNT_CODE_NOT_IN_KEY");
+        assertThat(codes(body, "NOT_MIGRATED")).contains("SCHEDULE_NOT_MIGRATED", "CONNECTION_NOT_MIGRATED",
+                "SECRET_LABEL_OMITTED", "DISCOUNT_CODE_NOT_IN_KEY");
+        // S8f: PSIMPEXCL wordt gemigreerd (LEGACY_EXCLUDES_NOT_MIGRATED verdwijnt); met een geblokkeerde identiteit
+        // (prefix op 11) is er nog geen groep te plannen.
+        assertThat(body).doesNotContain("LEGACY_EXCLUDES_NOT_MIGRATED").doesNotContain("RECORD_FILTER_GROUP");
         assertThat(body).doesNotContain("canary-golden-not-a-secret");
 
         // Met een bibliotheekcode valt enkel LIBRARY_CODE_NOT_RESOLVED weg.

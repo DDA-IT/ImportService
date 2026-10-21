@@ -175,8 +175,14 @@ class LegacyConfigSharedDefinitionTest extends LegacyConfigS2TestBase {
         }
         assertThat(count("select count(*) from import_field_mapping where definition_revision_id = ?",
                 templateRevision.get("id"))).isEqualTo(2);
-        assertThat(count("select count(*) from import_record_filter where definition_revision_id = ?",
-                templateRevision.get("id"))).isEqualTo(1);
+        // S8f: de include plus de EN-groep van de golden PSIMPEXCL-rij; de kopie via RevisionCopier neemt de groep mee.
+        String filterSql = "select sequence_number || ':' || outcome || ':' || source_reference || ':' || compare_value "
+                + "|| ':' || case_sensitive || ':' || coalesce(cast(match_group as varchar), '-') from import_record_filter "
+                + "where definition_revision_id = ? order by sequence_number";
+        List<String> templateFilters = jdbc.queryForList(filterSql, String.class, templateRevision.get("id"));
+        assertThat(templateFilters).containsExactly("1:INCLUDE:9:ACME:true:-", "2:EXCLUDE:3:9999:false:1",
+                "3:EXCLUDE:4::false:1", "4:EXCLUDE:5::true:1", "5:EXCLUDE:1:REF-1:false:1");
+        assertThat(jdbc.queryForList(filterSql, String.class, sharedRevision.get("id"))).isEqualTo(templateFilters);
         // S8a: sjabloon en gedeelde definitie dragen dezelfde vertaalrijen (de kopie via RevisionCopier neemt ze mee).
         String valueMapSql = "select m.target_field_code || ':' || v.sequence_number || ':' || v.source_value || '>' "
                 + "|| v.target_value from import_field_value_map v join import_field_mapping m on m.id = v.mapping_id "

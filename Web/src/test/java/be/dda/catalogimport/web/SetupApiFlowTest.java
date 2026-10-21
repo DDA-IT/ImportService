@@ -421,6 +421,87 @@ class SetupApiFlowTest {
         batch(batchId).andExpect(jsonPath("$.filteredOutCount").value(2));
     }
 
+    /**
+     * Legacy-config S8f: filterrijen met dezelfde {@code matchGroup} vormen een EN-regel (additief API-veld). Enkel het
+     * record dat aan alle rijen van een groep voldoet, valt buiten de scope (geteld, geen probleem); een groep waarvan
+     * een rij niet klopt, sluit niets uit. Ongeldige groepen zijn 400 en bewaren niets.
+     */
+    @Test
+    void aMatchGroupFromTheSetupApiExcludesOnlyTheRecordsMatchingEveryRuleOfTheGroup() throws Exception {
+        String unique = unique("GRP");
+        createOrganisation(unique);
+        long definitionId = createDefinition(unique);
+        long revisionId = createRevision(definitionId);
+
+        // Groep 1: groep = slijp (hoofdletterongevoelig) EN referentie = A-2002 -> een record.
+        postFilter(revisionId, "{\"sourceReference\":\"groep\",\"operator\":\"EQUALS\",\"compareValue\":\"slijp\","
+                + "\"outcome\":\"EXCLUDE\",\"nullBehaviour\":\"COMPARE_AS_EMPTY\",\"matchGroup\":1}")
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.matchGroup").value(1));
+        postFilter(revisionId, "{\"sourceReference\":\"referentie\",\"operator\":\"EQUALS\",\"compareValue\":"
+                + "\"A-2002\",\"outcome\":\"EXCLUDE\",\"nullBehaviour\":\"COMPARE_AS_EMPTY\",\"matchGroup\":1}")
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.sequenceNumber").value(2));
+        // Groep 2: groep = MEET EN een lege ean (enkel in een groep mag de vergelijkwaarde leeg zijn) -> geen record.
+        postFilter(revisionId, "{\"sourceReference\":\"groep\",\"operator\":\"EQUALS\",\"compareValue\":\"MEET\","
+                + "\"outcome\":\"EXCLUDE\",\"nullBehaviour\":\"COMPARE_AS_EMPTY\",\"matchGroup\":2}")
+                .andExpect(status().isCreated());
+        postFilter(revisionId, "{\"sourceReference\":\"ean\",\"operator\":\"EQUALS\",\"compareValue\":\"\","
+                + "\"outcome\":\"EXCLUDE\",\"nullBehaviour\":\"COMPARE_AS_EMPTY\",\"matchGroup\":2}")
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.compareValue").value(""));
+        // Alle vier de rijen dragen hun groep.
+        long loose = jdbc.queryForObject("select count(*) from import_record_filter where definition_revision_id = ? "
+                + "and match_group is null", Long.class, revisionId);
+        assertThat(loose).isZero();
+
+        // Ongeldig: groep 0, een INCLUDE in een groep, het standaard null-gedrag (EXCLUDE) in een groep, een lege
+        // vergelijkwaarde zonder groep. Telkens 400 en niets bewaard.
+        postFilter(revisionId, "{\"sourceReference\":\"groep\",\"operator\":\"EQUALS\",\"compareValue\":\"X\","
+                + "\"outcome\":\"EXCLUDE\",\"nullBehaviour\":\"COMPARE_AS_EMPTY\",\"matchGroup\":0}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("MATCH_GROUP_INVALID"));
+        postFilter(revisionId, "{\"sourceReference\":\"groep\",\"operator\":\"EQUALS\",\"compareValue\":\"X\","
+                + "\"outcome\":\"INCLUDE\",\"nullBehaviour\":\"COMPARE_AS_EMPTY\",\"matchGroup\":3}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("CONFIG_FILTER_INVALID"));
+        postFilter(revisionId, "{\"sourceReference\":\"groep\",\"operator\":\"EQUALS\",\"compareValue\":\"X\","
+                + "\"outcome\":\"EXCLUDE\",\"matchGroup\":3}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("CONFIG_FILTER_INVALID"));
+        postFilter(revisionId, "{\"sourceReference\":\"ean\",\"operator\":\"EQUALS\",\"compareValue\":\"\","
+                + "\"outcome\":\"EXCLUDE\",\"nullBehaviour\":\"COMPARE_AS_EMPTY\"}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMPARE_VALUE_REQUIRED"));
+        postFilter(revisionId, "{\"sourceReference\":\"ean\",\"operator\":\"CONTAINS\",\"compareValue\":\"\","
+                + "\"outcome\":\"EXCLUDE\",\"nullBehaviour\":\"COMPARE_AS_EMPTY\",\"matchGroup\":3}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMPARE_VALUE_REQUIRED"));
+        assertThat(jdbc.queryForObject("select count(*) from import_record_filter where definition_revision_id = ?",
+                Long.class, revisionId)).isEqualTo(4);
+
+        // Het revisiedetail toont de groepen.
+        mockMvc.perform(get("/api/catalog-import/definitions/{d}/revisions/{r}", definitionId, revisionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.filters[*].matchGroup").value(org.hamcrest.Matchers.contains(1, 1, 2, 2)));
+
+        activate(revisionId).andExpect(status().isOk());
+        long linkId = id(mockMvc.perform(post(SETUP + "/links").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"definitionId\":" + definitionId + ",\"code\":\"" + unique
+                                + "-LINK\",\"name\":\"" + unique + " koppeling\",\"supplierCode\":\"" + unique
+                                + "\",\"libraryCode\":\"" + library(unique) + "\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        long taskId = id(mockMvc.perform(post(SETUP + "/tasks").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"linkId\":" + linkId + ",\"name\":\"" + unique + " levering\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+
+        long batchId = batchId(upload(taskId, "REF-GRP", "01-eerste-levering.csv")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.rawRecordCount").value(10))
+                .andExpect(jsonPath("$.validRecordCount").value(9))
+                .andExpect(jsonPath("$.newCount").value(9))
+                .andReturn().getResponse().getContentAsString());
+        batch(batchId).andExpect(jsonPath("$.filteredOutCount").value(1));
+        assertThat(issueCodes(batchId)).doesNotContain("FILTER_RECORD_REJECTED", "FILTER_COLUMN_MISSING");
+    }
+
+    private ResultActions postFilter(long revisionId, String json) throws Exception {
+        return mockMvc.perform(post(SETUP + "/revisions/{id}/filters", revisionId)
+                .contentType(MediaType.APPLICATION_JSON).content(json));
+    }
+
     // --- Overzicht ---------------------------------------------------------------------------------
 
     @Test

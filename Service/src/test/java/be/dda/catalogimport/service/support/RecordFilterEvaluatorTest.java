@@ -271,7 +271,151 @@ class RecordFilterEvaluatorTest {
                 MissingColumnBehaviour.BLOCK)).inScope();
     }
 
+    // --- S8f: EN-groepen (match_group) -----------------------------------------------------------------
+
+    /** Alle rijen van een groep moeten matchen; een afwijkende rij houdt het record in scope. */
+    @Test
+    void aMatchGroupExcludesOnlyWhenEveryRuleOfTheGroupMatches() {
+        RecordFilter supplier = grouped(1, "LEVERANCIER", "ACME", false, 7);
+        RecordFilter culture = grouped(2, CULTURE, "BENL", false, 7);
+
+        Decision both = evaluate(row("BENL"), supplier, culture);
+        assertThat(both.kind()).isEqualTo(Decision.Kind.FILTERED_OUT);
+        assertThat(both.decidingSequenceNumber()).isEqualTo(1);
+        assertThat(both.fieldName()).isEqualTo("LEVERANCIER");
+        assertThat(both.sourceValue()).isEqualTo("ACME");
+        assertThat(both.message()).contains("exclude group 7").contains("LEVERANCIER").contains(CULTURE);
+        assertThat(evaluate(row("BEFR"), supplier, culture).inScope()).isTrue();
+        assertThat(evaluate(otherSupplierRow("BENL"), supplier, culture).inScope()).isTrue();
+        // Dezelfde twee rijen zonder groep zijn twee losse uitsluitingen (OF): het verschil met de groep.
+        RecordFilter looseSupplier = filter(1, "LEVERANCIER", FilterOperator.EQUALS, "ACME", FilterOutcome.EXCLUDE,
+                false, true, FilterNullBehaviour.COMPARE_AS_EMPTY, MissingColumnBehaviour.BLOCK);
+        assertThat(evaluate(row("BEFR"), looseSupplier).inScope()).isFalse();
+    }
+
+    /** Hoofdlettergevoeligheid en trim gelden per rij van de groep. */
+    @Test
+    void theCaseSensitivityAndTrimOfEachRuleOfTheGroupApply() {
+        RecordFilter supplier = grouped(1, "LEVERANCIER", "ACME", false, 1);
+        RecordFilter status = grouped(2, STATUS, "Kc", true, 1);
+
+        assertThat(evaluate(new ParsedRow(2, List.of(" acme ", "BENL", "  Kc "), positions()), supplier, status)
+                .inScope()).isFalse();
+        assertThat(evaluate(new ParsedRow(2, List.of("acme", "BENL", "KC"), positions()), supplier, status)
+                .inScope()).isTrue();
+    }
+
+    /** Een lege vergelijkwaarde in een groep is letterlijk leeg (COMPARE_AS_EMPTY): enkel een lege kolom matcht. */
+    @Test
+    void anEmptyCompareValueInAGroupMatchesOnlyAnEmptyColumn() {
+        RecordFilter supplier = grouped(1, "LEVERANCIER", "ACME", false, 1);
+        RecordFilter emptyStatus = grouped(2, STATUS, "", false, 1);
+
+        assertThat(evaluate(row("BENL", ""), supplier, emptyStatus).inScope()).isFalse();
+        assertThat(evaluate(row("BENL", "   "), supplier, emptyStatus).inScope()).isFalse();
+        assertThat(evaluate(row("BENL", "EOL"), supplier, emptyStatus).inScope()).isTrue();
+        // Een regel die korter is dan de kolom: een ontbrekende waarde, vergeleken als leeg.
+        ParsedRow shortRow = new ParsedRow(7, List.of("ACME"), positions());
+        assertThat(evaluate(shortRow, supplier, emptyStatus).inScope()).isFalse();
+    }
+
+    /**
+     * Een groep wordt geevalueerd op de plaats van haar laagste volgnummer: een REJECT tussen de rijen van de groep komt
+     * pas na de groep; een REJECT voor de groep wint.
+     */
+    @Test
+    void aGroupIsEvaluatedAtTheSequenceNumberOfItsLowestRule() {
+        RecordFilter groupFirst = grouped(1, "LEVERANCIER", "ACME", false, 1);
+        RecordFilter reject = filter(2, STATUS, FilterOperator.EQUALS, "EOL", FilterOutcome.REJECT, false, true,
+                FilterNullBehaviour.COMPARE_AS_EMPTY, MissingColumnBehaviour.BLOCK);
+        RecordFilter groupLast = grouped(3, CULTURE, "BENL", false, 1);
+
+        Decision excluded = evaluate(row("BENL", "EOL"), groupFirst, reject, groupLast);
+        assertThat(excluded.kind()).isEqualTo(Decision.Kind.FILTERED_OUT);
+        assertThat(excluded.decidingSequenceNumber()).isEqualTo(1);
+        // De lijstvolgorde van losse rijen blijft zoals voor S8f; de groep start bij de plaats van haar laagste rij.
+        assertThat(evaluate(row("BENL", "EOL"), groupLast, reject, groupFirst).kind())
+                .isEqualTo(Decision.Kind.REJECTED);
+        assertThat(evaluate(row("BENL", "EOL"), reject, groupLast, groupFirst).kind())
+                .isEqualTo(Decision.Kind.REJECTED);
+        RecordFilter laterGroup = grouped(4, "LEVERANCIER", "ACME", false, 2);
+        RecordFilter laterGroupToo = grouped(5, CULTURE, "BENL", false, 2);
+        assertThat(evaluate(row("BENL", "EOL"), reject, laterGroup, laterGroupToo).kind())
+                .isEqualTo(Decision.Kind.REJECTED);
+        // Een groep die niet matcht, laat de volgende rijen gewoon hun werk doen.
+        assertThat(evaluate(row("BEFR", "EOL"), groupFirst, reject, groupLast).kind())
+                .isEqualTo(Decision.Kind.REJECTED);
+    }
+
+    /** Twee groepen staan naast elkaar in OF: elke groep sluit zelfstandig uit. */
+    @Test
+    void twoGroupsExcludeIndependently() {
+        RecordFilter first = grouped(1, "LEVERANCIER", "ACME", false, 1);
+        RecordFilter firstToo = grouped(2, CULTURE, "BENL", false, 1);
+        RecordFilter second = grouped(3, CULTURE, "BEFR", false, 2);
+        RecordFilter secondToo = grouped(4, STATUS, "EOL", false, 2);
+
+        assertThat(evaluate(row("BENL", "ACTIVE"), first, firstToo, second, secondToo).decidingSequenceNumber())
+                .isEqualTo(1);
+        assertThat(evaluate(row("BEFR", "EOL"), first, firstToo, second, secondToo).decidingSequenceNumber())
+                .isEqualTo(3);
+        assertThat(evaluate(row("BEFR", "ACTIVE"), first, firstToo, second, secondToo).inScope()).isTrue();
+        // Dubbele input: twee identieke groepen geven dezelfde beslissing als een.
+        RecordFilter copy = grouped(5, "LEVERANCIER", "ACME", false, 3);
+        RecordFilter copyToo = grouped(6, CULTURE, "BENL", false, 3);
+        assertThat(evaluate(row("BENL", "ACTIVE"), first, firstToo, copy, copyToo).decidingSequenceNumber())
+                .isEqualTo(1);
+        assertThat(evaluate(row("BEFR", "ACTIVE"), first, firstToo, copy, copyToo).inScope()).isTrue();
+    }
+
+    /**
+     * Een ontbrekende kolom in een groep blijft nooit stil (R-FLT-03): ook als een eerdere rij van de groep niet
+     * matcht, geldt het {@code missing_column_behaviour} van de rij zonder kolom.
+     */
+    @Test
+    void aMissingColumnOfAGroupIsNeverSilentEvenWhenAnotherRuleDoesNotMatch() {
+        RecordFilter supplier = grouped(1, "LEVERANCIER", "OTHER", false, 1);
+        RecordFilter missing = grouped(2, "ONBEKEND", "X", false, 1);
+
+        assertThatThrownBy(() -> evaluate(row("BENL"), supplier, missing))
+                .isInstanceOf(ScreeningBlockedException.class)
+                .extracting(failure -> ((ScreeningBlockedException) failure).getCode())
+                .isEqualTo(RecordFilterEvaluator.CODE_FILTER_COLUMN_MISSING);
+        RecordFilter missingExcludes = new RecordFilter(2, "ONBEKEND", FilterOperator.EQUALS, "X",
+                FilterOutcome.EXCLUDE, false, true, FilterNullBehaviour.COMPARE_AS_EMPTY,
+                MissingColumnBehaviour.EXCLUDE, 1);
+        assertThat(evaluate(row("BENL"), supplier, missingExcludes).kind()).isEqualTo(Decision.Kind.FILTERED_OUT);
+    }
+
+    /** Een groep van een rij gedraagt zich als de losse rij (legacy-vorm "enkel leverancier"). */
+    @Test
+    void aGroupOfOneRuleBehavesLikeTheLooseRule() {
+        RecordFilter group = grouped(1, "LEVERANCIER", "ACME", false, 1);
+        RecordFilter loose = filter(1, "LEVERANCIER", FilterOperator.EQUALS, "ACME", FilterOutcome.EXCLUDE, false,
+                true, FilterNullBehaviour.COMPARE_AS_EMPTY, MissingColumnBehaviour.BLOCK);
+
+        for (ParsedRow candidate : List.of(row("BENL"), otherSupplierRow("BENL"),
+                new ParsedRow(2, List.of("", "BENL", "X"), positions()))) {
+            assertThat(evaluate(candidate, group).kind()).isEqualTo(evaluate(candidate, loose).kind());
+        }
+    }
+
     // --- Helpers ----------------------------------------------------------------------------------
+
+    /** S8f: een gegroepeerde rij zoals de PSIMPEXCL-migratie ze schrijft (EXCLUDE EQUALS, COMPARE_AS_EMPTY, trim). */
+    private static RecordFilter grouped(int sequenceNumber, String reference, String compareValue,
+                                        boolean caseSensitive, int group) {
+        return new RecordFilter(sequenceNumber, reference, FilterOperator.EQUALS, compareValue, FilterOutcome.EXCLUDE,
+                caseSensitive, true, FilterNullBehaviour.COMPARE_AS_EMPTY, MissingColumnBehaviour.BLOCK, group);
+    }
+
+    private static ParsedRow otherSupplierRow(String culture) {
+        return new ParsedRow(2, List.of("OTHER", culture, "ACTIVE"), positions());
+    }
+
+    private static SourceFieldPositions positions() {
+        return new SourceFieldPositions(Map.of("LEVERANCIER", 0, CULTURE, 1, STATUS, 2));
+    }
 
     private static boolean includes(FilterOperator operator, String compareValue, String sourceValue) {
         return evaluate(row(sourceValue), filter(1, CULTURE, operator, compareValue, FilterOutcome.INCLUDE,

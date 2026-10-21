@@ -45,6 +45,9 @@ import java.util.function.Function;
  * <b>Legacy-config S8c.</b> De ketenstappen van een mapping ({@code import_field_transform_step}) volgen achter die
  * mapping als {@code T, stapnummer, soort, config}, vóór de vertaalrijen, eveneens <b>enkel als ze er zijn</b>: een
  * revisie zonder stappen houdt byte voor byte haar inhoudshash.
+ * <p>
+ * <b>Legacy-config S8f.</b> Een filterrij in een EN-groep ({@code match_group}) krijgt achter haar velden
+ * {@code group=n}, <b>enkel als de groep gezet is</b>: een revisie zonder groepen houdt byte voor byte haar inhoudshash.
  */
 final class LegacyRevisionContent {
 
@@ -80,7 +83,7 @@ final class LegacyRevisionContent {
                 parts.addAll(filter(filter.sequence(), FilterStage.SOURCE_FIELD.name(), filter.sourceReference(),
                         filter.operator().name(), filter.compareValue(), filter.outcome().name(),
                         filter.caseSensitive(), true, filter.nullBehaviour().name(),
-                        MissingColumnBehaviour.BLOCK.name())));
+                        MissingColumnBehaviour.BLOCK.name(), filter.matchGroup())));
         return RevisionConfigHashes.hash(LAYER, parts.toArray(String[]::new));
     }
 
@@ -137,7 +140,8 @@ final class LegacyRevisionContent {
                 parts.addAll(filter(row.getSequenceNumber(), String.valueOf(row.getFilterStage()),
                         row.getSourceReference(), String.valueOf(row.getOperator()), row.getCompareValue(),
                         String.valueOf(row.getOutcome()), row.isCaseSensitive(), row.isTrimBeforeCompare(),
-                        String.valueOf(row.getNullBehaviour()), String.valueOf(row.getMissingColumnBehaviour()))));
+                        String.valueOf(row.getNullBehaviour()), String.valueOf(row.getMissingColumnBehaviour()),
+                        row.getMatchGroup())));
         return RevisionConfigHashes.hash(LAYER, parts.toArray(String[]::new));
     }
 
@@ -207,11 +211,19 @@ final class LegacyRevisionContent {
         return List.of("V", String.valueOf(sequence), source, target);
     }
 
+    /**
+     * S8f: de EN-groep volgt als {@code group=n}, <b>enkel als ze gezet is</b> (zoals de S6-uitbreidingen): een revisie
+     * zonder groepen houdt byte voor byte haar inhoudshash.
+     */
     private static List<String> filter(int sequence, String stage, String source, String operator, String compare,
                                        String outcome, boolean caseSensitive, boolean trim, String nullBehaviour,
-                                       String missingColumn) {
-        return List.of("F", String.valueOf(sequence), stage, String.valueOf(source), operator,
-                String.valueOf(compare), outcome, String.valueOf(caseSensitive), String.valueOf(trim), nullBehaviour,
-                missingColumn);
+                                       String missingColumn, Integer matchGroup) {
+        List<String> parts = new ArrayList<>(List.of("F", String.valueOf(sequence), stage, String.valueOf(source),
+                operator, String.valueOf(compare), outcome, String.valueOf(caseSensitive), String.valueOf(trim),
+                nullBehaviour, missingColumn));
+        if (matchGroup != null) {
+            parts.add("group=" + matchGroup);
+        }
+        return parts;
     }
 }

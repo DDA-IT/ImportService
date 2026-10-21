@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -66,6 +67,10 @@ import java.util.UUID;
  *   <li><b>Include/Exclude 1:</b> filter {@code INCLUDE}/{@code EQUALS} op de kolom van de regel. Meer dan één
  *       include-regel blokkeert: legacy combineert ze (elke regel moet kloppen), onze INCLUDE-filters staan in
  *       OF-verhouding.</li>
+ *   <li><b>PSIMPEXCL (S8f):</b> per rij een EN-groep ({@code match_group}) van {@code EXCLUDE EQUALS}-rijen op de
+ *       identiteitskolommen en de kolom van regel 23, in de vijf vormen van {@code Prg_1170} r.2640-2686; dode rijen,
+ *       niet-uitdrukbare kortingscodes en {@code Skip_Excludes=Y} worden gemeld, nooit stil weggelaten (zie
+ *       {@code excludeGroups}).</li>
  *   <li><b>INDET:</b> {@code Separator} Comma/Semicolon/Tab, afwezig → {@code ;} met waarschuwing ({@code Prg_1232}
  *       r.1194); {@code FILE_ENCODING} leeg → {@value #CHARSET_NOT_DECLARED} tenzij {@code charsetWhenUndeclared};
  *       {@code SkipHeaderLines} n ≥ 1 → header op regel n; {@code DecimalComma=Y} → {@code decimalSeparator=,} op de
@@ -145,7 +150,16 @@ final class LegacyConfigTranslator {
     static final String INCLUDE_EXCLUDE_WITH_FIXED_VALUE = "INCLUDE_EXCLUDE_WITH_FIXED_VALUE";
     /** S8e: codes 3 en 4 vergelijken in legacy ongetrimd op een opgevuld Alpha-veld; de padding is niet geverifieerd. */
     static final String LEGACY_FILTER_PADDING_UNVERIFIED = "LEGACY_FILTER_PADDING_UNVERIFIED";
+    /** Sinds S8f niet meer gezet (PSIMPEXCL wordt gemigreerd); blijft voor oudere rapporten. */
     static final String LEGACY_EXCLUDES_NOT_MIGRATED = "LEGACY_EXCLUDES_NOT_MIGRATED";
+    /** S8f: INDET {@code Skip_Excludes=Y}: legacy past PSIMPEXCL niet toe ({@code Prg_1170} r.395), wij dus ook niet. */
+    static final String LEGACY_EXCLUDES_SKIPPED = "LEGACY_EXCLUDES_SKIPPED";
+    /** S8f: een PSIMPEXCL-rij die door de vaste delen van de identiteit elk record zou uitsluiten (BLOCKING). */
+    static final String LEGACY_EXCLUDE_EXCLUDES_ALL = "LEGACY_EXCLUDE_EXCLUDES_ALL";
+    /** S8f: een PSIMPEXCL-rij die in legacy nooit een record treft (dode rij); niet gemigreerd. */
+    static final String LEGACY_EXCLUDE_NEVER_MATCHES = "LEGACY_EXCLUDE_NEVER_MATCHES";
+    /** S8f: de rij vergelijkt de kortingscode, maar regel 23 heeft geen bronkolom of een transformatie (WARNING). */
+    static final String LEGACY_EXCLUDE_NOT_EXPRESSIBLE = "LEGACY_EXCLUDE_NOT_EXPRESSIBLE";
 
     // --- Legacy-gegevens ------------------------------------------------------------------------------------------
 
@@ -162,12 +176,14 @@ final class LegacyConfigTranslator {
     static final String LABEL_KEY_DISCOUNT = "ArtImp_Key_Korting";
     static final String LABEL_KEY_BARCODE = "ArtImp_Key_Barcode";
     static final String LABEL_RATE = "ArtImp_Para_Koers";
+    /** S8f: {@code Prg_1232} r.444/518 ({@code [V_Skip_Excludes]='Y'}), {@code Prg_1170} r.395. */
+    static final String LABEL_SKIP_EXCLUDES = "Skip_Excludes";
     private static final List<String> CONNECTION_LABELS =
             List.of("FTP", "FTP2", "FTP_login", "FTP_directory", "FTP_filename");
     private static final Set<String> GOVERNED_LABELS = Set.of(LABEL_DEFINITION, LABEL_SUPPLIER, LABEL_LIBRARY,
             LABEL_SEPARATOR, LABEL_ENCODING, LABEL_SKIP_HEADER, LABEL_DECIMAL_COMMA, LABEL_KEY_SUPPLIER,
-            LABEL_KEY_REFERENCE, LABEL_KEY_GROUP, LABEL_KEY_DISCOUNT, LABEL_KEY_BARCODE, LABEL_RATE, "FTP", "FTP2",
-            "FTP_login", "FTP_directory", "FTP_filename");
+            LABEL_KEY_REFERENCE, LABEL_KEY_GROUP, LABEL_KEY_DISCOUNT, LABEL_KEY_BARCODE, LABEL_RATE,
+            LABEL_SKIP_EXCLUDES, "FTP", "FTP2", "FTP_login", "FTP_directory", "FTP_filename");
     private static final List<String> PUBLICATION_PREFIXES = List.of("ArtImp_", "MS_", "BIB_", "Email_", "RFtp_");
 
     static final int LINE_SUPPLIER = 9;
@@ -235,9 +251,20 @@ final class LegacyConfigTranslator {
     record PlannedValueMapEntry(int sequence, String source, String target) {
     }
 
-    /** Eén gepland recordfilter, met precies wat {@code SetupService.addFilter} krijgt. */
+    /**
+     * Eén gepland recordfilter, met precies wat {@code SetupService.addFilter} krijgt.
+     *
+     * @param matchGroup S8f: de EN-groep van een PSIMPEXCL-rij ({@code import_record_filter.match_group}); anders null
+     */
     record PlannedFilter(int sequence, String sourceReference, FilterOperator operator, String compareValue,
-                         FilterOutcome outcome, boolean caseSensitive, FilterNullBehaviour nullBehaviour) {
+                         FilterOutcome outcome, boolean caseSensitive, FilterNullBehaviour nullBehaviour,
+                         Integer matchGroup) {
+
+        /** De vorm van vóór S8f: een losse rij. */
+        PlannedFilter(int sequence, String sourceReference, FilterOperator operator, String compareValue,
+                      FilterOutcome outcome, boolean caseSensitive, FilterNullBehaviour nullBehaviour) {
+            this(sequence, sourceReference, operator, compareValue, outcome, caseSensitive, nullBehaviour, null);
+        }
     }
 
     /**
@@ -359,14 +386,14 @@ final class LegacyConfigTranslator {
         Integer skipHeader = skipHeaderLines(details);
         boolean decimalComma = "Y".equals(single(details, LABEL_DECIMAL_COMMA));
         IdentityProfileKind profile = identityProfile(details);
+        boolean skipExcludes = "Y".equals(single(details, LABEL_SKIP_EXCLUDES));
         rate(details);
         otherDetails(details);
         schedule();
 
         PlannedRevision revision = null;
         if (present) {
-            revision = lines(definition, profile, decimalComma, delimiter, charset, skipHeader);
-            excludes(definition);
+            revision = lines(definition, profile, decimalComma, delimiter, charset, skipHeader, skipExcludes);
         }
         if (revisionBlocked) {
             revision = null;
@@ -657,7 +684,7 @@ final class LegacyConfigTranslator {
     // --- PSIMPDEF -------------------------------------------------------------------------------------------------
 
     private PlannedRevision lines(JsonNode definition, IdentityProfileKind profile, boolean decimalComma,
-                                  String delimiter, String charset, Integer skipHeader) {
+                                  String delimiter, String charset, Integer skipHeader, boolean skipExcludes) {
         TreeMap<Integer, List<JsonNode>> byNumber = new TreeMap<>();
         for (JsonNode line : definition.path("lines")) {
             byNumber.computeIfAbsent(line.path("number").asInt(), key -> new ArrayList<>()).add(line);
@@ -730,6 +757,8 @@ final class LegacyConfigTranslator {
             }
         }
         filters.addAll(includeExcludeFilters(filterLines));
+        filters.addAll(excludeGroups(definition, byNumber, supplier, group, reference, skipExcludes,
+                filters.size()));
         mapsUsage(definition, mappings);
 
         if (delimiter == null || charset == null || skipHeader == null || profile == null || supplier == null
@@ -1259,12 +1288,214 @@ final class LegacyConfigTranslator {
         }
     }
 
-    private void excludes(JsonNode definition) {
-        int count = definition.path("excludes").size();
-        if (count > 0) {
-            add("PSIMPEXCL", NOT_MIGRATED, LEGACY_EXCLUDES_NOT_MIGRATED, null, count + " PSIMPEXCL row(s) are not "
-                    + "migrated yet (S8); records excluded in legacy are not excluded here");
+    // --- PSIMPEXCL (S8f) -------------------------------------------------------------------------------------------
+
+    /** Een identiteitsdeel van een PSIMPEXCL-vergelijking. */
+    private enum ExcludePart {
+        SUPPLIER("supplier"), GROUP("supplier group"), DISCOUNT("discount code"), REFERENCE("supplier reference");
+
+        private final String label;
+
+        ExcludePart(String label) {
+            this.label = label;
         }
+    }
+
+    /**
+     * De bron van de kortingscode (regel 23) zoals legacy ze in {@code ARIMP_Korting Code} zet: een bronkolom (zonder
+     * transformatie), een vaste waarde, altijd leeg (regel 23 ontbreekt: legacy schrijft het veld dan niet), of niet
+     * uitdrukbaar (geen kolom, een transformatie of Positie/Lengte).
+     */
+    private record DiscountSource(String column, String fixedValue, String notExpressible) {
+    }
+
+    /**
+     * PSIMPEXCL (S8f, design par. 2f; beslissing 2026-10-21 V2 = A). Legacy ({@code Prg_1170} taken "Check Excludes" en
+     * "Excludes", r.2582-2687) zoekt na het verwerken van een record vijf keer exact in de uitsluitingen, op de verwerkte
+     * waarden (leverancier, groep en referentie in hoofdletters, de kortingscode niet; {@code ''} is letterlijk leeg),
+     * en slaat het record over als één opzoeking treft. Per rij {@code (l, g, k, r)} geeft dat vijf vormen:
+     * <ol>
+     *   <li>{@code l<>''}, {@code g=k=r=''}: leverancier = l;</li>
+     *   <li>{@code l=''}, {@code k=r=''}: groep = g;</li>
+     *   <li>{@code l=''}, {@code r=''}, {@code k<>''}: groep = g en korting = k;</li>
+     *   <li>{@code l=''}, {@code r<>''}: groep = g, korting = k en referentie = r;</li>
+     *   <li>{@code l<>''}, {@code r<>''}: alle vier.</li>
+     * </ol>
+     * Een rij met leverancier zonder referentie (behalve vorm 1) of met kleine letters in l/g/r treft nooit (dode rij,
+     * {@value #LEGACY_EXCLUDE_NEVER_MATCHES}). Elke andere rij wordt één EN-groep ({@code match_group}) van 1-4
+     * {@code EXCLUDE EQUALS}-rijen met {@code COMPARE_AS_EMPTY}, op de bronkolommen van 9/10/11 (hoofdletterongevoelig:
+     * legacy vergelijkt {@code Upper(v)} met een waarde zonder kleine letters) en de kolom van regel 23
+     * (hoofdlettergevoelig, ook bij THREE_PART), getrimd. De identiteitsregels hebben geen transformatie (die blokkeert),
+     * dus de getrimde bronkolom is de verwerkte legacy-waarde. Een vaste leverancier/groep (S6) wordt hier al
+     * geëvalueerd: altijd waar laat de vergelijking weg, altijd onwaar maakt de rij dood; blijft er niets over, dan sluit
+     * de rij elk record uit ({@value #LEGACY_EXCLUDE_EXCLUDES_ALL}, blokkerend). {@code Skip_Excludes=Y}: niets
+     * gemigreerd ({@value #LEGACY_EXCLUDES_SKIPPED}).
+     *
+     * @param firstSequence het aantal filterrijen dat al gepland is; de groepen volgen erachter
+     */
+    private List<PlannedFilter> excludeGroups(JsonNode definition, Map<Integer, List<JsonNode>> byNumber,
+                                              IdentitySource supplier, IdentitySource group, String reference,
+                                              boolean skipExcludes, int firstSequence) {
+        JsonNode rows = definition.path("excludes");
+        if (skipExcludes) {
+            add("INDET:" + LABEL_SKIP_EXCLUDES, NOT_MIGRATED, LEGACY_EXCLUDES_SKIPPED, null, LABEL_SKIP_EXCLUDES
+                    + "=Y: legacy does not apply the " + rows.size() + " PSIMPEXCL row(s) (Prg_1170 r.395), so they are "
+                    + "not migrated");
+            return List.of();
+        }
+        if (rows.isEmpty() || supplier == null || group == null || reference == null) {
+            return List.of(); // zonder identiteit is de revisie al geblokkeerd
+        }
+        DiscountSource discount = discountSource(byNumber);
+        List<PlannedFilter> planned = new ArrayList<>();
+        int groupNumber = 0;
+        int index = 0;
+        for (JsonNode row : rows) {
+            index++;
+            String element = "PSIMPEXCL#" + index;
+            Map<ExcludePart, String> values = new LinkedHashMap<>();
+            values.put(ExcludePart.SUPPLIER, row.path("supplier").asText("").trim());
+            values.put(ExcludePart.GROUP, row.path("supplierGroup").asText("").trim());
+            values.put(ExcludePart.DISCOUNT, row.path("discountCode").asText("").trim());
+            values.put(ExcludePart.REFERENCE, row.path("supplierReference").asText("").trim());
+            String shape = "(supplier='" + values.get(ExcludePart.SUPPLIER) + "', group='" + values.get(ExcludePart.GROUP)
+                    + "', discount code='" + values.get(ExcludePart.DISCOUNT) + "', reference='"
+                    + values.get(ExcludePart.REFERENCE) + "')";
+            List<ExcludePart> form = excludeForm(values);
+            if (form == null) {
+                add(element, NOT_MIGRATED, LEGACY_EXCLUDE_NEVER_MATCHES, null, "PSIMPEXCL row " + shape + " never "
+                        + "matches in legacy: a supplier without a reference only matches with an empty group and "
+                        + "discount code (Prg_1170 r.2640-2686); not migrated");
+                continue;
+            }
+            ExcludePart lowerCase = form.stream().filter(part -> part != ExcludePart.DISCOUNT)
+                    .filter(part -> hasLowerCase(values.get(part))).findFirst().orElse(null);
+            if (lowerCase != null) {
+                add(element, NOT_MIGRATED, LEGACY_EXCLUDE_NEVER_MATCHES, null, "PSIMPEXCL row " + shape + " never "
+                        + "matches in legacy: the " + lowerCase.label + " has lower-case letters and legacy compares it "
+                        + "with the upper-case value of the record; not migrated");
+                continue;
+            }
+            List<String> dropped = new ArrayList<>();
+            String never = null;
+            String notExpressible = null;
+            List<String[]> terms = new ArrayList<>(); // {kolom, waarde, caseSensitive}
+            for (ExcludePart part : form) {
+                String value = values.get(part);
+                switch (part) {
+                    case SUPPLIER, GROUP -> {
+                        IdentitySource source = part == ExcludePart.SUPPLIER ? supplier : group;
+                        if (source.column() != null) {
+                            terms.add(new String[] {source.column(), value, "false"});
+                        } else if (source.fixedValue().toUpperCase(Locale.ROOT).equals(value)) {
+                            dropped.add("the fixed " + part.label + " " + source.fixedValue() + " always equals '"
+                                    + value + "'");
+                        } else if (never == null) {
+                            never = "the fixed " + part.label + " " + source.fixedValue() + " never equals '" + value
+                                    + "'";
+                        }
+                    }
+                    case REFERENCE -> terms.add(new String[] {reference, value, "false"});
+                    case DISCOUNT -> {
+                        if (discount.column() != null) {
+                            terms.add(new String[] {discount.column(), value, "true"});
+                        } else if (discount.notExpressible() != null) {
+                            notExpressible = discount.notExpressible();
+                        } else {
+                            String fixed = discount.fixedValue();
+                            String description = fixed.isEmpty() ? "the discount code is always empty (field "
+                                    + LINE_DISCOUNT + " is not defined)" : "the fixed discount code " + fixed;
+                            if (fixed.equals(value)) {
+                                dropped.add(description + (fixed.isEmpty() ? "" : " always equals '" + value + "'"));
+                            } else if (never == null) {
+                                never = description + (fixed.isEmpty() ? ", so it never equals '" + value + "'"
+                                        : " never equals '" + value + "'");
+                            }
+                        }
+                    }
+                }
+            }
+            if (never != null) {
+                add(element, NOT_MIGRATED, LEGACY_EXCLUDE_NEVER_MATCHES, null, "PSIMPEXCL row " + shape + " never "
+                        + "matches: " + never + "; not migrated");
+                continue;
+            }
+            if (notExpressible != null) {
+                add(element, WARNING, LEGACY_EXCLUDE_NOT_EXPRESSIBLE, null, "PSIMPEXCL row " + shape + " compares the "
+                        + "discount code, but " + notExpressible + "; the exclusion is not created, so records legacy "
+                        + "excluded are imported");
+                continue;
+            }
+            if (terms.isEmpty()) {
+                add(element, BLOCKING, LEGACY_EXCLUDE_EXCLUDES_ALL, null, "PSIMPEXCL row " + shape + " excludes every "
+                        + "record: " + String.join(" and ", dropped) + "; a definition that imports nothing is not "
+                        + "migrated");
+                revisionBlocked = true;
+                continue;
+            }
+            groupNumber++;
+            List<String> described = new ArrayList<>();
+            for (String[] term : terms) {
+                planned.add(new PlannedFilter(firstSequence + planned.size() + 1, term[0], FilterOperator.EQUALS,
+                        term[1], FilterOutcome.EXCLUDE, Boolean.parseBoolean(term[2]),
+                        FilterNullBehaviour.COMPARE_AS_EMPTY, groupNumber));
+                described.add("column " + term[0] + " EQUALS '" + term[1] + "'");
+            }
+            add(element, MIGRATED, "RECORD_FILTER_GROUP", "import_record_filter group " + groupNumber + ": "
+                    + String.join(" AND ", described), dropped.isEmpty() ? null
+                    : "left out because " + String.join(" and ", dropped));
+        }
+        return planned;
+    }
+
+    /** @return de vergeleken delen in vaste volgorde (leverancier, groep, korting, referentie), of null (dode rij) */
+    private static List<ExcludePart> excludeForm(Map<ExcludePart, String> values) {
+        boolean supplierEmpty = values.get(ExcludePart.SUPPLIER).isEmpty();
+        boolean groupEmpty = values.get(ExcludePart.GROUP).isEmpty();
+        boolean discountEmpty = values.get(ExcludePart.DISCOUNT).isEmpty();
+        boolean referenceEmpty = values.get(ExcludePart.REFERENCE).isEmpty();
+        if (!supplierEmpty && referenceEmpty) {
+            return groupEmpty && discountEmpty ? List.of(ExcludePart.SUPPLIER) : null;
+        }
+        if (supplierEmpty && referenceEmpty) {
+            return discountEmpty ? List.of(ExcludePart.GROUP) : List.of(ExcludePart.GROUP, ExcludePart.DISCOUNT);
+        }
+        if (supplierEmpty) {
+            return List.of(ExcludePart.GROUP, ExcludePart.DISCOUNT, ExcludePart.REFERENCE);
+        }
+        return List.of(ExcludePart.SUPPLIER, ExcludePart.GROUP, ExcludePart.DISCOUNT, ExcludePart.REFERENCE);
+    }
+
+    private static boolean hasLowerCase(String value) {
+        return !value.equals(value.toUpperCase(Locale.ROOT));
+    }
+
+    /**
+     * Regel 23 zoals legacy ze in {@code ARIMP_Korting Code} zet (zonder {@code Upper()}, S6). Ontbreekt de regel, dan
+     * blijft het veld leeg. Een dubbele regel blokkeert al ({@value #LEGACY_FIELD_DUPLICATED}).
+     */
+    private static DiscountSource discountSource(Map<Integer, List<JsonNode>> byNumber) {
+        List<JsonNode> rows = byNumber.get(LINE_DISCOUNT);
+        if (rows == null || rows.isEmpty()) {
+            return new DiscountSource(null, "", null);
+        }
+        if (rows.size() > 1) {
+            return new DiscountSource(null, null, "field " + LINE_DISCOUNT + " occurs more than once");
+        }
+        JsonNode line = rows.get(0);
+        String value = line.path("value").asText("");
+        if (!value.isEmpty()) {
+            return new DiscountSource(null, value.trim(), null); // legacy negeert dan kolom en bewerkingen
+        }
+        if (hasTransform(line) || hasSubstring(line)) {
+            return new DiscountSource(null, null, "field " + LINE_DISCOUNT + " is transformed ("
+                    + transformDescription(line) + ")");
+        }
+        int column = line.path("column").asInt();
+        if (column <= 0) {
+            return new DiscountSource(null, null, "field " + LINE_DISCOUNT + " has no source column");
+        }
+        return new DiscountSource(String.valueOf(column), null, null);
     }
 
     // --- Hulp -----------------------------------------------------------------------------------------------------

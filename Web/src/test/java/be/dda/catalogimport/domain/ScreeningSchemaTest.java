@@ -977,6 +977,58 @@ class ScreeningSchemaTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    // --- Legacy-config S8f, changeset 025-1: import_record_filter.match_group ----------------------------
+
+    /**
+     * Additief: een bestaande rij (en elke rij zonder groep) heeft {@code match_group = null}; een groep is positief en
+     * een gegroepeerde rij is EXCLUDE met COMPARE_AS_EMPTY - de database weigert al het andere, ook buiten de
+     * applicatie om. Een lege vergelijkwaarde ({@code ''}) mag in een groep.
+     */
+    @Test
+    void addsTheMatchGroupColumnWithItsTwoChecks() {
+        Scenario s = scenario("FLTGRP");
+        Long revisionId = s.revision().getId();
+        assertThat(constraintNames("IMPORT_RECORD_FILTER")).contains("CK_IMPORT_RECORD_FILTER_MATCH_GROUP_POSITIVE",
+                "CK_IMPORT_RECORD_FILTER_MATCH_GROUP_EXCLUDE");
+
+        insertFilter(revisionId, 1, "EQUALS", "INCLUDE", "EXCLUDE", "BLOCK");
+        assertThat(jdbc.queryForObject("select match_group from import_record_filter where definition_revision_id = ? "
+                + "and sequence_number = 1", Integer.class, revisionId)).isNull();
+        assertThatCode(() -> insertGroupedFilter(revisionId, 2, 1, "EXCLUDE", "COMPARE_AS_EMPTY", "ACME"))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> insertGroupedFilter(revisionId, 3, 1, "EXCLUDE", "COMPARE_AS_EMPTY", ""))
+                .doesNotThrowAnyException();
+
+        assertThatThrownBy(() -> insertGroupedFilter(revisionId, 4, 0, "EXCLUDE", "COMPARE_AS_EMPTY", "X"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertGroupedFilter(revisionId, 5, -1, "EXCLUDE", "COMPARE_AS_EMPTY", "X"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertGroupedFilter(revisionId, 6, 1, "INCLUDE", "COMPARE_AS_EMPTY", "X"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertGroupedFilter(revisionId, 7, 1, "REJECT", "COMPARE_AS_EMPTY", "X"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertGroupedFilter(revisionId, 8, 1, "EXCLUDE", "EXCLUDE", "X"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertGroupedFilter(revisionId, 9, 1, "EXCLUDE", "REJECT", "X"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        // Via JPA: de entiteit draagt de groep heen en terug.
+        ImportRecordFilter grouped = new ImportRecordFilter(s.revision(), 10, "STATUS", FilterOperator.EQUALS, "EOL",
+                FilterOutcome.EXCLUDE);
+        grouped.setNullBehaviour(FilterNullBehaviour.COMPARE_AS_EMPTY);
+        grouped.setMatchGroup(2);
+        ImportRecordFilter stored = recordFilters.saveAndFlush(grouped);
+        assertThat(recordFilters.findById(stored.getId()).orElseThrow().getMatchGroup()).isEqualTo(2);
+    }
+
+    private void insertGroupedFilter(Long revisionId, int sequenceNumber, int group, String outcome,
+                                     String nullBehaviour, String compareValue) {
+        jdbc.update("insert into import_record_filter (definition_revision_id, sequence_number, source_reference, "
+                        + "operator, compare_value, outcome, null_behaviour, missing_column_behaviour, match_group) "
+                        + "values (?, ?, 'CULTURE', 'EQUALS', ?, ?, ?, 'BLOCK', ?)",
+                revisionId, sequenceNumber, compareValue, outcome, nullBehaviour, group);
+    }
+
     // --- Fase 3b, changeset 004-10 en 004-11b -----------------------------------------------------
 
     /**

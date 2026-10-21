@@ -2804,3 +2804,12 @@ gevalideerd per leverancier op `supplier_group.group_name`; bewaard zoals gegeve
 - **Aannames S8 aanvaard:** elke gemigreerde regel met een transformatie wordt `CHAIN`; SUBSTRING voorbij het einde → `""`; CALC 7
   hoofdlettergevoelig; varchar(50) voor maprijen; codes 3/4 met padding-waarschuwing.
 **Bron:** mens / denker-zwaar S8-ontwerp
+
+## 2026-10-21 — Legacy-config S8f: lege vergelijkwaarde binnen een filtergroep
+**Vraag:** PSIMPEXCL-vormen vergelijken met `''` (kolom leeg); de setup-API weigert een lege `compareValue` (400
+`COMPARE_VALUE_REQUIRED`).
+**Beslissing (hoofdsessie, gevolg van V2 = A):** enkel binnen een `match_group` mag een `EQUALS`-rij een lege `compareValue`
+hebben (betekent "kolom leeg"); overal elders blijft 400 `COMPARE_VALUE_REQUIRED`. Additieve contractverruiming, gemeld aan de mens.
+Bekende verschillen met legacy (aanvaard, gedocumenteerd in `legacy-config-s8-design.md` "Uitwerking S8f"): legacy kapt ARIMP-waarden
+af op hun Alpha-lengte vóór de opzoeking (wij niet); records met lege leverancier/referentie worden bij ons verworpen i.p.v. uitgesloten.
+**Bron:** S8f-bouwerrapport / `legacy-config-s8-design.md` §2f

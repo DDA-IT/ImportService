@@ -153,6 +153,45 @@ class ConfigFactoryParityTest {
                 .extracting(ConfigFinding::message).asString().endsWith("a chain needs 1 to 3 steps but has 0");
     }
 
+    /**
+     * S8f, stap B' in collect-modus: een ongeldige EN-groep is een eigen bevinding {@code CONFIG_FILTER_INVALID} naast de
+     * onafhankelijke fouten van andere rijen (hier een vertaaltabelfout), met dezelfde boodschap als de eerste worp.
+     */
+    @Test
+    void anInvalidMatchGroupIsReportedInCollectModeNextToOtherFindings() {
+        Fixture fixture = new Fixture();
+        fixture.first().setTransformKind(FieldTransformKind.MAP);
+        fixture.valueMap("ab", "1", "AB", "2");
+        fixture.firstFilter().setMatchGroup(4); // INCLUDE in een groep
+
+        ConfigProblemCollector problems = ConfigProblemCollector.all();
+        StructureFacts facts = STRUCTURE.collectInto(fixture.revision, fixture.linkCurrency, problems);
+        MAPPING.collectInto(fixture.revision, facts, fixture.mappings, fixture.filters, fixture.criticalities,
+                fixture.valueMaps, problems);
+        ConfigCheckReport report = problems.toReport();
+
+        assertThat(report.findings()).extracting(ConfigFinding::code).containsExactlyInAnyOrder(TRANSFORM, FILTER);
+        assertThat(report.findings()).filteredOn(finding -> FILTER.equals(finding.code())).singleElement()
+                .satisfies(finding -> {
+                    assertThat(finding.fieldName()).isEqualTo("CULTURE");
+                    assertThat(finding.sourceValue()).isEqualTo("4");
+                    assertThat(finding.message()).startsWith("Record filter 1 belongs to match group 4 but is INCLUDE");
+                });
+    }
+
+    /** S8f: een geldige groep komt als groep in de configuratie; rijen zonder groep houden {@code null}. */
+    @Test
+    void aValidMatchGroupReachesTheConfiguration() {
+        Fixture fixture = new Fixture();
+        fixture.groupFirstFilter(3);
+        fixture.filters.add(filter(fixture.revision, 2, "STATUS", FilterOperator.EQUALS, "EOL", FilterOutcome.EXCLUDE));
+
+        ImportMappingConfig config = MAPPING.from(fixture.revision, fixture.deriveStructure(), fixture.mappings,
+                fixture.filters, fixture.criticalities);
+
+        assertThat(config.filters()).extracting(ImportMappingConfig.RecordFilter::matchGroup).containsExactly(3, null);
+    }
+
     @Test
     void rowIdsAreUnique() {
         Set<String> seen = new HashSet<>();
@@ -1013,6 +1052,37 @@ class ConfigFactoryParityTest {
             f.firstFilter().setCompareValue("  ");
         }, FILTER, "CULTURE", "  ", "Record filter 1 compares with CONTAINS but has no value to compare "
                 + "with; that rule would match every record");
+        // M4g (S8f): EN-groepen. Een geldige groep (EXCLUDE, COMPARE_AS_EMPTY) met een lege EQUALS-waarde werpt niets.
+        ok(t, "M4g-filter-match-group-valid", f -> {
+            f.groupFirstFilter(1);
+            ImportRecordFilter second = filter(f.revision, 2, "STATUS", FilterOperator.EQUALS, "", FilterOutcome.EXCLUDE);
+            second.setNullBehaviour(FilterNullBehaviour.COMPARE_AS_EMPTY);
+            second.setMatchGroup(1);
+            f.filters.add(second);
+        });
+        blocked(t, "M4g-filter-match-group-zero", f -> {
+            f.groupFirstFilter(1);
+            f.firstFilter().setMatchGroup(0);
+        }, FILTER, "CULTURE", "0", "Record filter 1 has match group 0; a match group is a positive number");
+        blocked(t, "M4g-filter-match-group-negative", f -> {
+            f.groupFirstFilter(1);
+            f.firstFilter().setMatchGroup(-3);
+        }, FILTER, "CULTURE", "-3", "Record filter 1 has match group -3; a match group is a positive number");
+        blocked(t, "M4g-filter-match-group-include", f -> f.firstFilter().setMatchGroup(2), FILTER, "CULTURE", "2",
+                "Record filter 1 belongs to match group 2 but is INCLUDE with null behaviour EXCLUDE; every rule of a "
+                        + "match group is EXCLUDE with COMPARE_AS_EMPTY, otherwise the group is no longer one AND rule");
+        blocked(t, "M4g-filter-match-group-null-behaviour-exclude", f -> {
+            f.groupFirstFilter(1);
+            f.firstFilter().setNullBehaviour(FilterNullBehaviour.EXCLUDE);
+        }, FILTER, "CULTURE", "1", "Record filter 1 belongs to match group 1 but is EXCLUDE with null behaviour "
+                + "EXCLUDE; every rule of a match group is EXCLUDE with COMPARE_AS_EMPTY, otherwise the group is no "
+                + "longer one AND rule");
+        blocked(t, "M4g-filter-match-group-reject", f -> {
+            f.groupFirstFilter(1);
+            f.firstFilter().setOutcome(FilterOutcome.REJECT);
+        }, FILTER, "CULTURE", "1", "Record filter 1 belongs to match group 1 but is REJECT with null behaviour "
+                + "COMPARE_AS_EMPTY; every rule of a match group is EXCLUDE with COMPARE_AS_EMPTY, otherwise the group "
+                + "is no longer one AND rule");
     }
 
     // M5: verifyIdentityClasses :667-678 (enkel bereikbaar met een vooraf opgebouwde structuur);
@@ -1127,6 +1197,13 @@ class ConfigFactoryParityTest {
 
         ImportRecordFilter firstFilter() {
             return filters.get(0);
+        }
+
+        /** S8f: de basisfilter wordt een geldige gegroepeerde rij (EXCLUDE, COMPARE_AS_EMPTY). */
+        void groupFirstFilter(int group) {
+            firstFilter().setOutcome(FilterOutcome.EXCLUDE);
+            firstFilter().setNullBehaviour(FilterNullBehaviour.COMPARE_AS_EMPTY);
+            firstFilter().setMatchGroup(group);
         }
 
         void replace(ImportFieldMapping only) {
