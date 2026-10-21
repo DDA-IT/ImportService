@@ -2792,3 +2792,15 @@ gevalideerd per leverancier op `supplier_group.group_name`; bewaard zoals gegeve
   BLOCKING; inhoud via `RevisionCopier` (materialisatieroute weigert DRAFT-sjablonen); ontvangsten met status DISCARDED tellen
   niet mee voor `sharedWith`; nooit over leveranciers heen.
 **Bron:** mens / S7-bouwerrapport
+
+## 2026-10-21 — Legacy-config S8: map-miss en PSIMPEXCL-model
+**Vraag:** V1 en V2 uit `docs/design/legacy-config-s8-design.md` §5.
+**Beslissing:**
+- **V1 = B:** opt-in `onMiss=KEEP_SOURCE` per MAP-mapping; de migratie zet het enkel voor CALC 7. Elke doorgelaten waarde geeft
+  melding `MAPPING_VALUE_PASSED_THROUGH`; de typecontrole verwerpt daarna een niet-numerieke waarde op een getalveld (nooit stil 0).
+  CALC 14 (MAP_CONTAINS) blijft verwerpen bij een miss. Gemelde aanpassing van R-REC-08 (terugvallen enkel expliciet per mapping).
+- **V2 = A:** `import_record_filter.match_group` (int null); rijen met dezelfde groep vormen een EN-regel op de bronkolommen vóór
+  de identiteit, binnen R-FLT-02. Vertaling van PSIMPEXCL volgens design §2f.
+- **Aannames S8 aanvaard:** elke gemigreerde regel met een transformatie wordt `CHAIN`; SUBSTRING voorbij het einde → `""`; CALC 7
+  hoofdlettergevoelig; varchar(50) voor maprijen; codes 3/4 met padding-waarschuwing.
+**Bron:** mens / denker-zwaar S8-ontwerp

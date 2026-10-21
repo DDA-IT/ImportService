@@ -68,6 +68,18 @@
 >
 > Legacy zet leverancier, groep en referentie (veld 9-11) en nog een tiental andere velden (o.a. 1-3, 8, 13, 14) met `Upper()` in hoofdletters vóór ze in de staging komen (`Prg_1170` r.733-815). De identiteitscanonicalisatie van CatalogImport is hoofdlettergevoelig (`CandidateNormaliser` r.601). Een overgenomen legacy-definitie zonder expliciete hoofdletteromzetting geeft dus andere identiteiten dan in legacy/PSARF, met dubbels of gemiste matches als gevolg. Bron: `docs/design/legacy-config-migratie-design.md` §7 (Q4).
 
+> Important business rule discovered
+>
+> Legacy Include/Exclude (`PSIMPDEF`) kent de codes 1–6 (`Prg_1170.xml` r.18681-18701): 1 gelijk (`Trim(v) = Trim(d)` anders overslaan), 2 niet-gelijk, 3 begint met, 4 eindigt op, 5 bevat, 6 bevat niet. Ze vergelijken de MID van de kolom (lengte 0→100). Elke regel sluit zelfstandig uit (`Verwerken=FALSE`, `Prg_1170` r.940-941): meerdere include-regels gelden dus samen (EN), niet als alternatief. Bron: `docs/design/legacy-config-s8-design.md` §2e.
+
+> Important business rule discovered
+>
+> Legacy-uitsluitingen (`PSIMPEXCL`) worden toegepast in `Prg_1170` (taken "Check Excludes"/"Excludes", r.2582-2687), niet in `Prg_1171`, en enkel als `Skip_Excludes` niet op `Y` staat. Ze werken in vijf vaste vormen op de verwerkte identiteit (leverancier, groep en referentie in hoofdletters, kortingscode niet; leeg = letterlijk leeg): enkel leverancier; enkel groep; groep + korting; groep + korting + referentie; alle vier. Rijen met leverancier zonder referentie (behalve "enkel leverancier") of met kleine letters in leverancier/groep/referentie treffen nooit. Bron: `docs/design/legacy-config-s8-design.md` §2f.
+
+> Important business rule discovered
+>
+> Legacy CALC 14 (`MapInstr`, `Prg_1170` r.1128-1167) zoekt enkel in de map-rijen van de eigen regel (NUMMER), hoofdletterongevoelig "bevat", eerste treffer in KEY-volgorde met een niet-lege waarde; een miss geeft `''`. CALC 7 daarentegen zoekt over alle map-rijen van de definitie (laagste NUMMER wint bij een dubbele sleutel) en laat bij een miss de bronwaarde door. In CatalogImport is dat doorlaten enkel expliciet per mapping (`onMiss=KEEP_SOURCE`, beslissing 2026-10-21), nooit stil. Bron: `docs/design/legacy-config-s8-design.md` §2a, §2d.
+
 ## Open uitzonderingen die nog een businesskeuze vragen
 
 - De proefversie bewaart enkel een issueaantal; zij bewaart reden en bronregel niet voor ongeldige regels. Support kan de originele CSV raadplegen, maar geen foutdetail opvragen.

@@ -841,3 +841,25 @@ Buiten scope (mens): PostgreSQL en performance; risicoquery `domain_mask like '%
 > Bij een parallelrun of vergelijking met legacy zijn verschillen hierdoor te verwachten. Ze worden getoond als
 > verklaard verschil, nooit weggewerkt.
 > Bron: `docs/design/legacy-config-migratie-design.md` §1 en §7.
+
+## 19. Ontdekkingen 2026-10-21 (legacy-config S8)
+
+> **Important technical constraint discovered**
+>
+> `FieldValueMapper` (r.125-126) geeft de **ongetrimde** ruwe kolomwaarde aan de transformatie en trimt pas erna; `Affix`/`PREFIX`
+> op `""` geeft daardoor `prefix+suffix`. Legacy trimt eerst en laat een lege waarde leeg (`Prg_1170` r.730). Gemigreerde
+> PREFIX/SUFFIX/MAP-mappings van vóór S8 wijken daardoor af bij opvulspaties en lege cellen; de transformatieketen van S8c (trim
+> vooraf, lege invoer blijft leeg) lost dat op voor gemigreerde regels. Bron: `docs/design/legacy-config-s8-design.md` §2c, §6.
+
+> **Important technical constraint discovered**
+>
+> `RevisionConfigHashes` (§14.14) omvat geen mappings en geen filters (r.68-91). Twee revisies die enkel in mappings of filters
+> verschillen, dragen dezelfde samengestelde configuratiehash. Dat bestond al vóór S8 en wordt in S8 niet opgelost; de migratie
+> gebruikt daarom `LegacyRevisionContent` (dat mappings, maprijen, stappen en filtergroepen wel omvat) voor `DEFINITION_UNCHANGED`
+> en `MANUAL_CHANGES_SINCE_MIGRATION`. Bron: `docs/design/legacy-config-s8-design.md` §3, §6.
+
+> **Important technical constraint discovered**
+>
+> `RevisionCopier.copyMappings` levert niet-opgeslagen mappingrijen. Elke kindtabel van een mapping (maprijen, ketenstappen) vraagt
+> een tweede kopieerstap na `saveAll`, bij alle drie de aanroepers (`LegacyConfigApplyService`, `RevisionSuccessorService`,
+> `TemplateMaterialisationService`). Bron: `docs/design/legacy-config-s8-design.md` §3.
