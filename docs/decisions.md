@@ -3026,3 +3026,11 @@ poging toch gecommit was, eindigt als **UNCHANGED** (niet APPLIED): de teller AP
 **Open voor P5c:** herstel/afronding van IN_PROGRESS-mutaties bij een verlaten run; begrenzing van herhaalde pogingen bij een fout die altijd
 terugkomt (bv. 22021); vlag `catalogimport.publication.prodis.enabled` en itemsleutel/`source-id` bij het aanmaken van items.
 **Bron:** P5b-bouwerrapport
+
+## 2026-10-22 — Parallel bouwen: P7 frontend naast P5c
+**Vraag:** Mag de bouw sneller door meer agents tegelijk?
+**Beslissing:** Ja, beperkt: de frontend van de publicatie (P7) start nu al parallel met P5c op basis van het API-contract uit het
+publicatie-ontwerp (bewuste afwijking van AGENT.md "gemiddeld/zwaar sequentieel"; risico op herwerk na P6 aanvaard). Daarnaast een lichte
+taak: validatiepakket (overzicht gevolgde aanbevelingen + testchecklist). P6 blijft na P5c. P7 raakt enkel `Frontend/` en
+`docs/handleiding/begrippen.md`, P5c enkel backend, zodat er geen gedeelde bestanden zijn.
+**Bron:** mens
