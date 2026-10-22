@@ -2860,3 +2860,22 @@ screenen met een configuratie die niet de hare is.
 `SourceStateDao.existsForImportDefinition` de *huidige* definitie van de koppeling (de kopie), ook voor oude behandelgevallen — in lijn met
 "de stroom is de koppeling", te bevestigen bij de validatie.
 **Bron:** G2a-bouwerrapport / beslissing 2026-10-22 G2a
+
+## 2026-10-22 — Publicatiefase: P-V1..P-V5
+**Vraag:** Open punten uit `docs/design/publicatie-prodis-db-design.md` §7. De hoofdsessie heeft de gevolgen van P-V1 en P-V2 expliciet
+voorgelegd (terugdraaien door `CatalogArticleJob` in modus PRODIS; prijsberekening Prg_1185, audit, tenant en precisie nabouwen bij
+rechtstreeks schrijven); de mens bevestigde bewust.
+**Beslissing:**
+- **P-V1:** ook schrijven als `legacy_master = PRODIS`; dat de datasync die wijzigingen terugdraait/overschrijft (en bij CREATE de
+  legacy-rij laat vallen) is **bewust aanvaard** (bruikbaar om te testen; de richting blijft `NONE`). Geen guard die schrijven in PRODIS weigert;
+  wel de modus zichtbaar maken.
+- **P-V2:** **rechtstreeks in de Prodis-PostgreSQL schrijven**, bewust. CatalogImport krijgt een schrijfverbinding (eigen DB-rol) en moet
+  zelf de verkoopprijzen berekenen volgens Prg_1185 (`LegacyPriceCalculator` als referentie), audit-/tenantvelden invullen en precisieverlies
+  weigeren. Herziet de aanbeveling "Prodis-API" uit beide publicatie-ontwerpen.
+- **P-V3 = a, eerst UPDATE-only:** creatiestandaarden per koppeling (btw, artikelgroep, rekeningen, eenheden, prijscode, `brut_price_politics`),
+  enkel bij aanmaak; de eerste slices bouwen enkel bijwerken, CREATE-items worden `NOT_SENT`.
+- **P-V4:** afwijking tussen de Prodis-waarde en ons `before` → CONFLICT voor basisprijs en percentages, melding (overschrijven) voor de
+  omschrijving; CREATE op een bestaand artikel → CONFLICT.
+- **P-V5:** leeg = Prodis-waarde behouden, nooit wissen in v1, WARNING `EMPTY_KEEPS_EXISTING`.
+- Gevolg: het publicatie-ontwerp wordt door een denker herwerkt voor rechtstreeks schrijven vóór de bouw.
+**Bron:** mens / `publicatie-prodis-db-design.md`
