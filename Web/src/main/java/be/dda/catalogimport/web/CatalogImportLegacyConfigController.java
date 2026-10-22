@@ -125,22 +125,29 @@ public class CatalogImportLegacyConfigController {
 
     /**
      * PREVIEW (S2): het rapport van wat APPLY nu zou doen, met dezelfde keuzes als de APPLY-body (als
-     * queryparameters), plus {@code previewFingerprint}. Schrijft niets.
+     * queryparameters), plus {@code previewFingerprint}. Schrijft niets. Sinds G2a ook {@code detachFromShared} en
+     * {@code detachedDefinitionCode} (additief; ze bepalen het rapport en dus de fingerprint).
      */
     @RequiresPermission(Permission.MANAGE)
     @GetMapping("/receipts/{receiptId}/preview")
     PreviewResult preview(@PathVariable("receiptId") long receiptId,
                           @RequestParam(value = "definitionCodeOverride", required = false) String definitionCodeOverride,
                           @RequestParam(value = "charsetWhenUndeclared", required = false) String charsetWhenUndeclared,
-                          @RequestParam(value = "libraryCode", required = false) String libraryCode) {
-        return applies.preview(receiptId, new ApplyOptions(definitionCodeOverride, charsetWhenUndeclared, libraryCode));
+                          @RequestParam(value = "libraryCode", required = false) String libraryCode,
+                          @RequestParam(value = "detachFromShared", required = false) Boolean detachFromShared,
+                          @RequestParam(value = "detachedDefinitionCode", required = false)
+                          String detachedDefinitionCode) {
+        return applies.preview(receiptId, new ApplyOptions(definitionCodeOverride, charsetWhenUndeclared, libraryCode,
+                Boolean.TRUE.equals(detachFromShared), detachedDefinitionCode));
     }
 
     /**
-     * APPLY (S2): {@code {previewFingerprint, reason, definitionCodeOverride?, charsetWhenUndeclared?, libraryCode?}}
-     * → 200 + rapport. 400 {@code LEGACY_APPLY_REASON_REQUIRED}; 404 {@code LEGACY_RECEIPT_NOT_FOUND}; 409
-     * {@code LEGACY_RECEIPT_NOT_APPLICABLE}, {@code LEGACY_PREVIEW_STALE}, {@code LEGACY_APPLY_BLOCKED}. Activeert
-     * nooit.
+     * APPLY (S2): {@code {previewFingerprint, reason, definitionCodeOverride?, charsetWhenUndeclared?, libraryCode?,
+     * detachFromShared?, detachedDefinitionCode?}} → 200 + rapport. 400 {@code LEGACY_APPLY_REASON_REQUIRED}; 404
+     * {@code LEGACY_RECEIPT_NOT_FOUND}; 409 {@code LEGACY_RECEIPT_NOT_APPLICABLE}, {@code LEGACY_PREVIEW_STALE},
+     * {@code LEGACY_APPLY_BLOCKED}. Activeert nooit, behalve bij loskoppelen (G2a, V2 = A): dan wordt de ongewijzigde
+     * kopie van de ACTIVE revisie van de gedeelde definitie geactiveerd (volledige validatie; een validatiefout geeft
+     * 400/409 en rolt alles terug).
      */
     @RequiresPermission(Permission.MANAGE)
     @PostMapping("/receipts/{receiptId}/apply")

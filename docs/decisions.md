@@ -2849,3 +2849,14 @@ bouwen; P publicatiefase naar de Prodis-database: ontwerp actualiseren (denker),
   "APPLY activeert nooit".
 - Aannames design G2 aanvaard (opnieuw aansluiten later; `legacy_definition_codes` van de groep ongewijzigd).
 **Bron:** mens / denker-zwaar G2-ontwerp
+
+## 2026-10-22 — G2a: nieuwe afwijkende interface loskoppelen
+**Vraag:** Een **nieuwe** interface die afwijkt van haar groep en `detachFromShared` gebruikt: activeert APPLY dan iets?
+**Beslissing (hoofdsessie, volgt uit bestaande beslissingen):** nee. Rev 1 van de eigen definitie is een DRAFT met de eigen legacy-inhoud;
+er wordt niets geactiveerd. "APPLY activeert nooit" blijft gelden; de uitzondering V2 = A (2026-10-22 G2a) is enkel bedoeld om een
+lopende inname niet stil te leggen, en een nieuwe interface heeft nog geen inname. De groepsinhoud activeren zou bovendien leveringen
+screenen met een configuratie die niet de hare is.
+**Open bij de mens (niet blokkerend):** na het loskoppelen volgen `IssueCaseService.activeRevision(link)`, `LinkBookmarkValueService` en
+`SourceStateDao.existsForImportDefinition` de *huidige* definitie van de koppeling (de kopie), ook voor oude behandelgevallen — in lijn met
+"de stroom is de koppeling", te bevestigen bij de validatie.
+**Bron:** G2a-bouwerrapport / beslissing 2026-10-22 G2a

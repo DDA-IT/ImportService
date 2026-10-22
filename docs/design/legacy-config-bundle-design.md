@@ -91,8 +91,8 @@ dezelfde `definition.code` of dezelfde `definitionContentHash`.
 | POST | `/receipts` | enkel technische client (§3) | vergeleken met de **laatste** ontvangst van dezelfde herkomst (ongeacht status): zelfde `contentHash` → 200 `UNCHANGED` met id en status van die rij, niets geschreven; anders 201 `RECEIVED` (nieuwe rij, ook bij A → B → A); een open ontvangst → `SUPERSEDED`, `APPLIED`/`DISCARDED` ongemoeid. Antwoord: contract §8 |
 | GET | `/receipts?status=&interface=&page=` | MANAGE | `PageResult`, zonder details |
 | GET | `/receipts/{id}` | MANAGE | Bundel zonder secret, met `secretOutcome` en `credentialRef` (MANAGE wegens host/login, L7b) |
-| GET | `/receipts/{id}/preview?definitionCodeOverride=&charsetWhenUndeclared=&libraryCode=` | MANAGE | Rapport (§5) + `previewFingerprint`; schrijft niets. De optionele queryparameters zijn dezelfde keuzes als in de APPLY-body (S2): het rapport en dus de fingerprint hangen ervan af |
-| POST | `/receipts/{id}/apply` | MANAGE | `{previewFingerprint, reason, definitionCodeOverride?, charsetWhenUndeclared?, libraryCode?}` → 200 + `{report, receiptStatus, configurationFindings}`. `libraryCode` is additief (beslissingslog 2026-10-20 "Legacy-config S2", V1 = c): tot S5 door de mens gegeven, nooit het ruwe `ArtImp_BibNr` |
+| GET | `/receipts/{id}/preview?definitionCodeOverride=&charsetWhenUndeclared=&libraryCode=&detachFromShared=&detachedDefinitionCode=` | MANAGE | Rapport (§5) + `previewFingerprint`; schrijft niets. De optionele queryparameters zijn dezelfde keuzes als in de APPLY-body (S2): het rapport en dus de fingerprint hangen ervan af. `detachFromShared`/`detachedDefinitionCode` zijn additief (G2a, §5 "Uitwerking G2a") |
+| POST | `/receipts/{id}/apply` | MANAGE | `{previewFingerprint, reason, definitionCodeOverride?, charsetWhenUndeclared?, libraryCode?, detachFromShared?, detachedDefinitionCode?}` → 200 + `{report, receiptStatus, configurationFindings}`. `libraryCode` is additief (beslissingslog 2026-10-20 "Legacy-config S2", V1 = c): tot S5 door de mens gegeven, nooit het ruwe `ArtImp_BibNr`; `detachFromShared` (boolean) en `detachedDefinitionCode` additief sinds G2a (beslissingslog 2026-10-22 "G2a") |
 | POST | `/receipts/{id}/discard` | MANAGE | `{reason}` → `DISCARDED` (G1a; enkel `RECEIVED`, anders 409 `LEGACY_RECEIPT_NOT_APPLICABLE`; 400 `LEGACY_DISCARD_REASON_REQUIRED`/`_TOO_LONG`) |
 
 Niet achter `catalogimport.setup-api.enabled` (precedent L7a). 403 vóór 400/404/409 (5-PERM V1).
@@ -228,6 +228,23 @@ in `transform_config` enkel nog de notatie. De gesloten volgorde `[SUBSTRING] �
 SUBTRACT|MULTIPLY|DIVIDE|PERCENTAGE|SPLIT]` bewaakt de configuratievalidatie (`CONFIG_TRANSFORM_INVALID`), niet het schema.
 De vertaalrijen van een MAP-stap blijven in `import_field_value_map`, aan de mapping.
 
+**026-legacy-config-detach.sql** (G2a; **gebouwd 2026-10-22**, `g2-design.md` par. G2a; beslissingslog 2026-10-22 "G2a")
+- **026-1** op `legacy_config_definition_origin`: `detached_interface_code` varchar(20) null en `group_marker` boolean null
+  (NULL-markertruc zoals 001/016/020-1, geen partiële index, dus ook H2); backfill `group_marker = TRUE` op elke bestaande rij;
+  `ck_legacy_config_definition_origin_kind`: precies twee vormen, **groep** (`group_marker` TRUE, geen interface) of
+  **losgekoppelde kopie** (`group_marker` NULL, `detached_interface_code` gevuld) - strenger dan de ontwerpcheck
+  `(group_marker is true) = (detached_interface_code is null)`, ook FALSE is verboden; `_detached_not_blank`;
+  `_detached_template` (een kopie heeft geen sjabloon). **Gemelde constraintwijziging:** `uk_legacy_config_definition_origin`
+  wordt `(env, dossier, supplier_code, definition_content_hash, group_marker)` (zelfde naam), zodat een kopie dezelfde
+  inhoudshash mag dragen als haar groep; nieuw `uk_legacy_config_definition_origin_detached (env, dossier,
+  detached_interface_code)`: hoogstens één kopie per interface. De rollback faalt bewust zolang er een kopie bestaat.
+- **026-2** `legacy_config_detachment` (append-only audit): id; `origin_id` FK 020-2; `import_link_id` FK; `from_definition_id`
+  / `to_definition_id` FK `import_definition` (check verschillend); `receipt_id` FK null; `action` varchar(20) check
+  `DETACH|REATTACH` (REATTACH voorzien, in G2 nooit gezet); `reason` varchar(500) niet blanco; `created_at`, `created_by`
+  varchar(100) niet blanco, `created_by_subject` varchar(255) met koppelcheck zoals 007-4; indexen op origin, koppeling en
+  doeldefinitie (geen op het subject). `import_link` bewaart zelf geen definitiehistoriek: na het verleggen staat de vroegere
+  definitie enkel nog in `import_batch.definition_revision_id` en hier.
+
 **025-record-filter-match-group.sql** (S8f; **gebouwd 2026-10-21**, `legacy-config-s8-design.md` par. 2f; V2 = A) changeset
 **025-1** `import_record_filter.match_group` integer null (additief; elke bestaande rij `null` = ongewijzigd gedrag);
 `ck_import_record_filter_match_group_positive` (`match_group is null or match_group > 0`) en
@@ -278,13 +295,14 @@ schreef → `MANUAL_CHANGES_SINCE_MIGRATION` (blokkeert); anders letterlijke kop
 omschrijving, de vertaalbare mappings en de filters overschrijft; drempels, kritiek-overrules en bookmarks blijven uit de kopie. APPLY
 geldt als R-REV-X3-bevestiging (WARNING `IDENTITY_CHANGE`).
 
-**Koppeling/taak bestaat al:** nooit muteren; afwijking → `LINK_DIFFERS_NOT_CHANGED`.
+**Koppeling/taak bestaat al:** nooit muteren; afwijking → `LINK_DIFFERS_NOT_CHANGED`. Enige uitzondering (G2a, gedeeltelijke
+herroeping enkel voor die expliciete actie): loskoppelen verlegt de koppeling naar een eigen kopie (zie "Uitwerking G2a").
 **Conflict met handmatige configuratie:** `uk_import_link_scope` → `LINK_SCOPE_CONFLICT_MANUAL` (blokkeert); nooit stil samenvoegen;
 een handmatige definitie wordt nooit migratiedoel.
 
 **Dedup (na M1):** groepsleutel `(env, dossier, Supplier, definitionContentHash)`; nooit over leveranciers heen (bronoverstijgend
 sjabloon buiten scope, 2026-09-23 keuze 4). Gedeelde definitie die in één interface wijzigt → `SHARED_DEFINITION_DIVERGED`
-(blokkeert; loskoppelen latere slice). Rapport toont `sharedWith`.
+(blokkeert; sinds G2a op te lossen met `detachFromShared`, zie "Uitwerking G2a"). Rapport toont `sharedWith`.
 
 **Uitwerking S7 (gebouwd 2026-10-21; beslissingslog "Legacy-config S7: gedeelde definities", A2):**
 - **Altijd sjabloon + gedeelde definitie**, ook bij één interface: APPLY van de eerste interface van een groep maakt een
@@ -316,7 +334,46 @@ sjabloon buiten scope, 2026-09-23 keuze 4). Gedeelde definitie die in één inte
 - **Gelijktijdig:** twee leden van een nieuwe groep tegelijk → de unieke codes (`uk_source_organisation_code`,
   `uk_import_definition_code`, `uk_legacy_config_definition_origin`) laten er één winnen; de ander krijgt 409
   (`SOURCE_ORGANISATION_CODE_IN_USE`/`DEFINITION_CODE_IN_USE`), schrijft niets en sluit na een nieuwe preview aan.
-- `SHARED_DEFINITION_NOT_SUPPORTED` vervalt. Loskoppelen tot een eigen definitie: niet in S7 (eigen ontwerp later).
+- `SHARED_DEFINITION_NOT_SUPPORTED` vervalt. Loskoppelen tot een eigen definitie: niet in S7; gebouwd in G2a (hieronder).
+
+**Uitwerking G2a (gebouwd 2026-10-22; `g2-design.md` par. G2a; beslissingslog 2026-10-22 "G2a: loskoppelen van een gedeelde
+definitie", V1 = A en V2 = A):**
+- **Trigger:** APPLY-optie `detachFromShared=true` (+ optioneel `detachedDefinitionCode`), ook als PREVIEW-queryparameters; ze
+  bepalen het rapport en dus de fingerprint. Enkel als het rapport `SHARED_DEFINITION_DIVERGED` zou geven en de definitie een
+  **groep** is; dat item wordt dan MIGRATED `DETACH_FROM_SHARED`. Anders WARNING `DETACH_NOT_NEEDED` (optie genegeerd, ook op een
+  interface die al een eigen kopie heeft). De tekst van `SHARED_DEFINITION_DIVERGED` noemt de optie.
+- **Bekende interface (V1 = A):** `planned.link.action = REPOINT`, `planned.definition.action = CREATE` (code
+  `LEGACY-<interface>` of `detachedDefinitionCode`, beschrijving "&lt;gedeelde beschrijving&gt; (losgekoppeld voor
+  &lt;interface&gt;)", ingekort tot 200 tekens met "..."), `planned.template.action = NONE`, `sharedWith = []`,
+  `planned.detach{fromDefinitionId, fromDefinitionCode, toDefinitionCode, copiedRevisionId, carriesActive}`. BLOCKING:
+  `DETACH_OPEN_BATCH` (`import_batch.open_marker` op de koppeling), `DETACH_RUN_IN_PROGRESS` (een `task_run` met
+  concurrency-token op een taak van de koppeling), `DETACHED_DEFINITION_CODE_CONFLICT` (code bestaat al bij de leverancier),
+  `DETACHED_DEFINITION_CODE_INVALID` (> 50 tekens). APPLY neemt eerst rijsloten op alle taken van de koppeling (de slotvolgorde
+  van de intake) en dan op de koppeling, en plant pas daarna: de guards worden zo onder slot opnieuw geëvalueerd.
+- **Revisies (V2 = A):** heeft de gedeelde definitie een ACTIVE revisie, dan gelden eerst de S2-regels op de gedeelde definitie
+  (`MANUAL_CHANGES_SINCE_MIGRATION` als er geen migratierevisie is of de ACTIVE revisie inhoudelijk afwijkt van de laatst
+  gemigreerde; `OPEN_DRAFT_EXISTS` als haar laatste revisie een DRAFT is; WARNING `IDENTITY_CHANGE`). Revisie 1 van de kopie =
+  letterlijke kopie van die ACTIVE revisie via `RevisionCopier` met alle kindtabellen zoals een opvolger (mappings + vertaalrijen
+  + ketenstappen, filters, kritiekheden, bookmarkdeclaraties met usages, bookmarkwaarden), gecontroleerd tegen de
+  `migrated_content_hash` en geactiveerd via `SetupService.activateRevision` (volledige validatie, de actor als goedkeurder;
+  een fout rolt de hele APPLY terug); revisie 2 = opvolgende DRAFT met de nieuwe legacy-inhoud (S2). Zonder ACTIVE revisie:
+  revisie 1 = DRAFT met de nieuwe inhoud (een open DRAFT van de gedeelde definitie blijft bij de groep).
+- **Nieuwe interface die DIVERGED is:** met de optie een eigen definitie zonder verleggen (`planned.link.action = CREATE`, koppeling
+  meteen op de kopie). **Interpretatie van de bouwer (te bevestigen):** revisie 1 = DRAFT met de eigen legacy-inhoud, niets
+  geactiveerd - er loopt nog geen inname die zou stilvallen, en een geactiveerde groepsinhoud zou deze interface screenen met een
+  configuratie die niet de hare is.
+- **Herkomst:** 020-2 ongewijzigd (koppeling, taak, credential; enkel `last_applied_receipt_id`); de 020-3-**groepsrij**
+  ongewijzigd (hash en `legacy_definition_codes`); een nieuwe 020-3-rij voor de kopie (`detached_interface_code`,
+  `group_marker` NULL, `template_definition_id` NULL, hash = de nieuwe legacy-inhoud); 020-4 voor revisie 1 geërfd van de laatst
+  gemigreerde revisie van de gedeelde definitie, voor de nieuwe inhoud een nieuwe rij; een auditrij `legacy_config_detachment`.
+- **Daarna:** de kopie volgt enkel haar interface, exact S2 (`DEFINITION_UNCHANGED`, `OPEN_DRAFT_EXISTS`, opvolgende DRAFT; de
+  kopierij schuift ter plaatse mee) met MIGRATED `DETACHED_DEFINITION` en `sharedWith = []`; `otherGroupCheck` geldt niet voor
+  een kopie (haar rij botst met geen groepssleutel). De groep ziet de interface niet meer (geen lid, en `sharedWith` slaat
+  interfaces met een kopierij over); `findGroup` leest enkel groepsrijen, dus de kopie trekt nooit leden aan. Opnieuw aansluiten:
+  niet in G2.
+- **Wat blijft:** koppelings- en taakcode, taak en leveringsconfiguratie, credential, bronstaat, prijshistoriek,
+  referentiestaat en behandelgevallen hangen aan de koppeling; oude batches houden hun bevroren `definition_revision_id`. De
+  backendweergaven van batches tonen de revisie van de batch zelf, niet de huidige definitie van de koppeling (nagekeken).
 
 **Configuratiehash:** nieuwe revisiekolommen tellen in `RevisionConfigHashes` enkel mee als ze niet de default hebben; bestaande
 hashes blijven byte-identiek (byte-vergelijkingstest).
@@ -349,7 +406,7 @@ hashes blijven byte-identiek (byte-vergelijkingstest).
   zette ze wél in hoofdletters met WARNING `DISCOUNT_CODE_UPPERCASED`; beide zijn teruggedraaid.
 
 **Rapport (PREVIEW = APPLY-resultaat):** `{receiptId, contentHash, outcome APPLICABLE|BLOCKED, planned{sourceOrganisation,
-definition, link{…, libraryCode, libraryCandidates[{scopeKey, catalogName, legacyNumber, status}]}, task, credential, template (S7)}, sharedWith,
+definition, link{…, libraryCode, libraryCandidates[{scopeKey, catalogName, legacyNumber, status}]}, task, credential, template (S7), detach (G2a, null zonder loskoppelen)}, sharedWith,
 items[{element:"PSIMPDEF#9", status: MIGRATED|NOT_MIGRATED|WARNING|BLOCKING, code, target, message}],
 prodisReference VERIFIED|UNAVAILABLE|NOT_CONFIGURED}`; `previewFingerprint` = SHA-256 over het canonieke rapport + id's/versies van
 geraakte bestaande rijen + (S5) de gelezen Prodis-rijen (leverancier: `number|name`; alle bibliotheekrijen van die leverancier:

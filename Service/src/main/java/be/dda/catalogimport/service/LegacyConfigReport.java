@@ -48,6 +48,11 @@ public record LegacyConfigReport(long receiptId, String contentHash, String rece
     public static final String ACTION_SUCCESSOR_DRAFT = "SUCCESSOR_DRAFT";
     public static final String ACTION_UNCHANGED = "UNCHANGED";
     public static final String ACTION_NONE = "NONE";
+    /**
+     * G2a ({@code planned.link.action}): de bestaande koppeling wordt verlegd naar de eigen kopie van de gedeelde
+     * definitie (beslissingslog 2026-10-22 "G2a", V1 = A); code, taak, leveringsconfiguratie en historiek blijven.
+     */
+    public static final String ACTION_REPOINT = "REPOINT";
 
     /**
      * Begin van de {@code previewFingerprint} van een rapport dat Prodis niet kon raadplegen (design par. 6:
@@ -80,14 +85,42 @@ public record LegacyConfigReport(long receiptId, String contentHash, String rece
      * @param sourceOrganisation leverancier (find-or-create)
      * @param definition         de gedeelde definitie ({@code OWN_DEFINITION}, S7): nieuw, hergebruikt, opvolgende DRAFT
      *                           of ongewijzigd
-     * @param link               koppeling (nieuw of hergebruikt, nooit gewijzigd)
+     * @param link               koppeling (nieuw of hergebruikt; enkel bij loskoppelen verlegd, G2a)
      * @param task               MANUAL-taak (nieuw of hergebruikt, nooit gewijzigd)
      * @param credential         de overgenomen credential (S4), of {@code null} als de herkomst er geen heeft en deze
      *                           ontvangst geen secret droeg
      * @param template           (S7, additief) het {@code REUSABLE_TEMPLATE} waarop de gedeelde definitie gebaseerd is
+     * @param detach             (G2a, additief) het loskoppelen van de gedeelde definitie, of {@code null} als deze
+     *                           APPLY niet loskoppelt
      */
     public record Planned(PlannedOrganisation sourceOrganisation, PlannedDefinition definition, PlannedLink link,
-                          PlannedTask task, PlannedCredential credential, PlannedTemplate template) {
+                          PlannedTask task, PlannedCredential credential, PlannedTemplate template,
+                          PlannedDetach detach) {
+
+        /** Zonder loskoppelen (vorm van vóór G2a). */
+        public Planned(PlannedOrganisation sourceOrganisation, PlannedDefinition definition, PlannedLink link,
+                       PlannedTask task, PlannedCredential credential, PlannedTemplate template) {
+            this(sourceOrganisation, definition, link, task, credential, template, null);
+        }
+    }
+
+    /**
+     * G2a ({@code docs/design/g2-design.md} par. G2a; beslissingslog 2026-10-22 "G2a: loskoppelen van een gedeelde
+     * definitie", V1 = A en V2 = A): de interface krijgt een eigen kopie ({@code planned.definition}, actie
+     * {@value #ACTION_CREATE}) van de gedeelde definitie; een bestaande koppeling wordt verlegd
+     * ({@code planned.link.action} {@value #ACTION_REPOINT}), een nieuwe interface krijgt haar koppeling meteen op de
+     * kopie.
+     *
+     * @param fromDefinitionId   de gedeelde definitie van de groep
+     * @param fromDefinitionCode haar code
+     * @param toDefinitionCode   de code van de kopie ({@code LEGACY-<interface>} of {@code detachedDefinitionCode})
+     * @param copiedRevisionId   de ACTIVE revisie van de gedeelde definitie die als revisie 1 gekopieerd en geactiveerd
+     *                           wordt, of {@code null} als de gedeelde definitie geen ACTIVE revisie heeft
+     * @param carriesActive      {@code true}: revisie 1 is die ACTIVE kopie en de nieuwe legacy-inhoud wordt de
+     *                           opvolgende DRAFT (revisie 2); {@code false}: revisie 1 is een DRAFT met de nieuwe inhoud
+     */
+    public record PlannedDetach(Long fromDefinitionId, String fromDefinitionCode, String toDefinitionCode,
+                                Long copiedRevisionId, boolean carriesActive) {
     }
 
     /**
