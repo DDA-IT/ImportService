@@ -293,7 +293,7 @@ describe('RevisionEditForm — herkenning: kolom of vaste waarde', () => {
   });
 
   it('een serverfout SUPPLIER_FIXED_VALUE_NOT_IN_PRODIS krijgt een Nederlandse tekst', async () => {
-    mockFetch((url, init) =>
+    mockFetch((_url, init) =>
       init?.method === 'PATCH'
         ? jsonResponse(
             { error: 'supplierFixedValue 1235 does not exist', code: 'SUPPLIER_FIXED_VALUE_NOT_IN_PRODIS' },
