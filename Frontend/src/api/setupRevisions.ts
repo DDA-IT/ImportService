@@ -21,7 +21,9 @@
 import { request } from './http.ts';
 import type {
   ActivateRevisionRequest,
+  CreateMappingRequest,
   CreateSuccessorRequest,
+  MappingView,
   RevisionView,
   UpdateRevisionRequest,
 } from './types.ts';
@@ -90,6 +92,28 @@ export function updateRevision(
 export function deleteMapping(revisionId: number, mappingId: number, signal?: AbortSignal): Promise<void> {
   return request<void>(`/setup/revisions/${revisionId}/mappings/${mappingId}`, {
     method: 'DELETE',
+    signal,
+  });
+}
+
+/**
+ * PUT /setup/revisions/{revisionId}/mappings/{mappingId} — CatalogImportSetupController.replaceMapping (200, G2c-1).
+ *
+ * Vervangt één extra veld van een `DRAFT` door de nieuwe configuratie: de server verwijdert de oude rij en voegt de nieuwe
+ * toe in één transactie, met hetzelfde volgnummer maar een **nieuw id**. Bij een fout is er niets gewijzigd.
+ *
+ * @throws {import('./http.ts').ApiError} 400 bij een ongeldige configuratie (`CONFIG_TRANSFORM_INVALID`, `VALUE_MAP_*`);
+ *   404 `REVISION_NOT_FOUND`, `MAPPING_NOT_FOUND`; 409 `REVISION_NOT_EDITABLE` of een `CONFIG_BOOKMARK_*`-code
+ */
+export function replaceMapping(
+  revisionId: number,
+  mappingId: number,
+  body: CreateMappingRequest,
+  signal?: AbortSignal,
+): Promise<MappingView> {
+  return request<MappingView>(`/setup/revisions/${revisionId}/mappings/${mappingId}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
     signal,
   });
 }

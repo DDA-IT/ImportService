@@ -633,6 +633,51 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
       'geen geldig doel.',
     whatNow: 'Laad de versie opnieuw.',
   },
+  // G2c-3 — een extra veld vervangen: de server beslist of de bewerking(en) en de omzettingstabel kloppen.
+  CONFIG_TRANSFORM_INVALID: {
+    title: 'De bewerking van dit extra veld klopt niet',
+    explanation:
+      'De gekozen bewerking, de volgorde in de keten of een instelling ervan is niet toegelaten. Er is niets ' +
+      'gewijzigd: het extra veld staat er nog zoals het was.',
+    whatNow: 'Lees de servertekst hieronder, pas de bewerking aan en probeer opnieuw.',
+    showBackendDetail: true,
+  },
+  VALUE_MAP_SOURCE_REQUIRED: {
+    title: 'Een bronwaarde in de omzettingstabel ontbreekt',
+    explanation: 'Elke rij van de omzettingstabel heeft een bronwaarde nodig. Er is niets gewijzigd.',
+    whatNow: 'Vul de bronwaarde in of verwijder de rij.',
+    showBackendDetail: true,
+  },
+  VALUE_MAP_SOURCE_TOO_LONG: {
+    title: 'Een bronwaarde in de omzettingstabel is te lang',
+    explanation: 'Een bronwaarde mag hoogstens 50 tekens hebben. Er is niets gewijzigd.',
+    whatNow: 'Kort de bronwaarde in.',
+    showBackendDetail: true,
+  },
+  VALUE_MAP_SOURCE_DUPLICATE: {
+    title: 'Een bronwaarde staat dubbel in de omzettingstabel',
+    explanation: 'Elke bronwaarde mag hoogstens één keer voorkomen. Er is niets gewijzigd.',
+    whatNow: 'Verwijder of wijzig de dubbele rij.',
+    showBackendDetail: true,
+  },
+  VALUE_MAP_TARGET_REQUIRED: {
+    title: 'Een nieuwe waarde in de omzettingstabel ontbreekt',
+    explanation: 'Elke rij van de omzettingstabel heeft een nieuwe waarde nodig. Er is niets gewijzigd.',
+    whatNow: 'Vul de nieuwe waarde in.',
+    showBackendDetail: true,
+  },
+  VALUE_MAP_TARGET_TOO_LONG: {
+    title: 'Een nieuwe waarde in de omzettingstabel is te lang',
+    explanation: 'Een nieuwe waarde mag hoogstens 50 tekens hebben. Er is niets gewijzigd.',
+    whatNow: 'Kort de nieuwe waarde in.',
+    showBackendDetail: true,
+  },
+  VALUE_MAP_INVALID: {
+    title: 'De omzettingstabel klopt niet',
+    explanation: 'Een rij van de omzettingstabel is leeg of onbruikbaar. Er is niets gewijzigd.',
+    whatNow: 'Controleer de rijen van de tabel.',
+    showBackendDetail: true,
+  },
   FILTER_NOT_FOUND: {
     title: 'Recordfilter niet gevonden',
     explanation: 'Dit recordfilter bestaat niet (meer) op deze versie.',

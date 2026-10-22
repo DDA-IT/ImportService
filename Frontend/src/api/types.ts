@@ -785,6 +785,32 @@ export type MappingView = {
   transformConfig?: string | null;
 };
 
+/**
+ * be.dda.catalogimport.service.SetupService.CreateMappingCommand — body van `POST` én van `PUT
+ * /setup/revisions/{revisionId}/mappings/{mappingId}` (G2c-1; bij `PUT` bepaalt de server het volgnummer: dezelfde plaats).
+ * Doelveld, soort herkomst en kritiek komen ongewijzigd uit de te vervangen mapping.
+ */
+export type CreateMappingRequest = {
+  targetFieldCode: string;
+  sourceReference: string | null;
+  sequenceNumber: number | null;
+  valueKind: string;
+  expectedPosition: number | null;
+  fixedValue: string | null;
+  defaultValue: string | null;
+  required: boolean;
+  maxLength: number | null;
+  decimalScale: number | null;
+  zeroAllowed: boolean;
+  negativeAllowed: boolean;
+  transformKind: string;
+  transformConfig: string | null;
+  criticality: string;
+  createdBy: string | null;
+  valueMap: ValueMapEntryView[];
+  steps: TransformStepView[];
+};
+
 // be.dda.catalogimport.service.SetupService.FilterView — één recordfilter van een revisie.
 export type FilterView = {
   id: number;

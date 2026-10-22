@@ -139,6 +139,12 @@
   font-size: 0.875rem;
 }
 
+.rowActions {
+  display: flex;
+  gap: var(--spacing-2);
+  margin-left: auto;
+}
+
 .deleteButton {
   margin-left: auto;
 }

@@ -42,6 +42,7 @@ import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
 import { Term } from '../../terms/Term.tsx';
 import { ActivateRevisionAction } from './ActivateRevisionAction.tsx';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
+import { ReplaceMappingAction } from './MappingReplaceDialog.tsx';
 import { RevisionEditForm } from './RevisionEditForm.tsx';
 import { editGate } from './revisionPolicy.ts';
 import { isSetupApiDisabledError, SETUP_WRITE_API_DISABLED_MESSAGE } from './setupWriteFlag.ts';
@@ -448,14 +449,17 @@ function ChildRows({ revision, onChanged }: { revision: RevisionDetail; onChange
                 </span>
                 <MappingExtras mapping={mapping} />
                 {draft && (
-                  <DeleteChildRowAction
-                    revisionId={revision.id}
-                    status={revision.status}
-                    kind="mapping"
-                    rowId={mapping.id}
-                    description={`Extra veld #${mapping.sequenceNumber} naar "${termLabel('fieldKey', mapping.targetFieldCode, 'een ander veld')}"`}
-                    onDeleted={onChanged}
-                  />
+                  <span className={styles.rowActions}>
+                    <ReplaceMappingAction revision={revision} mapping={mapping} onReplaced={onChanged} />
+                    <DeleteChildRowAction
+                      revisionId={revision.id}
+                      status={revision.status}
+                      kind="mapping"
+                      rowId={mapping.id}
+                      description={`Extra veld #${mapping.sequenceNumber} naar "${termLabel('fieldKey', mapping.targetFieldCode, 'een ander veld')}"`}
+                      onDeleted={onChanged}
+                    />
+                  </span>
                 )}
               </li>
             ))}
