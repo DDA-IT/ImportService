@@ -441,7 +441,9 @@ geraakte bestaande rijen + (S5) de gelezen Prodis-rijen (leverancier: `number|na
   `CONNECT` op de database, `USAGE` op schema `public`, en `SELECT (id, number, name) ON supplier`,
   `SELECT (id, supplier_id, group_name, discount_code, legacy_code) ON supplier_group`,
   `SELECT (id, supplier_id, scope_key, legacy_number, catalog_name, status) ON supplier_catalog`; rechtstreekse tabellen, geen views
-  (A4). `prodis-reference-test-schema.sql` bevat exact deze kolommen.
+  (A4). `prodis-reference-test-schema.sql` bevat exact deze kolommen. **Uitgebreid in publicatie P1** met kolomrechten op
+  `catalog_article`, `catalog_article_price`, `catalog_article_price_detail`, `catalog_article_description`, `language` en
+  `system_settings`: zie `docs/openstaande-externe-punten.md` par. 8.
 - **Bewaren:** enkel businesscodes (`source_organisation.code` = `supplier.number`, `import_link.library_code` = `scope_key`, de
   Prodis-naam als `source_organisation.name` van een nieuwe organisatie); geen Prodis-id's, geen cross-DB-FK.
 - **Onbereikbaar:** 503 `PRODIS_DB_UNAVAILABLE` op de keuze-endpoints; PREVIEW → `PRODIS_REFERENCE_NOT_VERIFIED`,

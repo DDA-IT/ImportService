@@ -63,6 +63,53 @@ public final class ProdisReferenceTestDatabase {
                 + "values (?, ?, ?, ?, ?)", supplierId, scopeKey, legacyNumber, catalogName, status);
     }
 
+    public long insertLanguage(String code) {
+        return insert("insert into language (code) values (?)", code);
+    }
+
+    /** Vervangt alle {@code system_settings}-rijen door één rij met deze waarde ({@code null} = geen rij). */
+    public void setLegacyMaster(String legacyMaster) {
+        execute("delete from system_settings");
+        if (legacyMaster != null) {
+            execute("insert into system_settings (legacy_master) values (?)", legacyMaster);
+        }
+    }
+
+    public long insertArticle(long supplierId, long groupId, long catalogId, String referenceStripped,
+                              boolean active, boolean deleted) {
+        return insert("insert into catalog_article (supplier_id, supplier_group_id, supplier_catalog_id, "
+                        + "supplier_reference_stripped, record_active, deleted_at) values (?, ?, ?, ?, ?, ?)",
+                supplierId, groupId, catalogId, referenceStripped, active,
+                deleted ? java.sql.Timestamp.valueOf("2026-01-01 00:00:00") : null);
+    }
+
+    public long insertPrice(long articleId, String priceCode, String brutPricePolitics, java.math.BigDecimal basePrice,
+                            Double brutPrice, Double brutPricePercentage) {
+        return insert("insert into catalog_article_price (catalog_article_id, price_code, brut_price_politics, "
+                        + "base_price, brut_price, brut_price_percentage, sales_price_last_updated) "
+                        + "values (?, ?, ?, ?, ?, ?, timestamp '2026-02-03 04:05:06')",
+                articleId, priceCode, brutPricePolitics, basePrice, brutPrice, brutPricePercentage);
+    }
+
+    public long insertPriceDetail(long priceId, String code, Double percentage, Double price) {
+        return insert("insert into catalog_article_price_detail (catalog_article_price_id, code, percentage, price) "
+                + "values (?, ?, ?, ?)", priceId, code, percentage, price);
+    }
+
+    public long insertDescription(long articleId, long languageId, String description) {
+        return insert("insert into catalog_article_description (catalog_article_id, language_id, description) "
+                + "values (?, ?, ?)", articleId, languageId, description);
+    }
+
+    /** Maakt {@code system_settings} tijdelijk onbruikbaar; herstellen met {@link #restoreSystemSettings()}. */
+    public void breakSystemSettings() {
+        execute("alter table system_settings rename to system_settings_unavailable");
+    }
+
+    public void restoreSystemSettings() {
+        execute("alter table system_settings_unavailable rename to system_settings");
+    }
+
     public void execute(String sql, Object... args) {
         try (Connection connection = connect(); PreparedStatement statement = connection.prepareStatement(sql)) {
             for (int i = 0; i < args.length; i++) {

@@ -1,6 +1,8 @@
 package be.dda.catalogimport.service;
 
 import be.dda.catalogimport.dao.ProdisReferenceDao;
+import be.dda.catalogimport.dao.ProdisReferenceDao.CatalogArticleIdentity;
+import be.dda.catalogimport.dao.ProdisReferenceDao.CatalogArticleLookup;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierCatalogRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierGroupRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierRow;
@@ -216,6 +218,81 @@ public class ProdisReferenceService {
             return readFixedIdentity(supplierNumber, groupSupplierNumber);
         } catch (DataAccessException failure) {
             throw unavailable(failure);
+        }
+    }
+
+    // --- Publicatie-parallelrun (P1; docs/design/publicatie-prodis-db-direct-design.md par. 5) --------------------
+
+    /** De modus van Prodis ({@code system_settings.legacy_master}); {@code UNKNOWN} = niet gelezen of onleesbaar. */
+    public enum LegacyMasterMode {
+        NONE, PRODIS, PROFAB, UNKNOWN
+    }
+
+    /**
+     * @param availability {@code NOT_CONFIGURED}, {@code UNAVAILABLE} (onbereikbaar, of tabel/kolom/rechten ontbreken) of
+     *                     {@code VERIFIED}
+     * @param mode         {@code UNKNOWN} tenzij {@code VERIFIED}; ook {@code UNKNOWN} bij een onbekende waarde in Prodis
+     */
+    public record LegacyMasterReading(Availability availability, LegacyMasterMode mode) {
+    }
+
+    /**
+     * Leest de modus van Prodis: de eerste rij op id; <b>geen rij = PRODIS</b> (zoals Prodis' {@code LegacyMasterResolver}).
+     * Een fout of een onbekende waarde wordt nooit stil een default: {@code UNAVAILABLE} resp. {@code UNKNOWN}. Gooit
+     * nooit; de aanroeper toont "onbekend" en weigert niets (design par. 5).
+     */
+    public LegacyMasterReading legacyMaster() {
+        if (!dao.isConfigured()) {
+            return new LegacyMasterReading(Availability.NOT_CONFIGURED, LegacyMasterMode.UNKNOWN);
+        }
+        try {
+            List<String> rows = dao.readLegacyMaster();
+            if (rows.isEmpty()) {
+                return new LegacyMasterReading(Availability.VERIFIED, LegacyMasterMode.PRODIS);
+            }
+            String raw = rows.get(0);
+            LegacyMasterMode mode = LegacyMasterMode.UNKNOWN;
+            for (LegacyMasterMode candidate : LegacyMasterMode.values()) {
+                if (candidate != LegacyMasterMode.UNKNOWN && candidate.name().equals(raw)) {
+                    mode = candidate;
+                }
+            }
+            if (mode == LegacyMasterMode.UNKNOWN) {
+                LOG.warn("Unreadable system_settings.legacy_master value in Prodis; treated as unknown");
+            }
+            return new LegacyMasterReading(Availability.VERIFIED, mode);
+        } catch (DataAccessException failure) {
+            logUnavailable(failure);
+            return new LegacyMasterReading(Availability.UNAVAILABLE, LegacyMasterMode.UNKNOWN);
+        }
+    }
+
+    /**
+     * @param availability {@code NOT_CONFIGURED} of {@code UNAVAILABLE}: {@code lookups} is dan leeg (nooit "niet
+     *                     gevonden" als antwoord op een fout)
+     * @param lookups      één element per verschillende identiteit, in volgorde van de invoer; zonder Prodis-id's
+     */
+    public record CatalogArticleLookups(Availability availability, List<CatalogArticleLookup> lookups) {
+
+        public CatalogArticleLookups {
+            lookups = List.copyOf(lookups);
+        }
+    }
+
+    /**
+     * Leest de catalogusrijen voor de publicatie-parallelrun, in batches (geen N+1). Gooit nooit voor "uit" of
+     * "onbereikbaar"; de planner bepaalt uit de vorm {@code ARTICLE_NOT_FOUND}, {@code ARTICLE_AMBIGUOUS},
+     * {@code SUPPLIER_AMBIGUOUS} en {@code PRODIS_ROW_SHAPE_UNSUPPORTED}.
+     */
+    public CatalogArticleLookups lookupCatalogArticles(List<CatalogArticleIdentity> identities) {
+        if (!dao.isConfigured()) {
+            return new CatalogArticleLookups(Availability.NOT_CONFIGURED, List.of());
+        }
+        try {
+            return new CatalogArticleLookups(Availability.VERIFIED, dao.findCatalogArticles(identities));
+        } catch (DataAccessException failure) {
+            logUnavailable(failure);
+            return new CatalogArticleLookups(Availability.UNAVAILABLE, List.of());
         }
     }
 

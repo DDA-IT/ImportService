@@ -180,3 +180,34 @@ leverancier(s) als bron.
 
 **Blokkeert:** niet de bouwstappen K-2 t/m K-4a/b in dev en test (embedded testserver). Wél de eerste
 echte ophaling bij een leverancier en de productie-inzet.
+
+## 8. Prodis-leesrol `catalogimport_ro`: extra SELECT-rechten voor de publicatie-parallelrun (P1)
+
+**Wat is nodig:** `catalogimport_ro` (alleen-lezen, `default_transaction_read_only=on`; zie
+`docs/design/legacy-config-bundle-design.md` par. 6) krijgt bovenop de bestaande drie GRANTs kolomrechten op de
+catalogustabellen, `language` en `system_settings`. Enkel `SELECT`, geen `UPDATE`/`INSERT`; de schrijfrol
+`catalogimport_pub` volgt in P5a (`docs/design/publicatie-prodis-db-direct-design.md` par. 2.3). Kolomnamen bevestigd tegen de
+Prodis-Liquibase en de lokale Prodis-database.
+
+```sql
+-- Bestaand (S5): supplier(id, number, name), supplier_group(id, supplier_id, group_name, discount_code, legacy_code),
+--                supplier_catalog(id, supplier_id, scope_key, legacy_number, catalog_name, status)
+-- Nieuw (P1):
+GRANT SELECT (id, code) ON language TO catalogimport_ro;
+GRANT SELECT (id, legacy_master) ON system_settings TO catalogimport_ro;
+GRANT SELECT (id, supplier_id, supplier_group_id, supplier_catalog_id, supplier_reference_stripped,
+              record_active, deleted_at) ON catalog_article TO catalogimport_ro;
+GRANT SELECT (id, catalog_article_id, price_code, brut_price_politics, base_price, brut_price,
+              brut_price_percentage, sales_price_last_updated, record_active, deleted_at)
+      ON catalog_article_price TO catalogimport_ro;
+GRANT SELECT (id, catalog_article_price_id, code, percentage, price, record_active, deleted_at)
+      ON catalog_article_price_detail TO catalogimport_ro;
+GRANT SELECT (id, catalog_article_id, language_id, description, record_active, deleted_at)
+      ON catalog_article_description TO catalogimport_ro;
+```
+
+**Wie levert dit:** Jeff/DDA-infra (of de DBA van de Prodis-database).
+
+**Blokkeert:** niet de bouw (de H2-testbron bevat deze kolommen). Wel de parallelrun (P2c) en de modusweergave
+tegen een echte Prodis-database: zonder deze rechten geeft de leesbron `UNAVAILABLE` (fail-closed, nooit "niet gevonden"
+of een stille standaardmodus).

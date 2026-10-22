@@ -2898,3 +2898,9 @@ wachten. Elke zo genomen keuze wordt hier gelogd met de vermelding **"aanbevelin
 achteraf in één keer kan overlopen en aanpassingen in kaart brengen. Bestaande bindende beslissingen blijven gelden; een aanbeveling die er
 een zou herroepen wordt niet stil gevolgd maar als open punt gemarkeerd.
 **Bron:** mens
+
+## 2026-10-22 — P1: ontbrekende tabel/kolom bij `legacy_master`
+**Vraag:** Ontbrekende rij én ontbrekende tabel/kolom → PRODIS (opdracht) of enkel ontbrekende rij?
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** enkel een ontbrekende **rij** geeft PRODIS (zoals Prodis
+`LegacyMasterResolver`); een ontbrekende tabel/kolom of ontbrekende rechten is een fout → `UNAVAILABLE` ("nooit stil een default bij een fout").
+**Bron:** P1-bouwerrapport

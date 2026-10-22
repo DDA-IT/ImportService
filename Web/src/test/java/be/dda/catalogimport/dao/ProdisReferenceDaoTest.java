@@ -5,6 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import be.dda.catalogimport.config.ProdisReadOnlyDatabaseConfiguration;
 import be.dda.catalogimport.config.ProdisReferenceDatabaseProperties;
+import be.dda.catalogimport.dao.ProdisReferenceDao.CatalogArticleDescriptionRow;
+import be.dda.catalogimport.dao.ProdisReferenceDao.CatalogArticleIdentity;
+import be.dda.catalogimport.dao.ProdisReferenceDao.CatalogArticleLookup;
+import be.dda.catalogimport.dao.ProdisReferenceDao.CatalogArticlePriceDetailRow;
+import be.dda.catalogimport.dao.ProdisReferenceDao.CatalogArticlePriceRow;
+import be.dda.catalogimport.dao.ProdisReferenceDao.CatalogArticleRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierCatalogRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierGroupRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierRow;
@@ -14,8 +20,14 @@ import be.dda.catalogimport.service.ProdisReferenceNotConfiguredException;
 import be.dda.catalogimport.service.ProdisReferenceService;
 import be.dda.catalogimport.service.ProdisReferenceService.Availability;
 import be.dda.catalogimport.service.ProdisReferenceService.LegacyLookup;
+import be.dda.catalogimport.service.ProdisReferenceService.CatalogArticleLookups;
+import be.dda.catalogimport.service.ProdisReferenceService.LegacyMasterMode;
+import be.dda.catalogimport.service.ProdisReferenceService.LegacyMasterReading;
 import be.dda.catalogimport.service.ProdisReferenceUnavailableException;
 import be.dda.catalogimport.testsupport.ProdisReferenceTestDatabase;
+import java.lang.reflect.RecordComponent;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -71,6 +83,7 @@ class ProdisReferenceDaoTest {
         PRODIS.insertCatalog(acme, "107", "106", "ACME PROMO", "IMPORTED");
         PRODIS.insertCatalog(acme, "2", "2", "ACME TWO", "ACTIVE");
         PRODIS.insertCatalog(other, "106", "106", "OTHER", "ACTIVE");
+        seedCatalog();
     }
 
     @AfterAll
@@ -200,6 +213,195 @@ class ProdisReferenceDaoTest {
                 .isInstanceOf(BadRequestException.class)
                 .extracting("code").isEqualTo(ProdisReferenceService.CODE_QUERY_INVALID);
         assertThat(service.searchSuppliers("x".repeat(100))).isEmpty();
+    }
+
+    // --- P1: legacy_master en catalogusrij voor de publicatie-parallelrun ---------------------------------------------
+
+    private static CatalogArticleIdentity id(String number, String group, String scope, String reference) {
+        return new CatalogArticleIdentity(number, group, scope, reference);
+    }
+
+    private static void seedCatalog() {
+        long nl = PRODIS.insertLanguage("NL");
+        long en = PRODIS.insertLanguage("EN");
+        long supplier = PRODIS.insertSupplier("PS1", "Pub one");
+        long group = PRODIS.insertGroup(supplier, "PS1|10|", "10", "");
+        long active = PRODIS.insertCatalog(supplier, "S1", "S1", "ACTIVE ONE", "ACTIVE");
+        long superseded = PRODIS.insertCatalog(supplier, "S1", "S1", "OLD ONE", "SUPERSEDED");
+
+        long ref1 = PRODIS.insertArticle(supplier, group, active, "REF1", true, false);
+        long price = PRODIS.insertPrice(ref1, "0", "N", new BigDecimal("12.345678"), 20.5, 5.0);
+        for (int i = 1; i <= 5; i++) {
+            PRODIS.insertPriceDetail(price, String.valueOf(i), i * 10.0, i * 1.5);
+        }
+        PRODIS.insertDescription(ref1, nl, "Hamer");
+        PRODIS.insertDescription(ref1, en, "Hammer");
+
+        // Vorm: artikel zonder prijsrij en zonder omschrijving.
+        PRODIS.insertArticle(supplier, group, active, "NOPRICE", true, false);
+        // Dubbel: twee artikelen met dezelfde identiteit.
+        PRODIS.insertArticle(supplier, group, active, "DUPREF", true, false);
+        PRODIS.insertArticle(supplier, group, active, "DUPREF", true, false);
+        // Verwijderd/inactief blijft zichtbaar met vlaggen; de planner beslist.
+        PRODIS.insertArticle(supplier, group, active, "GONE", false, true);
+        // Hoort bij de niet-actieve bibliotheekrij: geen treffer voor deze identiteit.
+        PRODIS.insertArticle(supplier, group, superseded, "OLDCAT", true, false);
+
+        // Twee leveranciers met hetzelfde nummer.
+        for (String name : List.of("Twin A", "Twin B")) {
+            long twin = PRODIS.insertSupplier("PTWIN", name);
+            long twinGroup = PRODIS.insertGroup(twin, "PTWIN|10|", "10", "");
+            long twinCatalog = PRODIS.insertCatalog(twin, "T1", "T1", "TWIN", "ACTIVE");
+            PRODIS.insertArticle(twin, twinGroup, twinCatalog, "TW1", true, false);
+        }
+
+        // Meer dan een batch.
+        long bulk = PRODIS.insertSupplier("PBULK", "Bulk");
+        long bulkGroup = PRODIS.insertGroup(bulk, "PBULK|10|", "10", "");
+        long bulkCatalog = PRODIS.insertCatalog(bulk, "B1", "B1", "BULK", "ACTIVE");
+        for (int i = 0; i < ProdisReferenceDao.CATALOG_BATCH_SIZE + 5; i++) {
+            long article = PRODIS.insertArticle(bulk, bulkGroup, bulkCatalog, "BULK" + i, true, false);
+            PRODIS.insertPrice(article, "0", "N", new BigDecimal(i), null, null);
+        }
+    }
+
+    @Test
+    void legacyMasterIsReadFromTheFirstRowAndAMissingRowMeansProdis() {
+        for (String value : List.of("NONE", "PRODIS", "PROFAB")) {
+            PRODIS.setLegacyMaster(value);
+            assertThat(service.legacyMaster()).isEqualTo(new LegacyMasterReading(Availability.VERIFIED,
+                    LegacyMasterMode.valueOf(value)));
+        }
+        PRODIS.setLegacyMaster(null);
+        assertThat(service.legacyMaster()).isEqualTo(new LegacyMasterReading(Availability.VERIFIED,
+                LegacyMasterMode.PRODIS));
+
+        // Eerste rij op id wint.
+        PRODIS.setLegacyMaster("NONE");
+        PRODIS.execute("insert into system_settings (legacy_master) values ('PROFAB')");
+        assertThat(service.legacyMaster().mode()).isEqualTo(LegacyMasterMode.NONE);
+    }
+
+    @Test
+    void anUnreadableLegacyMasterIsUnknownNeverADefault() {
+        PRODIS.setLegacyMaster("GARBAGE");
+        assertThat(service.legacyMaster()).isEqualTo(new LegacyMasterReading(Availability.VERIFIED,
+                LegacyMasterMode.UNKNOWN));
+    }
+
+    @Test
+    void anUnavailableSourceIsUnavailableForLegacyMasterNotProdis() throws Exception {
+        PRODIS.setLegacyMaster("NONE");
+        PRODIS.breakSystemSettings();
+        try {
+            assertThat(service.legacyMaster()).isEqualTo(new LegacyMasterReading(Availability.UNAVAILABLE,
+                    LegacyMasterMode.UNKNOWN));
+        } finally {
+            PRODIS.restoreSystemSettings();
+        }
+        ProdisReferenceService off = new ProdisReferenceService(new ProdisReferenceDao(provider(null)));
+        assertThat(off.legacyMaster()).isEqualTo(new LegacyMasterReading(Availability.NOT_CONFIGURED,
+                LegacyMasterMode.UNKNOWN));
+        assertThat(off.lookupCatalogArticles(List.of(id("PS1", "PS1|10|", "S1", "REF1"))))
+                .isEqualTo(new CatalogArticleLookups(Availability.NOT_CONFIGURED, List.of()));
+    }
+
+    @Test
+    void aCatalogRowIsReadWithPriceDetailsAndDutchDescription() {
+        CatalogArticleLookups result = service.lookupCatalogArticles(List.of(id("PS1", "PS1|10|", "S1", "REF1")));
+        assertThat(result.availability()).isEqualTo(Availability.VERIFIED);
+        CatalogArticleLookup lookup = result.lookups().get(0);
+        assertThat(lookup.supplierCount()).isEqualTo(1);
+        assertThat(lookup.articles()).hasSize(1);
+        CatalogArticleRow article = lookup.articles().get(0);
+        assertThat(article.active()).isTrue();
+        assertThat(article.deleted()).isFalse();
+        assertThat(article.descriptions()).containsExactly(new CatalogArticleDescriptionRow("Hamer", true, false));
+        assertThat(article.prices()).hasSize(1);
+        CatalogArticlePriceRow price = article.prices().get(0);
+        assertThat(price.priceCode()).isEqualTo("0");
+        assertThat(price.brutPricePolitics()).isEqualTo("N");
+        assertThat(price.basePrice()).isEqualByComparingTo("12.345678");
+        assertThat(price.brutPrice()).isEqualTo(20.5);
+        assertThat(price.brutPricePercentage()).isEqualTo(5.0);
+        assertThat(price.salesPriceLastUpdated()).isEqualTo(LocalDateTime.of(2026, 2, 3, 4, 5, 6));
+        assertThat(price.details()).extracting(CatalogArticlePriceDetailRow::code)
+                .containsExactly("1", "2", "3", "4", "5");
+        assertThat(price.details().get(2)).isEqualTo(new CatalogArticlePriceDetailRow("3", 30.0, 4.5, true, false));
+    }
+
+    @Test
+    void notFoundDuplicateAndShapeDeviationsAreVisibleInTheLookup() {
+        List<CatalogArticleLookup> lookups = service.lookupCatalogArticles(List.of(
+                id("PS1", "PS1|10|", "S1", "MISSING"),
+                id("PS1", "PS1|20|", "S1", "REF1"),
+                id("PS1", "PS1|10|", "S2", "REF1"),
+                id("PS1", "PS1|10|", "S1", "ref1"),
+                id("PS1", "PS1|10|", "S1", "OLDCAT"),
+                id("PS1", "PS1|10|", "S1", "DUPREF"),
+                id("PS1", "PS1|10|", "S1", "NOPRICE"),
+                id("PS1", "PS1|10|", "S1", "GONE"),
+                id("NOSUCH", "PS1|10|", "S1", "REF1"))).lookups();
+        assertThat(lookups).hasSize(9);
+        for (int i : new int[] {0, 1, 2, 3, 4, 8}) {
+            assertThat(lookups.get(i).articles()).as("identity %d", i).isEmpty();
+        }
+        assertThat(lookups.get(8).supplierCount()).isZero();
+        assertThat(lookups.get(5).articles()).hasSize(2);
+        CatalogArticleRow noPrice = lookups.get(6).articles().get(0);
+        assertThat(noPrice.prices()).isEmpty();
+        assertThat(noPrice.descriptions()).isEmpty();
+        CatalogArticleRow gone = lookups.get(7).articles().get(0);
+        assertThat(gone.active()).isFalse();
+        assertThat(gone.deleted()).isTrue();
+    }
+
+    @Test
+    void aDuplicateSupplierNumberIsReportedAsSuch() {
+        CatalogArticleLookup lookup = service.lookupCatalogArticles(List.of(id("PTWIN", "PTWIN|10|", "T1", "TW1")))
+                .lookups().get(0);
+        assertThat(lookup.supplierCount()).isEqualTo(2);
+        assertThat(lookup.articles()).hasSize(2);
+    }
+
+    @Test
+    void manyIdentitiesAreReadInBatchesInInputOrderAndDuplicatesCollapse() {
+        List<CatalogArticleIdentity> identities = new java.util.ArrayList<>();
+        for (int i = 0; i < ProdisReferenceDao.CATALOG_BATCH_SIZE + 5; i++) {
+            identities.add(id("PBULK", "PBULK|10|", "B1", "BULK" + i));
+        }
+        identities.add(id("PBULK", "PBULK|10|", "B1", "BULK0"));
+        identities.add(id("PBULK", "PBULK|10|", "B1", "NOPE"));
+        List<CatalogArticleLookup> lookups = service.lookupCatalogArticles(identities).lookups();
+        assertThat(lookups).hasSize(ProdisReferenceDao.CATALOG_BATCH_SIZE + 6);
+        assertThat(lookups).extracting(l -> l.identity().supplierReferenceStripped())
+                .startsWith("BULK0", "BULK1").endsWith("BULK204", "NOPE");
+        assertThat(lookups.subList(0, ProdisReferenceDao.CATALOG_BATCH_SIZE + 5))
+                .allSatisfy(l -> assertThat(l.articles()).hasSize(1));
+        assertThat(lookups.get(ProdisReferenceDao.CATALOG_BATCH_SIZE + 5).articles()).isEmpty();
+        assertThat(lookups.get(204).articles().get(0).prices().get(0).basePrice()).isEqualByComparingTo("204");
+        assertThat(service.lookupCatalogArticles(List.of()).lookups()).isEmpty();
+    }
+
+    @Test
+    void aFailingSourceMakesTheCatalogLookupUnavailableNeverNotFound() {
+        PRODIS.breakSource();
+        try {
+            assertThat(service.lookupCatalogArticles(List.of(id("PS1", "PS1|10|", "S1", "REF1"))))
+                    .isEqualTo(new CatalogArticleLookups(Availability.UNAVAILABLE, List.of()));
+        } finally {
+            PRODIS.restore();
+        }
+    }
+
+    @Test
+    void theProjectionCarriesNoProdisIds() {
+        for (Class<?> type : List.of(CatalogArticleLookup.class, CatalogArticleRow.class, CatalogArticlePriceRow.class,
+                CatalogArticlePriceDetailRow.class, CatalogArticleDescriptionRow.class,
+                CatalogArticleIdentity.class)) {
+            assertThat(type.getRecordComponents()).extracting(RecordComponent::getName)
+                    .noneMatch(name -> name.equals("id") || name.endsWith("Id") || name.endsWith("Ids"));
+        }
     }
 
     private static ObjectProvider<ProdisReferenceJdbc> provider(ProdisReferenceJdbc bean) {
