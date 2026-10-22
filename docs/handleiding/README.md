@@ -777,6 +777,7 @@ Draai altijd gericht, **nooit de hele reactor**. Voorbeelden:
 mvn -pl Web -am test "-Dtest=SetupApiDisabledTest,SetupApiFlowTest,DemoDataSeederTest" -Dsurefire.failIfNoSpecifiedTests=false
 mvn -pl Web -am test "-Dtest=DeliveryUploadTest,DeliveryScreeningFlowTest,AcceptBaselineReviewFlowTest,BatchBaselineHttpTest" -Dsurefire.failIfNoSpecifiedTests=false
 ```
+Tests schrijven nooit in het schema `public`: de test-configuratie (`Web/src/test/resources/config/`, `Dao/src/test/resources/application.yml`) gebruikt standaard het schema `ci_test` in dezelfde lokale database (wordt automatisch aangemaakt; andere database/schema via `CATALOG_TEST_DB_URL`). `scripts/test/run-full-tests.ps1` geeft zijn eigen schema `ci_fulltest` mee via `-Dspring.datasource.url`, dat blijft winnen.
 
 - Neem **maximaal ongeveer 4 testklassen per run**: een groot aantal `@SpringBootTest`-klassen in één
   Maven-run kan de PostgreSQL-verbindingen uitputten (*remaining connection slots are reserved…*). Draai

@@ -1,0 +1,13 @@
+# Test-only (docs/decisions.md 2026-10-22): testcontexten schrijven nooit in het lokale schema public.
+# classpath:/config/ heeft voorrang op classpath:/application.yml (die blijft gewoon geladen; enkel deze sleutels worden
+# overschreven). Systeemproperties winnen nog steeds: scripts/test/run-full-tests.ps1 geeft -Dspring.datasource.url
+# mee (schema ci_fulltest) en dat blijft gelden. Eigen database/schema: CATALOG_TEST_DB_URL.
+# De profielbestanden application-local.yml en application-demo.yml (main) zetten zelf een url en winnen van dit
+# bestand; daarom bestaan er ook config/application-local.yml en config/application-demo.yml in deze map.
+spring:
+  datasource:
+    url: ${CATALOG_TEST_DB_URL:jdbc:postgresql://localhost:5432/catalog_import?currentSchema=ci_test}
+    hikari:
+      # currentSchema zet enkel de search_path; het schema moet bestaan voor Liquibase draait. Bij een override
+      # (bv. ci_fulltest) ontstaat hierdoor hooguit een leeg ci_test, nooit data in public.
+      connection-init-sql: create schema if not exists ci_test

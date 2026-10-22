@@ -1,0 +1,5 @@
+# Test-only (docs/decisions.md 2026-10-22): testcontexten schrijven nooit in het lokale schema public.
+# Profiel demo zet in main een eigen datasource-url (public); in tests geldt de url uit config/application.yml.
+spring:
+  datasource:
+    url: ${CATALOG_TEST_DB_URL:jdbc:postgresql://localhost:5432/catalog_import?currentSchema=ci_test}

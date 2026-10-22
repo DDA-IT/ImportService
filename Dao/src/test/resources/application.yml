@@ -3,10 +3,13 @@
 # -Dspring.datasource.url in de argLine.
 spring:
   datasource:
-    url: ${CATALOG_DB_URL:jdbc:postgresql://localhost:5432/catalog_import}
+    # Standaard schema ci_test, nooit public (docs/decisions.md 2026-10-22); CATALOG_TEST_DB_URL om te wijzigen.
+    url: ${CATALOG_TEST_DB_URL:jdbc:postgresql://localhost:5432/catalog_import?currentSchema=ci_test}
     username: ${CATALOG_DB_USERNAME:catalog_import}
     password: ${CATALOG_DB_PASSWORD:catalog_import}
     hikari:
+      # currentSchema zet enkel de search_path; het schema moet bestaan voor Liquibase draait.
+      connection-init-sql: create schema if not exists ci_test
       data-source-properties:
         logServerErrorDetail: false
   jpa:

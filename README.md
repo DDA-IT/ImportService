@@ -564,6 +564,7 @@ rond de hele parameter.)
 
 Veel `@SpringBootTest`-klassen in één Maven-run kunnen de PostgreSQL-verbindingen uitputten (foutmelding
 *remaining connection slots are reserved…*). Draai de klassen dan los of in kleine groepen.
+Tests schrijven nooit in het schema `public`: de test-configuratie (`Web/src/test/resources/config/`, `Dao/src/test/resources/application.yml`) gebruikt standaard het schema `ci_test` in dezelfde lokale database (wordt automatisch aangemaakt; andere database/schema via `CATALOG_TEST_DB_URL`). `scripts/test/run-full-tests.ps1` geeft zijn eigen schema `ci_fulltest` mee via `-Dspring.datasource.url`, dat blijft winnen.
 
 ### Volledige testronde in een eigen schema
 
