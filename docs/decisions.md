@@ -3108,3 +3108,15 @@ Open punten (aanbeveling gevolgd — door de mens te herzien): V-a menselijke `P
 V-b host zonder schema met SFTP-hint gezet -> niet bewaren tot ProDisWebbase-gedrag gekend is; V-c API via `http://` wordt
 bewaard (enkel bewaring; de latere connector beslist over TLS).
 **Bron:** denker-zwaar (LF-ontwerp) / legacy-config-bundle-design.md, legacy-config-bundle-v1.md, vault Prg_1232
+
+## 2026-10-22 — Redesign ontvangstdetail legacy-config (kaarten)
+**Vraag:** De mens vroeg een redesign van `/setup/legacy-config/:id` met kaarten om fouten e.d. te raadplegen.
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** enkel frontend, geen API-wijziging. Kop met status,
+herkomstregel en acties (Controle opnieuw / Overnemen… / Verwerpen…) bovenaan; daaronder een kaartenrooster met teller en
+toplijn: Blokkeert, Waarschuwingen (WARNING + NOT_MIGRATED, aparte groepen in het paneel), Overgenomen/gepland, Wachtwoord
+(nooit een waarde), Importdefinitie, Bestemming/verbinding; Prodis-controle als regel/chip in de kop. In-place uitklappen,
+één detailpaneel tegelijk onder het rooster (geen drawer, geen tabs); standaard Blokkeert open als n > 0. Keuzes als eigen
+inklapbare kaart, open zolang er een blokkerend punt is. Probleemkaarten per punt met Nederlandse omschrijving van het
+legacy-onderdeel bovenaan en ruwe codes enkel in Technische details (noRawCodes blijft). Groeperen op code boven 5 gelijke
+punten, zoek/filter boven 8 punten. Geen historiekkaart (vraagt API). Bestaande testids blijven.
+**Bron:** denker-gemiddeld (redesign-voorstel) / decisions.md 2026-10-20 Frontend-ombouw
