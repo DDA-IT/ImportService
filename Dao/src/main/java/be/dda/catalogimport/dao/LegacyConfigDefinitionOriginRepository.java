@@ -4,13 +4,29 @@ import be.dda.catalogimport.domain.LegacyConfigDefinitionOrigin;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
-/** Changeset 020-3 ({@code 021-legacy-config-definition-origin.sql}); slice S2 van de legacy-config-migratie. */
+/**
+ * Changeset 020-3 ({@code 021-legacy-config-definition-origin.sql}); slice S2 van de legacy-config-migratie. Sinds G2a
+ * (changeset 026-1) staan hier twee soorten rijen: groepen en losgekoppelde kopieën
+ * ({@link LegacyConfigDefinitionOrigin#isDetached()}). De groepsherkenning leest <b>enkel groepen</b>: een kopie trekt
+ * nooit leden aan en mag dezelfde inhoudshash hebben als haar groep.
+ */
 public interface LegacyConfigDefinitionOriginRepository extends JpaRepository<LegacyConfigDefinitionOrigin, Long> {
 
+    /**
+     * De <b>groep</b> met deze groepssleutel (hoogstens één: {@code uk_legacy_config_definition_origin} met
+     * {@code group_marker = TRUE}). Een losgekoppelde kopie met dezelfde hash telt niet mee (G2a, 026-1).
+     */
+    @Query("select o from LegacyConfigDefinitionOrigin o where o.originEnvironment = :environment "
+            + "and o.originDossier = :dossier and o.supplierCode = :supplierCode "
+            + "and o.definitionContentHash = :definitionContentHash and o.groupMarker = true")
     Optional<LegacyConfigDefinitionOrigin>
             findByOriginEnvironmentAndOriginDossierAndSupplierCodeAndDefinitionContentHash(
-                    String originEnvironment, String originDossier, String supplierCode, String definitionContentHash);
+                    @Param("environment") String originEnvironment, @Param("dossier") String originDossier,
+                    @Param("supplierCode") String supplierCode,
+                    @Param("definitionContentHash") String definitionContentHash);
 
     /** De herkomstrijen van een definitie; leeg = een handmatige definitie (nooit een migratiedoel). */
     List<LegacyConfigDefinitionOrigin> findByImportDefinitionIdOrderByIdAsc(Long importDefinitionId);
@@ -18,9 +34,19 @@ public interface LegacyConfigDefinitionOriginRepository extends JpaRepository<Le
     boolean existsByImportDefinitionId(Long importDefinitionId);
 
     /**
-     * S7: de groepen van een leverancier in een omgeving/dossier, om een gedeelde definitie ook op de legacy-code te
-     * herkennen ({@code legacy_definition_codes}); vaste volgorde op id.
+     * S7: de <b>groepen</b> van een leverancier in een omgeving/dossier, om een gedeelde definitie ook op de legacy-code
+     * te herkennen ({@code legacy_definition_codes}); vaste volgorde op id. Losgekoppelde kopieën (G2a) niet.
      */
+    @Query("select o from LegacyConfigDefinitionOrigin o where o.originEnvironment = :environment "
+            + "and o.originDossier = :dossier and o.supplierCode = :supplierCode and o.groupMarker = true "
+            + "order by o.id asc")
     List<LegacyConfigDefinitionOrigin> findByOriginEnvironmentAndOriginDossierAndSupplierCodeOrderByIdAsc(
-            String originEnvironment, String originDossier, String supplierCode);
+            @Param("environment") String originEnvironment, @Param("dossier") String originDossier,
+            @Param("supplierCode") String supplierCode);
+
+    /**
+     * G2a: de losgekoppelde kopie van een interface (hoogstens één: {@code uk_legacy_config_definition_origin_detached}).
+     */
+    Optional<LegacyConfigDefinitionOrigin> findByOriginEnvironmentAndOriginDossierAndDetachedInterfaceCode(
+            String originEnvironment, String originDossier, String detachedInterfaceCode);
 }

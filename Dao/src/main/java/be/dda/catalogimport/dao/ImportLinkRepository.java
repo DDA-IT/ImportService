@@ -29,6 +29,17 @@ public interface ImportLinkRepository extends JpaRepository<ImportLink, Long> {
     @Query("select l from ImportLink l where l.id = :id")
     Optional<ImportLink> findByIdForUpdateNowait(@Param("id") Long id);
 
+    /**
+     * De koppeling met een schrijfslot tot het einde van de transactie, <b>wachtend</b> (G2a, loskoppelen): het verleggen
+     * van de definitie van een koppeling mag niet samenvallen met een andere schrijver op die koppeling. Slotvolgorde
+     * van de aanroeper: eerst de taken van de koppeling ({@link CatalogImportTaskRepository#findByImportLinkIdForUpdate},
+     * het slot van elke intake en ophaalrun), dan de koppeling. Moet de eerste lezing van de koppeling in de transactie
+     * zijn: een reeds geladen entiteit wordt door een slotquery niet ververst.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select l from ImportLink l where l.id = :id")
+    Optional<ImportLink> findByIdForUpdate(@Param("id") Long id);
+
     List<ImportLink> findByImportDefinitionId(Long importDefinitionId);
 
     List<ImportLink> findByLibraryCode(String libraryCode);

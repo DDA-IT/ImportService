@@ -58,3 +58,5 @@ databaseChangeLog:
       file: db/changelog/024-field-transform-step.sql
   - include:
       file: db/changelog/025-record-filter-match-group.sql
+  - include:
+      file: db/changelog/026-legacy-config-detach.sql
