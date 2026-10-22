@@ -7,6 +7,8 @@ import be.dda.catalogimport.service.LegacyConfigApplyService;
 import be.dda.catalogimport.service.LegacyConfigApplyService.ApplyCommand;
 import be.dda.catalogimport.service.LegacyConfigApplyService.ApplyOptions;
 import be.dda.catalogimport.service.LegacyConfigApplyService.ApplyResult;
+import be.dda.catalogimport.service.LegacyConfigApplyService.DiscardCommand;
+import be.dda.catalogimport.service.LegacyConfigApplyService.DiscardResult;
 import be.dda.catalogimport.service.LegacyConfigApplyService.PreviewResult;
 import be.dda.catalogimport.service.LegacyBundleParser;
 import be.dda.catalogimport.service.LegacyConfigReceiptService;
@@ -145,6 +147,18 @@ public class CatalogImportLegacyConfigController {
     ApplyResult apply(@PathVariable("receiptId") long receiptId,
                       @RequestBody(required = false) ApplyCommand request) {
         return applies.apply(receiptId, request, currentActor.signer(null, "appliedBy"));
+    }
+
+    /**
+     * DISCARD (G1): {@code {reason}} → 200 {@code {receiptId, receiptStatus: DISCARDED}}. 400
+     * {@code LEGACY_DISCARD_REASON_REQUIRED}; 404 {@code LEGACY_RECEIPT_NOT_FOUND}; 409
+     * {@code LEGACY_RECEIPT_NOT_APPLICABLE} (enkel een {@code RECEIVED} ontvangst kan verworpen worden).
+     */
+    @RequiresPermission(Permission.MANAGE)
+    @PostMapping("/receipts/{receiptId}/discard")
+    DiscardResult discard(@PathVariable("receiptId") long receiptId,
+                          @RequestBody(required = false) DiscardCommand request) {
+        return applies.discard(receiptId, request, currentActor.signer(null, "discardedBy"));
     }
 
     /**

@@ -8,6 +8,8 @@ import type {
   LegacyApplyChoices,
   LegacyApplyRequest,
   LegacyApplyResult,
+  LegacyDiscardRequest,
+  LegacyDiscardResult,
   LegacyPreviewResult,
   LegacyReceiptDetail,
   LegacyReceiptRow,
@@ -58,6 +60,22 @@ export function applyLegacyReceipt(
   signal?: AbortSignal,
 ): Promise<LegacyApplyResult> {
   return request<LegacyApplyResult>(`/legacy-config/receipts/${receiptId}/apply`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
+/**
+ * POST /legacy-config/receipts/{id}/discard — verwerpt een ontvangst met status `RECEIVED` (G1a). 409
+ * `LEGACY_RECEIPT_NOT_APPLICABLE` bij elke andere status; 400 `LEGACY_DISCARD_REASON_REQUIRED` zonder reden.
+ */
+export function discardLegacyReceipt(
+  receiptId: number,
+  body: LegacyDiscardRequest,
+  signal?: AbortSignal,
+): Promise<LegacyDiscardResult> {
+  return request<LegacyDiscardResult>(`/legacy-config/receipts/${receiptId}/discard`, {
     method: 'POST',
     body: JSON.stringify(body),
     signal,

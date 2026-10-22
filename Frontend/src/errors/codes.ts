@@ -843,8 +843,8 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   LEGACY_RECEIPT_NOT_APPLICABLE: {
     title: 'Deze ontvangst kan niet meer overgenomen worden',
     explanation:
-      'Alleen een ontvangst met de status "Ontvangen" kan overgenomen worden. Deze is al overgenomen, vervangen door ' +
-      'een nieuwere of terzijde gelegd.',
+      'Alleen een ontvangst met de status "Ontvangen" kan overgenomen of verworpen worden. Deze is al overgenomen, ' +
+      'vervangen door een nieuwere of terzijde gelegd.',
     whatNow: 'Laad de ontvangst opnieuw, of open de nieuwste ontvangst van dezelfde interface in de lijst.',
   },
   LEGACY_PREVIEW_STALE: {
@@ -865,6 +865,16 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     whatNow: 'Vul een reden in en bevestig opnieuw.',
   },
   LEGACY_APPLY_REASON_TOO_LONG: {
+    title: 'Reden is te lang',
+    explanation: 'De reden mag hoogstens 500 tekens bevatten.',
+    whatNow: 'Kort de reden in en bevestig opnieuw.',
+  },
+  LEGACY_DISCARD_REASON_REQUIRED: {
+    title: 'Reden ontbreekt',
+    explanation: 'Voor het verwerpen van een ontvangst is een reden verplicht.',
+    whatNow: 'Vul een reden in en bevestig opnieuw.',
+  },
+  LEGACY_DISCARD_REASON_TOO_LONG: {
     title: 'Reden is te lang',
     explanation: 'De reden mag hoogstens 500 tekens bevatten.',
     whatNow: 'Kort de reden in en bevestig opnieuw.',

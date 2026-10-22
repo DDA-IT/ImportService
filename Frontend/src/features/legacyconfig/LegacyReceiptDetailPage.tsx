@@ -30,7 +30,9 @@ import { Term } from '../../terms/Term.tsx';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { ApplyDialog } from './ApplyDialog.tsx';
 import { BundleSummary } from './BundleSummary.tsx';
-import { applyGate, NO_CHOICES, toChoices, type LegacyChoicesForm } from './legacyPolicy.ts';
+import { DiscardDialog } from './DiscardDialog.tsx';
+import { DraftLinks } from './DraftLinks.tsx';
+import { applyGate, discardPolicyGate, NO_CHOICES, toChoices, type LegacyChoicesForm } from './legacyPolicy.ts';
 import { LegacyReportView } from './LegacyReportView.tsx';
 import { PlannedSummary } from './PlannedSummary.tsx';
 import { PreviewChoices } from './PreviewChoices.tsx';
@@ -65,6 +67,9 @@ function Origin({ detail }: { detail: LegacyReceiptDetail }) {
         )}
         {receipt.appliedAt !== null && <Fact label="Overgenomen op">{formatDateTime(receipt.appliedAt)}</Fact>}
         {receipt.appliedBy !== null && <Fact label="Overgenomen door">{receipt.appliedBy}</Fact>}
+        {detail.discardedAt != null && <Fact label="Verworpen op">{formatDateTime(detail.discardedAt)}</Fact>}
+        {detail.discardedBy != null && <Fact label="Verworpen door">{detail.discardedBy}</Fact>}
+        {detail.discardedReason != null && <Fact label="Reden van het verwerpen">{detail.discardedReason}</Fact>}
       </dl>
       {detail.credentialRef !== null && (
         <TechnicalDetails items={[{ name: 'Verwijzing naar het wachtwoord', value: detail.credentialRef }]} />
@@ -85,6 +90,7 @@ function ApplyResultView({ result }: { result: LegacyApplyResult }) {
           zelf.
         </p>
         <PlannedSummary report={result.report} />
+        <DraftLinks planned={result.report.planned} />
         {result.configurationFindings.length > 0 && (
           <>
             <h3 className={styles.subTitle}>Wat nog niet klopt in de nieuwe conceptversie ({result.configurationFindings.length})</h3>
@@ -117,6 +123,7 @@ function ReceiptBody({ receiptId }: { receiptId: number }) {
   const [draft, setDraft] = useState<LegacyChoicesForm>(NO_CHOICES);
   const [applied, setApplied] = useState<LegacyChoicesForm>(NO_CHOICES);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const [result, setResult] = useState<LegacyApplyResult | null>(null);
   // De kandidaten blijven staan nadat er gekozen is, ook al geeft de server dan geen kandidaten meer.
   const [candidates, setCandidates] = useState<readonly LegacyLibraryCandidate[]>([]);
@@ -136,10 +143,16 @@ function ReceiptBody({ receiptId }: { receiptId: number }) {
     setCandidates(offered);
   }
   const gate = withPermission(manageGate, applyGate(receipt?.status ?? '', report));
+  const discardGate = withPermission(manageGate, discardPolicyGate(receipt?.status ?? ''));
 
   function handleApplied(next: LegacyApplyResult) {
     setDialogOpen(false);
     setResult(next);
+    detail.reload();
+  }
+
+  function handleDiscarded() {
+    setDiscardOpen(false);
     detail.reload();
   }
 
@@ -186,6 +199,14 @@ function ReceiptBody({ receiptId }: { receiptId: number }) {
           </section>
 
           {result !== null && <ApplyResultView result={result} />}
+
+          {result === null && detail.data.receipt.status === 'APPLIED' && detail.data.applyReport != null && (
+            <section className={`${pageCss.card} ${styles.section}`} aria-label="Aangemaakte versie">
+              <div className={pageCss.cardPad}>
+                <DraftLinks planned={detail.data.applyReport.planned} />
+              </div>
+            </section>
+          )}
 
           {result === null && detail.data.receipt.status !== 'RECEIVED' && (
             <section className={`${pageCss.card} ${styles.section}`} aria-label="Overnemen">
@@ -251,6 +272,34 @@ function ReceiptBody({ receiptId }: { receiptId: number }) {
                 )}
               </div>
             </section>
+          )}
+
+          {result === null && detail.data.receipt.status === 'RECEIVED' && (
+            <section className={`${pageCss.card} ${styles.section}`} aria-label="Verwerpen">
+              <div className={pageCss.cardPad}>
+                <p>Wilt u deze ontvangst niet overnemen, dan kunt u ze verwerpen. Er wordt dan niets gewijzigd in de inrichting.</p>
+                <div className={styles.actions}>
+                  <button
+                    type="button"
+                    className={button.secondary}
+                    disabled={!discardGate.allowed}
+                    title={gateTitle(discardGate)}
+                    onClick={() => setDiscardOpen(true)}
+                  >
+                    Verwerpen…
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {discardOpen && (
+            <DiscardDialog
+              receipt={detail.data.receipt}
+              onClose={() => setDiscardOpen(false)}
+              onDiscarded={handleDiscarded}
+              onNotApplicable={detail.reload}
+            />
           )}
 
           {dialogOpen && (

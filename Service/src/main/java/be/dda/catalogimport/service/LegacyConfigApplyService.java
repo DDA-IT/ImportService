@@ -187,6 +187,8 @@ public class LegacyConfigApplyService {
     public static final String CODE_BLOCKED = "LEGACY_APPLY_BLOCKED";
     public static final String CODE_REASON_REQUIRED = "LEGACY_APPLY_REASON_REQUIRED";
     public static final String CODE_REASON_TOO_LONG = "LEGACY_APPLY_REASON_TOO_LONG";
+    public static final String CODE_DISCARD_REASON_REQUIRED = "LEGACY_DISCARD_REASON_REQUIRED";
+    public static final String CODE_DISCARD_REASON_TOO_LONG = "LEGACY_DISCARD_REASON_TOO_LONG";
 
     static final String LIBRARY_CODE_NOT_RESOLVED = "LIBRARY_CODE_NOT_RESOLVED";
     static final String LIBRARY_CODE_INVALID = "LIBRARY_CODE_INVALID";
@@ -259,6 +261,14 @@ public class LegacyConfigApplyService {
         ApplyOptions options() {
             return new ApplyOptions(definitionCodeOverride, charsetWhenUndeclared, libraryCode).normalised();
         }
+    }
+
+    /** DISCARD-body: {@code {reason}}. */
+    public record DiscardCommand(String reason) {
+    }
+
+    /** @param receiptStatus {@code DISCARDED} */
+    public record DiscardResult(long receiptId, String receiptStatus) {
     }
 
     public record PreviewResult(LegacyConfigReport report, String previewFingerprint) {
@@ -398,6 +408,41 @@ public class LegacyConfigApplyService {
                 result.report().planned().definition().revisionAction(), result.report().planned().link().id(),
                 result.report().planned().task().id());
         return result;
+    }
+
+    // --- DISCARD (slice G1) ---------------------------------------------------------------------------------------
+
+    /**
+     * Verwerpt een open ontvangst (rijslot zoals APPLY): enkel {@code RECEIVED}, reden verplicht. Schrijft niets anders
+     * dan de ontvangst zelf; de ontvangst blijft de laatste van haar herkomst, dus dezelfde inhoud opnieuw pushen geeft
+     * {@code UNCHANGED} met status {@code DISCARDED}.
+     *
+     * @throws NotFoundException   404 {@code LEGACY_RECEIPT_NOT_FOUND}
+     * @throws BadRequestException 400 {@value #CODE_DISCARD_REASON_REQUIRED}, {@value #CODE_DISCARD_REASON_TOO_LONG}
+     * @throws ConflictException   409 {@value #CODE_NOT_APPLICABLE}
+     */
+    public DiscardResult discard(long receiptId, DiscardCommand command, ActorIdentity actor) {
+        LegacyConfigReceipt receipt = receipts.findByIdForUpdate(receiptId).orElseThrow(() -> notFound(receiptId));
+        String reason = command == null ? null : command.reason();
+        if (reason == null || reason.isBlank()) {
+            throw new BadRequestException(CODE_DISCARD_REASON_REQUIRED, "reason is required: it is the only record of "
+                    + "why this legacy configuration was discarded");
+        }
+        reason = reason.trim();
+        if (reason.length() > MAX_REASON_LENGTH) {
+            throw new BadRequestException(CODE_DISCARD_REASON_TOO_LONG, "reason must be at most " + MAX_REASON_LENGTH
+                    + " characters");
+        }
+        if (receipt.getStatus() != LegacyConfigReceiptStatus.RECEIVED) {
+            throw new ConflictException(CODE_NOT_APPLICABLE, "Legacy-config receipt " + receiptId + " is "
+                    + receipt.getStatus() + "; only a RECEIVED receipt can be discarded");
+        }
+        receipt.markDiscarded(clock.instant(), actor.username(), actor.subject(), reason);
+        receipts.saveAndFlush(receipt);
+        LOG.info("Legacy-config receipt {} DISCARDED for {}/{}/{} by {}", receipt.getId(),
+                receipt.getOriginEnvironment(), receipt.getOriginDossier(), receipt.getInterfaceCode(),
+                actor.username());
+        return new DiscardResult(receipt.getId(), LegacyConfigReceiptStatus.DISCARDED.name());
     }
 
     // --- Plannen (gedeeld door PREVIEW en APPLY) -----------------------------------------------------------------

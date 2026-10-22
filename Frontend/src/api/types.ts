@@ -1827,6 +1827,12 @@ export type LegacyReceiptDetail = {
   /** Verwijzing naar de credential van de herkomst (id), nooit het wachtwoord. */
   credentialRef: string | null;
   bundle: LegacyBundle | null;
+  /** G1b (additief): het bewaarde rapport van een overgenomen ontvangst, met de id's van wat aangemaakt werd; anders `null`. */
+  applyReport?: LegacyConfigReport | null;
+  /** G1a (additief): audit van een verworpen ontvangst. */
+  discardedAt?: string | null;
+  discardedBy?: string | null;
+  discardedReason?: string | null;
 };
 
 // be.dda.catalogimport.service.LegacyConfigReport — status van één rapportitem.
@@ -1902,6 +1908,12 @@ export type LegacyApplyChoices = {
   charsetWhenUndeclared?: string;
   libraryCode?: string;
 };
+
+/** Body van `POST /legacy-config/receipts/{id}/discard` (G1a). */
+export type LegacyDiscardRequest = { reason: string };
+
+/** be.dda.catalogimport.service.LegacyConfigApplyService.DiscardResult. */
+export type LegacyDiscardResult = { receiptId: number; receiptStatus: string };
 
 /** Body van `POST /legacy-config/receipts/{id}/apply`. */
 export type LegacyApplyRequest = LegacyApplyChoices & { previewFingerprint: string; reason: string };

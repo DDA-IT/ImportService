@@ -93,7 +93,7 @@ dezelfde `definition.code` of dezelfde `definitionContentHash`.
 | GET | `/receipts/{id}` | MANAGE | Bundel zonder secret, met `secretOutcome` en `credentialRef` (MANAGE wegens host/login, L7b) |
 | GET | `/receipts/{id}/preview?definitionCodeOverride=&charsetWhenUndeclared=&libraryCode=` | MANAGE | Rapport (§5) + `previewFingerprint`; schrijft niets. De optionele queryparameters zijn dezelfde keuzes als in de APPLY-body (S2): het rapport en dus de fingerprint hangen ervan af |
 | POST | `/receipts/{id}/apply` | MANAGE | `{previewFingerprint, reason, definitionCodeOverride?, charsetWhenUndeclared?, libraryCode?}` → 200 + `{report, receiptStatus, configurationFindings}`. `libraryCode` is additief (beslissingslog 2026-10-20 "Legacy-config S2", V1 = c): tot S5 door de mens gegeven, nooit het ruwe `ArtImp_BibNr` |
-| POST | `/receipts/{id}/discard` | MANAGE | `{reason}` → `DISCARDED` (latere slice) |
+| POST | `/receipts/{id}/discard` | MANAGE | `{reason}` → `DISCARDED` (G1a; enkel `RECEIVED`, anders 409 `LEGACY_RECEIPT_NOT_APPLICABLE`; 400 `LEGACY_DISCARD_REASON_REQUIRED`/`_TOO_LONG`) |
 
 Niet achter `catalogimport.setup-api.enabled` (precedent L7a). 403 vóór 400/404/409 (5-PERM V1).
 

@@ -52,3 +52,11 @@ export function applyGate(receiptStatus: string, report: LegacyConfigReport | nu
   }
   return ALLOWED;
 }
+
+/** Mag verwerpen? Enkel een ontvangst met status `RECEIVED` (de server controleert: 409 `LEGACY_RECEIPT_NOT_APPLICABLE`). */
+export function discardPolicyGate(receiptStatus: string): Gate {
+  if (receiptStatus !== 'RECEIVED') {
+    return denied('Alleen een ontvangst met de status "Ontvangen" kan verworpen worden.', 'LEGACY_RECEIPT_NOT_APPLICABLE');
+  }
+  return ALLOWED;
+}

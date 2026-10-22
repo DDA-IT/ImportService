@@ -128,8 +128,14 @@ public class LegacyConfigReceiptService {
     /**
      * Detail van een ontvangst: de bundel zonder secret ({@code "secret": null}), met {@code secretOutcome} en
      * {@code credentialRef} (vanaf S4). Enkel voor MANAGE: de bundel toont host en login (L7b).
+     * <p>
+     * G1b (additief): {@code applyReport} is het bewaarde APPLY-rapport ({@code report} uit {@code apply_report_json}, met
+     * de id's van wat aangemaakt of hergebruikt werd) van een {@code APPLIED} ontvangst, anders {@code null}; voor de
+     * links naar de conceptversie. {@code discardedAt/By/Reason}: de audit van een verworpen ontvangst.
      */
-    public record ReceiptDetail(ReceiptRow receipt, String secretOutcome, UUID credentialRef, JsonNode bundle) {
+    public record ReceiptDetail(ReceiptRow receipt, String secretOutcome, UUID credentialRef, JsonNode bundle,
+                                JsonNode applyReport, Instant discardedAt, String discardedBy,
+                                String discardedReason) {
     }
 
     private final LegacyConfigReceiptRepository receipts;
@@ -358,7 +364,8 @@ public class LegacyConfigReceiptService {
                     .orElse(null);
             return new ReceiptDetail(ReceiptRow.of(receipt),
                     receipt.getSecretOutcome() == null ? null : receipt.getSecretOutcome().name(), credentialRef,
-                    readBundle(receipt));
+                    readBundle(receipt), readApplyReport(receipt), receipt.getDiscardedAt(),
+                    receipt.getDiscardedBy(), receipt.getDiscardedReason());
         });
     }
 
@@ -378,6 +385,20 @@ public class LegacyConfigReceiptService {
             return json.readTree(receipt.getBundleJson());
         } catch (JsonProcessingException corrupt) {
             throw new IllegalStateException("bundle_json of legacy-config receipt " + receipt.getId()
+                    + " is not readable");
+        }
+    }
+
+    /** Het {@code report}-deel van {@code apply_report_json}; {@code null} zonder bewaard rapport. */
+    private JsonNode readApplyReport(LegacyConfigReceipt receipt) {
+        if (receipt.getApplyReportJson() == null) {
+            return null;
+        }
+        try {
+            JsonNode report = json.readTree(receipt.getApplyReportJson()).get("report");
+            return report == null || report.isNull() ? null : report;
+        } catch (JsonProcessingException corrupt) {
+            throw new IllegalStateException("apply_report_json of legacy-config receipt " + receipt.getId()
                     + " is not readable");
         }
     }

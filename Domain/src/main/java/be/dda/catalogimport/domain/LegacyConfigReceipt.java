@@ -275,6 +275,26 @@ public class LegacyConfigReceipt {
         this.openMarker = null;
     }
 
+    /**
+     * {@code RECEIVED → DISCARDED} (slice G1): een mens verwerpt de open ontvangst met een verplichte reden. Sluit de
+     * open marker; de ontvangst blijft de laatste van de herkomst (nooit {@code SUPERSEDED}).
+     *
+     * @throws IllegalStateException    de ontvangst is niet {@code RECEIVED}
+     * @throws IllegalArgumentException tijdstip, actor of reden ontbreekt
+     */
+    public void markDiscarded(Instant at, String by, String bySubject, String reason) {
+        if (status != LegacyConfigReceiptStatus.RECEIVED) {
+            throw new IllegalStateException("Only a RECEIVED receipt can be discarded; receipt " + id + " is "
+                    + status);
+        }
+        this.discardedAt = required(at, "discardedAt");
+        this.discardedBy = requiredText(by, "discardedBy");
+        this.discardedBySubject = bySubject;
+        this.discardedReason = requiredText(reason, "discardedReason");
+        this.status = LegacyConfigReceiptStatus.DISCARDED;
+        this.openMarker = null;
+    }
+
     public String getAppliedReason() {
         return appliedReason;
     }
