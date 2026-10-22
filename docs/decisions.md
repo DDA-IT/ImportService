@@ -2927,3 +2927,26 @@ een zou herroepen wordt niet stil gevolgd maar als open punt gemarkeerd.
 testrol, via het script `scripts/test/setup-prodis-pubtest.sql`). De echte database `Prodis` wordt nooit beschreven; de tests stoppen als
 `current_database() ≠ 'prodis_pubtest'`.
 **Bron:** mens
+
+## 2026-10-22 — P2b: projectie en planner
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):**
+1. Kortingscode NOT_USED/EMPTY → derde component `""` in `legacy_code` (zoals de datasync); onbekende toestand of VALUE zonder code → BLOCKING `IDENTITY_INCOMPLETE`.
+2. Ontbrekende munt → REJECTED `CURRENCY_NOT_SUPPORTED_BY_PRODIS`, nooit EUR aannemen; ook een VKP-component in een andere munt.
+3. Basisprijs bij UPDATE zonder `before_base_price` → KEEP + `EXPECTED_NOT_AVAILABLE`.
+4. CREATE → altijd `NOT_SENT` (`CREATE_NOT_SUPPORTED_IN_V1`); bestaand artikel bij CREATE → WARNING `ARTICLE_ALREADY_EXISTS`.
+5. Identiteit: geen leverancier → `ARTICLE_NOT_FOUND`; inactieve/verwijderde rijen tellen mee voor AMBIGUOUS; één inactieve rij → vormfout; altijd precies één actieve NL-omschrijving vereist.
+6. KEEP basisprijs terwijl Prodis er geen heeft → `PRODIS_ROW_SHAPE_UNSUPPORTED` (nooit rekenen met 0).
+7. Conflictcode `VALUE_CHANGED_IN_PRODIS`, één melding per veld.
+8. CONFLICT/REJECTED → altijd lege `changes` (schrijft per constructie niets).
+9. `PRICE_ROUNDING_DIFFERENCE` enkel voor echt toegepaste percentages.
+10. **`DERIVED_PRICE_DRIFT` (financieel):** een item dat zelf geen basisprijs of percentage wijzigt, schrijft **geen** afgeleide prijzen
+    (VKP1..5-prijs, `brut_price`, `brut_price_percentage`) en schuift `sales_price_last_updated` niet; enkel WARNING met de afwijking.
+    Wijkt af van Prg_1179 (dat altijd Prg_1185 aanroept): scheve afgeleide prijzen in Prodis blijven scheef tot een echte wijziging.
+11. `requestHash` over mutationId, actie, identiteit, munt, velden en expected.
+12. Nieuwe blokkerende codes `IDENTITY_INCOMPLETE`, `ACTION_UNSUPPORTED`, `SNAPSHOT_INCOMPLETE`.
+13. Negatieve basisprijs is een gewone waarde.
+14. De lezer neemt de snapshotrijen als scope, niet de huidige mutatiestatus.
+**Ontdekt:** lege VKP-componenten worden niet gestaged (`CandidateNormaliser` r.453-456) → "gemapt maar leeg" gedraagt zich als niet gemapt;
+VKP-percentages (bedrag/basis, schaal 12) zullen bij spec v2 bijna altijd `EXCEEDS_LEGACY_PRECISION` geven; identiteit met `identity_uppercase`
+kan `ARTICLE_NOT_FOUND` geven bij letterlijke vergelijking (parallelrun maakt het zichtbaar).
+**Bron:** P2b-bouwerrapport
