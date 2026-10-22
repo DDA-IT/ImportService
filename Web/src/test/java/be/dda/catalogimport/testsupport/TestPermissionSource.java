@@ -6,6 +6,7 @@ import be.dda.catalogimport.web.PermissionSource;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.Set;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -19,9 +20,13 @@ import org.springframework.stereotype.Component;
  * <p>
  * <b>Bewust een gewone {@code @Component} met {@code @Primary}</b>, net als
  * {@link TestSecurityConfiguration}: de component-scan van {@code CatalogImportApplication} pikt hem op
- * de test-classpath op, zodat bestaande testklassen ongewijzigd blijven. Hij wint van
- * {@code ConfiguredPermissionSource}, die daardoor in tests niets bepaalt maar wel nog steeds bij het
+ * de test-classpath op, zodat bestaande testklassen ongewijzigd blijven. Hij wint van de echte bron
+ * ({@code ConfiguredPermissionSource} of {@code ProdisPermissionSource}, gekozen door
+ * {@code catalogimport.permissions.source}), die daardoor in tests niets bepaalt maar wel nog steeds bij het
  * opstarten gebouwd en gevalideerd wordt.
+ * <p>
+ * <b>Uitschakelvlag (5B-7):</b> met {@value #ENABLED_PROPERTY}{@code =false} bestaat deze bean niet en beslist de
+ * echte bron — voor een HTTP-test die de Prodis-adapter end-to-end gebruikt (5B-7c). Zonder de property staat hij aan.
  * <p>
  * Levert de <b>ruwe</b> codes, precies als een echte bron; de hiërarchie past {@code CurrentActor} toe.
  * Onbekende waarden in de claim worden genegeerd — dat is wat de Prodis-adapter (5B-7) ook zal doen.
@@ -29,7 +34,11 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @Primary
+@ConditionalOnProperty(name = TestPermissionSource.ENABLED_PROPERTY, havingValue = "true", matchIfMissing = true)
 public class TestPermissionSource implements PermissionSource {
+
+    /** Testproperty: {@code false} = deze bron uit, de echte {@code PermissionSource} beslist. */
+    public static final String ENABLED_PROPERTY = "catalogimport.test.permission-source.enabled";
 
     /** De claim waarin een testlogin haar rechten draagt. */
     public static final String CLAIM = "catalogimport_permissions";

@@ -8,12 +8,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import org.springframework.stereotype.Component;
 
 /**
  * De lokale rechtenbron: toekenningen uit {@code application*.yml} (Fase 5-PERM, ontwerp par. 2;
- * beslissingslog 2026-09-26 "5-PERM = nu bouwen met een lokaal instelbare rechtenbron"). De
- * Prodis-adapter is de laatste, losse stap (5B-7) en vervangt of vergezelt deze bron dan.
+ * beslissingslog 2026-09-26 "5-PERM = nu bouwen met een lokaal instelbare rechtenbron"). Actief bij
+ * {@code catalogimport.permissions.source=CONFIGURED}; bij {@code PRODIS} vervangt {@link ProdisPermissionSource} haar
+ * volledig (nooit een unie, beslissingslog 2026-10-22). Geen {@code @Component}: de bronkeuze
+ * ({@code PermissionSourceConfiguration}) maakt precies één {@link PermissionSource}.
  *
  * <h2>Business rule vs. implementatie</h2>
  * <ul>
@@ -36,7 +37,6 @@ import org.springframework.stereotype.Component;
  * <p>Deze bron levert de <b>ruwe</b> codes; de hiërarchie past {@link CurrentActor} toe. Ze is nooit
  * onbereikbaar en gooit dus nooit {@link PermissionSourceUnavailableException}.</p>
  */
-@Component
 public class ConfiguredPermissionSource implements PermissionSource {
 
     /** Nooit een beheerder of goedkeurder, ook niet als de yml dat vraagt. */

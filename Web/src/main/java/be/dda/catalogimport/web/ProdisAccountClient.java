@@ -8,6 +8,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
+import java.time.Duration;
+import java.util.function.Supplier;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -49,18 +51,31 @@ final class ProdisAccountClient {
     /** Bovengrens voor het antwoord van {@code /api/account}; een normaal antwoord is enkele kB. */
     static final int MAX_BODY_BYTES = 256 * 1024;
 
-    private final AppSwitcherProperties properties;
+    private final Supplier<String> accountUrl;
     private final ObjectMapper objectMapper;
     private final OAuth2AuthorizedClientManager clientManager;
     private final RestClient restClient;
 
+    /** Voor de productwisselaar: URL en timeouts uit {@code catalogimport.app-switcher}. */
     ProdisAccountClient(AppSwitcherProperties properties,
                         ObjectProvider<ClientRegistrationRepository> clientRegistrations,
                         OAuth2AuthorizedClientRepository authorizedClients,
                         ObjectMapper objectMapper) {
-        this.properties = properties;
+        this(properties::getProdisAccountUrl, properties.getConnectTimeout(), properties.getReadTimeout(),
+                clientRegistrations, authorizedClients, objectMapper);
+    }
+
+    /**
+     * Met eigen URL en timeouts (5B-7b: de rechtenbron heeft haar eigen {@code catalogimport.permissions.prodis.*}).
+     * De URL wordt bij elke call opnieuw gelezen.
+     */
+    ProdisAccountClient(Supplier<String> accountUrl, Duration connectTimeout, Duration readTimeout,
+                        ObjectProvider<ClientRegistrationRepository> clientRegistrations,
+                        OAuth2AuthorizedClientRepository authorizedClients,
+                        ObjectMapper objectMapper) {
+        this.accountUrl = accountUrl;
         this.objectMapper = objectMapper;
-        SimpleClientHttpRequestFactory requestFactory = requestFactory(properties);
+        SimpleClientHttpRequestFactory requestFactory = requestFactory(connectTimeout, readTimeout);
         this.restClient = RestClient.builder().requestFactory(requestFactory).build();
         ClientRegistrationRepository registrations = clientRegistrations.getIfAvailable();
         // Zonder registratie start de applicatie sowieso niet (SecurityConfiguration); hier enkel defensief.
@@ -70,8 +85,27 @@ final class ProdisAccountClient {
 
     /** De geparste JSON-root (altijd een object) van Prodis' accountantwoord; gooit {@link ProdisAccountException}. */
     JsonNode fetchAccount(Authentication principal, HttpServletRequest request, HttpServletResponse response) {
+        return fetch((principal == null) ? null : authorizeRequest().principal(principal), request, response);
+    }
+
+    /**
+     * Zoals {@link #fetchAccount(Authentication, HttpServletRequest, HttpServletResponse)}, maar met enkel de
+     * principalnaam ({@code OAuth2AuthorizeRequest.principal(String)}): de rechtenbron leest zo de SecurityContext niet
+     * (5B-7 design par. 2). De geautoriseerde client komt uit de sessie, die de naam niet als sleutel gebruikt.
+     */
+    JsonNode fetchAccount(String principalName, HttpServletRequest request, HttpServletResponse response) {
+        return fetch((principalName == null || principalName.isBlank()) ? null
+                : authorizeRequest().principal(principalName), request, response);
+    }
+
+    private static OAuth2AuthorizeRequest.Builder authorizeRequest() {
+        return OAuth2AuthorizeRequest.withClientRegistrationId(REGISTRATION_ID);
+    }
+
+    private JsonNode fetch(OAuth2AuthorizeRequest.Builder authorizeRequest, HttpServletRequest request,
+                           HttpServletResponse response) {
         try {
-            String accessToken = accessToken(principal, request, response);
+            String accessToken = accessToken(authorizeRequest, request, response);
             if (accessToken == null) {
                 throw ProdisAccountException.tokenLost("no authorized client in the session");
             }
@@ -86,22 +120,21 @@ final class ProdisAccountClient {
         }
     }
 
-    private String accessToken(Authentication principal, HttpServletRequest request, HttpServletResponse response) {
-        if (this.clientManager == null || principal == null) {
+    private String accessToken(OAuth2AuthorizeRequest.Builder authorizeRequest, HttpServletRequest request,
+                               HttpServletResponse response) {
+        if (this.clientManager == null || authorizeRequest == null) {
             return null;
         }
-        OAuth2AuthorizeRequest authorizeRequest = OAuth2AuthorizeRequest.withClientRegistrationId(REGISTRATION_ID)
-                .principal(principal)
+        OAuth2AuthorizedClient client = this.clientManager.authorize(authorizeRequest
                 .attribute(HttpServletRequest.class.getName(), request)
                 .attribute(HttpServletResponse.class.getName(), response)
-                .build();
-        OAuth2AuthorizedClient client = this.clientManager.authorize(authorizeRequest);
+                .build());
         return (client == null || client.getAccessToken() == null) ? null : client.getAccessToken().getTokenValue();
     }
 
     private byte[] call(String accessToken) {
         return this.restClient.get()
-                .uri(URI.create(this.properties.getProdisAccountUrl()))
+                .uri(URI.create(this.accountUrl.get()))
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                 .accept(MediaType.APPLICATION_JSON)
                 .exchange((clientRequest, clientResponse) -> {
@@ -147,7 +180,7 @@ final class ProdisAccountClient {
      * niet geopend worden, en de bean wordt bij het opstarten gemaakt). Korte connect- en read-timeout; een redirect
      * wordt nooit gevolgd — met een bearer token is een 3xx gewoon een mislukte relay.
      */
-    private static SimpleClientHttpRequestFactory requestFactory(AppSwitcherProperties properties) {
+    private static SimpleClientHttpRequestFactory requestFactory(Duration connectTimeout, Duration readTimeout) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory() {
             @Override
             protected void prepareConnection(HttpURLConnection connection, String httpMethod) throws IOException {
@@ -155,8 +188,8 @@ final class ProdisAccountClient {
                 connection.setInstanceFollowRedirects(false);
             }
         };
-        factory.setConnectTimeout(properties.getConnectTimeout());
-        factory.setReadTimeout(properties.getReadTimeout());
+        factory.setConnectTimeout(connectTimeout);
+        factory.setReadTimeout(readTimeout);
         return factory;
     }
 
