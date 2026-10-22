@@ -261,9 +261,12 @@ function ImportLinksList({
  */
 function RevisionsList({
   definitionId,
+  sourceOrganisationCode,
   onDefinitionChanged,
 }: {
   definitionId: number;
+  /** G2c-2: de bronorganisatie van de definitie; de groepskeuze van een vaste groep zonder vaste leverancier gebruikt ze. */
+  sourceOrganisationCode?: string;
   /**
    * Activeren verplaatst `activeRevisionId` van de definitie; zonder deze terugmelding zou de
    * definitierij erboven blijven zeggen "actieve revisie: #<oude>". De definitielijst herlaadt daarom mee.
@@ -333,6 +336,7 @@ function RevisionsList({
       {openRevisionId !== null && (
         <RevisionDetailSection
           definitionId={definitionId}
+          sourceOrganisationCode={sourceOrganisationCode}
           revisionId={openRevisionId}
           onRevisionChanged={() => {
             revisions.reload();
@@ -367,7 +371,11 @@ function DefinitionNode({
       </div>
       {expanded && (
         <div className={styles.children}>
-          <RevisionsList definitionId={definition.id} onDefinitionChanged={onDefinitionChanged} />
+          <RevisionsList
+            definitionId={definition.id}
+            sourceOrganisationCode={definition.sourceOrganisationCode}
+            onDefinitionChanged={onDefinitionChanged}
+          />
           <ImportLinksList
             definitionId={definition.id}
             organisationId={definition.sourceOrganisationId}

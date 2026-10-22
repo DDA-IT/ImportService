@@ -190,6 +190,8 @@ function DeleteChildRowAction({
 export type RevisionDetailSectionProps = {
   definitionId: number;
   revisionId: number;
+  /** G2c-2: de bronorganisatie van de definitie, voor de groepskeuze (afwezig = vrije tekst). */
+  sourceOrganisationCode?: string;
   /** Na een geslaagde wijziging/activatie: de ouder herlaadt de revisielijst van de boom. */
   onRevisionChanged: () => void;
 };
@@ -197,6 +199,7 @@ export type RevisionDetailSectionProps = {
 export function RevisionDetailSection({
   definitionId,
   revisionId,
+  sourceOrganisationCode,
   onRevisionChanged,
 }: RevisionDetailSectionProps) {
   const key = `revision-detail:${definitionId}:${revisionId}`;
@@ -216,7 +219,11 @@ export function RevisionDetailSection({
       {detail.loading && detail.data === null && <p className={styles.loading}>Bezig met laden…</p>}
 
       {detail.data !== null && (
-        <RevisionBody revision={detail.data} onChanged={afterWrite} />
+        <RevisionBody
+          revision={detail.data}
+          sourceOrganisationCode={sourceOrganisationCode}
+          onChanged={afterWrite}
+        />
       )}
     </section>
   );
@@ -226,7 +233,15 @@ export function RevisionDetailSection({
  * Het geladen detail: samenvatting, dan het bewerkformulier (of de reden waarom er geen is), dan de
  * kindrijen en — op een DRAFT — de activatieknop met de R-CASE-03-waarschuwing.
  */
-function RevisionBody({ revision, onChanged }: { revision: RevisionDetail; onChanged: () => void }) {
+function RevisionBody({
+  revision,
+  sourceOrganisationCode,
+  onChanged,
+}: {
+  revision: RevisionDetail;
+  sourceOrganisationCode?: string;
+  onChanged: () => void;
+}) {
   const gate = editGate(revision.status);
   return (
     <>
@@ -235,7 +250,12 @@ function RevisionBody({ revision, onChanged }: { revision: RevisionDetail; onCha
       {gate.allowed ? (
         // `key` op het revisie-id: schakelt de gebruiker naar een andere revisie, dan begint het
         // formulier met de waarden van díe revisie in plaats van met de vorige ingevulde tekst.
-        <RevisionEditForm key={revision.id} revision={revision} onUpdated={onChanged} />
+        <RevisionEditForm
+          key={revision.id}
+          revision={revision}
+          sourceOrganisationCode={sourceOrganisationCode}
+          onUpdated={onChanged}
+        />
       ) : (
         <p className={styles.notEditable} title={gateTitle(gate)} data-testid="revision-not-editable-reason">
           {gate.reason}

@@ -335,6 +335,14 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       label: 'Herkenning in hoofdletters',
       uitleg: 'Leverancier, groep en referentie worden in hoofdletters vergeleken.',
     },
+    identitySourceColumn: {
+      label: 'Uit een kolom',
+      uitleg: 'De leverancier of de groep staat in een kolom van het bestand.',
+    },
+    identitySourceFixed: {
+      label: 'Vaste waarde',
+      uitleg: 'Dezelfde leverancier of groep voor alle regels van het bestand, zonder kolom.',
+    },
     supplierField: { label: 'Kolom leverancier', uitleg: 'De kolom met de leverancier van het artikel.' },
     supplierGroupField: { label: 'Kolom groep', uitleg: 'De kolom met de artikelgroep van de leverancier.' },
     supplierReferenceField: {

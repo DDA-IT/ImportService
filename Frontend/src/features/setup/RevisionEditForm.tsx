@@ -46,6 +46,7 @@ import {
   type RevisionDetail,
   type RevisionView,
   type RowIssueSeverity,
+  type SetupWarning,
   type UpdateRevisionRequest,
 } from '../../api/types.ts';
 import { useActor } from '../../actor/ActorContext.tsx';
@@ -57,6 +58,7 @@ import { gateTitle } from '../../actor/gate.ts';
 import { term, termLabel } from '../../terms/index.ts';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
+import { ProdisFixedValueField } from './ProdisFixedValueField.tsx';
 import { editGate } from './revisionPolicy.ts';
 import {
   buildRequest,
@@ -65,6 +67,8 @@ import {
   hasChanges,
   identityChanged,
   initialForm,
+  SOURCE_COLUMN,
+  SOURCE_FIXED,
   type FlagKey,
   type FormState,
   type TextKey,
@@ -87,11 +91,16 @@ const CLEARABLE_HINT = 'Leegmaken wist de waarde (een uitdrukkelijk lege waarde 
 
 export type RevisionEditFormProps = {
   revision: RevisionDetail;
+  /**
+   * De code van de bronorganisatie van de definitie (= het Prodis-leveranciersnummer): de groepskeuze van een
+   * vaste groep zonder vaste leverancier zoekt daar. Afwezig = geen groepenlijst, vrije tekst.
+   */
+  sourceOrganisationCode?: string;
   /** Na een geslaagde wijziging: de ouder herlaadt het revisiedetail (expliciete invalidatie). */
   onUpdated: (result: RevisionView) => void;
 };
 
-export function RevisionEditForm({ revision, onUpdated }: RevisionEditFormProps) {
+export function RevisionEditForm({ revision, sourceOrganisationCode, onUpdated }: RevisionEditFormProps) {
   const { actor } = useActor();
   const manageGate = usePermissionGate(PERMISSION_MANAGE);
   const gate = withPermission(manageGate, editGate(revision.status));
@@ -100,6 +109,7 @@ export function RevisionEditForm({ revision, onUpdated }: RevisionEditFormProps)
   const [acknowledgeIdentityChange, setAcknowledgeIdentityChange] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<SetupWarning[]>([]);
   const runner = useAction((body: UpdateRevisionRequest) =>
     setupRevisionsApi.updateRevision(revision.id, body),
   );
@@ -108,6 +118,7 @@ export function RevisionEditForm({ revision, onUpdated }: RevisionEditFormProps)
   function touched() {
     setValidationError(null);
     setSaved(null);
+    setWarnings([]);
     runner.reset();
   }
 
@@ -143,6 +154,7 @@ export function RevisionEditForm({ revision, onUpdated }: RevisionEditFormProps)
       return;
     }
     setSaved(null);
+    setWarnings([]);
     const built = buildRequest(form, revision, acknowledgeIdentityChange, actor);
     if ('problem' in built) {
       setValidationError(built.problem);
@@ -161,6 +173,7 @@ export function RevisionEditForm({ revision, onUpdated }: RevisionEditFormProps)
     }
     setSaved(`Versie ${result.revisionNumber} is bijgewerkt (status: ${term('revisionStatus', result.status).label}).`);
     setAcknowledgeIdentityChange(false);
+    setWarnings(result.warnings ?? []);
     onUpdated(result);
   }
 
@@ -181,6 +194,72 @@ export function RevisionEditForm({ revision, onUpdated }: RevisionEditFormProps)
           onChange={(event) => setText(name, event.target.value)}
         />
       </Field>
+    );
+  }
+
+  /**
+   * G2c-2: leverancier of groep uit een kolom of een vaste waarde (legacy-config S6). Overstappen wist de andere
+   * bron in hetzelfde verzoek; de tekst van de verborgen bron blijft in het formulier staan zodat terugschakelen
+   * niets kwijt is.
+   */
+  function sourceRow(part: 'supplier' | 'group'): ReactNode {
+    const sourceKey: TextKey = part === 'supplier' ? 'supplierSource' : 'supplierGroupSource';
+    const columnKey: TextKey = part === 'supplier' ? 'supplierField' : 'supplierGroupField';
+    const fixedKey: TextKey = part === 'supplier' ? 'supplierFixedValue' : 'supplierGroupFixedValue';
+    const source = form[sourceKey];
+    const fixedId = `revision-${fixedKey}`;
+    const groupName = `revision-${part}-source`;
+    // De groepen horen bij de vaste leverancier, anders bij de bronorganisatie van de definitie (zoals de server).
+    const supplierTyped = form.supplierSource === SOURCE_FIXED ? form.supplierFixedValue.trim() : '';
+    const groupSupplier =
+      supplierTyped !== ''
+        ? form.identityUppercase
+          ? supplierTyped.toUpperCase()
+          : supplierTyped
+        : (sourceOrganisationCode ?? '');
+    return (
+      <div className={styles.sourceRow} data-testid={`revision-${part}-source`}>
+        <div className={styles.sourceChoice} role="radiogroup" aria-label={part === 'supplier' ? 'Bron van de leverancier' : 'Bron van de groep'}>
+          <label>
+            <input
+              type="radio"
+              name={groupName}
+              value={SOURCE_COLUMN}
+              checked={source === SOURCE_COLUMN}
+              onChange={() => setText(sourceKey, SOURCE_COLUMN)}
+            />{' '}
+            {term('revisionField', 'identitySourceColumn').label}
+          </label>
+          <label>
+            <input
+              type="radio"
+              name={groupName}
+              value={SOURCE_FIXED}
+              checked={source === SOURCE_FIXED}
+              onChange={() => setText(sourceKey, SOURCE_FIXED)}
+            />{' '}
+            {term('revisionField', 'identitySourceFixed').label}
+          </label>
+        </div>
+        {source === SOURCE_FIXED ? (
+          <Field
+            label={fieldWord(fixedKey)}
+            htmlFor={fixedId}
+            required
+            help={term('revisionField', fixedKey).uitleg}
+          >
+            <ProdisFixedValueField
+              kind={part}
+              id={fixedId}
+              value={form[fixedKey]}
+              onChange={(next) => setText(fixedKey, next)}
+              supplierNumber={part === 'group' ? groupSupplier : undefined}
+            />
+          </Field>
+        ) : (
+          textRow(columnKey, { required: true, maxLength: 200 })
+        )}
+      </div>
     );
   }
 
@@ -260,8 +339,9 @@ export function RevisionEditForm({ revision, onUpdated }: RevisionEditFormProps)
             )}
           </select>
         </Field>
-        {textRow('supplierField', { required: true, maxLength: 200 })}
-        {textRow('supplierGroupField', { required: true, maxLength: 200 })}
+        {sourceRow('supplier')}
+        {sourceRow('group')}
+        {checkRow('identityUppercase')}
         {textRow('supplierReferenceField', { required: true, maxLength: 200 })}
         {textRow('discountCodeField', { hint: CLEARABLE_HINT, maxLength: 200 })}
       </fieldset>
@@ -422,6 +502,17 @@ export function RevisionEditForm({ revision, onUpdated }: RevisionEditFormProps)
         <p className={styles.saved} role="status" data-testid="revision-edit-saved">
           {saved}
         </p>
+      )}
+      {warnings.length > 0 && (
+        <ul className={styles.warning} data-testid="revision-edit-warnings">
+          {warnings.map((warning, index) => (
+            <li key={`${warning.code}-${warning.field ?? ''}-${index}`}>
+              {termLabel('legacyReportCode', warning.code, 'Waarschuwing')}
+              {warning.field !== null && ` (${termLabel('revisionField', warning.field, warning.field)})`}:{' '}
+              {term('legacyReportCode', warning.code).uitleg}
+            </li>
+          ))}
+        </ul>
       )}
 
       {!gate.allowed && (

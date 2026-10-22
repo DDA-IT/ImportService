@@ -424,6 +424,8 @@ het veld staan in het stappenplan "Nieuwe leverancier en taak".
 | `supplierFixedValue` | Vaste leverancier | Een vaste leverancier voor alle regels, in plaats van een kolom. |
 | `supplierGroupFixedValue` | Vaste groep | Een vaste artikelgroep voor alle regels, in plaats van een kolom. |
 | `identityUppercase` | Herkenning in hoofdletters | Leverancier, groep en referentie worden in hoofdletters vergeleken. |
+| `identitySourceColumn` | Uit een kolom | De leverancier of de groep staat in een kolom van het bestand. |
+| `identitySourceFixed` | Vaste waarde | Dezelfde leverancier of groep voor alle regels van het bestand, zonder kolom. |
 | `supplierField` | Kolom leverancier | De kolom met de leverancier van het artikel. |
 | `supplierGroupField` | Kolom groep | De kolom met de artikelgroep van de leverancier. |
 | `supplierReferenceField` | Kolom referentie | De kolom met het artikelnummer van de leverancier. |

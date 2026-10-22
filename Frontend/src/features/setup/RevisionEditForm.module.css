@@ -105,3 +105,15 @@
   background: var(--bg-neutral);
   font-size: 0.875rem;
 }
+
+/* G2c-2: de keuze "uit een kolom / vaste waarde" boven het veld van leverancier of groep. */
+.sourceRow {
+  margin: 0 0 var(--spacing-3) 0;
+}
+
+.sourceChoice {
+  display: flex;
+  gap: var(--spacing-4);
+  margin: 0 0 var(--spacing-2) 0;
+  font-size: 0.875rem;
+}

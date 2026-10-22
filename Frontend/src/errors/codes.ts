@@ -734,6 +734,39 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     title: 'De kolom voor de groep is te lang',
     explanation: 'Een kolomaanduiding heeft hoogstens 200 tekens. De versie is niet opgeslagen.',
   },
+  SUPPLIER_FIXED_VALUE_INVALID: {
+    title: 'Kies een kolom of een vaste leverancier, niet allebei',
+    explanation: 'De leverancier komt uit een kolom of uit een vaste waarde. De versie is niet opgeslagen.',
+  },
+  SUPPLIER_FIXED_VALUE_TOO_LONG: {
+    title: 'De vaste leverancier is te lang',
+    explanation: 'Een vaste leverancier heeft hoogstens 50 tekens. De versie is niet opgeslagen.',
+  },
+  SUPPLIER_FIXED_VALUE_NOT_IN_PRODIS: {
+    title: 'Deze leverancier bestaat niet in Prodis',
+    explanation: 'Het nummer van de vaste leverancier komt niet voor in Prodis. De versie is niet opgeslagen.',
+    whatNow: 'Kies een leverancier uit de lijst of controleer het nummer.',
+  },
+  SUPPLIER_FIXED_VALUE_AMBIGUOUS_IN_PRODIS: {
+    title: 'Deze leverancier is niet eenduidig in Prodis',
+    explanation:
+      'Het nummer van de vaste leverancier komt meer dan eens voor in Prodis; er wordt nooit stilzwijgend een ' +
+      'van de twee gekozen. De versie is niet opgeslagen.',
+    whatNow: 'Vraag de beheerder van Prodis om het dubbele nummer op te lossen.',
+  },
+  SUPPLIER_GROUP_FIXED_VALUE_INVALID: {
+    title: 'Kies een kolom of een vaste groep, niet allebei',
+    explanation: 'De groep komt uit een kolom of uit een vaste waarde. De versie is niet opgeslagen.',
+  },
+  SUPPLIER_GROUP_FIXED_VALUE_TOO_LONG: {
+    title: 'De vaste groep is te lang',
+    explanation: 'Een vaste groep heeft hoogstens 50 tekens. De versie is niet opgeslagen.',
+  },
+  SUPPLIER_GROUP_FIXED_VALUE_NOT_IN_PRODIS: {
+    title: 'Deze groep bestaat niet bij de leverancier in Prodis',
+    explanation: 'De vaste groep is geen groep van deze leverancier in Prodis. De versie is niet opgeslagen.',
+    whatNow: 'Kies een groep uit de lijst of controleer de naam.',
+  },
   SUPPLIER_REFERENCE_FIELD_REQUIRED: {
     title: 'Vul de kolom voor de referentie in',
     explanation: 'Deze kolom is nodig om een artikel te herkennen. De versie is niet opgeslagen.',

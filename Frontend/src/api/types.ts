@@ -746,7 +746,12 @@ export type RevisionView = {
   supplierGroupFixedValue?: string | null;
   /** Legacy-config S6 (additief): leverancier, groep en referentie in hoofdletters vergelijken. */
   identityUppercase?: boolean;
+  /** G2c-2: waarschuwingen van dit verzoek (bv. `PRODIS_REFERENCE_NOT_VERIFIED`); niet bewaard. */
+  warnings?: SetupWarning[];
 };
+
+/** be.dda.catalogimport.service.SetupService.SetupWarning — `field` is `supplierFixedValue` of `supplierGroupFixedValue`. */
+export type SetupWarning = { code: string; field: string | null; message: string };
 
 /** be.dda.catalogimport.service.SetupService.ValueMapEntry — één vertaalrij van een MAP (legacy-config S8a, additief). */
 export type ValueMapEntryView = { source: string; target: string };
@@ -958,6 +963,15 @@ export type UpdateRevisionRequest = {
   changeReason: string | null;
   acknowledgeIdentityChange: boolean | null;
   createdBy: string | null;
+  /**
+   * G2c-2 (legacy-config S6): `null` = ongewijzigd, `""` = wissen, anders de vaste leverancier/groep. Wie van
+   * kolom naar vaste waarde overstapt, wist de andere bron in hetzelfde verzoek (`supplierField: ""`).
+   * Optioneel zodat bestaande aanroepers niets hoeven mee te geven.
+   */
+  supplierFixedValue?: string | null;
+  supplierGroupFixedValue?: string | null;
+  /** `null`/afwezig = ongewijzigd. */
+  identityUppercase?: boolean | null;
 };
 
 /**

@@ -21,11 +21,25 @@ export function fieldWord(name: string): string {
   return term('revisionField', name).label;
 }
 
+/**
+ * G2c-2 (legacy-config S6): leverancier en groep komen elk uit precies één van een kolom of een vaste waarde.
+ * De keuze is formulierstaat (`supplierSource`/`supplierGroupSource`), nooit iets wat de server bewaart.
+ */
+export const SOURCE_COLUMN = 'COLUMN';
+export const SOURCE_FIXED = 'FIXED';
+
 /** Alle bewerkbare velden als tekst/boolean; getallen blijven tekst tot het versturen (nooit stil 0). */
 export type FormState = {
   identityProfileKind: string;
   supplierField: string;
   supplierGroupField: string;
+  /** `COLUMN` of `FIXED`: waar de leverancier vandaan komt. */
+  supplierSource: string;
+  supplierFixedValue: string;
+  /** `COLUMN` of `FIXED`: waar de groep vandaan komt. */
+  supplierGroupSource: string;
+  supplierGroupFixedValue: string;
+  identityUppercase: boolean;
   supplierReferenceField: string;
   discountCodeField: string;
   basePriceField: string;
@@ -65,6 +79,11 @@ export function initialForm(revision: RevisionDetail): FormState {
     // Een vaste leverancier/groep (legacy-config S6) heeft geen kolom: het veld blijft leeg en ongewijzigd.
     supplierField: revision.identitySupplierField ?? '',
     supplierGroupField: revision.identitySupplierGroupField ?? '',
+    supplierSource: revision.identitySupplierFixedValue != null ? SOURCE_FIXED : SOURCE_COLUMN,
+    supplierFixedValue: revision.identitySupplierFixedValue ?? '',
+    supplierGroupSource: revision.identitySupplierGroupFixedValue != null ? SOURCE_FIXED : SOURCE_COLUMN,
+    supplierGroupFixedValue: revision.identitySupplierGroupFixedValue ?? '',
+    identityUppercase: revision.identityUppercase ?? false,
     supplierReferenceField: revision.identitySupplierReferenceField,
     discountCodeField: revision.identityDiscountCodeField ?? '',
     basePriceField: revision.recordBasePriceField,
@@ -138,16 +157,68 @@ export function diffNumber(text: string, current: number | null): NumberDiff {
   return { value: parsed === current ? null : parsed, invalid: false };
 }
 
-/** R-REV-X3: dezelfde vergelijking als de server — oud versus nieuw, niet "stond het in het verzoek". */
+/**
+ * Eén identiteitsdeel (leverancier of groep) oud versus nieuw: enkel de gekozen bron telt, de andere is "leeg".
+ * Zo is overstappen van kolom naar vaste waarde (of omgekeerd) een wijziging, ook al blijft de verborgen tekst staan.
+ */
+function sourcePartChanged(
+  source: string,
+  column: string,
+  fixed: string,
+  currentColumn: string | null,
+  currentFixed: string | null | undefined,
+): boolean {
+  const nextColumn = source === SOURCE_FIXED ? '' : column.trim();
+  const nextFixed = source === SOURCE_FIXED ? fixed.trim() : '';
+  return nextColumn !== (currentColumn ?? '').trim() || nextFixed !== (currentFixed ?? '').trim();
+}
+
+/**
+ * R-REV-X3: dezelfde vergelijking als de server — oud versus nieuw, niet "stond het in het verzoek". Sinds G2c-2
+ * tellen ook de vaste leverancier/groep en `identityUppercase` mee (`RevisionFieldRules`: een wijziging daaraan is
+ * een identiteitswijziging).
+ */
 export function identityChanged(form: FormState, revision: RevisionDetail): boolean {
   return (
     form.identityProfileKind !== revision.identityProfileKind ||
-    form.supplierField.trim() !== (revision.identitySupplierField ?? '').trim() ||
-    form.supplierGroupField.trim() !== (revision.identitySupplierGroupField ?? '').trim() ||
+    sourcePartChanged(
+      form.supplierSource,
+      form.supplierField,
+      form.supplierFixedValue,
+      revision.identitySupplierField,
+      revision.identitySupplierFixedValue,
+    ) ||
+    sourcePartChanged(
+      form.supplierGroupSource,
+      form.supplierGroupField,
+      form.supplierGroupFixedValue,
+      revision.identitySupplierGroupField,
+      revision.identitySupplierGroupFixedValue,
+    ) ||
+    form.identityUppercase !== (revision.identityUppercase ?? false) ||
     form.supplierReferenceField.trim() !== revision.identitySupplierReferenceField.trim() ||
     normaliseOptional(form.discountCodeField) !==
       (revision.identityDiscountCodeField === null ? null : revision.identityDiscountCodeField.trim())
   );
+}
+
+function sourceDiff(
+  source: string,
+  column: string,
+  fixed: string,
+  currentColumn: string | null,
+  currentFixed: string | null | undefined,
+): { field: string | null; fixedValue: string | null } {
+  if (source === SOURCE_FIXED) {
+    return {
+      field: currentColumn !== null ? '' : null,
+      fixedValue: diffRequiredText(fixed, currentFixed ?? ''),
+    };
+  }
+  return {
+    field: diffRequiredText(column, currentColumn ?? ''),
+    fixedValue: currentFixed != null ? '' : null,
+  };
 }
 
 /**
@@ -184,11 +255,13 @@ export function buildRequest(
 
   // Verplichte tekstvelden: leeg is een fout, nooit een lege waarde in het verzoek.
   const requiredFields: Array<[string, string]> = [
-    // Met een vaste leverancier/groep (kolom `null`, legacy-config S6) is een lege kolom geen fout.
-    ...(revision.identitySupplierField === null ? [] : ([['supplierField', form.supplierField]] as Array<[string, string]>)),
-    ...(revision.identitySupplierGroupField === null
-      ? []
-      : ([['supplierGroupField', form.supplierGroupField]] as Array<[string, string]>)),
+    // Leverancier en groep: precies de gekozen bron is verplicht (kolom of vaste waarde, legacy-config S6).
+    form.supplierSource === SOURCE_FIXED
+      ? ['supplierFixedValue', form.supplierFixedValue]
+      : ['supplierField', form.supplierField],
+    form.supplierGroupSource === SOURCE_FIXED
+      ? ['supplierGroupFixedValue', form.supplierGroupFixedValue]
+      : ['supplierGroupField', form.supplierGroupField],
     ['supplierReferenceField', form.supplierReferenceField],
     ['basePriceField', form.basePriceField],
     ['delimiter', form.delimiter],
@@ -209,10 +282,30 @@ export function buildRequest(
     };
   }
 
+  // Overstappen in één verzoek: de nieuwe bron krijgt zijn waarde, de andere bron `""` (= wissen, S6), nooit een
+  // stille wissel. Is de andere bron al leeg, dan gaat ze als `null` (ongewijzigd) mee.
+  const supplier = sourceDiff(
+    form.supplierSource,
+    form.supplierField,
+    form.supplierFixedValue,
+    revision.identitySupplierField,
+    revision.identitySupplierFixedValue,
+  );
+  const group = sourceDiff(
+    form.supplierGroupSource,
+    form.supplierGroupField,
+    form.supplierGroupFixedValue,
+    revision.identitySupplierGroupField,
+    revision.identitySupplierGroupFixedValue,
+  );
+
   const body: UpdateRevisionRequest = {
     identityProfileKind: diffEnum<IdentityProfileKind>(form.identityProfileKind, revision.identityProfileKind),
-    supplierField: diffRequiredText(form.supplierField, revision.identitySupplierField ?? ''),
-    supplierGroupField: diffRequiredText(form.supplierGroupField, revision.identitySupplierGroupField ?? ''),
+    supplierField: supplier.field,
+    supplierGroupField: group.field,
+    supplierFixedValue: supplier.fixedValue,
+    supplierGroupFixedValue: group.fixedValue,
+    identityUppercase: diffBoolean(form.identityUppercase, revision.identityUppercase ?? false),
     supplierReferenceField: diffRequiredText(
       form.supplierReferenceField,
       revision.identitySupplierReferenceField,
