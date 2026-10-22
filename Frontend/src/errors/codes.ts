@@ -633,6 +633,29 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
       'geen geldig doel.',
     whatNow: 'Laad de versie opnieuw.',
   },
+  // G2c-4 — een uitsluitingsgroep toevoegen: de server beslist over groepsnummer en voorwaarden.
+  MATCH_GROUP_INVALID: {
+    title: 'Het groepsnummer klopt niet',
+    explanation: 'Het groepsnummer van een uitsluitingsgroep moet een getal groter dan 0 zijn.',
+    whatNow: 'Pas het groepsnummer aan en probeer opnieuw. Rijen die al aangemaakt zijn, staan in de dialoog.',
+    showBackendDetail: true,
+  },
+  CONFIG_FILTER_INVALID: {
+    title: 'Deze voorwaarde past niet in een uitsluitingsgroep',
+    explanation:
+      'Elke voorwaarde van een groep moet een regel overslaan en een lege kolom als leeg vergelijken. De ' +
+      'versie hoort daarna ook als geheel te kloppen.',
+    whatNow: 'Lees de servertekst hieronder, pas de voorwaarde aan en probeer opnieuw.',
+    showBackendDetail: true,
+  },
+  COMPARE_VALUE_REQUIRED: {
+    title: 'Een vergelijkwaarde ontbreekt',
+    explanation:
+      'Alleen bij een uitsluitingsgroep mag de vergelijkwaarde leeg zijn (dan betekent ze "de kolom is leeg"). ' +
+      'Bij een andere vergelijking is ze verplicht.',
+    whatNow: 'Vul de vergelijkwaarde in en probeer opnieuw.',
+    showBackendDetail: true,
+  },
   // G2c-3 — een extra veld vervangen: de server beslist of de bewerking(en) en de omzettingstabel kloppen.
   CONFIG_TRANSFORM_INVALID: {
     title: 'De bewerking van dit extra veld klopt niet',

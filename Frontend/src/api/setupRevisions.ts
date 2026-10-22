@@ -23,6 +23,7 @@ import type {
   ActivateRevisionRequest,
   CreateMappingRequest,
   CreateSuccessorRequest,
+  FilterView,
   MappingView,
   RevisionView,
   UpdateRevisionRequest,
@@ -153,6 +154,38 @@ export function activateRevision(
   signal?: AbortSignal,
 ): Promise<RevisionView> {
   return request<RevisionView>(`/setup/revisions/${revisionId}/activate`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
+/** Body van `POST /setup/revisions/{rid}/filters` (`SetupService.CreateFilterCommand`); weggelaten velden krijgen de serverstandaard. */
+export type CreateFilterRequest = {
+  sequenceNumber?: number | null;
+  sourceReference: string;
+  operator: string;
+  compareValue: string | null;
+  outcome: string;
+  caseSensitive?: boolean;
+  trimBeforeCompare?: boolean;
+  nullBehaviour?: string;
+  missingColumnBehaviour?: string;
+  createdBy: string | null;
+  matchGroup?: number | null;
+};
+
+/**
+ * POST /setup/revisions/{revisionId}/filters — CatalogImportSetupController.addFilter (201, G2c-4).
+ *
+ * Voegt één filterrij toe aan een `DRAFT`. Met `matchGroup` is de rij deel van een uitsluitingsgroep (enkel `EXCLUDE` +
+ * `COMPARE_AS_EMPTY`; bij `EQUALS` betekent een lege vergelijkwaarde "kolom is leeg").
+ *
+ * @throws {import('./http.ts').ApiError} 400 `MATCH_GROUP_INVALID`, `CONFIG_FILTER_INVALID`, `COMPARE_VALUE_REQUIRED`;
+ *   404 `REVISION_NOT_FOUND`; 409 `REVISION_NOT_EDITABLE`, `FILTER_SEQUENCE_IN_USE` of een `CONFIG_BOOKMARK_*`-code
+ */
+export function addFilter(revisionId: number, body: CreateFilterRequest, signal?: AbortSignal): Promise<FilterView> {
+  return request<FilterView>(`/setup/revisions/${revisionId}/filters`, {
     method: 'POST',
     body: JSON.stringify(body),
     signal,

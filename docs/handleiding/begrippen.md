@@ -28,6 +28,7 @@ De enumwaarden hieronder komen uit `Domain/src/main/java/be/dda/catalogimport/do
 | **Bevriezen (freeze)** | Sluit een bundel af (`FROZEN`) na controle; keurt resterende `PLANNED` mee goed op naam van de bevriezer. Onomkeerbaar in de applicatie. |
 | **Bibliotheek (`libraryCode`)** | Doelbibliotheek van een koppeling (bv. `PSARF012`). Scope, geen deel van de identiteit. |
 | **Blokkeerreden (`blockedCode`)** | Reden waarom een batch `BLOCKED` is. |
+| **Uitsluitingsgroep** | Reeks filters met hetzelfde groepsnummer (`matchGroup`) die samen waar moeten zijn voor een regel overgeslagen wordt. Elke voorwaarde is `EXCLUDE` met een lege kolom als leeg vergeleken; een lege vergelijkwaarde betekent "de kolom is leeg". Toe te voegen op een concept via "Uitsluitingsgroep toevoegen…" (één aanmaak per voorwaarde; bij een fout toont het scherm welke al bestaan). |
 | **Invulpunt** | Benoemde, getypeerde plaats in een sjabloon waar een waarde ingevuld wordt. Geldt voor de hele beschrijving (bij het aanmaken vastgezet, `DEFINITION`) of per koppeling (`LINK`). |
 | **Leverancier of aankoopvereniging** | Wie het bestand aanlevert: `SUPPLIER` of `PURCHASING_ASSOCIATION`. |
 | **Bronstaat** | Wat het systeem als huidige stand per aanbieding beschouwt. Alleen `accept-baseline` schrijft er vandaag in (herkomst `BASELINE_ACCEPTED`). |

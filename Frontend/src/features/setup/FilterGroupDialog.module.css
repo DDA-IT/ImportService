@@ -1,0 +1,75 @@
+/* G2c-4 — dialoog "Uitsluitingsgroep toevoegen". */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  font-size: 0.875rem;
+}
+
+.body p {
+  margin: 0;
+}
+
+.muted {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
+}
+
+.rowTitle {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.emptyHint {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-style: italic;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.actions {
+  display: flex;
+  gap: var(--spacing-2);
+}
+
+.problems {
+  margin: 0;
+  padding: var(--spacing-2) var(--spacing-3) var(--spacing-2) var(--spacing-5, 1.5rem);
+  border-radius: var(--radius);
+  background: var(--status-rejected-bg);
+  color: var(--soft-error-text);
+  font-size: 0.8125rem;
+}
+
+.partial {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius);
+  background: var(--bg-neutral);
+}
+
+.flagOff {
+  margin: 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius);
+  background: var(--bg-neutral);
+  font-size: 0.875rem;
+}

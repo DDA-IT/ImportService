@@ -141,9 +141,12 @@ describe('revisiedetail — velden van de legacy-config-migratie', () => {
     expect(mapping).toHaveTextContent('Bewerkingen: Deel van de tekst → Voor- en achtervoegsel → Waarde omzetten');
     expect(mapping).toHaveTextContent('Onbekende waarden blijven ongewijzigd');
 
-    const filters = screen.getByTestId('revision-filters').querySelectorAll('li');
-    expect(filters[0]).toHaveTextContent('Groep 2: alle voorwaarden samen');
-    expect(filters[1]).not.toHaveTextContent('Groep');
+    // G2c-4: een groep staat samen onder één kop; een losse rij staat erbuiten.
+    const group = screen.getByTestId('filter-group-2');
+    expect(group).toHaveTextContent('Uitsluitingsgroep 2 — alle voorwaarden samen');
+    expect(within(group).getAllByRole('listitem')).toHaveLength(1);
+    const loose = within(screen.getByTestId('revision-filters')).getByText('4').closest('li')!;
+    expect(loose).not.toHaveTextContent('Uitsluitingsgroep');
   });
 
   it('toont de nieuwe velden niet voor een revisie zonder die velden (oudere vorm)', async () => {

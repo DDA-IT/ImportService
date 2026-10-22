@@ -28,7 +28,7 @@
 import { useState, type ReactNode } from 'react';
 import * as setupApi from '../../api/setup.ts';
 import * as setupRevisionsApi from '../../api/setupRevisions.ts';
-import { PERMISSION_MANAGE, type MappingView, type RevisionDetail } from '../../api/types.ts';
+import { PERMISSION_MANAGE, type FilterView, type MappingView, type RevisionDetail } from '../../api/types.ts';
 import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
@@ -41,6 +41,8 @@ import { INVULPUNT, INVULPUNT_CAP, INVULPUNTEN } from '../../terms/wording.ts';
 import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
 import { Term } from '../../terms/Term.tsx';
 import { ActivateRevisionAction } from './ActivateRevisionAction.tsx';
+import { AddFilterGroupAction } from './FilterGroupDialog.tsx';
+import { groupFilters } from './filterGroupModel.ts';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
 import { ReplaceMappingAction } from './MappingReplaceDialog.tsx';
 import { RevisionEditForm } from './RevisionEditForm.tsx';
@@ -420,6 +422,41 @@ function MappingExtras({ mapping }: { mapping: MappingView }) {
   );
 }
 
+/** Eén filterrij (los of binnen een uitsluitingsgroep). */
+function FilterRow({
+  revision,
+  filter,
+  onChanged,
+}: {
+  revision: RevisionDetail;
+  filter: FilterView;
+  onChanged: () => void;
+}) {
+  return (
+    <li className={styles.listItem}>
+      <span className={styles.sequence}>#{filter.sequenceNumber}</span>
+      <span className={styles.code}>{filter.sourceReference}</span>
+      <span>
+        <Term domain="filterOperator" code={filter.operator} unknownLabel="andere vergelijking" />
+      </span>
+      <span>{filter.matchGroup != null && filter.compareValue === '' ? 'leeg veld' : show(filter.compareValue)}</span>
+      <span>
+        <Term domain="filterOutcome" code={filter.outcome} unknownLabel="Andere uitkomst" />
+      </span>
+      {revision.status === 'DRAFT' && (
+        <DeleteChildRowAction
+          revisionId={revision.id}
+          status={revision.status}
+          kind="filter"
+          rowId={filter.id}
+          description={`Filter #${filter.sequenceNumber} op kolom ${filter.sourceReference}`}
+          onDeleted={onChanged}
+        />
+      )}
+    </li>
+  );
+}
+
 /** Extra velden, filters, kritiek per veld, bookmarkdeclaraties en hun DEFINITION-waarden. */
 function ChildRows({ revision, onChanged }: { revision: RevisionDetail; onChanged: () => void }) {
   const draft = revision.status === 'DRAFT';
@@ -473,31 +510,28 @@ function ChildRows({ revision, onChanged }: { revision: RevisionDetail; onChange
           <p className={styles.empty}>Deze versie heeft geen filters op de regels.</p>
         ) : (
           <ul className={styles.list} data-testid="revision-filters">
-            {revision.filters.map((filter) => (
-              <li key={filter.id} className={styles.listItem}>
-                <span className={styles.sequence}>#{filter.sequenceNumber}</span>
-                <span className={styles.code}>{filter.sourceReference}</span>
-                <span>
-                  <Term domain="filterOperator" code={filter.operator} unknownLabel="andere vergelijking" />
-                </span>
-                <span>{show(filter.compareValue)}</span>
-                <span>
-                  <Term domain="filterOutcome" code={filter.outcome} unknownLabel="Andere uitkomst" />
-                </span>
-                {filter.matchGroup != null && <span>Groep {filter.matchGroup}: alle voorwaarden samen</span>}
-                {draft && (
-                  <DeleteChildRowAction
-                    revisionId={revision.id}
-                    status={revision.status}
-                    kind="filter"
-                    rowId={filter.id}
-                    description={`Filter #${filter.sequenceNumber} op kolom ${filter.sourceReference}`}
-                    onDeleted={onChanged}
-                  />
-                )}
-              </li>
-            ))}
+            {groupFilters(revision.filters).map((entry) =>
+              entry.kind === 'single' ? (
+                <FilterRow key={entry.filter.id} revision={revision} filter={entry.filter} onChanged={onChanged} />
+              ) : (
+                <li key={`group-${entry.group}`} className={styles.filterGroup} data-testid={`filter-group-${entry.group}`}>
+                  <span className={styles.filterGroupTitle}>
+                    Uitsluitingsgroep {entry.group} — alle voorwaarden samen
+                  </span>
+                  <ul className={styles.list}>
+                    {entry.filters.map((filter) => (
+                      <FilterRow key={filter.id} revision={revision} filter={filter} onChanged={onChanged} />
+                    ))}
+                  </ul>
+                </li>
+              ),
+            )}
           </ul>
+        )}
+        {draft && (
+          <div className={styles.childActions}>
+            <AddFilterGroupAction revision={revision} onChanged={onChanged} />
+          </div>
         )}
       </div>
 
