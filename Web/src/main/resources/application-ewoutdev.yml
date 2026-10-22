@@ -57,6 +57,17 @@ catalogimport:
   app-switcher:
     prodis-url: ${CATALOG_PRODIS_URL:http://localhost:9060}
     prodis-account-url: ${CATALOG_PRODIS_ACCOUNT_URL:http://localhost:8080/api/account}
+  # Lokale alleen-lezen Prodis-database (docs/decisions.md 2026-10-22, uitzondering enkel voor ewoutdev): dezelfde
+  # lokale verbinding als het Prodis-project (profiel devewout). De pool is readOnly. CATALOG_PRODIS_DB_* overschrijven.
+  prodis-db:
+    url: ${CATALOG_PRODIS_DB_URL:jdbc:postgresql://localhost:5432/Prodis}
+    username: ${CATALOG_PRODIS_DB_USERNAME:Prodis}
+    password: ${CATALOG_PRODIS_DB_PASSWORD:Prodis}
+  # Lokale sleutelring (docs/decisions.md 2026-10-22, uitzondering op K-1 enkel voor ewoutdev): gegenereerde dev-sleutel,
+  # nooit in een andere omgeving gebruiken. CATALOG_SECRETS_KEYS / CATALOG_SECRETS_ACTIVE_KEY_ID overschrijven.
+  secrets:
+    keys: ${CATALOG_SECRETS_KEYS:dev-ewout-1:1AVUpxdi/5i8aIDW24tbx0N4dOGMI9ahBMB/lHlnYkM=}
+    active-key-id: ${CATALOG_SECRETS_ACTIVE_KEY_ID:dev-ewout-1}
   # Legacy-config-push (docs/decisions.md 2026-10-20 M2): lokaal de Prodis-Keycloak (realm prodis) met audience web_app
   # (design par. 3: lokale audience web_app) en de confidential client prodis-datasync-catalogimport (in prodis-realm.json
   # van de Prodis-repo aan te maken, met client role legacy-config-push op web_app). Overschrijfbaar via de omgeving.

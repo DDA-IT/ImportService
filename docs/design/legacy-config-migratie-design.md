@@ -84,6 +84,22 @@ Legende: **B** = bestaand concept · **U** = uitbreiding nodig · **N** = bewust
 - **Contract:** geversioneerde bundel "legacy-config-bundle v1" (PSIMDHFD, PSIMPDEF, PSIMPDEFMAP, PSIMPEXCL, INHEAD,
   INDET per interface). Upload naar een MANAGE-endpoint: eerst `PREVIEW` (rapport, niets geschreven), dan `APPLY`.
   Niet via `DeliveryArchiveStore`, niet gearchiveerd.
+
+> **Important technical constraint discovered**
+>
+> In de Pervasive DDF van PRODISWEB staan de legacy-configuratietabellen geregistreerd in `X$File` onder hun Magic-datasourcenaam, niet onder de Btrieve-bestandsnaam (geverifieerd lokaal op PRODISWEB, 2026-10-22):
+>
+> | `pervasive.tables.*` | SQL-naam (`Xf$Name`) | Bestand (`Xf$Loc`) | rijen lokaal |
+> |---|---|---|---|
+> | interface-headers | `InterfaceHeaders` | `Prosys\INHEAD` | 245 |
+> | interface-details | `InterfaceDetail` | `Prosys\INDET` | 15557 |
+> | import-definition-headers | `Import_Definitie_Hoo` | `Prosys\PSIMDHFD` | 397 |
+> | import-definition-lines | `Import_Definitie` | `Prosys\PSIMPDEF` | 9435 |
+> | import-definition-maps | `Import_Definitie_map` | `Prosys\PSIMPDEFMAP` | 173 |
+> | import-definition-excludes | `Import_Definitie_Exc` | `Prosys\PSIMPEXCL` | 0 |
+>
+> Kolomnamen zijn afgekapt tot 20 tekens, niet-alfanumerieke tekens worden `_` (bv. `Execution_Time__or_s`, `Waarde_Formule_Funct`); `LegacyConfigPervasiveImpl.ColumnIndex` lost dat op (prefix-match, minimaal 10 tekens). De codedefaults (INHEAD, INDET, PSIMDHFD, ...) bestaan niet als SQL-naam; de mapping staat in `application.yml` onder `pervasive.tables` (ProdisDatasyncEngine, `sync-app`). Andere omgevingen gebruiken waarschijnlijk dezelfde namen, maar verifieer `X$File` per omgeving.
+
 - **Producent van de bundel (Q1):** R1 Magic-export (Prg 1176 exporteert PSIMPDEF al als `Importdef_<code>.csv`,
   `Prg_1176` r.161, r.501-689); R2 los DDA-script via DDF-SQL (niet elke tabel heeft een DDF); R3 read-only endpoint
   in ProDisWebbase (nieuw M2M-contract). **Verworpen:** CatalogImport leest Zen rechtstreeks (grens 2026-09-18).

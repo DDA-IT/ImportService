@@ -3064,3 +3064,47 @@ SIMULATION-run = lege pagina, `continue` op SIMULATION = 409 `PUBLICATION_RUN_NO
 opgeslagen JSON (onleesbaar = 500, nooit stil leeg); `continue` tekent als niet-systeem-actor met APPROVE. POST start/continue geven een
 `PublicationRunView` (frontendcontract); `PARTIALLY_PUBLISHED` is enkel een bundelstatus.
 **Bron:** P6-bouwerrapport
+
+## 2026-10-22 — Uitzondering op K-1: lokale sleutelring in profiel ewoutdev
+**Vraag:** De legacy-config-push van de datasync faalde lokaal met 409 `SECRETS_NOT_CONFIGURED` (49 interfaces met een
+secret), omdat K-1 (2026-09-29) geen sleutel en geen default in enig profiel toelaat.
+**Beslissing:** Enkel in `application-ewoutdev.yml` (lokale ontwikkelomgeving) staat een gegenereerde dev-sleutel als default
+(`catalogimport.secrets.keys`, id `dev-ewout-1`); de omgevingsvariabelen `CATALOG_SECRETS_KEYS` /
+`CATALOG_SECRETS_ACTIVE_KEY_ID` overschrijven hem. K-1 blijft gelden voor alle andere profielen en omgevingen; deze sleutel
+beschermt geen echte gegevens buiten de lokale database en mag nooit in een gedeelde of productieomgeving gebruikt worden.
+**Bron:** mens
+
+## 2026-10-22 — Legacy-config: ook FTP- en API-wachtwoorden bewaren
+**Vraag:** De eerste echte push (lokaal) gaf 49 x `DISCARDED_PROTOCOL_UNSUPPORTED`: 46 gewone FTP-bestemmingen (host zonder
+schema, bv. `ftp.vrooamgrossier.be`, `dx.kramp.com`, `84.199.80.12`; INDET-label `SFTP` = `N` of afwezig) en 3 HTTPS-API's
+(Intercars, `FTP/LOCAL/API` = `A`). Het ontwerp (`legacy-config-migratie-design.md` "Alleen SFTP") bewaarde die niet.
+**Beslissing:** Herroept "Alleen SFTP; FTP/API-secrets niet opslaan" voor de legacy-config-overname: ook FTP- en
+API-wachtwoorden worden versleuteld bewaard (zelfde sleutelring en regels als SFTP: nooit leesbaar, enkel via verwijzing,
+een bestaande credential wordt nooit vervangen), zodat niets verloren gaat wanneer Magic verdwijnt. Gebruik ervan vraagt
+een latere FTP-/API-connector; tot dan is het enkel bewaring. Uitwerking (secret-soorten, protocolherkenning zonder
+URL-schema, host/endpoint, contract en migratie) via denker-zwaar.
+**Bron:** mens
+
+## 2026-10-22 — Lokale Prodis-leesverbinding in profiel ewoutdev; tekenset legacy = UTF-8
+**Vraag:** PREVIEW gaf `LIBRARY_CODE_NOT_RESOLVED` (Prodis-database niet geconfigureerd) en `CHARSET_NOT_DECLARED` voor
+interfaces zonder `FILE_ENCODING`.
+**Beslissing:** (1) Enkel in `application-ewoutdev.yml` staat `catalogimport.prodis-db` als default op de lokale Prodis-
+database met de lokale ontwikkellogin uit het Prodis-project (profiel devewout); uitzondering op "bewust geen default"
+alleen voor deze lokale omgeving, andere profielen ongewijzigd. (2) Business rule: een legacy-interface zonder
+`FILE_ENCODING` gebruikt altijd UTF-8; dat is geen gok maar de vastgelegde legacy-tekenset, dus geen blokkering meer.
+**Bron:** mens
+
+## 2026-10-22 — LF: uitwerking FTP-/API-wachtwoorden bewaren (ontwerp)
+**Vraag:** Uitwerking van "ook FTP- en API-wachtwoorden bewaren": secret-soorten, protocolherkenning, binding, contract.
+**Beslissing:** `ExternalCredentialSecretKind` + `FTP_PASSWORD`, `API_PASSWORD` (Liquibase 029-1 verbreedt
+`ck_external_credential_secret_kind`, additief). `LegacyFtpLocation` volgt Magic `Prg_1232` r.454-499/622-624: eerste teken
+van `FTP/LOCAL/API` = `A` + http(s) -> API (host = authority), `L` -> LOCAL (niet bewaard), anders `sftp://` -> SFTP,
+`ftp://`/`ftps://`/`ftpes://` -> FTP, geen schema en geen SFTP-hint -> FTP (host uit `FTP` alleen, moet gelijk zijn met
+FTP+FTP2), tegenstrijdig/dubbel label -> UNKNOWN (`DISCARDED_PROTOCOL_UNSUPPORTED`). Binding enkel `bound_host`
+(IP toegestaan, regels `HostNames`). Uitkomst blijft `STORED` voor alle soorten (soort staat op de credential).
+Contract v1: enkel formulering, geen versie-/hashwijziging. Bestaande 49 ontvangsten: herhaalde push (UNCHANGED-pad)
+bewaart ze zonder migratie. Nieuwe soorten kunnen niet in een (SFTP-)verbindingsprofiel (bestaande checks).
+Open punten (aanbeveling gevolgd — door de mens te herzien): V-a menselijke `POST /credentials` blijft SFTP-only;
+V-b host zonder schema met SFTP-hint gezet -> niet bewaren tot ProDisWebbase-gedrag gekend is; V-c API via `http://` wordt
+bewaard (enkel bewaring; de latere connector beslist over TLS).
+**Bron:** denker-zwaar (LF-ontwerp) / legacy-config-bundle-design.md, legacy-config-bundle-v1.md, vault Prg_1232
