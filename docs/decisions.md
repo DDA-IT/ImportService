@@ -3034,3 +3034,26 @@ publicatie-ontwerp (bewuste afwijking van AGENT.md "gemiddeld/zwaar sequentieel"
 taak: validatiepakket (overzicht gevolgde aanbevelingen + testchecklist). P6 blijft na P5c. P7 raakt enkel `Frontend/` en
 `docs/handleiding/begrippen.md`, P5c enkel backend, zodat er geen gedeelde bestanden zijn.
 **Bron:** mens
+
+## 2026-10-22 — P5c: orchestratie PRODUCTION-run
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):**
+1. Begrenzing: na `max-not-applied-attempts` (5) zeker niet-toegepaste pogingen → REJECTED `PRODIS_NOT_APPLIED_REPEATEDLY`, mutatie terug
+   READY_FOR_PUBLICATION (kolom `not_applied_count`); RESULT_UNKNOWN nooit zo begrensd; `possiblyWrittenEarlier` gemeld.
+2. Chunk = RESULT_UNKNOWN eerst, samen met PENDING hoogstens `chunk-size` (200).
+3. Lease-owner `continue:<UUID>`, per item verlengd.
+4. Start herberekent bundel- én snapshothash; nieuwe codes `BUNDLE_TARGET_MODE_NOT_PRODUCTION`, `PRODUCTION_RUN_IN_PROGRESS`,
+   `PUBLICATION_RUN_NOT_PRODUCTION`, `PUBLICATION_RUN_NOT_PUBLISHING`.
+5. Eindstatus run altijd APPLIED; de bundelstatus (PUBLISHED/PARTIALLY_PUBLISHED) toont volledig of gedeeltelijk.
+6. Bronstaat niet bijgewerkt (met melding `SOURCE_STATE_NOT_UPDATED`) als stagerij/bronstaat ontbreekt, de bronstaat wijzigde, een component
+   geen percentage heeft, of bij CREATE; `catalog_reference_state` niet geschreven.
+7. Start met bezette lease geeft de run terug zonder chunk.
+8. IN_PROGRESS-mutaties van een nooit afgeronde run: geen automatische actie, zichtbaar in de tellers; continue hervat.
+9. Liquibase 028: `APPLIED` terminaal enkel voor PRODUCTION in de DB-check (lokale testdata met APPLIED SIMULATION blijft geldig);
+   `isTerminal()` algemeen uitgebreid (gemelde gedragswijziging).
+**Open bij de mens (§6 statusflow, niet blokkerend voor P6):** REJECTED/CONFLICT/NOT_SENT-mutaties blijven READY_FOR_PUBLICATION in een
+PARTIALLY_PUBLISHED-bundel; de conflictregel tussen bundels (R-FRZ-04) telt ze als publiceerbaar, waardoor een latere bundel met een mutatie
+voor dezelfde aanbieding niet bevroren kan worden; en er is geen pad om een PARTIALLY_PUBLISHED-bundel opnieuw te publiceren. Vraagt een
+beslissing (bv. de rest vrijgeven aan een nieuwe bundel vs. de bundel herpubliceren).
+**Ontdekt:** `SourceStateBaselineService` schrijft `base_price_currency_origin` niet (010-2 bedoelt dat wel); de publicatie volgt de
+baseline. `PublicationRunView` zet `simulationOnly=true`/`writesToProdis=false` vast — P6 lost dat op.
+**Bron:** P5c-bouwerrapport

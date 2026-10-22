@@ -30,6 +30,8 @@ import java.time.Instant;
  *   <li>{@link #recordNotApplied}: {@code SENT → PENDING} met {@code last_error_code} (zeker niets toegepast).</li>
  *   <li>{@link #recordResultUnknown}: {@code SENT → RESULT_UNKNOWN} met {@code last_error_code}.</li>
  *   <li>{@link #markNotSent}: een nooit verstuurd {@code PENDING}-item → {@code NOT_SENT} (bv. CREATE in v1).</li>
+ *   <li>{@link #rejectAfterRepeatedNotApplied} (P5c): {@code PENDING} na te veel zeker niet-toegepaste pogingen →
+ *       {@code REJECTED}.</li>
  * </ul>
  */
 @Entity
@@ -115,6 +117,14 @@ public class PublicationRunItem {
     @Column(name = "send_count", nullable = false)
     private int sendCount;
 
+    /**
+     * Het aantal pogingen dat zeker niets in Prodis toepaste ({@link #recordNotApplied}, changeset 028-2); basis van de
+     * begrenzing van herhaalde pogingen (P5c). {@code sendCount - notAppliedCount > 0} betekent dat minstens één poging
+     * een onbekende uitkomst had.
+     */
+    @Column(name = "not_applied_count", nullable = false)
+    private int notAppliedCount;
+
     protected PublicationRunItem() {
         // JPA
     }
@@ -183,11 +193,44 @@ public class PublicationRunItem {
         this.warningsJson = warningsJson;
     }
 
-    /** Zeker niets toegepast (fout vóór de Prodis-commit): {@code SENT → PENDING}, tijdstip en teller blijven. */
+    /**
+     * Zeker niets toegepast (fout vóór de Prodis-commit): {@code SENT → PENDING}, tijdstip en {@code send_count} blijven,
+     * {@code not_applied_count + 1} (P5c).
+     */
     public void recordNotApplied(String errorCode) {
         requireSent("fall back to PENDING");
         this.status = PublicationRunItemStatus.PENDING;
         this.lastErrorCode = requireErrorCode(errorCode);
+        this.notAppliedCount = notAppliedCount + 1;
+    }
+
+    /**
+     * De begrenzing van herhaalde pogingen (P5c): een {@code PENDING}-item dat al minstens {@code maxNotApplied} keer zeker
+     * niets toepaste, wordt definitief {@code REJECTED} zonder nieuw contact met Prodis. Er wordt niets "teruggezet":
+     * {@code send_count}, {@code sent_at} en {@code last_error_code} blijven als historiek.
+     *
+     * @param reasonDetail verplicht; vermeldt of een eerdere poging een onbekende uitkomst had
+     * @throws IllegalStateException het item is niet {@code PENDING}, werd nooit verstuurd of heeft de grens niet bereikt
+     */
+    public void rejectAfterRepeatedNotApplied(Instant answeredAt, int maxNotApplied, String reasonCode,
+                                              String reasonDetail, String resultJson) {
+        if (status != PublicationRunItemStatus.PENDING || sendCount < 1 || sentAt == null) {
+            throw new IllegalStateException("Item " + id + " (" + status + ", sent " + sendCount
+                    + " times) cannot be rejected after repeated attempts");
+        }
+        if (maxNotApplied < 1 || notAppliedCount < maxNotApplied) {
+            throw new IllegalStateException("Item " + id + " failed " + notAppliedCount + " times, below the limit "
+                    + maxNotApplied);
+        }
+        if (answeredAt == null || reasonCode == null || reasonDetail == null) {
+            throw new IllegalArgumentException("answeredAt, reasonCode and reasonDetail are required");
+        }
+        this.status = PublicationRunItemStatus.REJECTED;
+        this.outcome = PublicationRunItemStatus.REJECTED.name();
+        this.answeredAt = answeredAt;
+        this.reasonCode = reasonCode;
+        this.reasonDetail = reasonDetail;
+        this.resultJson = resultJson;
     }
 
     /** Uitkomst onbekend (fout tijdens de Prodis-commit of daarna): {@code SENT → RESULT_UNKNOWN}. */
@@ -305,5 +348,9 @@ public class PublicationRunItem {
 
     public int getSendCount() {
         return sendCount;
+    }
+
+    public int getNotAppliedCount() {
+        return notAppliedCount;
     }
 }

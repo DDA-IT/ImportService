@@ -20,6 +20,7 @@ import be.dda.catalogimport.service.ProdisPublicationPlanner.Plan;
 import be.dda.catalogimport.service.ProdisPublicationPlanner.PlanOutcome;
 import be.dda.catalogimport.service.ProdisPublicationProjection.Item;
 import be.dda.catalogimport.service.ProdisPublicationProjection.Notice;
+import be.dda.catalogimport.service.ProdisPublicationProjection.Severity;
 import be.dda.catalogimport.service.ProdisReferenceService.LegacyMasterMode;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
@@ -27,7 +28,9 @@ import java.io.IOException;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import org.slf4j.Logger;
@@ -39,7 +42,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * De levenscyclus van één publicatie-item naar de Prodis-database ({@code docs/design/publicatie-prodis-db-direct-design.md}
  * par. 2.4-2.6 en 4, slice P5b; beslissingen 2026-10-22 P-V1..P-V5, Q1 = b, Q2, P2b, P5a). Geen 2PC: drie losse
- * transacties, herstartbaar. De orchestratie (items aanmaken, chunks, lease, run afronden, bronstaat Q3) is P5c.
+ * transacties, herstartbaar. De orchestratie (items aanmaken, chunks, lease, run afronden) is
+ * {@link ProdisPublicationRunService} (P5c).
  *
  * <h2>Volgorde ({@link #processItem})</h2>
  * <ol>
@@ -56,7 +60,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       {@code WOULD_UPDATE} de UPDATE's.</li>
  *   <li><b>CI-transactie 2</b>: het antwoord {@code APPLIED | UNCHANGED | REJECTED | CONFLICT} met {@code prior_json},
  *       {@code result_json}, {@code warnings_json}; de mutatie {@code IN_PROGRESS → PUBLISHED} (APPLIED/UNCHANGED) of
- *       terug naar {@code READY_FOR_PUBLICATION} (REJECTED/CONFLICT).</li>
+ *       terug naar {@code READY_FOR_PUBLICATION} (REJECTED/CONFLICT). Bij APPLIED/UNCHANGED legt
+ *       {@link PublishedSourceStateRecorder} in dezelfde transactie de bronwaarden vast als bronstaat
+ *       ({@code state_origin = PUBLISHED}, beslissing Q3, P5c); kan de bronstaat niet veilig bijgewerkt worden (bv. ze
+ *       wijzigde intussen), dan komt er een melding {@code SOURCE_STATE_NOT_UPDATED} en blijft het Prodis-antwoord wat
+ *       het is.</li>
  * </ol>
  *
  * <h2>Foutklassen (design par. 2.4, beslissing P5a punt 1)</h2>
@@ -129,23 +137,27 @@ public class ProdisPublicationService {
     }
 
     private record Prepared(long itemId, long mutationId, Item request, int sendCount,
-                            PublicationRunItemStatus previousStatus, LegacyMasterMode legacyMaster, ItemResult finished) {
+                            PublicationRunItemStatus previousStatus, LegacyMasterMode legacyMaster, String sentBy,
+                            ItemResult finished) {
     }
 
     private final PublicationRunItemRepository items;
     private final ImportMutationRepository mutations;
     private final ProdisPublicationWriter writer;
     private final ProdisReferenceService reference;
+    private final PublishedSourceStateRecorder sourceState;
     private final TransactionTemplate transaction;
     private final Clock clock;
 
     public ProdisPublicationService(PublicationRunItemRepository items, ImportMutationRepository mutations,
                                     ProdisPublicationWriter writer, ProdisReferenceService reference,
+                                    PublishedSourceStateRecorder sourceState,
                                     PlatformTransactionManager transactionManager, Clock clock) {
         this.items = items;
         this.mutations = mutations;
         this.writer = writer;
         this.reference = reference;
+        this.sourceState = sourceState;
         this.transaction = new TransactionTemplate(transactionManager);
         this.clock = clock;
     }
@@ -266,7 +278,7 @@ public class ProdisPublicationService {
             // REJECTED zonder Prodis (projectie, te lange omschrijving): in één CI-transactie verstuurd en beantwoord.
             item.markSent(clock.instant(), sentBy, sentBySubject, mode.name());
             item.recordAnswer(PublicationRunItemStatus.REJECTED, clock.instant(), pure.reasonCode(), reasonDetail(pure),
-                    null, resultJson(pure, previous, item.getSendCount(), false, null), warningsJson(pure.notices()));
+                    null, resultJson(pure, previous, item.getSendCount(), false, null, null), warningsJson(pure.notices()));
             items.saveAndFlush(item);
             mutations.transitionStatus(mutationId, MutationStatus.IN_PROGRESS, MutationStatus.READY_FOR_PUBLICATION);
             LOG.info("Publication item {} (mutation {}): REJECTED {} without contacting Prodis", itemId, mutationId,
@@ -282,7 +294,7 @@ public class ProdisPublicationService {
         }
         item.markSent(clock.instant(), sentBy, sentBySubject, mode.name());
         items.saveAndFlush(item);
-        return new Prepared(itemId, mutationId, request, item.getSendCount(), previous, mode, null);
+        return new Prepared(itemId, mutationId, request, item.getSendCount(), previous, mode, sentBy, null);
     }
 
     private Item request(PublicationRunItem item, long mutationId) {
@@ -361,9 +373,22 @@ public class ProdisPublicationService {
                     prepared.itemId(), answer, prepared.sendCount(), item.getStatus(), item.getSendCount());
             return result(item, prepared.mutationId(), true, outcome.written(), true);
         }
-        item.recordAnswer(answer, clock.instant(), plan.reasonCode(), reasonDetail(plan), priorJson(plan.prior()),
-                resultJson(plan, prepared.previousStatus(), prepared.sendCount(), outcome.written(), outcome.writtenAt()),
-                warningsJson(plan.notices()));
+        Instant answeredAt = clock.instant();
+        // Q3 (beslissing 2026-10-22): bij APPLIED/UNCHANGED de bronwaarden als bronstaat vastleggen, in DEZE transactie.
+        PublishedSourceStateRecorder.Result source = null;
+        List<Notice> notices = plan.notices();
+        if (answer == PublicationRunItemStatus.APPLIED || answer == PublicationRunItemStatus.UNCHANGED) {
+            source = sourceState.recordPublished(prepared.mutationId(), prepared.sentBy(), answeredAt);
+            if (!source.outcome().current()) {
+                notices = new ArrayList<>(notices);
+                notices.add(new Notice(PublishedSourceStateRecorder.NOTICE_SOURCE_STATE_NOT_UPDATED, Severity.WARNING,
+                        null, source.outcome().name() + ": " + source.message()));
+            }
+        }
+        item.recordAnswer(answer, answeredAt, plan.reasonCode(), reasonDetail(plan), priorJson(plan.prior()),
+                resultJson(plan, prepared.previousStatus(), prepared.sendCount(), outcome.written(), outcome.writtenAt(),
+                        source),
+                warningsJson(notices));
         items.saveAndFlush(item);
         MutationStatus next = answer == PublicationRunItemStatus.APPLIED || answer == PublicationRunItemStatus.UNCHANGED
                 ? MutationStatus.PUBLISHED : MutationStatus.READY_FOR_PUBLICATION;
@@ -407,7 +432,7 @@ public class ProdisPublicationService {
 
     private Prepared finished(PublicationRunItem item, long mutationId, boolean contacted, boolean written,
                               boolean superseded) {
-        return new Prepared(item.getId(), mutationId, null, item.getSendCount(), item.getStatus(), null,
+        return new Prepared(item.getId(), mutationId, null, item.getSendCount(), item.getStatus(), null, null,
                 result(item, mutationId, contacted, written, superseded));
     }
 
@@ -448,8 +473,12 @@ public class ProdisPublicationService {
         });
     }
 
+    /**
+     * @param sourceState de bronstaat na een APPLIED/UNCHANGED (Q3), anders {@code null}: dan staat {@code sourceState} er
+     *                    als {@code null} (niet van toepassing)
+     */
     static String resultJson(Plan plan, PublicationRunItemStatus previousStatus, int sendCount, boolean written,
-                             LocalDateTime writtenAt) {
+                             LocalDateTime writtenAt, PublishedSourceStateRecorder.Result sourceState) {
         return json(json -> {
             json.writeStartObject();
             json.writeStringField("planOutcome", plan.outcome().name());
@@ -464,6 +493,7 @@ public class ProdisPublicationService {
             PublicationParallelRunReport.writeChanges(json, "changes", written ? plan.changes() : List.of());
             PublicationParallelRunReport.writeChanges(json, "derivedDrift", plan.derivedDrift());
             PublicationParallelRunReport.writeState(json, "target", plan.target());
+            json.writeStringField("sourceState", sourceState == null ? null : sourceState.outcome().name());
             json.writeEndObject();
         });
     }

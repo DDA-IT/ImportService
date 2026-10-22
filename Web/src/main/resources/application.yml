@@ -228,6 +228,24 @@ catalogimport:
     # Het expliciete afbreek-endpoint (POST .../abort, recht APPROVE) kent GEEN tijdsvoorwaarde en is dus
     # niet aan deze drempel gebonden.
     stuck-after: PT60M
+  publication:
+    # Publicatie naar de Prodis-database, PRODUCTION-run (P5c; docs/design/publicatie-prodis-db-direct-design.md par. 2.1 en
+    # 2.4; publicatie-prodis-db-design.md par. 2). Naast de schrijfverbinding (prodis-db-write hierboven) is deze vlag de
+    # noodrem: uit = start en continue van een PRODUCTION-run geven 409 PUBLICATION_MODE_NOT_ENABLED, ook voor een lopende run.
+    prodis:
+      enabled: ${CATALOG_PUBLICATION_PRODIS_ENABLED:false}
+    # Eerste deel van elke itemsleutel <source-id>:mut:<mutationId>:pa:<n>; uniek per installatie en nooit wijzigen zolang
+    # er publicatie-items bestaan. 1..100 tekens [A-Za-z0-9._-]. BEWUST GEEN default: verplicht zodra enabled true is,
+    # anders start de applicatie niet.
+    source-id: ${CATALOG_PUBLICATION_SOURCE_ID:}
+    # Items per continue (1..1000).
+    chunk-size: 200
+    # Geldigheid van de chunk-lease, verlengd per item (ISO-8601, positief). Een tweede continue onder een geldige lease
+    # geeft 409 PUBLICATION_RUN_BUSY; na het verlopen neemt een volgende continue over (SENT-items worden RESULT_UNKNOWN).
+    lease: PT5M
+    # Zeker niet-toegepaste pogingen per item (bv. lock-timeout) voor het item REJECTED PRODIS_NOT_APPLIED_REPEATEDLY wordt
+    # en de mutatie terug READY_FOR_PUBLICATION (1..100).
+    max-not-applied-attempts: 5
   staging-retention:
     # Opruiming van de kandidaatstaging (stap 7, docs/decisions.md 2026-10-02 "Stap 7 uitgewerkt"; zie de handleiding
     # par. 9.10). Verwijdert ENKEL import_candidate_stage/_price/_reference van BASELINE_ACCEPTED-batches die langer dan

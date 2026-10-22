@@ -151,6 +151,12 @@ public class PublicationRunService {
      * afgebroken worden door wie {@code APPROVE} heeft.
      */
     public static final String CODE_RUN_NOT_STUCK = "PUBLICATION_RUN_NOT_STUCK";
+    /**
+     * De run staat op {@code PUBLISHING} (409, P5c; {@code publicatie-prodis-db-design.md} par. 2 "Herstel"): een
+     * PRODUCTION-run met (mogelijk) verstuurde items wordt nooit afgebroken of automatisch FAILED; ze wordt verder gezet tot
+     * elk item een uitkomst heeft ({@link ProdisPublicationRunService#continueRun}).
+     */
+    public static final String CODE_RUN_HAS_SENT_ITEMS = "PUBLICATION_RUN_HAS_SENT_ITEMS";
 
     /** {@code failure_code}: het artefact kon niet naar het bestandssysteem geschreven worden. */
     public static final String FAILURE_ARTIFACT_WRITE_FAILED = "ARTIFACT_WRITE_FAILED";
@@ -421,7 +427,8 @@ public class PublicationRunService {
      * @param actor verplicht; dezelfde naamregels als een handtekening elders in dit domein
      * @return de runview met status {@code FAILED}
      * @throws NotFoundException        {@link #CODE_RUN_NOT_FOUND}
-     * @throws ConflictException        {@link #CODE_RUN_NOT_STUCK} — de run is niet (meer) {@code PREPARING}
+     * @throws ConflictException        {@link #CODE_RUN_HAS_SENT_ITEMS} — een {@code PUBLISHING}-run (P5c);
+     *                                  {@link #CODE_RUN_NOT_STUCK} — de run is niet (meer) {@code PREPARING}
      * @throws IllegalArgumentException ontbrekende of ongeldige aanvrager
      */
     @Transactional
@@ -431,6 +438,11 @@ public class PublicationRunService {
         }
         String aborter = ActorNames.requireActorName(actor.username(), "abortedBy", MAX_ACTOR_LENGTH);
         PublicationRun run = lockedRun(runId);
+        if (run.getStatus() == PublicationRunStatus.PUBLISHING) {
+            // P5c: een PRODUCTION-run in PUBLISHING heeft (mogelijk) items naar Prodis verstuurd; nooit FAILED maken.
+            throw new ConflictException(CODE_RUN_HAS_SENT_ITEMS, "Publication run " + runId + " is PUBLISHING and may "
+                    + "have sent items to Prodis; it cannot be aborted, continue it until every item has an outcome");
+        }
         if (run.getStatus() != PublicationRunStatus.PREPARING) {
             throw new ConflictException(CODE_RUN_NOT_STUCK, "Publication run " + runId + " is " + run.getStatus()
                     + "; only a PREPARING run can be aborted");

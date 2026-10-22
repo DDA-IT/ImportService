@@ -62,3 +62,5 @@ databaseChangeLog:
       file: db/changelog/026-legacy-config-detach.sql
   - include:
       file: db/changelog/027-publication-run-item.sql
+  - include:
+      file: db/changelog/028-publication-run-production.sql

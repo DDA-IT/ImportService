@@ -22,6 +22,9 @@ import java.time.Instant;
  * {@link #recordFailed}, bouwstap 5P-7); er zijn bewust geen losse setters, zodat status, marker en de
  * bijbehorende velden nooit los van elkaar gezet kunnen worden. {@link #recordSimulated} en
  * {@link #recordFailed} werken enkel vanuit {@code PREPARING}: een afgebroken run blijft afgebroken.
+ * De PRODUCTION-run (P5c) voegt {@link #markPublishing} ({@code PREPARING → PUBLISHING}) en {@link #recordApplied}
+ * ({@code PUBLISHING → APPLIED}) toe; de chunk-lease ({@code lease_owner}/{@code lease_until}) wordt met
+ * voorwaardelijke updates in de repository genomen en vrijgegeven, nooit via een setter.
  * <p>
  * {@code activeMarker} is {@code TRUE} zolang de run niet-terminaal is en {@code null} daarna; samen met
  * {@code uk_publication_run_active} maximaal één niet-terminale run per bundel.
@@ -110,7 +113,7 @@ public class PublicationRun {
 
     /**
      * De {@code legacy_master}-modus bij de start van een PRODUCTION-run (changeset 027-2); {@code null} =
-     * niet vastgesteld. Enkel schema in P4a: de service die hem vult volgt in P5.
+     * niet vastgesteld (elke run die geen PRODUCTION-run is). Gevuld door {@link #markPublishing} (P5c).
      */
     @Column(name = "legacy_master_at_start", length = 30)
     private String legacyMasterAtStart;
@@ -200,6 +203,53 @@ public class PublicationRun {
         this.failureCode = failureCode;
         this.failureMessage = failureMessage;
         this.activeMarker = null;
+    }
+
+    /**
+     * {@code PREPARING → PUBLISHING} voor een PRODUCTION-run (P5c, docs/design/publicatie-prodis-db-direct-design.md par.
+     * 2.4): de items zijn gematerialiseerd, de run begint te versturen. Niet-terminaal: de marker blijft {@code TRUE}.
+     *
+     * @param legacyMasterAtStart de modus van Prodis bij de start ({@code NONE|PRODIS|PROFAB|UNKNOWN}); nooit stil een
+     *                            default, design par. 5
+     * @param itemCount           het aantal gematerialiseerde items ({@code row_count})
+     * @throws IllegalStateException geen PRODUCTION-run of niet (meer) {@code PREPARING}; de run blijft ongewijzigd
+     */
+    public void markPublishing(String legacyMasterAtStart, long itemCount) {
+        if (this.targetMode != PublicationTargetMode.PRODUCTION) {
+            throw new IllegalStateException("Publication run " + this.id + " is a " + this.targetMode
+                    + " run; only a PRODUCTION run publishes");
+        }
+        requirePreparing("PUBLISHING");
+        if (legacyMasterAtStart == null || legacyMasterAtStart.isBlank()) {
+            throw new IllegalArgumentException("legacyMasterAtStart is required (UNKNOWN when it could not be read)");
+        }
+        this.status = PublicationRunStatus.PUBLISHING;
+        this.legacyMasterAtStart = legacyMasterAtStart;
+        this.rowCount = itemCount;
+        // De startcontrole weigert een bundel met onvolledige rijen (BUNDLE_HAS_INCOMPLETE_ROWS): vastgesteld 0.
+        this.incompleteRowCount = 0L;
+    }
+
+    /**
+     * {@code PUBLISHING → APPLIED} (P5c): elk item van deze PRODUCTION-run heeft een definitief antwoord of werd niet
+     * verstuurd. Terminaal: {@code finished_at} gezet, marker {@code null} (het slot op bundel en installatie komt vrij,
+     * changeset 028-1) en de lease vervalt.
+     *
+     * @throws IllegalStateException de run staat niet op {@code PUBLISHING}; de run blijft ongewijzigd
+     */
+    public void recordApplied(Instant finishedAt) {
+        if (this.status != PublicationRunStatus.PUBLISHING) {
+            throw new IllegalStateException("Publication run " + this.id + " cannot move from " + this.status
+                    + " to APPLIED; only a PUBLISHING run can be finished");
+        }
+        if (finishedAt == null) {
+            throw new IllegalArgumentException("finishedAt is required");
+        }
+        this.status = PublicationRunStatus.APPLIED;
+        this.finishedAt = finishedAt;
+        this.activeMarker = null;
+        this.leaseOwner = null;
+        this.leaseUntil = null;
     }
 
     /** Domeinregel: een run wordt enkel vanuit {@code PREPARING} afgerond. Controleert vóór elke wijziging. */

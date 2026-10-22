@@ -154,6 +154,8 @@ class ProdisPublicationWriteTest {
     private PlatformTransactionManager transactionManager;
     @Autowired
     private JdbcTemplate ci;
+    @Autowired
+    private PublishedSourceStateRecorder sourceStateRecorder;
 
     private ProdisPublicationService service;
 
@@ -281,8 +283,10 @@ class ProdisPublicationWriteTest {
         assertThat(resultJson.path("sentFromStatus").asText()).isEqualTo("PENDING");
         assertThat(resultJson.path("changes")).hasSize(8);
         assertThat(resultJson.path("target").path("basePrice").asText()).isEqualTo("120");
+        // P5c (Q3): deze fixture heeft geen stagerij, dus de bronstaat kan niet bijgewerkt worden: zichtbaar, nooit stil.
         assertThat(JSON.readTree((String) row.get("warnings_json")).findValuesAsText("code"))
-                .containsExactly("DESCRIPTION_OVERWRITTEN");
+                .containsExactly("DESCRIPTION_OVERWRITTEN", PublishedSourceStateRecorder.NOTICE_SOURCE_STATE_NOT_UPDATED);
+        assertThat(resultJson.path("sourceState").asText()).isEqualTo("NOT_UPDATED_STAGE_NOT_AVAILABLE");
     }
 
     @Test
@@ -873,7 +877,8 @@ class ProdisPublicationWriteTest {
     private ProdisPublicationService service(ProdisPublicationJdbc prodis, Clock clock) {
         ProdisReferenceService notConfigured = new ProdisReferenceService(new ProdisReferenceDao(
                 new StaticListableBeanFactory().getBeanProvider(ProdisReferenceJdbc.class)));
-        return new ProdisPublicationService(items, mutations, writer(prodis), notConfigured, transactionManager, clock);
+        return new ProdisPublicationService(items, mutations, writer(prodis), notConfigured, sourceStateRecorder,
+                transactionManager, clock);
     }
 
     private static ProdisPublicationWriter writer(ProdisPublicationJdbc prodis) {

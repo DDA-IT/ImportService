@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -18,6 +19,9 @@ import org.springframework.stereotype.Repository;
  * aanbiedingsidentiteit binnen een importkoppeling (design par. 3). Enkel de
  * {@code accept-baseline}-actie schrijft hier (beslissingslog 18/09): de screening zelf nooit, en een
  * ongewijzigde regel raakt de bronstaat nooit aan — ook {@code updated_at} niet.
+ * <p>
+ * <b>Publicatie (P5c, beslissing 2026-10-22 Q3).</b> Sinds P5c schrijft ook de publicatie naar Prodis hier, per mutatie
+ * ({@link #updatePublishedFromStage}, {@code state_origin = PUBLISHED}), in dezelfde transactie als het itemresultaat.
  * <p>
  * <b>JDBC-only.</b> De tabel heeft bewust geen entiteit: nieuwe rijen komen set-based rechtstreeks uit
  * {@code import_candidate_stage} ({@code insert ... select}), de binaire hashkolommen verlaten de
@@ -196,6 +200,58 @@ public class SourceStateDao {
             + "        and existing.reference_type = ref.reference_type "
             + "        and existing.value_normalised = ref.value_normalised "
             + "        and existing.active_marker = true)";
+
+    /**
+     * Publicatie (P5c, Q3): de mutatie met haar stagerij ({@code batch_id} + {@code source_row_number}), zonder slot. De
+     * bronstaatrij wordt apart vergrendeld ({@link #lockStateForPublication}): {@code for update} mag niet op de
+     * nullable kant van een outer join.
+     */
+    private static final String SELECT_PUBLICATION_SOURCE = "select m.action_type, m.import_link_id, m.batch_id, "
+            + "m.delivery_id, m.source_row_number, m.identity_hash, m.before_combined_fingerprint, "
+            + "stage.row_number, stage.identity_hash, stage.article_fingerprint, stage.price_fingerprint, "
+            + "stage.reference_fingerprint, stage.combined_fingerprint, stage.base_price, stage.base_price_currency "
+            + "from import_mutation m "
+            + "left join import_candidate_stage stage "
+            + "  on stage.batch_id = m.batch_id and stage.row_number = m.source_row_number "
+            + "where m.id = ?";
+
+    /** Zelfde kolommen als {@link #UPDATE_CHANGED}, maar op de vergrendelde rij en zonder vingerafdrukvoorwaarde. */
+    private static final String UPDATE_PUBLISHED = "update catalog_source_state set article_fingerprint = ?, "
+            + "price_fingerprint = ?, reference_fingerprint = ?, combined_fingerprint = ?, base_price = ?, "
+            + "base_price_currency = ?, "
+            + "state_origin = ?, last_change_delivery_id = ?, last_change_batch_id = ?, accepted_by = ?, "
+            + "accepted_at = ?, updated_at = ? "
+            + "where id = ?";
+
+    /** De prijscomponenten van één stagerij naar één bronstaatrij (zelfde kolommen als {@link #INSERT_PRICES_FROM_STAGE}). */
+    private static final String INSERT_PUBLISHED_PRICES = "insert into catalog_source_state_price ("
+            + "source_state_id, component_code, amount, percentage, currency, updated_at) "
+            + "select cast(? as bigint), price.component_code, price.source_amount, price.percentage, "
+            + "price.currency, cast(? as timestamp with time zone) "
+            + "from import_candidate_price price "
+            + "where price.batch_id = ? and price.row_number = ?";
+
+    /**
+     * Eén gepubliceerde mutatie met haar stagerij (P5c, Q3). {@code stageRowNumber == null} = de stagerij bestaat niet
+     * (meer); de {@code stage*}-velden zijn dan {@code null}.
+     */
+    public record PublicationSource(long mutationId, String actionType, long importLinkId, long batchId,
+                                    long deliveryId, Long sourceRowNumber, byte[] identityHash,
+                                    byte[] beforeCombinedFingerprint, Long stageRowNumber, byte[] stageIdentityHash,
+                                    byte[] stageArticleFingerprint, byte[] stagePriceFingerprint,
+                                    byte[] stageReferenceFingerprint, byte[] stageCombinedFingerprint,
+                                    BigDecimal stageBasePrice, String stageBasePriceCurrency) {
+    }
+
+    /** De vergrendelde bronstaatrij van één identiteit. */
+    public record LockedState(long id, byte[] combinedFingerprint) {
+    }
+
+    /**
+     * Wat een gepubliceerde bronstaatrij meekrijgt (P5c, Q3): {@code state_origin = PUBLISHED}, wie publiceerde en wanneer.
+     */
+    public record PublicationWrite(String stateOrigin, String acceptedBy, Instant acceptedAt) {
+    }
 
     private record ChangedRow(byte[] identityHash, byte[] articleFingerprint, byte[] priceFingerprint,
                               byte[] referenceFingerprint, byte[] combinedFingerprint,
@@ -386,6 +442,97 @@ public class SourceStateDao {
             statement.setLong(5, fromExclusive);
             statement.setLong(6, toInclusive);
         });
+    }
+
+    // --- Publicatie per mutatie (P5c, beslissing 2026-10-22 Q3) -------------------------------------------------
+
+    /**
+     * De mutatie en haar stagerij, voor het vastleggen van de bronstaat na een geslaagde publicatie (Q3). Leest enkel; de
+     * aanroeper beslist (vergrendelde bronstaat, "voor"-vingerafdruk) en schrijft in dezelfde transactie als het
+     * itemresultaat.
+     *
+     * @return leeg als de mutatie niet bestaat
+     */
+    public Optional<PublicationSource> findPublicationSource(long mutationId) {
+        List<PublicationSource> rows = jdbc.query(SELECT_PUBLICATION_SOURCE, (rs, index) -> {
+            long sourceRow = rs.getLong(5);
+            Long sourceRowNumber = rs.wasNull() ? null : sourceRow;
+            long stageRow = rs.getLong(8);
+            Long stageRowNumber = rs.wasNull() ? null : stageRow;
+            return new PublicationSource(mutationId, rs.getString(1), rs.getLong(2), rs.getLong(3), rs.getLong(4),
+                    sourceRowNumber, rs.getBytes(6), rs.getBytes(7), stageRowNumber, rs.getBytes(9), rs.getBytes(10),
+                    rs.getBytes(11), rs.getBytes(12), rs.getBytes(13), rs.getBigDecimal(14), rs.getString(15));
+        }, mutationId);
+        return rows.stream().findFirst();
+    }
+
+    /**
+     * De bronstaatrij van deze identiteit met een schrijfslot tot het einde van de transactie (serialiseert twee
+     * publicaties of een publicatie en een aanvaarding op dezelfde aanbieding).
+     */
+    public Optional<LockedState> lockStateForPublication(long importLinkId, byte[] identityHash) {
+        List<LockedState> rows = jdbc.query("select id, combined_fingerprint from catalog_source_state "
+                        + "where import_link_id = ? and identity_hash = ? for update",
+                (rs, index) -> new LockedState(rs.getLong(1), rs.getBytes(2)), importLinkId, identityHash);
+        return rows.stream().findFirst();
+    }
+
+    /**
+     * Zet de vergrendelde bronstaatrij op de stagewaarden van de gepubliceerde mutatie: vingerafdrukken, basisprijs en
+     * munt, {@code state_origin}, {@code last_change_*}, {@code accepted_*}, {@code updated_at}. Zelfde kolommen als de
+     * aanvaarding van een gewijzigde regel ({@link #updateChangedFromStage}); de aanroeper heeft vastgesteld dat de rij nog
+     * de "voor"-toestand van de mutatie is.
+     *
+     * @return het aantal bijgewerkte rijen (1)
+     */
+    public int updatePublishedFromStage(long stateId, PublicationSource source, PublicationWrite write) {
+        return jdbc.update(UPDATE_PUBLISHED, statement -> {
+            statement.setBytes(1, source.stageArticleFingerprint());
+            statement.setBytes(2, source.stagePriceFingerprint());
+            if (source.stageReferenceFingerprint() == null) {
+                statement.setNull(3, Types.BINARY);
+            } else {
+                statement.setBytes(3, source.stageReferenceFingerprint());
+            }
+            statement.setBytes(4, source.stageCombinedFingerprint());
+            statement.setBigDecimal(5, source.stageBasePrice());
+            if (source.stageBasePriceCurrency() == null) {
+                statement.setNull(6, Types.VARCHAR);
+            } else {
+                statement.setString(6, source.stageBasePriceCurrency());
+            }
+            statement.setString(7, write.stateOrigin());
+            statement.setLong(8, source.deliveryId());
+            statement.setLong(9, source.batchId());
+            statement.setString(10, write.acceptedBy());
+            statement.setObject(11, utc(write.acceptedAt()));
+            statement.setObject(12, utc(write.acceptedAt()));
+            statement.setLong(13, stateId);
+        });
+    }
+
+    /**
+     * Vervangt de prijscomponenten van de bronstaatrij door die van de stagerij (zelfde regel als
+     * {@link #replaceChangedPricesFromStage}: eerst verwijderen, dan overnemen). <b>Enkel aanroepen wanneer de batch
+     * werkelijk prijscomponenten heeft</b>, om dezelfde reden als daar.
+     *
+     * @return het aantal weggeschreven componentrijen
+     */
+    /**
+     * Het aantal prijscomponenten (niet de basisprijs) van één stagerij zonder percentage. De bronstaat aanvaardt zo'n
+     * component niet ({@code ck_catalog_source_state_price_component}); de publicatie weigert dan expliciet in plaats van de
+     * component stil weg te laten.
+     */
+    public long countStagedComponentsWithoutPercentage(long batchId, long rowNumber) {
+        Long count = jdbc.queryForObject("select count(*) from import_candidate_price where batch_id = ? "
+                + "and row_number = ? and component_code <> 'BASE_PRICE' and percentage is null", Long.class, batchId,
+                rowNumber);
+        return count == null ? 0L : count;
+    }
+
+    public int replacePublishedPrices(long stateId, PublicationSource source, Instant writtenAt) {
+        jdbc.update("delete from catalog_source_state_price where source_state_id = ?", stateId);
+        return jdbc.update(INSERT_PUBLISHED_PRICES, stateId, utc(writtenAt), source.batchId(), source.stageRowNumber());
     }
 
     public long countByImportLinkId(long importLinkId) {

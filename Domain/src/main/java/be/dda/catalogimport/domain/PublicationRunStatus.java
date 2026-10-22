@@ -1,9 +1,10 @@
 package be.dda.catalogimport.domain;
 
 /**
- * Levenscyclus van één {@link PublicationRun} (docs/design/fase5-pub-design.md par. 3). 5-PUB-a zet enkel
- * {@link #REQUESTED}, {@link #PREPARING}, {@link #SIMULATED} en {@link #FAILED}; de overige zeven zijn
- * gedeclareerd voor 5-PUB-b/c en worden nooit gezet.
+ * Levenscyclus van één {@link PublicationRun} (docs/design/fase5-pub-design.md par. 3). 5-PUB-a zet
+ * {@link #REQUESTED}, {@link #PREPARING}, {@link #SIMULATED} en {@link #FAILED}; de PRODUCTION-run (P5c,
+ * docs/design/publicatie-prodis-db-direct-design.md par. 2.4) zet daarnaast {@link #PUBLISHING} en {@link #APPLIED}. De
+ * overige zes zijn gedeclareerd en worden nooit gezet.
  */
 public enum PublicationRunStatus {
 
@@ -14,8 +15,8 @@ public enum PublicationRunStatus {
     PREPARING,
 
     /**
-     * Toegevoegd in P4a (changeset 027-2), nog nooit gezet: de PRODUCTION-run verstuurt zijn items in chunks. Niet-terminaal
-     * ({@link #isTerminal()} blijft ongewijzigd): de run houdt de actieve marker vast.
+     * Toegevoegd in P4a (changeset 027-2), gezet sinds P5c: de PRODUCTION-run verstuurt zijn items in chunks.
+     * Niet-terminaal: de run houdt de actieve marker vast.
      */
     PUBLISHING,
 
@@ -40,7 +41,11 @@ public enum PublicationRunStatus {
     /** Gedeclareerd, nooit gezet (5-PUB-b/c): uitkomst onbekend. */
     RESULT_UNKNOWN,
 
-    /** Gedeclareerd, nooit gezet (5-PUB-b/c): echt toegepast in het doelsysteem. */
+    /**
+     * Gezet sinds P5c, terminaal: de PRODUCTION-run is afgerond, elk item heeft een definitief antwoord of werd niet
+     * verstuurd. Zegt niet dat elk item toegepast is: de bundel toont {@code PUBLISHED} of {@code PARTIALLY_PUBLISHED},
+     * elk item zijn eigen uitkomst. Enkel een PRODUCTION-run bereikt deze status (changeset 028-1).
+     */
     APPLIED,
 
     /** Gedeclareerd, nooit gezet (5-PUB-b/c): door ProDis geweigerd. */
@@ -50,11 +55,13 @@ public enum PublicationRunStatus {
     RECOVERY_REQUIRED;
 
     /**
-     * @return {@code true} bij {@link #SIMULATED} en {@link #FAILED}: de run is afgerond en houdt de
-     *     actieve marker niet meer vast. De nooit-gezette statussen gelden voorlopig als niet-terminaal.
+     * @return {@code true} bij {@link #SIMULATED}, {@link #FAILED} en (sinds P5c, gemelde gedragswijziging)
+     *     {@link #APPLIED}: de run is afgerond en houdt de actieve marker niet meer vast. De nooit-gezette statussen
+     *     gelden voorlopig als niet-terminaal. In de database is {@code APPLIED} enkel terminaal voor een
+     *     PRODUCTION-run (changeset 028-1), de enige die het kan bereiken.
      */
     public boolean isTerminal() {
-        return this == SIMULATED || this == FAILED;
+        return this == SIMULATED || this == FAILED || this == APPLIED;
     }
 
     /** @return {@code true} voor de vier statussen die 5-PUB-a effectief zet. */

@@ -5,6 +5,7 @@ import be.dda.catalogimport.domain.PublicationRunItemStatus;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -26,4 +27,26 @@ public interface PublicationRunItemRepository extends JpaRepository<PublicationR
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from PublicationRunItem i where i.id = :id")
     Optional<PublicationRunItem> findByIdForUpdate(@Param("id") Long id);
+
+    // --- Orchestratie (P5c) --------------------------------------------------------------------------------------
+
+    /** De id's van de items van een run in één status, oudste eerst (een chunk: {@code Pageable.ofSize(n)}). */
+    @Query("select i.id from PublicationRunItem i where i.run.id = :runId and i.status = :status order by i.id")
+    List<Long> findIdsByRunIdAndStatus(@Param("runId") Long runId, @Param("status") PublicationRunItemStatus status,
+                                       Pageable chunk);
+
+    List<PublicationRunItem> findByRunIdAndStatusOrderByIdAsc(Long runId, PublicationRunItemStatus status);
+
+    /** {@code PENDING}-items die de grens van zeker niet-toegepaste pogingen bereikten (begrenzing, P5c). */
+    @Query("select i from PublicationRunItem i where i.run.id = :runId and i.status = :status "
+            + "and i.notAppliedCount >= :limit order by i.id")
+    List<PublicationRunItem> findByRunIdAndStatusAndNotAppliedCountAtLeast(@Param("runId") Long runId,
+                                                                        @Param("status") PublicationRunItemStatus status,
+                                                                        @Param("limit") int limit);
+
+    /** Aantal items per status van een run: rijen {@code [PublicationRunItemStatus, Long]}. */
+    @Query("select i.status, count(i) from PublicationRunItem i where i.run.id = :runId group by i.status")
+    List<Object[]> countByStatus(@Param("runId") Long runId);
+
+    long countByRunId(Long runId);
 }

@@ -91,7 +91,9 @@ class PublicationRunSchemaTest {
         for (PublicationRunStatus status : PublicationRunStatus.values()) {
             Boolean marker = status.isTerminal() ? null : Boolean.TRUE;
             PublicationBundle own = bundle("STATUS-" + status);
-            assertThatCode(() -> rawInsert(own, "SIMULATION", status.name(), marker, "CODE",
+            // APPLIED is enkel terminaal voor een PRODUCTION-run (028-1), de enige die het kan bereiken.
+            String mode = status == PublicationRunStatus.APPLIED ? "PRODUCTION" : "SIMULATION";
+            assertThatCode(() -> rawInsert(own, mode, status.name(), marker, "CODE",
                     key("ST-" + status))).doesNotThrowAnyException();
         }
     }
@@ -145,6 +147,34 @@ class PublicationRunSchemaTest {
         // Correcte combinaties.
         assertThatCode(() -> rawInsert(bundle, "SIMULATION", "PREPARING", true, null, key("MK-4")))
                 .doesNotThrowAnyException();
+    }
+
+    /** 028-1 (P5c): een afgeronde PRODUCTION-run (APPLIED) is terminaal en geeft het slot vrij; elders blijft APPLIED zoals het was. */
+    @Test
+    void anAppliedProductionRunIsTerminalWithFinishedAtAndOtherModesKeepTheOldRule() {
+        PublicationBundle bundle = bundle("APPLIED");
+
+        // PRODUCTION + APPLIED: marker NULL en finished_at verplicht.
+        assertThatThrownBy(() -> rawInsert(bundle, "PRODUCTION", "APPLIED", true, null, key("AP-1")))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("insert into publication_run (bundle_id, target_mode, status, "
+                        + "requested_by, requested_at, bundle_content_hash, idempotency_key) values (?, ?, ?, ?, ?, ?, ?)",
+                bundle.getId(), "PRODUCTION", "APPLIED", USER, Timestamp.from(Instant.now()), new byte[32],
+                key("AP-2"))).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatCode(() -> {
+            rawInsert(bundle, "PRODUCTION", "APPLIED", null, null, key("AP-3"));
+            rawInsert(bundle, "PRODUCTION", "APPLIED", null, null, key("AP-4"));
+        }).doesNotThrowAnyException();
+
+        // Andere modi: APPLIED is daar niet bereikbaar en blijft onder de oude regel (marker TRUE), zodat bestaande rijen geldig blijven.
+        PublicationBundle other = bundle("APPLIED-SIM");
+        assertThatThrownBy(() -> rawInsert(other, "SIMULATION", "APPLIED", null, null, key("AP-5")))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatCode(() -> rawInsert(other, "SIMULATION", "APPLIED", true, null, key("AP-6")))
+                .doesNotThrowAnyException();
+        // De andere nooit gezette statussen blijven niet-terminaal, ook voor PRODUCTION.
+        assertThatThrownBy(() -> rawInsert(bundle("RBP"), "PRODUCTION", "REJECTED_BY_PRODIS", null, "CODE",
+                key("AP-7"))).isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
@@ -209,8 +239,8 @@ class PublicationRunSchemaTest {
     @Test
     void enumHelpersMatchTheMarkerRule() {
         for (PublicationRunStatus status : PublicationRunStatus.values()) {
-            assertThat(status.isTerminal()).isEqualTo(
-                    status == PublicationRunStatus.SIMULATED || status == PublicationRunStatus.FAILED);
+            assertThat(status.isTerminal()).isEqualTo(status == PublicationRunStatus.SIMULATED
+                    || status == PublicationRunStatus.FAILED || status == PublicationRunStatus.APPLIED);
         }
         assertThat(PublicationRunStatus.values()).hasSize(12); // 11 + PUBLISHING (027-2, P4a)
     }

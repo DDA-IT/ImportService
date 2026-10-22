@@ -110,7 +110,9 @@ class PublicationRunItemSchemaTest {
                 "ID", "RUN_ID", "MUTATION_ID", "PUBLICATION_ATTEMPT", "IDEMPOTENCY_KEY", "REQUEST_HASH", "REQUEST_JSON",
                 "STATUS", "OUTCOME", "REASON_CODE", "REASON_DETAIL", "PRIOR_JSON", "RESULT_JSON", "WARNINGS_JSON",
                 "LEGACY_MASTER", "LAST_ERROR_CODE", "SENT_AT", "SENT_BY", "SENT_BY_SUBJECT", "ANSWERED_AT",
-                "SEND_COUNT");
+                "SEND_COUNT",
+                // 028-2 (P5c): begrenzing van herhaalde pogingen.
+                "NOT_APPLIED_COUNT");
 
         assertThat(length("idempotency_key")).isEqualTo(200);
         assertThat(length("request_hash")).isEqualTo(64);
@@ -131,6 +133,8 @@ class PublicationRunItemSchemaTest {
         assertThat(nullable("prior_json")).isEqualTo("YES");
         assertThat(defaultOf("status")).contains("PENDING");
         assertThat(defaultOf("send_count")).isEqualTo("0");
+        assertThat(defaultOf("not_applied_count")).isEqualTo("0");
+        assertThat(nullable("not_applied_count")).isEqualTo("NO");
         assertThat(defaultOf("publication_attempt")).isEqualTo("1");
     }
 
@@ -238,6 +242,21 @@ class PublicationRunItemSchemaTest {
                 f.run.getId(), f.mutation(2).getId(), key("NEG"), "a".repeat(64), "{}"))
                 .isInstanceOf(DataIntegrityViolationException.class);
 
+        // 028-2 (P5c): not_applied_count is nooit negatief en nooit groter dan send_count.
+        assertThatThrownBy(() -> jdbc.update("insert into publication_run_item (run_id, mutation_id, "
+                        + "idempotency_key, request_hash, request_json, send_count, not_applied_count) "
+                        + "values (?, ?, ?, ?, ?, 0, -1)", f.run.getId(), f.mutation(6).getId(), key("NACNEG"),
+                "a".repeat(64), "{}")).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("insert into publication_run_item (run_id, mutation_id, "
+                        + "idempotency_key, request_hash, request_json, status, sent_at, send_count, not_applied_count) "
+                        + "values (?, ?, ?, ?, ?, 'PENDING', ?, 1, 2)", f.run.getId(), f.mutation(7).getId(),
+                key("NACMAX"), "a".repeat(64), "{}", Timestamp.from(Instant.now())))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatCode(() -> jdbc.update("insert into publication_run_item (run_id, mutation_id, "
+                        + "idempotency_key, request_hash, request_json, status, sent_at, send_count, not_applied_count) "
+                        + "values (?, ?, ?, ?, ?, 'PENDING', ?, 2, 2)", f.run.getId(), f.mutation(8).getId(),
+                key("NACOK"), "a".repeat(64), "{}", Timestamp.from(Instant.now()))).doesNotThrowAnyException();
+
         // Koppelcheck zoals 007-4: een subject zonder naam is een handtekening zonder ondertekenaar.
         assertThatThrownBy(() -> jdbc.update("insert into publication_run_item (run_id, mutation_id, idempotency_key, "
                         + "request_hash, request_json, sent_by_subject) values (?, ?, ?, ?, ?, 'sub-x')",
@@ -309,7 +328,9 @@ class PublicationRunItemSchemaTest {
         for (PublicationRunStatus status : PublicationRunStatus.values()) {
             PublicationBundle bundle = bundle("RSTAT-" + status);
             Boolean marker = status.isTerminal() ? null : Boolean.TRUE;
-            assertThatCode(() -> rawRun(bundle, "SIMULATION", status.name(), marker, "CODE", key("RS-" + status)))
+            // APPLIED is enkel terminaal voor een PRODUCTION-run (028-1); terminaal valt buiten de partiele index.
+            String mode = status == PublicationRunStatus.APPLIED ? "PRODUCTION" : "SIMULATION";
+            assertThatCode(() -> rawRun(bundle, mode, status.name(), marker, "CODE", key("RS-" + status)))
                     .as(status.name()).doesNotThrowAnyException();
         }
         assertThatThrownBy(() -> rawRun(bundle("RSTAT-X"), "SIMULATION", "BOGUS", true, null, key("RS-X")))

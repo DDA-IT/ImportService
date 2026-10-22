@@ -82,7 +82,8 @@ class PublicationRunTransitionTest {
     void enumHelpersAreConsistentWithMarker() {
         for (PublicationRunStatus status : PublicationRunStatus.values()) {
             assertThat(status.isTerminal()).as("%s", status)
-                    .isEqualTo(status == PublicationRunStatus.SIMULATED || status == PublicationRunStatus.FAILED);
+                    .isEqualTo(status == PublicationRunStatus.SIMULATED || status == PublicationRunStatus.FAILED
+                            || status == PublicationRunStatus.APPLIED);
         }
         PublicationRun run = newRun();
         assertThat(run.getStatus().isTerminal()).isFalse();
@@ -207,5 +208,56 @@ class PublicationRunTransitionTest {
                 .filteredOn(PublicationRunStatus::isUsedInSimulation)
                 .containsExactlyInAnyOrder(PublicationRunStatus.REQUESTED, PublicationRunStatus.PREPARING,
                         PublicationRunStatus.SIMULATED, PublicationRunStatus.FAILED);
+    }
+
+    // --- P5c: PRODUCTION-run PREPARING -> PUBLISHING -> APPLIED ------------------------------------------------
+
+    private static PublicationRun productionRun() {
+        return new PublicationRun(null, PublicationTargetMode.PRODUCTION, 1, "tester", "sub", REQUESTED_AT,
+                new byte[] {1}, new byte[] {2}, "key-prod");
+    }
+
+    @Test
+    void aProductionRunPublishesAndIsAppliedTerminalWithoutMarkerOrLease() {
+        PublicationRun run = productionRun();
+        run.markPreparing(STARTED_AT);
+        run.markPublishing("PRODIS", 7L);
+        assertThat(run.getStatus()).isEqualTo(PublicationRunStatus.PUBLISHING);
+        assertThat(run.getStatus().isTerminal()).isFalse();
+        assertThat(run.getActiveMarker()).isTrue();
+        assertThat(run.getLegacyMasterAtStart()).isEqualTo("PRODIS");
+        assertThat(run.getRowCount()).isEqualTo(7L);
+        assertThat(run.getIncompleteRowCount()).isZero();
+
+        run.recordApplied(FINISHED_AT);
+        assertThat(run.getStatus()).isEqualTo(PublicationRunStatus.APPLIED);
+        assertThat(run.getStatus().isTerminal()).isTrue();
+        assertThat(run.getActiveMarker()).isNull();
+        assertThat(run.getFinishedAt()).isEqualTo(FINISHED_AT);
+        assertThat(run.getLeaseOwner()).isNull();
+        assertThat(run.getLeaseUntil()).isNull();
+    }
+
+    @Test
+    void onlyAPreparingProductionRunPublishesAndOnlyAPublishingRunIsApplied() {
+        PublicationRun simulation = newRun();
+        simulation.markPreparing(STARTED_AT);
+        assertThatThrownBy(() -> simulation.markPublishing("NONE", 1L)).isInstanceOf(IllegalStateException.class);
+        assertThat(simulation.getStatus()).isEqualTo(PublicationRunStatus.PREPARING);
+
+        PublicationRun requested = productionRun();
+        assertThatThrownBy(() -> requested.markPublishing("NONE", 1L)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> requested.recordApplied(FINISHED_AT)).isInstanceOf(IllegalStateException.class);
+        assertThat(requested.getStatus()).isEqualTo(PublicationRunStatus.REQUESTED);
+
+        PublicationRun preparing = productionRun();
+        preparing.markPreparing(STARTED_AT);
+        assertThatThrownBy(() -> preparing.markPublishing(null, 1L)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> preparing.recordApplied(FINISHED_AT)).isInstanceOf(IllegalStateException.class);
+        preparing.markPublishing("UNKNOWN", 0L);
+        assertThatThrownBy(() -> preparing.recordFailed(FINISHED_AT, "X", "y"))
+                .isInstanceOf(IllegalStateException.class);
+        preparing.recordApplied(FINISHED_AT);
+        assertThatThrownBy(() -> preparing.recordApplied(FINISHED_AT)).isInstanceOf(IllegalStateException.class);
     }
 }

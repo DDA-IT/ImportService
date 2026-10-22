@@ -175,6 +175,52 @@ public class PriceObservationDao {
         });
     }
 
+    /**
+     * De goedgekeurde dagwaarden van <b>één</b> gepubliceerde stagerij (P5c, beslissing 2026-10-22 Q3): dezelfde twee
+     * regels als hierboven (basisprijs; componenten met status {@code OK}, behalve de basisprijs), dezelfde
+     * {@code not exists} per dag (de eerste waarde van de dag wint, A16), maar beperkt tot één regel en één bronstaatrij.
+     * Aanroepen ná het bijwerken van die bronstaatrij, in dezelfde transactie.
+     *
+     * @return het aantal werkelijk weggeschreven observaties
+     */
+    public int insertPublishedObservations(ObservationContext context, long sourceStateId, long rowNumber) {
+        int written = jdbc.update("insert into catalog_price_observation ("
+                + "import_link_id, identity_hash, component_code, observation_date, amount, percentage, "
+                + "currency, source_state_id, batch_id, accepted_by, created_at) "
+                + "select state.import_link_id, state.identity_hash, cast(? as varchar(20)), cast(? as date), "
+                + "stage.base_price, cast(null as numeric(24,12)), stage.base_price_currency, state.id, "
+                + "cast(? as bigint), cast(? as varchar(100)), cast(? as timestamp with time zone) "
+                + "from import_candidate_stage stage "
+                + "join catalog_source_state state on state.id = ? and state.identity_hash = stage.identity_hash "
+                + "where stage.batch_id = ? and stage.row_number = ? "
+                + "  and not exists (select 1 from catalog_price_observation existing "
+                + "      where existing.import_link_id = state.import_link_id "
+                + "        and existing.identity_hash = state.identity_hash "
+                + "        and existing.component_code = cast(? as varchar(20)) "
+                + "        and existing.observation_date = cast(? as date))",
+                BASE_COMPONENT_CODE, context.observationDate(), context.batchId(), context.acceptedBy(),
+                utc(context.createdAt()), sourceStateId, context.batchId(), rowNumber, BASE_COMPONENT_CODE,
+                context.observationDate());
+        written += jdbc.update("insert into catalog_price_observation ("
+                + "import_link_id, identity_hash, component_code, observation_date, amount, percentage, "
+                + "currency, source_state_id, batch_id, accepted_by, created_at) "
+                + "select state.import_link_id, state.identity_hash, price.component_code, cast(? as date), "
+                + "price.source_amount, price.percentage, price.currency, state.id, "
+                + "cast(? as bigint), cast(? as varchar(100)), cast(? as timestamp with time zone) "
+                + "from import_candidate_price price "
+                + "join catalog_source_state state on state.id = ? "
+                + "where price.batch_id = ? and price.row_number = ? "
+                + "  and price.component_code <> cast(? as varchar(20)) and price.status = 'OK' "
+                + "  and not exists (select 1 from catalog_price_observation existing "
+                + "      where existing.import_link_id = state.import_link_id "
+                + "        and existing.identity_hash = state.identity_hash "
+                + "        and existing.component_code = price.component_code "
+                + "        and existing.observation_date = cast(? as date))",
+                context.observationDate(), context.batchId(), context.acceptedBy(), utc(context.createdAt()),
+                sourceStateId, context.batchId(), rowNumber, BASE_COMPONENT_CODE, context.observationDate());
+        return written;
+    }
+
     /** Het aantal vastgelegde observaties van één koppeling; voor tellingen en tests. */
     public long countByImportLinkId(long importLinkId) {
         Long count = jdbc.queryForObject(
