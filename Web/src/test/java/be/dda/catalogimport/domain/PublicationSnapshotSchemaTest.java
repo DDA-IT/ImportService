@@ -68,7 +68,9 @@ class PublicationSnapshotSchemaTest {
                 "ID", "BUNDLE_ID", "MUTATION_ID", "BATCH_ID", "IMPORT_LINK_ID", "SOURCE_ROW_NUMBER",
                 "DESCRIPTION", "DESCRIPTION_STATE", "CREATED_AT");
         assertThat(columnNames("publication_bundle_snapshot_price")).containsExactlyInAnyOrder(
-                "SNAPSHOT_ID", "COMPONENT_CODE", "SOURCE_AMOUNT", "PERCENTAGE", "CURRENCY", "STATUS");
+                "SNAPSHOT_ID", "COMPONENT_CODE", "SOURCE_AMOUNT", "PERCENTAGE", "CURRENCY", "STATUS",
+                // 027-3 (P4a): verwachte Prodis-percentage.
+                "BEFORE_PERCENTAGE");
 
         assertThat(numeric("publication_bundle_snapshot_price", "source_amount")).containsExactly(24, 6);
         assertThat(numeric("publication_bundle_snapshot_price", "percentage")).containsExactly(24, 12);

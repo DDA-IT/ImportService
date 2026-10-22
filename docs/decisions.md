@@ -2968,3 +2968,10 @@ kan `ARTICLE_NOT_FOUND` geven bij letterlijke vergelijking (parallelrun maakt he
 **Ontdekt:** `PRICE_ROUNDING_DIFFERENCE` kan end-to-end pas na P4b (tot dan zijn alle VKP% KEEP met `EXPECTED_NOT_AVAILABLE`); de POST van
 een SIMULATION-run wacht nu synchroon op de Prodis-lookups (risico op HTTP-time-out bij grote bundels).
 **Bron:** P2c-bouwerrapport
+
+## 2026-10-22 — P4a: schema publicatie-items
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** "actief" voor de partiële unieke index = `active_marker is not null`
+(terminaal enkel SIMULATED en FAILED, zoals `ck_publication_run_marker_status`); de marker-check is in 027 niet gewijzigd (puur additief).
+**Open voor P5c:** APPLIED en REJECTED_BY_PRODIS vragen nog marker TRUE; P5c moet `ck_publication_run_marker_status` en
+`ck_publication_run_finished` herzien vóór een run APPLIED wordt, anders houdt een afgeronde PRODUCTION-run het slot vast.
+**Bron:** P4a-bouwerrapport

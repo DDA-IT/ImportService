@@ -44,7 +44,9 @@ class PublicationRunSchemaTest {
                 "ID", "BUNDLE_ID", "TARGET_MODE", "ATTEMPT", "STATUS", "REQUESTED_BY", "REQUESTED_BY_SUBJECT",
                 "REQUESTED_AT", "STARTED_AT", "FINISHED_AT", "BUNDLE_CONTENT_HASH", "SNAPSHOT_HASH",
                 "PAYLOAD_HASH", "ARTIFACT_REFERENCE", "ARTIFACT_SHA256", "ARTIFACT_BYTE_SIZE", "ROW_COUNT",
-                "INCOMPLETE_ROW_COUNT", "FAILURE_CODE", "FAILURE_MESSAGE", "IDEMPOTENCY_KEY", "ACTIVE_MARKER");
+                "INCOMPLETE_ROW_COUNT", "FAILURE_CODE", "FAILURE_MESSAGE", "IDEMPOTENCY_KEY", "ACTIVE_MARKER",
+                // 027-2 (P4a): modus bij de start en chunk-lease.
+                "LEGACY_MASTER_AT_START", "LEASE_OWNER", "LEASE_UNTIL");
 
         assertThat(length("target_mode")).isEqualTo(30);
         assertThat(length("status")).isEqualTo(30);
@@ -210,7 +212,7 @@ class PublicationRunSchemaTest {
             assertThat(status.isTerminal()).isEqualTo(
                     status == PublicationRunStatus.SIMULATED || status == PublicationRunStatus.FAILED);
         }
-        assertThat(PublicationRunStatus.values()).hasSize(11);
+        assertThat(PublicationRunStatus.values()).hasSize(12); // 11 + PUBLISHING (027-2, P4a)
     }
 
     // --- Helpers ---------------------------------------------------------------------------------

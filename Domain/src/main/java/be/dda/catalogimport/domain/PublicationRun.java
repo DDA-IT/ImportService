@@ -108,6 +108,20 @@ public class PublicationRun {
     @Column(name = "active_marker")
     private Boolean activeMarker;
 
+    /**
+     * De {@code legacy_master}-modus bij de start van een PRODUCTION-run (changeset 027-2); {@code null} =
+     * niet vastgesteld. Enkel schema in P4a: de service die hem vult volgt in P5.
+     */
+    @Column(name = "legacy_master_at_start", length = 30)
+    private String legacyMasterAtStart;
+
+    /** Houder van de chunk-lease (changeset 027-2); samen met {@code leaseUntil} gevuld of leeg. */
+    @Column(name = "lease_owner", length = 100)
+    private String leaseOwner;
+
+    @Column(name = "lease_until")
+    private Instant leaseUntil;
+
     protected PublicationRun() {
         // JPA
     }
@@ -282,5 +296,17 @@ public class PublicationRun {
 
     public Boolean getActiveMarker() {
         return activeMarker;
+    }
+
+    public String getLegacyMasterAtStart() {
+        return legacyMasterAtStart;
+    }
+
+    public String getLeaseOwner() {
+        return leaseOwner;
+    }
+
+    public Instant getLeaseUntil() {
+        return leaseUntil;
     }
 }

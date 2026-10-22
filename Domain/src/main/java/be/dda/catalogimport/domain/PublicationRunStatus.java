@@ -14,6 +14,12 @@ public enum PublicationRunStatus {
     PREPARING,
 
     /**
+     * Toegevoegd in P4a (changeset 027-2), nog nooit gezet: de PRODUCTION-run verstuurt zijn items in chunks. Niet-terminaal
+     * ({@link #isTerminal()} blijft ongewijzigd): de run houdt de actieve marker vast.
+     */
+    PUBLISHING,
+
+    /**
      * Gebruikt, terminaal (geslaagd): artefact geschreven, GEEN enkel operationeel effect. Nooit te
      * verwarren met {@link #APPLIED}.
      */

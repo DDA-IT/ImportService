@@ -68,6 +68,13 @@ public class PublicationBundleSnapshotPrice {
     @Column(name = "percentage", precision = 24, scale = 12)
     private BigDecimal percentage;
 
+    /**
+     * De verwachte Prodis-percentage voor CONFLICT-detectie (changeset 027-3, P-V4); {@code null} = niet beschikbaar
+     * (spec-v1-bundels), nooit stil 0. Gevuld door het bevriezen in P4b.
+     */
+    @Column(name = "before_percentage", precision = 24, scale = 12)
+    private BigDecimal beforePercentage;
+
     @Column(name = "currency", length = 3)
     private String currency;
 
@@ -102,6 +109,10 @@ public class PublicationBundleSnapshotPrice {
 
     public BigDecimal getPercentage() {
         return percentage;
+    }
+
+    public BigDecimal getBeforePercentage() {
+        return beforePercentage;
     }
 
     public String getCurrency() {

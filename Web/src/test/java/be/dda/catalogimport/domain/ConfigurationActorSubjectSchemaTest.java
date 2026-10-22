@@ -119,13 +119,14 @@ class ConfigurationActorSubjectSchemaTest {
         // (014-delivery-configuration, LC-1): 30 op 22; plus legacy_config_receipt.{received,applied,discarded}_by_subject
         // (020-1, legacy-config S1): 33 op 23; plus import_field_value_map.created_by_subject (023-1, S8a): 34 op 24;
         // plus import_field_transform_step.created_by_subject (024-1, S8c): 35 op 25; plus
-        // legacy_config_detachment.created_by_subject (026-2, G2a): 36 op 26.
+        // legacy_config_detachment.created_by_subject (026-2, G2a): 36 op 26; plus
+        // publication_run_item.sent_by_subject (027-1, P4a): 37 op 27.
         Long total = jdbc.queryForObject("select count(*) from information_schema.columns "
                 + "where table_schema = current_schema() and column_name like '%\\_by\\_subject'", Long.class);
         Long tables = jdbc.queryForObject("select count(distinct table_name) from information_schema.columns "
                 + "where table_schema = current_schema() and column_name like '%\\_by\\_subject'", Long.class);
-        assertThat(total).isEqualTo(36L);
-        assertThat(tables).isEqualTo(26L);
+        assertThat(total).isEqualTo(37L);
+        assertThat(tables).isEqualTo(27L);
     }
 
     @Test
