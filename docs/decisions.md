@@ -2985,3 +2985,23 @@ een SIMULATION-run wacht nu synchroon op de Prodis-lookups (risico op HTTP-time-
 5. `SNAPSHOT_SPEC_VERSION` wordt "2"; `SNAPSHOT_SPEC_VERSION_1/_2` nieuw.
 6. `computeSnapshotHash(long)` = huidige spec; nieuwe overload met versie.
 **Bron:** P4b-bouwerrapport
+
+## 2026-10-22 — P5a: schrijfverbinding, rolscript, testopzet
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):**
+1. Fout tijdens `commit()`: enkel SQLState-klasse 23/40 (server meldt rollback) = niet toegepast; al de rest (08, 57P0x, geen SQLState,
+   driver-RuntimeException) = `CommitOutcomeUnknownException`. Herziet design §2.2/§2.4 ("klasse 08"): een sessie die tijdens de commit
+   beëindigd wordt geeft 57P01 (empirisch vastgesteld).
+2. `select 1` vóór de commit: pgjdbc 42.7.5 beantwoordt een COMMIT op een afgebroken transactie stil; zo wordt dat `NotApplied` (25P02).
+3. Verbinding weg na het werk maar vóór de commit = `NotApplied` (geen COMMIT verstuurd).
+4. `Transaction`-handle met afgeschermde verbinding + `setRollbackOnly()` voor REJECTED/CONFLICT.
+5. Gedeelde basisklasse `ProdisDatabaseProperties` voor lees- en schrijfbron (refactor van `ProdisReferenceDatabaseProperties`, gedrag ongewijzigd).
+6. Rolscript in delen (CREATE ROLE door setup als superuser, ALTER ROLE door de rol zelf, GRANTs door de eigenaar), letterlijk uit het productiescript.
+7. Testschema afgeleid van `pg_dump --schema-only` van de lokale Prodis (Liquibase-stand 20261022100000), negen tabellen; FK's naar tabellen
+   buiten de set weggelaten.
+8. Schema-parity via `pg_catalog` in een read-only sessie.
+9. Commit-fout gesimuleerd met een test-hook rond de DataSource.
+10. Dao-excepties zijn gewone `RuntimeException`s (P5b vangt ze expliciet op).
+**Ontdekt:** `FOR UPDATE` vraagt UPDATE-recht (de rol kan `catalog_article` niet locken, conform "identiteit zonder lock");
+rolinstellingen zijn sessiedefaults, geen harde grenzen; PUBLIC heeft standaard TEMP op `Prodis`; `catalog_article_description.description`
+is `varchar(4000)` — langere omschrijving best vooraf afvangen in de planner.
+**Bron:** P5a-bouwerrapport

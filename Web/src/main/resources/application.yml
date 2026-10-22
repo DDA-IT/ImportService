@@ -143,6 +143,25 @@ catalogimport:
     connect-timeout: ${CATALOG_PRODIS_DB_CONNECT_TIMEOUT:PT5S}
     query-timeout: ${CATALOG_PRODIS_DB_QUERY_TIMEOUT:PT10S}
     maximum-pool-size: ${CATALOG_PRODIS_DB_MAXIMUM_POOL_SIZE:2}
+  # Schrijfverbinding naar de Prodis-database voor de publicatie (P5a; docs/design/publicatie-prodis-db-direct-design.md
+  # par. 2.1-2.3; beslissingslog 2026-10-22 P-V2). Eigen DB-rol catalogimport_pub (docs/ops/prodis-catalogimport-pub-role.sql:
+  # enkel UPDATE op de prijs-, VKP- en omschrijvingskolommen, geen INSERT/DELETE/sequence). BEWUST GEEN default, in geen
+  # enkel profiel:
+  #   CATALOG_PRODIS_DB_WRITE_URL       bv. jdbc:postgresql://<host>:5432/Prodis (zonder wachtwoord in de URL)
+  #   CATALOG_PRODIS_DB_WRITE_USERNAME  catalogimport_pub (infra)
+  #   CATALOG_PRODIS_DB_WRITE_PASSWORD  nooit in de repo
+  # Alle drie leeg = functie uit: de applicatie start, publiceren naar Prodis geeft 409 PRODIS_WRITE_NOT_CONFIGURED. Een of
+  # twee gezet, een URL die geen driver kent of een wachtwoord draagt, of een ongeldige waarde hieronder = de applicatie
+  # start niet. Onbereikbaar = de applicatie start wel. Pool autoCommit=false, READ COMMITTED, geen Liquibase, buiten de
+  # readiness-probe, geen DataSource-bean (de hoofddatabase blijft ongemoeid).
+  prodis-db-write:
+    url: ${CATALOG_PRODIS_DB_WRITE_URL:}
+    username: ${CATALOG_PRODIS_DB_WRITE_USERNAME:}
+    password: ${CATALOG_PRODIS_DB_WRITE_PASSWORD:}
+    # Wachten op een verbinding (min. PT0.25S), time-out per opdracht (min. PT1S, hele seconden), poolgrootte (1..10).
+    connect-timeout: ${CATALOG_PRODIS_DB_WRITE_CONNECT_TIMEOUT:PT5S}
+    query-timeout: ${CATALOG_PRODIS_DB_WRITE_QUERY_TIMEOUT:PT30S}
+    maximum-pool-size: ${CATALOG_PRODIS_DB_WRITE_MAXIMUM_POOL_SIZE:2}
   # catalogimport.fetch.* staat hier BEWUST NIET als waarde (K-4a; docs/decisions.md 2026-09-29 L4b, A12;
   # docs/design/leveringsconfiguratie-design.md par. 5 en 8). Enkel deze toelichting:
   #   fetch.allowed-hosts   (env CATALOGIMPORT_FETCH_ALLOWED_HOSTS) exacte hostnamen, komma-gescheiden in EEN string,
