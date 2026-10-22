@@ -1,6 +1,6 @@
 # 5B-7 — Prodis-adapter als rechtenbron
 
-> **Status: GEBOUWD (5B-7a t/m 5B-7d, 2026-10-22); 5B-7e (neutrale lege-rechtentekst) optioneel en niet gebouwd.** Ontwerp door
+> **Status: GEBOUWD (5B-7a t/m 5B-7d, 2026-10-22); 5B-7e vervalt: de bestaande lege-rechtentekst (`App.tsx` "Vraag de beheerder om het recht om CatalogImport te lezen (catalogImport.read).") noemt de bron al niet.** Ontwerp door
 > denker-zwaar; V1-V4 beslist (`docs/decisions.md` 2026-10-22: V1 = B, V2 = A, V3 bevestigd, V4 = B). Verfijnt `fase5-perm-design.md`
 > §2 (r.55-57), §4 (r.93-96) en de bouwtabel (r.137).
 
@@ -66,7 +66,7 @@ te kennen." Bij V4 = B volstaat de bestaande 401-afhandeling (`http.ts:128-129`)
 | 5B-7b | `source`-enum + `prodis.*`-properties met validatie, beanselectie, `ProdisPermissionSource` | zwaar | `-Dtest=ProdisPermissionSourceTest,ConfiguredPermissionSourceTest,PermissionHierarchyTest` (stub `FakeProdisServer`) |
 | 5B-7c | HTTP-integratie met `source=PRODIS`, `TestPermissionSource` uit | gemiddeld | `-Dtest=ProdisPermissionHttpTest,MePermissionSourceUnavailableHttpTest,PermissionHttpTest,PermissionCoverageTest,SecurityHttpTest` |
 | 5B-7d | yml-profielen, README/handleiding, fase5-perm §2 + r.137, extern punt 2 doorhalen | licht | n.v.t. |
-| 5B-7e | (optioneel) neutrale lege-rechtentekst | licht | `npm test -- --run`, `tsc -p tsconfig.app.json` |
+| 5B-7e | vervalt — bestaande lege-rechtentekst noemt de bron al niet | licht | `npm test -- --run`, `tsc -p tsconfig.app.json` |
 
 **Acceptatie 5B-7b:** exacte code toegekend (`approve`, `read`, `CATALOGIMPORT.READ` genegeerd); ontbrekend/verkeerd type → 503;
 geweigerde refresh/geen client/timeout/401/500/302/te grote body → 503 zonder token in de log; verlopen token eerst ververst; geldige
