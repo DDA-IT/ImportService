@@ -2813,3 +2813,16 @@ hebben (betekent "kolom leeg"); overal elders blijft 400 `COMPARE_VALUE_REQUIRED
 Bekende verschillen met legacy (aanvaard, gedocumenteerd in `legacy-config-s8-design.md` "Uitwerking S8f"): legacy kapt ARIMP-waarden
 af op hun Alpha-lengte vóór de opzoeking (wij niet); records met lege leverancier/referentie worden bij ons verworpen i.p.v. uitgesloten.
 **Bron:** S8f-bouwerrapport / `legacy-config-s8-design.md` §2f
+
+## 2026-10-22 — 5B-7: Prodis als rechtenbron (V1–V4)
+**Vraag:** Open punten uit `docs/design/fase5-perm-5b7-design.md` §7.
+**Beslissing:** aanbevelingen aanvaard.
+- **V1 = B:** enkel geslaagde antwoorden van Prodis `GET /api/account` worden PT30S per sessie gecachet (gekoppeld aan subject +
+  username); fouten nooit. Herziet de "per verzoek, nooit gecachet"-regel uit fase5-perm r.57 / 2026-09-26 voor deze bron.
+- **V2 = A:** default `catalogimport.permissions.source=PRODIS` in `application.yml` (productie start niet zonder
+  `CATALOG_PRODIS_ACCOUNT_URL`); demo/local/ewoutdev blijven `CONFIGURED`.
+- **V3:** een System Admin in Prodis krijgt alle `catalogImport.*` (dus approve en via de hiërarchie alles).
+- **V4 = B:** verloren token (geweigerde refresh, geen geautoriseerde client) → 401 `AUTHENTICATION_REQUIRED`; andere fouten → 503
+  `PERMISSION_SOURCE_UNAVAILABLE`. Contractkeuze, blijft fail-closed.
+- Bouw 5B-7a t/m 5B-7e strikt sequentieel, één commit per slice; YAML en Prodis nooit als unie.
+**Bron:** mens / denker-zwaar 5B-7-ontwerp
