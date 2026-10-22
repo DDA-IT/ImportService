@@ -116,6 +116,9 @@ class PermissionCoverageTest {
         // Herstel van een vastgelopen PREPARING-run (docs/decisions.md 2026-09-27, optie A): zelfde
         // rechtenconventie als het aanvragen zelf.
         m.put("POST /api/catalog-import/publication-runs/{}/abort", "APPROVE");
+        // Publicatie naar Prodis (P6, publicatie-prodis-db-direct-design.md par. 6): publiceren = APPROVE (A2), lezen = READ.
+        m.put("POST /api/catalog-import/publication-runs/{}/continue", "APPROVE");
+        m.put("GET /api/catalog-import/publication-runs/{}/items", "READ");
         // Leveringen, koppelingen, taken
         m.put("POST /api/catalog-import/tasks/{}/deliveries", "MANAGE");
         // Tweede ontvangstweg (beslissingslog 2026-09-27, D8): het lijsten van de servermap vraagt MANAGE en

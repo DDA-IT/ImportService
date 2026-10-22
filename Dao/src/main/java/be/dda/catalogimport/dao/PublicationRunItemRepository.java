@@ -5,6 +5,7 @@ import be.dda.catalogimport.domain.PublicationRunItemStatus;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -49,4 +50,12 @@ public interface PublicationRunItemRepository extends JpaRepository<PublicationR
     List<Object[]> countByStatus(@Param("runId") Long runId);
 
     long countByRunId(Long runId);
+
+    // --- Lezen (P6) ----------------------------------------------------------------------------------------------
+
+    /** Eén pagina items van een run (sortering via de {@code Pageable}). */
+    Page<PublicationRunItem> findByRunId(Long runId, Pageable page);
+
+    /** Eén pagina items van een run in één status. */
+    Page<PublicationRunItem> findByRunIdAndStatus(Long runId, PublicationRunItemStatus status, Pageable page);
 }

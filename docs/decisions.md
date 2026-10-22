@@ -3057,3 +3057,10 @@ beslissing (bv. de rest vrijgeven aan een nieuwe bundel vs. de bundel herpublice
 **Ontdekt:** `SourceStateBaselineService` schrijft `base_price_currency_origin` niet (010-2 bedoelt dat wel); de publicatie volgt de
 baseline. `PublicationRunView` zet `simulationOnly=true`/`writesToProdis=false` vast — P6 lost dat op.
 **Bron:** P5c-bouwerrapport
+
+## 2026-10-22 — P6: endpoints publicatie naar Prodis
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** facade `PublicationRunApiService` (geen businesslogica); items-endpoint op een
+SIMULATION-run = lege pagina, `continue` op SIMULATION = 409 `PUBLICATION_RUN_NOT_PRODUCTION`; `prior`/`result`/`severity` letterlijk uit de
+opgeslagen JSON (onleesbaar = 500, nooit stil leeg); `continue` tekent als niet-systeem-actor met APPROVE. POST start/continue geven een
+`PublicationRunView` (frontendcontract); `PARTIALLY_PUBLISHED` is enkel een bundelstatus.
+**Bron:** P6-bouwerrapport

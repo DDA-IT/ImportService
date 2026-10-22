@@ -343,6 +343,32 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     whatNow: 'Ga verder met publiceren: de onzekere artikelen worden dan veilig opnieuw gecontroleerd.',
     showBackendDetail: true,
   },
+  BUNDLE_TARGET_MODE_NOT_PRODUCTION: {
+    title: 'Deze bundel is niet bedoeld voor de echte publicatie',
+    explanation:
+      'Deze bundel heeft een ander publicatiedoel dan de echte publicatie naar Prodis. Er is niets naar Prodis ' +
+      'geschreven.',
+    whatNow: 'Stel een bundel samen met als doel de echte publicatie, of gebruik hier de proefpublicatie.',
+  },
+  PRODUCTION_RUN_IN_PROGRESS: {
+    title: 'Er loopt al een publicatie naar Prodis',
+    explanation:
+      'Er wordt al een andere bundel naar Prodis gepubliceerd; er kan er maar een tegelijk lopen. Er is niets ' +
+      'gestart.',
+    whatNow: 'Wacht tot die publicatie klaar is (of ga er verder mee) en probeer het dan opnieuw.',
+    showBackendDetail: true,
+  },
+  PUBLICATION_RUN_NOT_PRODUCTION: {
+    title: 'Dit is geen publicatie naar Prodis',
+    explanation: 'Deze run is een proefpublicatie; die schrijft niets naar Prodis en kan niet voortgezet worden.',
+  },
+  PUBLICATION_RUN_NOT_PUBLISHING: {
+    title: 'Deze publicatie loopt niet (meer)',
+    explanation:
+      'Alleen een publicatie die bezig is met schrijven naar Prodis kan verder gezet worden. Deze run is dat niet ' +
+      '(meer), bijvoorbeeld omdat ze mislukt of al afgerond is.',
+    whatNow: 'Laad de lijst opnieuw om de actuele stand te zien.',
+  },
   LOCAL_SOURCE_NOT_CONFIGURED: {
     title: 'Ontvangstweg niet ingesteld',
     explanation: 'Deze ontvangstweg is niet ingesteld op deze omgeving.',

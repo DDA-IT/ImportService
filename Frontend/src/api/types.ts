@@ -1250,6 +1250,8 @@ export type ParallelRunSummary = {
 // "Technische details".
 export type PublicationItemWarning = {
   code: string;
+  /** `INFO`/`WARNING`/`BLOCKING` zoals de planner het meldt; ontbreekt bij oudere items. */
+  severity?: string | null;
   field: string | null;
   message: string | null;
 };

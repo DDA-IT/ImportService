@@ -4,10 +4,12 @@ import be.dda.catalogimport.dao.PsimportPreviewDao;
 import be.dda.catalogimport.dao.PsimportPreviewDao.SourceRow;
 import be.dda.catalogimport.dao.PublicationBundleDao;
 import be.dda.catalogimport.dao.PublicationBundleRepository;
+import be.dda.catalogimport.dao.PublicationRunItemRepository;
 import be.dda.catalogimport.dao.PublicationRunRepository;
 import be.dda.catalogimport.domain.PublicationBundle;
 import be.dda.catalogimport.domain.PublicationBundleStatus;
 import be.dda.catalogimport.domain.PublicationRun;
+import be.dda.catalogimport.domain.PublicationRunItemStatus;
 import be.dda.catalogimport.domain.PublicationRunStatus;
 import be.dda.catalogimport.domain.PublicationTargetMode;
 import be.dda.catalogimport.service.PsimportPreviewMapper.Row;
@@ -24,8 +26,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -184,15 +189,19 @@ public class PublicationRunService {
 
     private static final Logger LOG = LoggerFactory.getLogger(PublicationRunService.class);
 
+    /** Itemstatussen die nog niet terminaal zijn (P6: {@code done} is enkel waar zonder open items). */
+    private static final Set<String> OPEN_ITEM_STATUSES = Set.of(PublicationRunItemStatus.PENDING.name(),
+            PublicationRunItemStatus.SENT.name(), PublicationRunItemStatus.RESULT_UNKNOWN.name());
+
     /**
      * Eén publicatierun zoals de API ze toont. Bewust <b>zonder</b> {@code requested_by_subject} (audit,
      * komt nooit in een domeinantwoord — zelfde regel als {@code frozen_by_subject}) en <b>zonder</b>
      * {@code artifact_reference}: het bestandspad van de server hoort niet in een antwoord; het artefact
      * wordt in 5P-8 via een eigen endpoint aangeboden.
      * <p>
-     * {@code simulationOnly}, {@code writesToProdis} en {@code contractStatus} staan er altijd en vast op:
-     * ze zijn geen contractuele toezegging over de inhoud, maar een waarschuwing dat deze run niets
-     * uitgevoerd heeft.
+     * {@code simulationOnly} en {@code writesToProdis} volgen de doelmodus van de run (P6; vroeger vast {@code true}/
+     * {@code false}): {@code SIMULATION} schrijft niets, {@code PRODUCTION} schrijft naar Prodis. {@code contractStatus}
+     * staat er altijd en vast op: geen contractuele toezegging over de inhoud.
      *
      * @param bundleContentHash hex, of {@code null} wanneer de bundel er geen draagt
      * @param snapshotHash      hex, of {@code null} voor een bundel zonder bundelsnapshot
@@ -200,6 +209,11 @@ public class PublicationRunService {
      * @param parallelRun       de samenvatting van de Prodis-parallelrun (P2c, afgeleid uit het samenvattingsbestand
      *                          naast het artefact); {@code null} als de run er geen heeft (niet {@code SIMULATED}, of van
      *                          voor P2c). Draagt geen bestandspad.
+     * @param itemCounts         (P6) aantal items per status; enkel statussen die voorkomen (ontbrekend = 0); leeg voor een run zonder
+     *                          items (SIMULATION)
+     * @param done               (P6) de run is terminaal en geen item is nog open: de continue-lus stopt; nooit {@code true} voor een
+     *                          {@code PUBLISHING}-run
+     * @param legacyMasterAtStart (P6) de modus van Prodis bij de start van een PRODUCTION-run; anders {@code null}
      */
     public record PublicationRunView(long id, long bundleId, String targetMode, int attempt, String status,
                                      String requestedBy, Instant requestedAt, Instant startedAt,
@@ -208,14 +222,17 @@ public class PublicationRunService {
                                      Long rowCount, Long incompleteRowCount, String failureCode,
                                      String failureMessage, boolean simulationOnly, boolean writesToProdis,
                                      String contractStatus, String previewSpecVersion,
-                                     String snapshotSpecVersion, ParallelRunSummary parallelRun) {
+                                     String snapshotSpecVersion, ParallelRunSummary parallelRun,
+                                     Map<String, Long> itemCounts, boolean done, String legacyMasterAtStart) {
 
         private static PublicationRunView of(PublicationRun run, String snapshotSpecVersion) {
-            return of(run, snapshotSpecVersion, null);
+            return of(run, snapshotSpecVersion, null, Map.of());
         }
 
         private static PublicationRunView of(PublicationRun run, String snapshotSpecVersion,
-                                             ParallelRunSummary parallelRun) {
+                                             ParallelRunSummary parallelRun, Map<String, Long> itemCounts) {
+            long open = OPEN_ITEM_STATUSES.stream().mapToLong(status -> itemCounts.getOrDefault(status, 0L)).sum();
+            boolean production = run.getTargetMode() == PublicationTargetMode.PRODUCTION;
             HexFormat hex = HexFormat.of();
             return new PublicationRunView(run.getId(), run.getBundle().getId(), run.getTargetMode().name(),
                     run.getAttempt(), run.getStatus().name(), run.getRequestedBy(), run.getRequestedAt(),
@@ -225,15 +242,17 @@ public class PublicationRunService {
                     run.getPayloadHash() == null ? null : hex.formatHex(run.getPayloadHash()),
                     run.getArtifactSha256(), run.getArtifactByteSize(), run.getRowCount(),
                     run.getIncompleteRowCount(), run.getFailureCode(), run.getFailureMessage(),
-                    true, false, PsimportPreviewService.CONTRACT_STATUS,
-                    PsimportPreviewService.PREVIEW_SPEC_VERSION, snapshotSpecVersion, parallelRun);
+                    !production, production, PsimportPreviewService.CONTRACT_STATUS,
+                    PsimportPreviewService.PREVIEW_SPEC_VERSION, snapshotSpecVersion, parallelRun, itemCounts,
+                    run.getStatus().isTerminal() && open == 0, run.getLegacyMasterAtStart());
         }
 
         private PublicationRunView withParallelRun(ParallelRunSummary summary) {
             return new PublicationRunView(id, bundleId, targetMode, attempt, status, requestedBy, requestedAt,
                     startedAt, finishedAt, bundleContentHash, snapshotHash, payloadHash, artifactSha256,
                     artifactByteSize, rowCount, incompleteRowCount, failureCode, failureMessage, simulationOnly,
-                    writesToProdis, contractStatus, previewSpecVersion, snapshotSpecVersion, summary);
+                    writesToProdis, contractStatus, previewSpecVersion, snapshotSpecVersion, summary, itemCounts, done,
+                    legacyMasterAtStart);
         }
     }
 
@@ -256,6 +275,8 @@ public class PublicationRunService {
     private final Duration stuckAfter;
     /** {@code null} = geen parallelrun (enkel via de oorspronkelijke constructor, voor tests zonder Prodis-kant). */
     private final PublicationParallelRunService parallelRuns;
+    /** {@code null} = geen itemtellers in de runview (enkel via de oorspronkelijke constructor, voor tests). */
+    private final PublicationRunItemRepository items;
 
     /**
      * De oorspronkelijke constructor (5P-7), ongewijzigd beschikbaar: zonder parallelrun. Spring gebruikt de
@@ -266,7 +287,7 @@ public class PublicationRunService {
                                  PublicationArtifactStore artifacts,
                                  PlatformTransactionManager transactionManager, Clock clock,
                                  Duration stuckAfter) {
-        this(runs, bundles, bundleDao, previewDao, artifacts, transactionManager, clock, stuckAfter, null);
+        this(runs, bundles, bundleDao, previewDao, artifacts, transactionManager, clock, stuckAfter, null, null);
     }
 
     @Autowired
@@ -275,8 +296,10 @@ public class PublicationRunService {
                                  PublicationArtifactStore artifacts,
                                  PlatformTransactionManager transactionManager, Clock clock,
                                  @Value("${catalogimport.publication-run.stuck-after:PT60M}") Duration stuckAfter,
-                                 PublicationParallelRunService parallelRuns) {
+                                 PublicationParallelRunService parallelRuns,
+                                 PublicationRunItemRepository items) {
         this.parallelRuns = parallelRuns;
+        this.items = items;
         this.runs = runs;
         this.bundles = bundles;
         this.bundleDao = bundleDao;
@@ -735,7 +758,19 @@ public class PublicationRunService {
                 && run.getArtifactReference() != null) {
             parallelRun = parallelRuns.readSummary(run.getArtifactReference());
         }
-        return PublicationRunView.of(run, snapshotSpecVersion, parallelRun);
+        return PublicationRunView.of(run, snapshotSpecVersion, parallelRun, itemCounts(run));
+    }
+
+    /** Aantal items per status van een PRODUCTION-run (enkel voorkomende statussen); leeg voor elke andere run. */
+    private Map<String, Long> itemCounts(PublicationRun run) {
+        if (items == null || run.getTargetMode() != PublicationTargetMode.PRODUCTION) {
+            return Map.of();
+        }
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (Object[] row : items.countByStatus(run.getId())) {
+            counts.put(((PublicationRunItemStatus) row[0]).name(), (Long) row[1]);
+        }
+        return java.util.Collections.unmodifiableMap(counts);
     }
 
     private PublicationRun requireRun(long runId) {
@@ -758,7 +793,7 @@ public class PublicationRunService {
     }
 
     /** Tekst naar modus: leeg is niet hetzelfde als onbekend, en geen van beide wordt een aanname. */
-    private static PublicationTargetMode parseMode(String targetMode) {
+    static PublicationTargetMode parseMode(String targetMode) {
         if (targetMode == null || targetMode.isBlank()) {
             throw new BadRequestException(CODE_PUBLICATION_MODE_REQUIRED,
                     "targetMode is required; a publication run never assumes a target");

@@ -310,7 +310,7 @@ public class BundleQueryService {
                 PublicationBundleService.CODE_BUNDLE_NOT_FOUND, "Bundle " + bundleId + " not found"));
     }
 
-    private static PageRequest pageRequest(Integer page, Integer size, Sort sort) {
+    static PageRequest pageRequest(Integer page, Integer size, Sort sort) {
         int number = page == null ? 0 : page;
         int requested = size == null ? DEFAULT_PAGE_SIZE : size;
         if (number < 0) {
