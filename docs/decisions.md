@@ -2920,3 +2920,10 @@ een zou herroepen wordt niet stil gevolgd maar als open punt gemarkeerd.
 **Ontdekt (bewust aanvaard, P-V2):** Prodis rekent in `double`; op sommige bedragen wijkt dat een cent af van decimale rekenkunde (bv. 0,7 × 45%
 → 0,31 i.p.v. 0,32). Wij volgen Prodis bit-identiek; de parallelrun tegen legacy kan centverschillen tonen.
 **Bron:** P2a-bouwerrapport / `publicatie-prodis-db-direct-design.md` §3
+
+## 2026-10-22 — Lokale testdatabase voor de publicatie
+**Vraag:** Wie maakt de lokale testdatabase `prodis_pubtest` en testrol `catalogimport_pub_test` aan (design publicatie-direct §6, testopzet)?
+**Beslissing:** De bouwer van P5a maakt ze zelf aan in de lokale Docker-container `prodis-postgresql-1` (enkel lokaal: nieuwe database +
+testrol, via het script `scripts/test/setup-prodis-pubtest.sql`). De echte database `Prodis` wordt nooit beschreven; de tests stoppen als
+`current_database() ≠ 'prodis_pubtest'`.
+**Bron:** mens
