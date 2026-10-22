@@ -120,8 +120,11 @@ describe('verwerpen — knop en dialoog', () => {
     expect(write.body).toEqual({ reason: 'Niet nodig' });
     // Na het herladen: geen knop meer, wel de audit.
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Verwerpen…' })).not.toBeInTheDocument());
-    expect(screen.getByTestId('legacy-origin-facts')).toHaveTextContent('Reden van het verwerpen');
-    expect(screen.getByTestId('legacy-origin-facts')).toHaveTextContent('Niet nodig');
+    const audit = await screen.findByTestId('legacy-discarded-audit');
+    expect(audit).toHaveTextContent('Reden van het verwerpen');
+    expect(audit).toHaveTextContent('Niet nodig');
+    expect(audit).toHaveTextContent('beheerder@example.test');
+    expect(screen.queryByTestId('legacy-not-applicable')).not.toBeInTheDocument();
   });
 });
 

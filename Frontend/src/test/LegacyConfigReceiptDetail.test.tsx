@@ -19,6 +19,7 @@ import {
   errorResponse,
   jsonResponse,
   mockApi,
+  openCard,
   preview,
   receiptDetail,
   report,
@@ -64,13 +65,17 @@ describe('LegacyReceiptDetailPage — bundel', () => {
     const origin = screen.getByTestId('legacy-origin-facts');
     expect(within(origin).getByText('PROD')).toBeInTheDocument();
     expect(within(origin).getByText('KLANT01')).toBeInTheDocument();
-    expect(within(origin).getByText('Wachtwoord veilig bewaard')).toBeInTheDocument();
 
+    await openCard('Wachtwoord');
+    expect(within(screen.getByTestId('legacy-password-facts')).getByText('Wachtwoord veilig bewaard')).toBeInTheDocument();
+
+    await openCard('Bestemming en verbinding');
     const iface = screen.getByTestId('legacy-interface-facts');
     expect(within(iface).getByText('Kramp artikelen')).toBeInTheDocument();
     expect(screen.getByText('sftp.example.test')).toBeInTheDocument();
     expect(screen.getByText('klant01')).toBeInTheDocument();
 
+    await openCard('Importsoort');
     const definition = screen.getByTestId('legacy-definition-facts');
     expect(within(definition).getByText('Importsoort aanwezig')).toBeInTheDocument();
     expect(within(definition).getByText('VROOAM catalogus CSV')).toBeInTheDocument();
@@ -82,10 +87,14 @@ describe('LegacyReceiptDetailPage — bundel', () => {
     const { container } = renderDetail();
     await screen.findByRole('heading', { name: /Ontvangst #7/ });
 
+    // Het geheime label staat enkel bij naam in de wachtwoordkaart, en met een verborgen waarde in de instellingen.
+    await openCard('Wachtwoord');
+    expect(within(screen.getByTestId('legacy-omitted-secrets')).getByText('API_AUTH_PASSWORD')).toBeInTheDocument();
     expect(container.textContent).not.toContain(SECRET_VALUE);
     expect(container.innerHTML).not.toContain(SECRET_VALUE);
-    // Het geheime label staat enkel bij naam, met een verborgen waarde in de tabel.
-    expect(within(screen.getByTestId('legacy-omitted-secrets')).getByText('API_AUTH_PASSWORD')).toBeInTheDocument();
+    await openCard('Bestemming en verbinding');
+    expect(container.textContent).not.toContain(SECRET_VALUE);
+    expect(container.innerHTML).not.toContain(SECRET_VALUE);
     const settingRow = screen.getAllByText('API_AUTH_PASSWORD').map((cell) => cell.closest('tr')).find((row) => row !== null)!;
     expect(within(settingRow).getByText('(verborgen)')).toBeInTheDocument();
   });
@@ -96,6 +105,7 @@ describe('LegacyReceiptDetailPage — bundel', () => {
 
     expect(await screen.findByTestId('legacy-not-applicable')).toHaveTextContent('kan niet meer overgenomen worden');
     expect(screen.queryByRole('button', { name: /Overnemen/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Verwerpen/ })).not.toBeInTheDocument();
     expect(api.reads('/preview')).toHaveLength(0);
   });
 
@@ -118,17 +128,21 @@ describe('LegacyReceiptDetailPage — controle vooraf', () => {
     mockApi(defaultHandler);
     renderDetail();
 
+    // Blokkeert is standaard open; de andere soorten staan achter hun eigen kaart (één paneel tegelijk).
     await screen.findByTestId('legacy-report');
-    const groups = screen.getAllByTestId(/^legacy-group-/).map((group) => group.getAttribute('data-testid'));
-    expect(groups).toEqual(['legacy-group-BLOCKING', 'legacy-group-WARNING', 'legacy-group-NOT_MIGRATED', 'legacy-group-MIGRATED']);
-
+    expect(screen.getAllByTestId(/^legacy-group-/).map((group) => group.getAttribute('data-testid'))).toEqual(['legacy-group-BLOCKING']);
     const blocking = screen.getByTestId('legacy-group-BLOCKING');
     expect(within(blocking).getByText('Bibliotheek niet eenduidig bepaald')).toBeInTheDocument();
     expect(within(blocking).getByText(/kies er zelf een uit de lijst/)).toBeInTheDocument();
     expect(within(blocking).getByText('Blokkeert')).toBeInTheDocument();
-    expect(within(screen.getByTestId('legacy-group-MIGRATED')).getByText('Importsoort wordt overgenomen')).toBeInTheDocument();
-    expect(within(screen.getByTestId('legacy-group-NOT_MIGRATED')).getByText('Planning niet overgenomen')).toBeInTheDocument();
     expect(within(screen.getByTestId('legacy-outcome')).getByText('Geblokkeerd')).toBeInTheDocument();
+
+    await openCard('Waarschuwingen');
+    expect(screen.getAllByTestId(/^legacy-group-/).map((group) => group.getAttribute('data-testid'))).toEqual(['legacy-group-WARNING', 'legacy-group-NOT_MIGRATED']);
+    expect(within(screen.getByTestId('legacy-group-NOT_MIGRATED')).getByText('Planning niet overgenomen')).toBeInTheDocument();
+
+    await openCard('Wordt overgenomen');
+    expect(within(screen.getByTestId('legacy-group-MIGRATED')).getByText('Importsoort wordt overgenomen')).toBeInTheDocument();
   });
 
   it('houdt codes uit de zichtbare tekst en zet ze onder de technische details', async () => {
@@ -150,7 +164,7 @@ describe('LegacyReceiptDetailPage — controle vooraf', () => {
   it('gebruikt één woordenboekingang voor elke berekeningscode en valt voor een onbekende code terug op de servertekst', async () => {
     mockApi(defaultHandler);
     renderDetail();
-    await screen.findByTestId('legacy-report');
+    await openCard('Waarschuwingen');
 
     expect(within(screen.getByTestId('legacy-item-LEGACY_CALC_8_NOT_MIGRATED')).getByText('Berekening nog niet ondersteund')).toBeInTheDocument();
     const unknown = screen.getByTestId('legacy-item-SOMETHING_FROM_THE_FUTURE');
@@ -161,6 +175,7 @@ describe('LegacyReceiptDetailPage — controle vooraf', () => {
   it('toont wat aangemaakt of hergebruikt wordt, met gedeeld met en de Prodis-controle', async () => {
     mockApi(defaultHandler);
     renderDetail();
+    await openCard('Wordt overgenomen');
     const planned = await screen.findByTestId('legacy-planned');
 
     const row = (label: string) => within(planned).getByText(label).closest('div')!;

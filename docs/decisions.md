@@ -3120,3 +3120,13 @@ inklapbare kaart, open zolang er een blokkerend punt is. Probleemkaarten per pun
 legacy-onderdeel bovenaan en ruwe codes enkel in Technische details (noRawCodes blijft). Groeperen op code boven 5 gelijke
 punten, zoek/filter boven 8 punten. Geen historiekkaart (vraagt API). Bestaande testids blijven.
 **Bron:** denker-gemiddeld (redesign-voorstel) / decisions.md 2026-10-20 Frontend-ombouw
+
+## 2026-10-22 — Tests schrijven nooit in het lokale schema public
+**Vraag:** Een gewone `mvn test` gebruikt de hoofd-`application.yml` en schrijft dus testdata (credentials "Lektest…",
+verbindingsprofielen "CP…") in `catalog_import.public`, de lokale werkdatabase van de ontwikkelaar.
+**Beslissing:** Testcontexten gebruiken standaard een eigen schema (`ci_test`) in dezelfde lokale database, via een
+test-only configuratie (`Web/src/test/resources/config/application.yml`, voorrang op de hoofdconfig; overschrijfbaar met
+`CATALOG_TEST_DB_URL`); het schema wordt automatisch aangemaakt. `scripts/test/run-full-tests.ps1` blijft zijn eigen
+schema (`ci_fulltest`) doorgeven. Productiecode en profielen blijven ongewijzigd. Lokale data in `public` op 2026-10-22
+op verzoek van de mens gewist (behalve `databasechangelog*` en de seed `import_field_catalog`).
+**Bron:** mens (vraag) / hoofdsessie (technische invulling; klein, zonder architectuurimpact)

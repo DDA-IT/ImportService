@@ -9,15 +9,11 @@ import type { LegacyBundle, LegacyReceiptDetail } from '../../api/types.ts';
 import { DataTable, type DataTableColumn } from '../../components/DataTable.tsx';
 import { Term } from '../../terms/Term.tsx';
 import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
+import { SECRET_LABEL } from './legacyPolicy.ts';
 import styles from './LegacyConfig.module.css';
 
 type Setting = { sequence: number; label: string; value: string };
 
-/**
- * Vangnet: de backend laat geheime labels nooit mee (`omittedSecretLabels`), maar komt er toch zo'n label met een waarde
- * binnen, dan toont dit scherm de waarde niet. Zelfde patroon als de bundelparser.
- */
-const SECRET_LABEL = /pass|secret|apikey|api_key|token|_pw$/i;
 const HIDDEN_VALUE = '(verborgen)';
 
 const SETTING_COLUMNS: readonly DataTableColumn<Setting>[] = [
@@ -42,7 +38,7 @@ function show(value: string | number | undefined | null): string {
   return value === undefined || value === null || value === '' ? '—' : String(value);
 }
 
-function Interface({ bundle }: { bundle: LegacyBundle }) {
+export function Interface({ bundle }: { bundle: LegacyBundle }) {
   const iface = bundle.interface;
   const header = iface?.header;
   const settings: Setting[] = (iface?.details ?? []).map((detail) => ({
@@ -87,7 +83,7 @@ function Interface({ bundle }: { bundle: LegacyBundle }) {
   );
 }
 
-function Definition({ bundle }: { bundle: LegacyBundle }) {
+export function Definition({ bundle }: { bundle: LegacyBundle }) {
   const definition = bundle.definition;
   return (
     <>

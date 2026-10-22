@@ -1230,9 +1230,9 @@ Een wachtwoord wordt nergens getoond: u ziet enkel wat ermee gebeurd is.
 <!-- terms:legacySecretOutcome -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `STORED` | Wachtwoord veilig bewaard | Het wachtwoord is versleuteld bewaard en alleen via een verwijzing te gebruiken. |
+| `STORED` | Wachtwoord veilig bewaard | Het wachtwoord is versleuteld bewaard en alleen via een verwijzing te gebruiken; het gebruik voor FTP en API volgt later. |
 | `DISCARDED_ALREADY_PRESENT` | Wachtwoord niet overgenomen: bestaat al | Voor deze interface bestaat al een wachtwoord; het nieuwe is weggegooid, vervangen doet u zelf. |
-| `DISCARDED_PROTOCOL_UNSUPPORTED` | Wachtwoord niet overgenomen: protocol | Enkel bij SFTP wordt een wachtwoord overgenomen; dit wachtwoord is weggegooid. |
+| `DISCARDED_PROTOCOL_UNSUPPORTED` | Wachtwoord niet overgenomen: protocol | Een wachtwoord wordt bewaard voor SFTP, FTP en API; bij een lokaal bestand of een onduidelijk of tegenstrijdig protocol is het weggegooid. |
 | `DISCARDED_NO_HOST` | Wachtwoord niet overgenomen: geen server | Er was geen geldige server om het wachtwoord aan te koppelen; het is weggegooid. |
 | `null` | Geen wachtwoord ontvangen | Bij deze ontvangst zat geen wachtwoord. |
 

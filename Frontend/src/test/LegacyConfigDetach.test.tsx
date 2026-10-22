@@ -13,7 +13,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
 import type { LegacyConfigReport, LegacyPlannedDetach, LegacyReportItem } from '../api/types';
 import { LegacyReceiptDetailPage } from '../features/legacyconfig/LegacyReceiptDetailPage';
-import { applicableReport, jsonResponse, mockApi, preview, receiptDetail, type Call } from './legacyConfigFixtures';
+import { applicableReport, jsonResponse, mockApi, openCard, preview, receiptDetail, type Call } from './legacyConfigFixtures';
 import { TEST_IDENTITY } from './testIdentity';
 
 configure({ asyncUtilTimeout: 10000 });
@@ -149,6 +149,8 @@ describe('loskoppelen — samenvatting, bevestiging en APPLY', () => {
     detachSetup();
     renderDetail();
     fireEvent.click(await screen.findByLabelText(CHECKBOX));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Overnemen…' })).toBeEnabled());
+    await openCard('Wordt overgenomen');
 
     const detach = await screen.findByTestId('legacy-detach');
     expect(detach).toHaveTextContent('GEDEELD-1');
@@ -163,6 +165,8 @@ describe('loskoppelen — samenvatting, bevestiging en APPLY', () => {
     detachSetup({ carriesActive: false, copiedRevisionId: null });
     renderDetail();
     fireEvent.click(await screen.findByLabelText(CHECKBOX));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Overnemen…' })).toBeEnabled());
+    await openCard('Wordt overgenomen');
     const planned = await screen.findByTestId('legacy-planned');
     await waitFor(() => expect(planned).toHaveTextContent('heeft geen actieve versie'));
     expect(planned).not.toHaveTextContent('wordt meteen als eigen versie actief');
@@ -228,7 +232,7 @@ describe('loskoppelen — blokkerende codes', () => {
     });
     renderDetail();
 
-    expect(await screen.findByText(label)).toBeInTheDocument();
+    expect(within(await screen.findByTestId('legacy-panel-blocking')).getByText(label)).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Overnemen…' })).toBeDisabled();
   });
 });

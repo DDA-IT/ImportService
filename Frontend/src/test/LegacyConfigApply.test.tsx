@@ -90,7 +90,7 @@ describe('overnemen — knop en dialoog', () => {
 
     const button = await screen.findByRole('button', { name: 'Overnemen…' });
     expect(button).toBeDisabled();
-    expect(screen.getByTestId('legacy-apply-blocked-reason')).toHaveTextContent('blokkerende punten');
+    expect(await screen.findByTestId('legacy-apply-blocked-reason')).toHaveTextContent('blokkerende punten');
     expect(button).toHaveAttribute('title', expect.stringContaining('blokkerende punten'));
     fireEvent.click(button);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -142,7 +142,7 @@ describe('overnemen — knop en dialoog', () => {
   it('stuurt enkel de ingevulde keuzes mee', async () => {
     const api = setup();
     renderDetail();
-    await screen.findByTestId('legacy-report');
+    await screen.findByTestId('legacy-outcome');
     const dialog = await openDialog();
     confirm(dialog);
     await waitFor(() => expect(api.writes()).toHaveLength(1));

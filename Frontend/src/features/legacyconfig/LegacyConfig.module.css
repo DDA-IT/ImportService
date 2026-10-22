@@ -201,13 +201,49 @@
   list-style: none;
 }
 
+/* Eén punt van het rapport als kaart; de rand draagt de soort (kleur is nooit de enige drager: het woord staat erbij) */
 .item {
-  padding: 8px 0;
-  border-bottom: 1px dashed var(--divider);
+  margin-top: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--divider);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-paper);
+  overflow-wrap: anywhere;
+}
+
+.itemBlocking {
+  border-color: var(--color-danger);
+}
+
+.itemWarning {
+  border-color: var(--color-warning);
+}
+
+.itemNotMigrated {
+  border-color: var(--text-disabled);
+}
+
+.itemMigrated {
+  border-color: var(--color-success);
+}
+
+.itemPart {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
 }
 
 .itemTitle {
+  margin: 0;
+  font-size: 1rem;
   font-weight: 600;
+}
+
+.itemCount {
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
 }
 
 .itemExplanation {
@@ -216,10 +252,219 @@
   color: var(--text-secondary);
 }
 
-.blockingGroup {
+.groupDetails {
+  margin-top: 8px;
+}
+
+.groupSummary {
+  cursor: pointer;
+  color: var(--color-link);
+  font-size: 0.875rem;
+}
+
+/* Zoeken en filteren in een paneel met veel punten */
+.filterBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 8px;
+}
+
+.filterLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.filterInput {
+  flex: 1 1 220px;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 8px 12px;
-  border: 1px solid var(--color-danger);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-sm);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+}
+
+.filterChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filterChip {
+  padding: 4px 12px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.filterChip[aria-pressed='true'] {
+  background: var(--color-accent-soft-bg);
+  border-color: var(--color-accent);
+  color: var(--color-accent-soft-text);
+}
+
+/* Kaartenrooster met teller en toplijn */
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.summaryCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--divider);
+  border-top-width: 4px;
+  border-radius: var(--radius-card);
+  background: var(--bg-paper);
+  box-shadow: var(--shadow-card);
+  overflow-wrap: anywhere;
+}
+
+.summaryCardOpen {
+  outline: 2px solid var(--color-accent);
+}
+
+.cardDanger {
+  border-top-color: var(--color-danger);
+}
+
+.cardWarning {
+  border-top-color: var(--color-warning);
+}
+
+.cardSuccess {
+  border-top-color: var(--color-success);
+}
+
+.cardNeutral {
+  border-top-color: var(--divider);
+}
+
+.summaryTitle {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.summaryCount {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.summaryTop {
+  margin: 0;
+  font-weight: 600;
+}
+
+.summarySub {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.summaryButton {
+  align-self: flex-start;
+  margin-top: auto;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.summaryButton:hover:not(:disabled) {
+  background: var(--action-hover);
+}
+
+.summaryButton:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.detailPanel {
+  margin-top: 16px;
+  padding: 24px;
+  border-radius: var(--radius-card);
+  background: var(--bg-paper);
+  box-shadow: var(--shadow-card);
+  overflow-wrap: anywhere;
+}
+
+.collapseHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+}
+
+/* Kop: herkomstregel, chips en acties */
+.originLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
+  margin: 12px 0 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.originPart + .originPart::before {
+  content: '·';
+  margin: 0 8px;
+}
+
+.originPart b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.outcomeLive {
+  display: inline-flex;
+}
+
+.chipPlain,
+.chipWarning {
+  padding: 2px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+}
+
+.chipPlain {
+  background: var(--status-neutral-bg);
+  color: var(--status-neutral-text);
+}
+
+.chipWarning {
+  background: var(--status-awaiting-bg);
+  color: var(--status-awaiting-text);
+}
+
+.headActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
 }
 
 .actions {
@@ -249,6 +494,21 @@
 
 @media (max-width: 899px) {
   .toolbar > div {
+    flex: 1 1 100%;
+  }
+}
+
+@media (max-width: 599px) {
+  .cardGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .headActions {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+
+  .headActions > button {
     flex: 1 1 100%;
   }
 }

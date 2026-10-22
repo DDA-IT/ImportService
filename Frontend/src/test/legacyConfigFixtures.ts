@@ -5,6 +5,7 @@
  */
 
 import { vi } from 'vitest';
+import { fireEvent, screen } from '@testing-library/react';
 import type {
   LegacyConfigReport,
   LegacyPreviewResult,
@@ -159,6 +160,18 @@ export function applicableReport(): LegacyConfigReport {
 
 export function preview(reportValue: LegacyConfigReport, previewFingerprint = 'fp-1'): LegacyPreviewResult {
   return { report: reportValue, previewFingerprint };
+}
+
+/**
+ * Opent het detailpaneel van een kaart (kaarttitel zoals op het scherm) en wacht daarvoor tot de kaart er is; een al
+ * open kaart blijft open. Geeft de knop terug.
+ */
+export async function openCard(title: string): Promise<HTMLElement> {
+  const button = await screen.findByRole('button', { name: new RegExp(`^(Tonen|Verbergen) ${title}$`) });
+  if (button.getAttribute('aria-expanded') !== 'true') {
+    fireEvent.click(button);
+  }
+  return button;
 }
 
 export type Call = { url: string; method: string; body: unknown };
