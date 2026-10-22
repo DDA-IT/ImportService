@@ -1,6 +1,6 @@
 # G2 — Loskoppelen, single-flight voor Prodis-rechten, bewerken van de nieuwe revisievelden
 
-> **Status: VOORSTEL (2026-10-22), denker-zwaar.** Volgt op `docs/decisions.md` "2026-10-22 — Bouwopdracht". G2b en G2c kunnen gebouwd
+> **Status: GEBOUWD (2026-10-22): G2b `8917fec`, G2c-1..4 `1ae7dfd`..`35c0a19`, G2a-1..3 `1692fb2`, `96575b6`, `540521b`. Beslissingen: decisions 2026-10-22 G2a.** Oorspronkelijk voorstel van denker-zwaar. Volgt op `docs/decisions.md` "2026-10-22 — Bouwopdracht". G2b en G2c kunnen gebouwd
 > worden; **G2a wacht op V1/V2** (§4). Volgorde: G2b-1 → G2c-1..4 → G2a.
 
 ## G2a — Loskoppelen van een gedeelde definitie
