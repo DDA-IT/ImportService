@@ -126,6 +126,61 @@ class ProdisPublicationSourceDaoTest {
         assertThat(item.rejected()).isFalse();
     }
 
+    /**
+     * P4b: {@code before_percentage} wordt letterlijk gelezen (schaal 12, {@code null} blijft {@code null}); bij snapshot
+     * spec 2 maakt de projectie er de expected van, zodat het percentage geschreven wordt. Dezelfde rij als spec 1 gelezen
+     * houdt het percentage op KEEP: de lezer kijkt niet naar de versie, de projectie wel.
+     */
+    @Test
+    void readsBeforePercentageLiterallyAndSpec2UsesItAsExpected() {
+        Fixture f = fixture("BEFORE");
+        ImportMutation update = f.mutation(MutationActionType.UPDATE, "REF-B", new BigDecimal("100.000000"),
+                new BigDecimal("100.000000"), "EUR", null, DiscountCodeState.NOT_USED);
+        PublicationBundleSnapshot snapshot = snapshots.saveAndFlush(new PublicationBundleSnapshot(f.bundle, update,
+                f.batch.getId(), f.link.getId(), 1L, "Omschrijving B", SnapshotDescriptionState.VALUE));
+        snapshotPrices.saveAndFlush(new PublicationBundleSnapshotPrice(snapshot.getId(), "VKP1",
+                new BigDecimal("15.000000"), new BigDecimal("15.000000000000"), "EUR", "OK"));
+        snapshotPrices.saveAndFlush(new PublicationBundleSnapshotPrice(snapshot.getId(), "VKP2",
+                new BigDecimal("25.000000"), new BigDecimal("25.000000000000"), "EUR", "OK"));
+        jdbc.update("update publication_bundle_snapshot_price set before_percentage = ? where snapshot_id = ? "
+                + "and component_code = 'VKP1'", new BigDecimal("10.000000000000"), snapshot.getId());
+        jdbc.update("update publication_bundle set snapshot_spec_version = '2' where id = ?", f.bundle.getId());
+
+        SourceRow row = dao.findPage(f.bundle.getId(), 0L, 10).get(0);
+
+        assertThat(row.snapshotSpecVersion()).isEqualTo("2");
+        SourcePrice vkp1 = row.prices().get(0);
+        SourcePrice vkp2 = row.prices().get(1);
+        assertThat(vkp1.componentCode()).isEqualTo("VKP1");
+        assertThat(vkp1.beforePercentage()).isEqualTo(new BigDecimal("10.000000000000"));
+        assertThat(vkp2.beforePercentage()).isNull();
+
+        Item item = ProdisPublicationProjection.project(row);
+        assertThat(item.salesPercentages().get(1).state()).isEqualTo(FieldState.VALUE);
+        assertThat(item.expected().percentages().get(1)).isEqualByComparingTo("10");
+        // Geen voor-waarde → KEEP + EXPECTED_NOT_AVAILABLE, nooit 0 als verwachting.
+        assertThat(item.salesPercentages().get(2).state()).isEqualTo(FieldState.KEEP);
+        assertThat(item.expected().percentages()).doesNotContainKey(2);
+        assertThat(item.notices()).anySatisfy(notice -> {
+            assertThat(notice.code()).isEqualTo(ProdisPublicationProjection.CODE_EXPECTED_NOT_AVAILABLE);
+            assertThat(notice.field()).isEqualTo("VKP2_PCT");
+        });
+
+        // Dezelfde rij als spec-1-bundel: de waarde wordt nog gelezen, maar de projectie gebruikt ze niet.
+        jdbc.update("update publication_bundle set snapshot_spec_version = '1' where id = ?", f.bundle.getId());
+        try {
+            SourceRow asV1 = dao.findPage(f.bundle.getId(), 0L, 10).get(0);
+            assertThat(asV1.prices().get(0).beforePercentage()).isEqualTo(new BigDecimal("10.000000000000"));
+            Item v1Item = ProdisPublicationProjection.project(asV1);
+            assertThat(v1Item.salesPercentages().get(1).state()).isEqualTo(FieldState.KEEP);
+            assertThat(v1Item.expected().percentages()).isEmpty();
+        } finally {
+            // Gedeelde database: geen spec-1-bundel met een gevuld before_percentage achterlaten (bestaat in werkelijkheid
+            // niet; PublicationRunItemSchemaTest bewaakt "geen backfill" op spec-1-bundels).
+            jdbc.update("update publication_bundle set snapshot_spec_version = '2' where id = ?", f.bundle.getId());
+        }
+    }
+
     @Test
     void pagesDeterministicallyOnMutationIdAndOnlyWithinTheBundle() {
         Fixture f = fixture("PAGE");

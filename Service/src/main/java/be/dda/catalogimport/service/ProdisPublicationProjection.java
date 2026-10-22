@@ -42,7 +42,8 @@ import java.util.TreeMap;
  *   <li>Expliciete 0 voor basisprijs of VKP% → {@code KEEP} + {@code ZERO_KEEPS_EXISTING} (Q2, zoals Prg_1179).</li>
  *   <li>UPDATE zonder bruikbare expected → {@code KEEP} + {@code EXPECTED_NOT_AVAILABLE}: basisprijs zonder
  *       {@code before_base_price}; een percentage zonder {@code before_percentage} of uit een snapshot spec &lt; 2
- *       (par. 2.5; spec v2 komt in P4b, dus nu worden percentages nooit geschreven).</li>
+ *       (par. 2.5; sinds P4b vult het bevriezen {@code before_percentage} en krijgen nieuwe bundels spec 2 — bundels
+ *       bevroren vóór P4b blijven spec 1 en schrijven dus nooit percentages).</li>
  *   <li>Precisie (par. 2.6) op elk {@code VALUE}-bedrag: basisprijs &gt; 6 decimalen of &gt; 15 cijfers vóór de komma,
  *       percentage &gt; 15 significante cijfers → {@code PRECISION_LOSS} (blokkerend); basisprijs &gt; 3 of percentage
  *       &gt; 2 decimalen → {@code EXCEEDS_LEGACY_PRECISION} (waarschuwing, legacy {@code #6.#3} / {@code N###.##}).</li>

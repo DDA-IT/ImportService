@@ -2975,3 +2975,13 @@ een SIMULATION-run wacht nu synchroon op de Prodis-lookups (risico op HTTP-time-
 **Open voor P5c:** APPLIED en REJECTED_BY_PRODIS vragen nog marker TRUE; P5c moet `ck_publication_run_marker_status` en
 `ck_publication_run_finished` herzien vóór een run APPLIED wordt, anders houdt een afgeronde PRODUCTION-run het slot vast.
 **Bron:** P4a-bouwerrapport
+
+## 2026-10-22 — P4b: before_percentage en snapshot spec v2
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):**
+1. Bron van `before_percentage` = de bronstaatrij `import_mutation.source_state_id` (dezelfde als `before_base_price`), enkel voor UPDATE.
+2. Gevuld voor **elke** prijscomponent (ook AKP en VKP_GROSS), niet enkel VKP1..5; de projectie beslist wat naar Prodis gaat.
+3. Enkel in de `snapshot_hash` (spec v2); `content_hash` blijft byte-identiek (beslissing 2026-09-26).
+4. v2-tekst: één veld extra achteraan elke componentgroep, geen versiemarker in de gehashte tekst (zonder componenten zijn v1 en v2 gelijk).
+5. `SNAPSHOT_SPEC_VERSION` wordt "2"; `SNAPSHOT_SPEC_VERSION_1/_2` nieuw.
+6. `computeSnapshotHash(long)` = huidige spec; nieuwe overload met versie.
+**Bron:** P4b-bouwerrapport

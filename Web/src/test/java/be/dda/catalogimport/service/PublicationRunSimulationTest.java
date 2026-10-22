@@ -187,7 +187,8 @@ class PublicationRunSimulationTest {
         assertThat(view.writesToProdis()).isFalse();
         assertThat(view.contractStatus()).isEqualTo("UNVERIFIED_FIELD_INVENTORY");
         assertThat(view.previewSpecVersion()).isEqualTo("2");
-        assertThat(view.snapshotSpecVersion()).isEqualTo("1");
+        // P4b: nieuwe bevriezingen dragen snapshot spec 2 (before_percentage); de run geeft ze letterlijk door.
+        assertThat(view.snapshotSpecVersion()).isEqualTo("2");
 
         Map<String, Object> row = runRow(view.id());
         assertThat(row.get("status")).isEqualTo("SIMULATED");
@@ -285,7 +286,7 @@ class PublicationRunSimulationTest {
                 .contains("bundleContentHash=" + view.bundleContentHash())
                 .contains("simulationOnly=true")
                 .contains("writesToProdis=false")
-                .contains("snapshotSpecVersion=1")
+                .contains("snapshotSpecVersion=2")
                 .contains("snapshotHash=" + view.snapshotHash());
 
         // Header en datarijen zijn letterlijk die van de bestaande preview-CSV (banner uitgezonderd).

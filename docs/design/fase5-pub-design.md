@@ -19,6 +19,13 @@ Er wordt NIETS naar ProDisWebbase, PSIMPORT of Pervasive geschreven. 5-PUB-b (TR
   `(m.batch_id, m.source_row_number) = (s.batch_id, s.row_number)`, met dezelfde scope als `PsimportPreviewDao.FROM_WHERE`. **Staging weg = blokkeren:** tel mutaties in scope en geschreven snapshotrijen; bij verschil 409
   `SNAPSHOT_SOURCE_MISSING` en de hele bevriezing rolt terug. Nooit stil leeg of 0.
 - **Hash (keuze mens):** `computeContentHash` blijft **byte-identiek**; de snapshot krijgt een aparte `snapshot_hash` (zelfde serialisatiestijl: U+001F/U+001E, `stripTrailingZeros().toPlainString()`), over snapshot en prijscomponenten.
+- **Snapshot spec v2 (P4b, 2026-10-22; `publicatie-prodis-db-direct-design.md` par. 2.5):** `publication_bundle_snapshot_price.before_percentage` (changeset 027-3) wordt bij het bevriezen
+  gevuld met het percentage van dezelfde component in de aanvaarde bronstaat waartegen de mutatie gescreend is: `catalog_source_state_price` van `import_mutation.source_state_id`
+  (dezelfde bronstaatrij als `before_base_price`; de bevriescontrole `SOURCE_STATE_CHANGED` garandeert dat die rij sindsdien niet verschoof). CREATE of een component zonder
+  bronstaatwaarde → `null` (nooit 0). Elke component krijgt zijn voor-waarde, ook `AKP`/`VKP_GROSS`. Nieuwe bundels krijgen `snapshot_spec_version = 2`; de v2-hash voegt
+  `before_percentage` als laatste veld toe aan elke componentgroep (zie par. 7). `content_hash` blijft ongewijzigd voor alle bundels. **Bestaande (v1-)bundels:** geen backfill;
+  ze houden spec 1, hun `snapshot_hash` (de v1-serialisatie is byte-identiek gebleven, bewezen met een letterlijke pre-P4b-hash) en `before_percentage = null`, zodat de
+  Prodis-publicatie hun percentages niet schrijft (KEEP + `EXPECTED_NOT_AVAILABLE`).
 - **Reeds bevroren bundels (keuze mens):** geen automatische backfill; ze houden `snapshot_hash = null` (afgeleide toestand `NO_SNAPSHOT`); de preview toont `NOT_SNAPSHOTTED`. Een SIMULATION-run mag er wel op draaien, met
   `incompleteRowCount > 0` (niets wordt stil ingevuld).
 - **Retentie kandidaatstaging:** staging van batch B mag pas weg als B terminaal is, B geen actief lidmaatschap heeft in een niet-geannuleerde bundel, én elke bundel waarin B zat een `snapshot_hash` draagt. Nu alleen de regel en een
@@ -96,6 +103,9 @@ Volledige ronde via `scripts/test/run-full-tests.ps1` na 5P-4 en na 5P-8.
 - **`BASE_PRICE` niet in de snapshot (5P-2):** de basisprijs staat als gewone componentrij in staging maar ook op `import_mutation`; ze wordt bewust niet gekopieerd (geen tweede bron voor een bedrag). De `snapshot_hash` (5P-3, spec versie 1)
   is SHA-256 over per snapshotrij (oplopend op `mutation_id`): `mutation_id, description_state, description` en per prijscomponent (oplopend op `component_code`, Java `String.compareTo`): `component_code, source_amount, percentage, currency, status`;
   velden gescheiden door U+001F, rijen afgesloten met U+001E, `null` als tekst `null`, bedragen met `stripTrailingZeros().toPlainString()`. Een omschrijving die zelf U+001F/U+001E bevat kan met de scheiding botsen (geen escaping, zoals bij `content_hash`).
+  **Spec versie 2 (P4b):** identiek, met per prijscomponent één veld extra achteraan: `component_code, source_amount, percentage, currency, status, before_percentage`
+  (`stripTrailingZeros().toPlainString()`, `null` als `null`). Een rij zonder componenten serialiseert in beide versies gelijk; de versie staat in `snapshot_spec_version`,
+  niet in de gehashte tekst. `computeSnapshotHash(bundleId, specVersion)` herberekent per versie; een onbekende versie wordt geweigerd (nooit stil terugvallen).
 - **Preview slice 2 (5P-4):** een prijscomponent zonder percentage geeft `UNKNOWN` (rij onvolledig); een rij zonder snapshotrij geeft `NOT_SNAPSHOTTED` op `DESCRIPTION` en `VKPn_PCT` en telt als onvolledig. De CSV-banner van de preview-endpoint blijft
   ongewijzigd (draagt `previewSpecVersion=2`); het artefact van een run heeft een uitgebreide banner (`simulationOnly=true writesToProdis=false snapshotSpecVersion snapshotHash`).
 - **Run (5P-7):** aanvraag in een eigen transactie (slot op de bundel, controles, `REQUESTED` → `PREPARING`), artefact paginagewijs gestreamd buiten een transactie, afronding in een tweede transactie (`SIMULATED`, marker NULL). Een uitzondering

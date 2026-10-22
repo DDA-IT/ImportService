@@ -76,6 +76,10 @@ additieve kolom `publication_bundle_snapshot_price.before_percentage`, gevuld bi
 `snapshot_spec_version` 2 (in de hash); spec-v1-bundels schrijven geen percentages (KEEP, WARNING `EXPECTED_NOT_AVAILABLE`); vergelijking
 `BigDecimal.valueOf(prodisDouble).compareTo(before) == 0`. Omschrijving: nooit CONFLICT, melding `DESCRIPTION_OVERWRITTEN` als de overschreven
 waarde ≠ de nieuwe (aanname). Leeg (P-V5): KEEP + `EMPTY_KEEPS_EXISTING`, KEEP-velden niet bewaakt.
+*Gebouwd (P4b):* `before_percentage` = `catalog_source_state_price.percentage` van `import_mutation.source_state_id` (dezelfde bronstaatrij als
+`before_base_price`, letterlijk `numeric(24,12)`), voor elke snapshotcomponent; CREATE of component zonder bronstaatwaarde → `null` → KEEP +
+`EXPECTED_NOT_AVAILABLE`. Spec v2 neemt het veld op in de `snapshot_hash` (niet in `content_hash`, dat byte-identiek blijft); v1-bundels blijven
+ongewijzigd (hash, spec, `null`). Detail: `fase5-pub-design.md` par. 1 en 7.
 
 **2.6 Precisie** (REJECTED `PRECISION_LOSS` met veld): basisprijs ≤ 6 decimalen en ≤ 15 cijfers voor de komma (`numeric(21,6)`, entiteit
 `Double`, `CatalogArticlePrice.java` r.34-47); percentages ≤ 15 significante cijfers. Enkel melding `EXCEEDS_LEGACY_PRECISION` bij > 3 decimalen
@@ -127,7 +131,7 @@ de modus; bij PRODIS vaste waarschuwing "De volgende datasync zet deze wijziging
 | P2b | `ProdisPublicationProjection` + `ProdisPublicationPlanner` | zwaar | deterministisch; elke regel een test |
 | P2c | Parallelrun op de SIMULATION-run (ro-rol) | zwaar | niets geschreven; 2× identiek |
 | P4a | Liquibase 027: `publication_run_item`, `PUBLISHING`, lease-/moduskolommen, partiële index, `before_percentage` | gemiddeld | constraints onder gelijktijdigheid |
-| P4b | Bevriezen vult `before_percentage`, snapshot spec v2 | zwaar | `content_hash` byte-identiek voor v1 |
+| P4b | Bevriezen vult `before_percentage`, snapshot spec v2 — **gebouwd** | zwaar | `content_hash` byte-identiek voor v1 (en v1-`snapshot_hash` letterlijk) |
 | P5a | Schrijfverbinding + config + rolscript + testopzet | zwaar | fail-fast; niet-gegrante actie → 42501 |
 | P5b | Writer + `ProdisPublicationService` | zwaar | 2× item → één wijziging; commit-fout → RESULT_UNKNOWN → retry UNCHANGED; CONFLICT schrijft niets |
 | P5c | Orchestratie start/continue/lease/afronden; bronstaat (na Q3) | zwaar | REJECTED → PARTIALLY_PUBLISHED; tweede continue → 409 |

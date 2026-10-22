@@ -118,13 +118,34 @@ public class PublicationBundleSnapshotDao {
      * Geen enkele herberekening en geen afronding: {@code source_amount}, {@code percentage},
      * {@code currency} en {@code status} gaan ongewijzigd mee. Een component zonder bedrag of zonder
      * percentage blijft {@code null}; er wordt nooit 0 ingevuld (R-PRI-05).
+     *
+     * <h3>{@code before_percentage} (snapshot spec v2, P4b)</h3>
+     * De verwachte Prodis-waarde voor CONFLICT-detectie (P-V4, design publicatie-direct par. 2.5): het percentage
+     * van dezelfde component in de <b>aanvaarde bronstaat</b> waartegen de mutatie gescreend is —
+     * {@code catalog_source_state_price} van {@code import_mutation.source_state_id}, exact dezelfde bronstaatrij
+     * waaruit {@code import_mutation.before_base_price} komt ({@code MutationDao}, "voor"-waarde, R-PRI-09). Dat die
+     * rij sinds de screening niet verschoven is, bewaakt het bevriezen zelf vóór deze insert
+     * ({@code SOURCE_STATE_CHANGED} op de gecombineerde vingerafdruk, die de componentverhoudingen dekt).
+     * <ul>
+     *   <li>{@code CREATE} → {@code null}: er is geen voor-toestand (ook expliciet in de join-voorwaarde);</li>
+     *   <li>{@code UPDATE} zonder die component in de bronstaat (component erbij gekomen) → {@code null};</li>
+     *   <li>anders de bronstaatwaarde, letterlijk van kolom naar kolom ({@code numeric(24,12)} → {@code numeric(24,12)}).</li>
+     * </ul>
+     * {@code null} betekent "niet beschikbaar", nooit 0; de projectie maakt er KEEP + {@code EXPECTED_NOT_AVAILABLE} van.
+     * Elke component krijgt zijn voor-waarde (ook {@code AKP}/{@code VKP_GROSS}): de kolom is "de bronstaat vóór deze
+     * levering", geen Prodis-specifieke selectie; welke codes naar Prodis gaan, beslist de projectie.
      */
     private static final String INSERT_SNAPSHOT_PRICES = "insert into publication_bundle_snapshot_price ("
-            + "snapshot_id, component_code, source_amount, percentage, currency, status) "
-            + "select sn.id, p.component_code, p.source_amount, p.percentage, p.currency, p.status "
+            + "snapshot_id, component_code, source_amount, percentage, currency, status, before_percentage) "
+            + "select sn.id, p.component_code, p.source_amount, p.percentage, p.currency, p.status, "
+            + "       accepted.percentage "
             + "from publication_bundle_snapshot sn "
             + "join import_candidate_price p "
             + "  on p.batch_id = sn.batch_id and p.row_number = sn.source_row_number "
+            + "join import_mutation m on m.id = sn.mutation_id "
+            + "left join catalog_source_state_price accepted "
+            + "  on m.action_type = 'UPDATE' and accepted.source_state_id = m.source_state_id "
+            + " and accepted.component_code = p.component_code "
             + "where sn.bundle_id = ? and p.component_code <> '" + BASE_PRICE_COMPONENT_CODE + "'";
 
     private final JdbcTemplate jdbc;
@@ -170,15 +191,33 @@ public class PublicationBundleSnapshotDao {
         return jdbc.update(INSERT_SNAPSHOT_PRICES, bundleId);
     }
 
-    /** De huidige specificatieversie van {@link #computeSnapshotHash}; bewaard in {@code snapshot_spec_version}. */
-    public static final String SNAPSHOT_SPEC_VERSION = "1";
+    /** Snapshot spec versie 1 (5P-3): zonder {@code before_percentage}. Bundels bevroren vóór P4b dragen deze versie. */
+    public static final String SNAPSHOT_SPEC_VERSION_1 = "1";
+
+    /** Snapshot spec versie 2 (P4b): elke prijscomponent draagt ook {@code before_percentage}. */
+    public static final String SNAPSHOT_SPEC_VERSION_2 = "2";
 
     /**
-     * De snapshothash (ontwerp 5-PUB par. 1, bouwstap 5P-3): één SHA-256 over de snapshottabellen van
+     * De huidige specificatieversie: die waarmee het bevriezen nu de snapshot vult en hasht; bewaard in
+     * {@code snapshot_spec_version}. Sinds P4b {@value}.
+     */
+    public static final String SNAPSHOT_SPEC_VERSION = SNAPSHOT_SPEC_VERSION_2;
+
+    /**
+     * De snapshothash volgens de <b>huidige</b> specificatie ({@link #SNAPSHOT_SPEC_VERSION}). Voor een bestaande
+     * bundel: {@link #computeSnapshotHash(long, String)} met haar eigen {@code snapshot_spec_version}.
+     */
+    public byte[] computeSnapshotHash(long bundleId) {
+        return computeSnapshotHash(bundleId, SNAPSHOT_SPEC_VERSION);
+    }
+
+    /**
+     * De snapshothash (ontwerp 5-PUB par. 1, bouwstap 5P-3; P4b): één SHA-256 over de snapshottabellen van
      * deze bundel. Zelfde stijl als {@code PublicationBundleDao.computeContentHash}, maar over de
-     * snapshot in plaats van over {@code import_mutation}.
+     * snapshot in plaats van over {@code import_mutation}. {@code content_hash} zelf blijft voor elke bundel
+     * byte-identiek (beslissing 2026-09-26); {@code before_percentage} zit uitsluitend in deze hash.
      *
-     * <h2>Snapshot spec versie 1 (vastgelegd)</h2>
+     * <h2>Snapshot spec versie 1 (vastgelegd, ongewijzigd)</h2>
      * Per snapshotrij, oplopend op {@code mutation_id}, in exact deze volgorde, elk veld afgesloten met
      * {@code U+001F} (unit separator) en de hele rij afgesloten met {@code U+001E} (record separator):
      * <pre>mutation_id ␟ description_state ␟ description ␟ { component_code ␟ source_amount ␟ percentage ␟ currency ␟ status ␟ }* ␞</pre>
@@ -192,64 +231,107 @@ public class PublicationBundleSnapshotDao {
      *   <li>{@code source_amount} en {@code percentage} als {@code stripTrailingZeros().toPlainString()}.</li>
      *   <li>Tekst als UTF-8; algoritme SHA-256; type {@code byte[]}, identiek aan {@code content_hash}.</li>
      * </ul>
+     * Versie 1 leest {@code before_percentage} niet: een v1-bundel levert byte-identiek dezelfde hash als vóór P4b.
+     *
+     * <h2>Snapshot spec versie 2 (P4b)</h2>
+     * Identiek aan versie 1, met één veld extra <b>achteraan elke componentgroep</b>:
+     * <pre>mutation_id ␟ description_state ␟ description ␟ { component_code ␟ source_amount ␟ percentage ␟ currency ␟ status ␟ before_percentage ␟ }* ␞</pre>
+     * {@code before_percentage} als {@code stripTrailingZeros().toPlainString()}, {@code null} als {@code "null"}. Een
+     * rij zonder componenten serialiseert in beide versies gelijk (er is dan geen {@code before_percentage} om op te
+     * nemen); de versie zelf staat in {@code snapshot_spec_version} naast de hash, niet in de gehashte tekst.
+     * <p>
      * De basisprijs zit niet in de snapshot en dus ook niet in deze hash; hij is gedekt door
      * {@code content_hash} (via {@code import_mutation.after_base_price}).
      * <p>
      * Gestreamd: één query geordend op {@code mutation_id}; enkel de componenten van de huidige rij staan
      * in het geheugen.
      *
+     * @param specVersion {@link #SNAPSHOT_SPEC_VERSION_1} of {@link #SNAPSHOT_SPEC_VERSION_2}
      * @return de hash, of {@code null} wanneer de bundel geen enkele snapshotrij heeft (dan wordt er
      *         ook geen {@code snapshot_hash} bewaard)
+     * @throws IllegalArgumentException een onbekende versie: nooit stil op een andere versie terugvallen
      */
-    public byte[] computeSnapshotHash(long bundleId) {
-        MessageDigest digest = newSha256();
-        SnapshotHashState state = new SnapshotHashState(digest);
+    public byte[] computeSnapshotHash(long bundleId, String specVersion) {
+        SnapshotHasher hasher = new SnapshotHasher(specVersion);
         jdbc.query("select sn.mutation_id, sn.description_state, sn.description, "
-                        + "       p.component_code, p.source_amount, p.percentage, p.currency, p.status "
+                        + "       p.component_code, p.source_amount, p.percentage, p.currency, p.status, "
+                        + "       p.before_percentage "
                         + "from publication_bundle_snapshot sn "
                         + "left join publication_bundle_snapshot_price p on p.snapshot_id = sn.id "
                         + "where sn.bundle_id = ? "
                         + "order by sn.mutation_id, p.component_code",
                 rs -> {
-                    long mutationId = rs.getLong(1);
-                    if (!state.open || state.mutationId != mutationId) {
-                        state.flush();
-                        state.open = true;
-                        state.mutationId = mutationId;
-                        state.head = new StringBuilder(96);
-                        hashField(state.head, Long.toString(mutationId));
-                        hashField(state.head, rs.getString(2));
-                        hashField(state.head, rs.getString(3));
-                    }
+                    hasher.row(rs.getLong(1), rs.getString(2), rs.getString(3));
                     String code = rs.getString(4);
                     if (code != null) {
-                        StringBuilder component = new StringBuilder(64);
-                        hashField(component, code);
-                        hashField(component, plain(rs.getBigDecimal(5)));
-                        hashField(component, plain(rs.getBigDecimal(6)));
-                        hashField(component, rs.getString(7));
-                        hashField(component, rs.getString(8));
-                        state.components.put(code, component.toString());
+                        hasher.component(code, rs.getBigDecimal(5), rs.getBigDecimal(6), rs.getString(7),
+                                rs.getString(8), rs.getBigDecimal(9));
                     }
                 }, bundleId);
-        state.flush();
-        return state.rows == 0 ? null : digest.digest();
+        return hasher.finish();
     }
 
-    /** Toestand van de gestreamde berekening: de huidige rij en haar (op code gesorteerde) componenten. */
-    private static final class SnapshotHashState {
-        private final MessageDigest digest;
+    /**
+     * De canonieke serialisatie van {@link #computeSnapshotHash(long, String)}, los van de database: rijen in
+     * {@code mutation_id}-volgorde aanbieden ({@link #row} mag voor dezelfde mutatie herhaald worden, zoals een
+     * {@code left join} dat doet), componenten in willekeurige volgorde ({@link #component}; gesorteerd op code bij het
+     * afsluiten van de rij). Pakketzichtbaar zodat de spec met letterlijke hashes getest kan worden.
+     */
+    static final class SnapshotHasher {
+        private final boolean withBeforePercentage;
+        private final MessageDigest digest = newSha256();
         private final java.util.TreeMap<String, String> components = new java.util.TreeMap<>();
         private boolean open;
         private long mutationId;
         private StringBuilder head;
         private long rows;
 
-        SnapshotHashState(MessageDigest digest) {
-            this.digest = digest;
+        SnapshotHasher(String specVersion) {
+            if (SNAPSHOT_SPEC_VERSION_1.equals(specVersion)) {
+                withBeforePercentage = false;
+            } else if (SNAPSHOT_SPEC_VERSION_2.equals(specVersion)) {
+                withBeforePercentage = true;
+            } else {
+                throw new IllegalArgumentException("Unknown snapshot spec version: " + specVersion);
+            }
         }
 
-        void flush() {
+        /** Begint een nieuwe snapshotrij, tenzij dit dezelfde mutatie is als de huidige. */
+        void row(long rowMutationId, String descriptionState, String description) {
+            if (open && mutationId == rowMutationId) {
+                return;
+            }
+            flush();
+            open = true;
+            mutationId = rowMutationId;
+            head = new StringBuilder(96);
+            hashField(head, Long.toString(rowMutationId));
+            hashField(head, descriptionState);
+            hashField(head, description);
+        }
+
+        /** Eén prijscomponent van de huidige rij; {@code beforePercentage} telt enkel mee vanaf spec versie 2. */
+        void component(String code, BigDecimal sourceAmount, BigDecimal percentage, String currency, String status,
+                       BigDecimal beforePercentage) {
+            StringBuilder component = new StringBuilder(80);
+            hashField(component, code);
+            hashField(component, plain(sourceAmount));
+            hashField(component, plain(percentage));
+            hashField(component, currency);
+            hashField(component, status);
+            if (withBeforePercentage) {
+                hashField(component, plain(beforePercentage));
+            }
+            components.put(code, component.toString());
+        }
+
+        /** @return de hash, of {@code null} zonder enige rij */
+        byte[] finish() {
+            flush();
+            return rows == 0 ? null : digest.digest();
+        }
+
+        private void flush() {
             if (!open) {
                 return;
             }

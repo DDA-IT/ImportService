@@ -75,7 +75,9 @@ import org.springframework.test.context.DynamicPropertySource;
  *       onafhankelijke herberekening van de in {@code PublicationBundleDao.computeContentHash}
  *       gedocumenteerde serialisatie — die serialisatie leest de snapshottabellen dus niet en is door
  *       5P-2 niet verschoven.</li>
- *   <li>{@code snapshot_hash}/{@code snapshot_spec_version} blijven {@code null}: die komen in 5P-3.</li>
+ *   <li>{@code snapshot_hash}/{@code snapshot_spec_version} (5P-3) en, sinds P4b, snapshot spec v2:
+ *       {@code before_percentage} uit de aanvaarde bronstaat (CREATE → {@code null}), opgenomen in de hash; een
+ *       bundel van vóór P4b houdt spec 1, haar hash en {@code before_percentage = null}.</li>
  * </ul>
  * Elke test bouwt een eigen keten met unieke codes: de database is gedeeld.
  */
@@ -123,6 +125,8 @@ class BundleFreezeSnapshotTest {
     private BundleDecisionService decisions;
     @Autowired
     private BundleFreezeService freezeService;
+    @Autowired
+    private SourceStateBaselineService baseline;
     @Autowired
     private PublicationBundleDao dao;
     @Autowired
@@ -192,10 +196,10 @@ class BundleFreezeSnapshotTest {
         assertThat(snapshotDao.countInScope(scenario.bundleId())).isEqualTo(previewDao.count(scenario.bundleId()));
         assertThat(snapshotDao.countSnapshotRows(scenario.bundleId())).isEqualTo(3L);
 
-        // 5P-3: de snapshothash is gezet (details in de snapshot-hash-tests hieronder).
+        // 5P-3: de snapshothash is gezet (details in de snapshot-hash-tests hieronder); sinds P4b spec 2.
         PublicationBundle frozen = bundles.findById(scenario.bundleId()).orElseThrow();
         assertThat(frozen.getSnapshotHash()).hasSize(32);
-        assertThat(frozen.getSnapshotSpecVersion()).isEqualTo("1");
+        assertThat(frozen.getSnapshotSpecVersion()).isEqualTo("2");
     }
 
     // --- (b) De afleiding van description_state ----------------------------------------------------
@@ -468,7 +472,7 @@ class BundleFreezeSnapshotTest {
 
     // --- (h) 5P-3: snapshot_hash ------------------------------------------------------------------------
 
-    /** Hash gezet, spec '1', gelijk aan een onafhankelijke nabouw; content_hash ongewijzigd; view toont hex. */
+    /** Hash gezet, spec '2' (P4b), gelijk aan een onafhankelijke nabouw; content_hash ongewijzigd; view toont hex. */
     @Test
     void snapshotHashIsStoredWithSpecVersionAndEqualsAnIndependentRecomputation() throws Exception {
         Scenario scenario = readyBundle(fixture("SNAPHASH", true, true), HEADER_WITH_COMPONENTS,
@@ -480,11 +484,16 @@ class BundleFreezeSnapshotTest {
         PublicationBundle frozen = bundles.findById(scenario.bundleId()).orElseThrow();
         byte[] stored = frozen.getSnapshotHash();
         assertThat(stored).hasSize(32);
-        assertThat(frozen.getSnapshotSpecVersion()).isEqualTo("1");
+        assertThat(frozen.getSnapshotSpecVersion()).isEqualTo("2");
         assertThat(view.snapshotHash()).isEqualTo(HexFormat.of().formatHex(stored));
-        assertThat(view.snapshotSpecVersion()).isEqualTo("1");
-        assertThat(independentSnapshotHash(scenario.bundleId())).isEqualTo(stored);
+        assertThat(view.snapshotSpecVersion()).isEqualTo("2");
+        assertThat(independentSnapshotHash(scenario.bundleId(), "2")).isEqualTo(stored);
         assertThat(snapshotDao.computeSnapshotHash(scenario.bundleId())).isEqualTo(stored);
+        assertThat(snapshotDao.computeSnapshotHash(scenario.bundleId(), "2")).isEqualTo(stored);
+        // Spec 1 over dezelfde rijen is een andere tekst (geen before_percentage-veld) en dus een andere hash.
+        assertThat(snapshotDao.computeSnapshotHash(scenario.bundleId(), "1"))
+                .isEqualTo(independentSnapshotHash(scenario.bundleId(), "1"))
+                .isNotEqualTo(stored);
         // content_hash blijft de onafhankelijke herberekening van de oude serialisatie.
         assertThat(independentContentHash(scenario.bundleId())).isEqualTo(frozen.getContentHash());
     }
@@ -540,9 +549,10 @@ class BundleFreezeSnapshotTest {
         for (int i = prices.size() - 1; i >= 0; i--) {
             Map<String, Object> p = prices.get(i);
             jdbc.update("insert into publication_bundle_snapshot_price (snapshot_id, component_code, "
-                            + "source_amount, percentage, currency, status) values (?, ?, ?, ?, ?, ?)",
+                            + "source_amount, percentage, currency, status, before_percentage) "
+                            + "values (?, ?, ?, ?, ?, ?, ?)",
                     p.get("snapshot_id"), p.get("component_code"), p.get("source_amount"), p.get("percentage"),
-                    p.get("currency"), p.get("status"));
+                    p.get("currency"), p.get("status"), p.get("before_percentage"));
         }
 
         assertThat(snapshotDao.computeSnapshotHash(scenario.bundleId())).isEqualTo(original);
@@ -580,13 +590,16 @@ class BundleFreezeSnapshotTest {
 
     private List<Map<String, Object>> snapshotPriceRowsWithSnapshotId(long bundleId) {
         return jdbc.queryForList("select p.snapshot_id, p.component_code, p.source_amount, p.percentage, "
-                + "p.currency, p.status from publication_bundle_snapshot_price p "
+                + "p.currency, p.status, p.before_percentage from publication_bundle_snapshot_price p "
                 + "join publication_bundle_snapshot sn on sn.id = p.snapshot_id where sn.bundle_id = ? "
                 + "order by p.snapshot_id, p.component_code", bundleId);
     }
 
-    /** Onafhankelijke nabouw van "snapshot spec versie 1" uit de Javadoc van computeSnapshotHash. */
-    private byte[] independentSnapshotHash(long bundleId) throws Exception {
+    /**
+     * Onafhankelijke nabouw van "snapshot spec versie 1/2" uit de Javadoc van computeSnapshotHash: v2 voegt per
+     * component {@code before_percentage} achteraan toe. Geen gedeelde code met de DAO.
+     */
+    private byte[] independentSnapshotHash(long bundleId, String specVersion) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         List<Map<String, Object>> rows = jdbc.queryForList("select id, mutation_id, description_state, "
                 + "description from publication_bundle_snapshot where bundle_id = ? order by mutation_id", bundleId);
@@ -596,7 +609,7 @@ class BundleFreezeSnapshotTest {
             field(line, (String) row.get("description_state"));
             field(line, (String) row.get("description"));
             List<Map<String, Object>> comps = new java.util.ArrayList<>(jdbc.queryForList(
-                    "select component_code, source_amount, percentage, currency, status "
+                    "select component_code, source_amount, percentage, currency, status, before_percentage "
                             + "from publication_bundle_snapshot_price where snapshot_id = ?", row.get("id")));
             comps.sort((a, b) -> ((String) a.get("component_code")).compareTo((String) b.get("component_code")));
             for (Map<String, Object> c : comps) {
@@ -605,11 +618,162 @@ class BundleFreezeSnapshotTest {
                 field(line, plain((BigDecimal) c.get("percentage")));
                 field(line, (String) c.get("currency"));
                 field(line, (String) c.get("status"));
+                if ("2".equals(specVersion)) {
+                    field(line, plain((BigDecimal) c.get("before_percentage")));
+                }
             }
             line.append(RECORD_SEPARATOR);
             digest.update(line.toString().getBytes(StandardCharsets.UTF_8));
         }
         return digest.digest();
+    }
+
+    // --- (i) P4b: before_percentage en snapshot spec v2 --------------------------------------------------
+
+    /**
+     * Design publicatie-direct par. 2.5 (P-V4): bij het bevriezen krijgt elke prijscomponent het percentage uit de
+     * aanvaarde bronstaat waartegen de mutatie gescreend is ({@code catalog_source_state_price} van
+     * {@code import_mutation.source_state_id}, dezelfde rij als {@code before_base_price}), letterlijk (schaal 12).
+     * CREATE → {@code null}; een UPDATE-component die in de bronstaat ontbrak → {@code null}; nooit 0.
+     */
+    @Test
+    void freezingFillsBeforePercentageFromTheAcceptedSourceStateAndNullForCreatesAndNewComponents() throws Exception {
+        BaselineScenario scenario = baselineScenario("BEFORE");
+
+        BundleFreezeView view = freezeService.freeze(scenario.bundleId(), FREEZER, FREEZE_REASON);
+
+        assertThat(view.snapshotSpecVersion()).isEqualTo("2");
+        Map<String, BigDecimal> before = beforePercentages(scenario.bundleId());
+        // R1 (UPDATE): beide componenten stonden in de nulmeting (80/100 en 120/100).
+        assertThat(before.get("R1/AKP")).isEqualByComparingTo("80");
+        assertThat(before.get("R1/VKP1")).isEqualByComparingTo("120");
+        assertThat(before.get("R1/AKP").scale()).isEqualTo(12);
+        // R2 (UPDATE): AKP stond in de nulmeting (40/50), VKP1 was toen leeg → geen voor-waarde, nooit 0.
+        assertThat(before.get("R2/AKP")).isEqualByComparingTo("80");
+        assertThat(before).containsKey("R2/VKP1");
+        assertThat(before.get("R2/VKP1")).isNull();
+        // R3 (CREATE): geen voor-toestand.
+        assertThat(before).containsKeys("R3/AKP", "R3/VKP1");
+        assertThat(before.get("R3/AKP")).isNull();
+        assertThat(before.get("R3/VKP1")).isNull();
+
+        // Letterlijk de bronstaatwaarde van de bronstaatrij van de mutatie (dezelfde rij als before_base_price).
+        List<Map<String, Object>> compared = jdbc.queryForList("select p.before_percentage, accepted.percentage "
+                + "from publication_bundle_snapshot_price p "
+                + "join publication_bundle_snapshot sn on sn.id = p.snapshot_id "
+                + "join import_mutation m on m.id = sn.mutation_id "
+                + "join catalog_source_state_price accepted "
+                + "  on accepted.source_state_id = m.source_state_id and accepted.component_code = p.component_code "
+                + "where sn.bundle_id = ? and m.action_type = 'UPDATE'", scenario.bundleId());
+        assertThat(compared).hasSize(3);
+        assertThat(compared).allSatisfy(row -> assertThat(row.get("before_percentage")).isEqualTo(row.get("percentage")));
+
+        // De hash (spec 2) dekt before_percentage: gelijk aan de onafhankelijke v2-nabouw, anders zodra het veld wijzigt.
+        PublicationBundle frozen = bundles.findById(scenario.bundleId()).orElseThrow();
+        assertThat(frozen.getSnapshotSpecVersion()).isEqualTo("2");
+        assertThat(independentSnapshotHash(scenario.bundleId(), "2")).isEqualTo(frozen.getSnapshotHash());
+        jdbc.update("update publication_bundle_snapshot_price set before_percentage = null where snapshot_id in "
+                + "(select id from publication_bundle_snapshot where bundle_id = ?)", scenario.bundleId());
+        assertThat(snapshotDao.computeSnapshotHash(scenario.bundleId(), "2")).isNotEqualTo(frozen.getSnapshotHash());
+        // content_hash blijft de oude serialisatie (leest de snapshot niet).
+        assertThat(independentContentHash(scenario.bundleId())).isEqualTo(frozen.getContentHash());
+    }
+
+    /** Herhaling: een geweigerde tweede bevriezing raakt de voor-percentages en de hash niet. */
+    @Test
+    void aRefusedSecondFreezeLeavesBeforePercentagesAndHashUntouched() {
+        BaselineScenario scenario = baselineScenario("BEFORE2");
+        freezeService.freeze(scenario.bundleId(), FREEZER, FREEZE_REASON);
+        Map<String, BigDecimal> first = beforePercentages(scenario.bundleId());
+        byte[] hash = bundles.findById(scenario.bundleId()).orElseThrow().getSnapshotHash();
+
+        assertThatThrownBy(() -> freezeService.freeze(scenario.bundleId(), FREEZER, "Nog eens"))
+                .isInstanceOf(ConflictException.class)
+                .hasFieldOrPropertyWithValue("code", BundleFreezeService.CODE_BUNDLE_NOT_ASSEMBLING);
+
+        assertThat(beforePercentages(scenario.bundleId())).isEqualTo(first);
+        assertThat(bundles.findById(scenario.bundleId()).orElseThrow().getSnapshotHash()).isEqualTo(hash);
+    }
+
+    /**
+     * Een bundel bevroren vóór P4b: spec 1, {@code before_percentage = null}, hash volgens spec 1 (hier gezet met de
+     * onafhankelijke v1-nabouw, de serialisatie die vóór P4b bewezen gelijk was aan de DAO). De DAO levert voor spec 1
+     * byte-identiek dezelfde hash — ook als er later toch een voor-percentage in de kolom zou staan (v1 leest ze niet) —
+     * en een nieuwe bevriezing raakt de oude bundel niet aan (geen backfill).
+     */
+    @Test
+    void aPreP4bBundleKeepsSpecVersion1ItsHashAndItsNullBeforePercentages() throws Exception {
+        BaselineScenario old = baselineScenario("V1OLD");
+        freezeService.freeze(old.bundleId(), FREEZER, FREEZE_REASON);
+        jdbc.update("update publication_bundle_snapshot_price set before_percentage = null where snapshot_id in "
+                + "(select id from publication_bundle_snapshot where bundle_id = ?)", old.bundleId());
+        byte[] v1Hash = independentSnapshotHash(old.bundleId(), "1");
+        jdbc.update("update publication_bundle set snapshot_spec_version = '1', snapshot_hash = ? where id = ?",
+                v1Hash, old.bundleId());
+        byte[] contentHash = bundles.findById(old.bundleId()).orElseThrow().getContentHash();
+
+        assertThat(snapshotDao.computeSnapshotHash(old.bundleId(), "1")).isEqualTo(v1Hash);
+
+        // Een nieuwe bevriezing (spec 2) laat de oude bundel volledig ongemoeid.
+        BaselineScenario fresh = baselineScenario("V1NEW");
+        freezeService.freeze(fresh.bundleId(), FREEZER, FREEZE_REASON);
+        PublicationBundle reloaded = bundles.findById(old.bundleId()).orElseThrow();
+        assertThat(reloaded.getSnapshotSpecVersion()).isEqualTo("1");
+        assertThat(reloaded.getSnapshotHash()).isEqualTo(v1Hash);
+        assertThat(reloaded.getContentHash()).isEqualTo(contentHash);
+        assertThat(beforePercentages(old.bundleId()).values()).containsOnlyNulls();
+        assertThat(bundles.findById(fresh.bundleId()).orElseThrow().getSnapshotSpecVersion()).isEqualTo("2");
+
+        // v1 leest before_percentage niet: zelfs een gevulde kolom verandert de v1-hash niet.
+        jdbc.update("update publication_bundle_snapshot_price set before_percentage = 1 where snapshot_id in "
+                + "(select id from publication_bundle_snapshot where bundle_id = ?)", old.bundleId());
+        try {
+            assertThat(snapshotDao.computeSnapshotHash(old.bundleId(), "1")).isEqualTo(v1Hash);
+            assertThat(snapshotDao.computeSnapshotHash(old.bundleId(), "2")).isNotEqualTo(v1Hash);
+        } finally {
+            // Gedeelde database: een spec-1-bundel heeft in werkelijkheid altijd NULL (PublicationRunItemSchemaTest).
+            jdbc.update("update publication_bundle_snapshot_price set before_percentage = null where snapshot_id in "
+                    + "(select id from publication_bundle_snapshot where bundle_id = ?)", old.bundleId());
+        }
+    }
+
+    /** Per {@code referentie/component} het bewaarde voor-percentage ({@code null} blijft {@code null}). */
+    private Map<String, BigDecimal> beforePercentages(long bundleId) {
+        Map<String, BigDecimal> result = new java.util.TreeMap<>();
+        jdbc.query("select m.identity_supplier_reference, p.component_code, p.before_percentage "
+                        + "from publication_bundle_snapshot_price p "
+                        + "join publication_bundle_snapshot sn on sn.id = p.snapshot_id "
+                        + "join import_mutation m on m.id = sn.mutation_id where sn.bundle_id = ?",
+                rs -> {
+                    result.put(rs.getString(1) + "/" + rs.getString(2), rs.getBigDecimal(3));
+                }, bundleId);
+        return result;
+    }
+
+    /**
+     * Nulmeting R1 (100; AKP 80, VKP1 120) en R2 (50; AKP 40, VKP1 leeg) als bronstaat aanvaard; de tweede levering
+     * wijzigt R1 (AKP 70, VKP1 130 → UPDATE), geeft R2 een VKP1 (→ UPDATE, VKP1 nieuw) en voegt R3 toe (→ CREATE).
+     * Enkel de tweede levering zit in de bundel, alle wachtende mutaties goedgekeurd; nog niet bevroren.
+     */
+    private BaselineScenario baselineScenario(String prefix) {
+        Fixture fixture = fixture(prefix, true, true);
+        long first = screenedBatch(fixture, "NULMETING", HEADER_WITH_COMPONENTS,
+                "ACME;G1;R1;100,00;Boormachine;80,00;120,00",
+                "ACME;G1;R2;50,00;Hamer;40,00;");
+        baseline.acceptBaseline(first, CREATOR, "Nulmeting");
+        long batchId = screenedBatch(fixture, "PRIJSRONDE", HEADER_WITH_COMPONENTS,
+                "ACME;G1;R1;100,00;Boormachine;70,00;130,00",
+                "ACME;G1;R2;50,00;Hamer;40,00;60,00",
+                "ACME;G1;R3;10,00;Beitel;5,00;12,00");
+        long bundleId = bundleWith(fixture, batchId);
+        decisions.decideGroup(bundleId, BundleDecisionKind.APPROVE, DECIDER, "Prijsronde nagekeken",
+                new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null, null));
+        assertThat(contentMutations(batchId)).extracting(m -> m.getActionType().name())
+                .containsExactlyInAnyOrder("UPDATE", "UPDATE", "CREATE");
+        return new BaselineScenario(bundleId, batchId);
+    }
+
+    private record BaselineScenario(long bundleId, long batchId) {
     }
 
     // --- (g) Regressie: content_hash blijft byte-identiek ---------------------------------------------

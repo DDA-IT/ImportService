@@ -451,10 +451,15 @@ class PublicationRunItemSchemaTest {
             assertThat(jdbc.queryForObject("select before_percentage from publication_bundle_snapshot_price "
                     + "where snapshot_id = ?", BigDecimal.class, snapshot.getId()))
                     .isEqualByComparingTo("12.123456789012");
-            // Alle snapshotprijzen van VOOR deze test hebben nog NULL (geen backfill).
-            assertThat(jdbc.queryForObject("select count(*) from publication_bundle_snapshot_price "
-                    + "where before_percentage is not null and snapshot_id <> ?", Long.class, snapshot.getId()))
-                    .isZero();
+            // Geen backfill: elke snapshotprijs van een bundel zonder snapshot spec 2 (bevroren vóór P4b, of zonder
+            // snapshot) heeft nog NULL. Sinds P4b vult het bevriezen before_percentage voor spec-2-bundels; die tellen
+            // hier dus bewust niet mee.
+            assertThat(jdbc.queryForObject("select count(*) from publication_bundle_snapshot_price p "
+                    + "join publication_bundle_snapshot sn on sn.id = p.snapshot_id "
+                    + "join publication_bundle b on b.id = sn.bundle_id "
+                    + "where p.before_percentage is not null and p.snapshot_id <> ? "
+                    + "and (b.snapshot_spec_version is null or b.snapshot_spec_version <> '2')", Long.class,
+                    snapshot.getId())).isZero();
         } finally {
             // Herhaalbaarheid: de eigen testrij terug op NULL zodat een volgende run dezelfde assert haalt.
             jdbc.update("update publication_bundle_snapshot_price set before_percentage = null where snapshot_id = ?",

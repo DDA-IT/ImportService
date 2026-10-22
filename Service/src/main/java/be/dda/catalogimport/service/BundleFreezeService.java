@@ -76,7 +76,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       Dit gebeurt ná de bulkgoedkeuring — pas dan staat definitief vast welke mutaties
  *       {@code READY_FOR_PUBLICATION} zijn — en vóór de bundelhash. Ontbreekt de staging van ook maar
  *       één mutatie, dan wordt de hele bevriezing geweigerd
- *       ({@link #CODE_SNAPSHOT_SOURCE_MISSING}).</li>
+ *       ({@link #CODE_SNAPSHOT_SOURCE_MISSING}). Sinds P4b (snapshot spec v2) draagt elke prijscomponent ook
+ *       {@code before_percentage}: het percentage uit de aanvaarde bronstaat waartegen de mutatie gescreend is
+ *       ({@code catalog_source_state_price} van {@code import_mutation.source_state_id}, dezelfde bron als
+ *       {@code before_base_price}); {@code null} bij een CREATE of een component zonder bronstaatwaarde.</li>
  *   <li>De tien tellers uit ontwerp par. 2 worden vastgesteld en op de rij bewaard. Vanaf dan toont
  *       {@code GET /bundles/{id}} die bevroren getallen in plaats van live te tellen: dat zijn de
  *       getallen waarvoor getekend is.</li>
@@ -112,9 +115,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>
  * <b>{@code content_hash} blijft byte-identiek.</b> Bouwstap 5P-2 raakt
  * {@link PublicationBundleDao#computeContentHash} en zijn kolomlijst niet aan: dezelfde bundelinhoud
- * levert exact dezelfde hash op als vóór de snapshot. De snapshot krijgt in 5P-3 een eigen
- * {@code snapshot_hash}; tot dan blijven {@code snapshot_hash} en {@code snapshot_spec_version}
- * {@code null}.
+ * levert exact dezelfde hash op als vóór de snapshot. De snapshot heeft sinds 5P-3 een eigen
+ * {@code snapshot_hash} met {@code snapshot_spec_version}; nieuwe bevriezingen gebruiken sinds P4b
+ * {@link PublicationBundleSnapshotDao#SNAPSHOT_SPEC_VERSION} (2, met {@code before_percentage}). Eerder bevroren
+ * bundels houden hun versie 1, hun hash en hun {@code before_percentage = null}: er wordt niets nagevuld.
  */
 @Service
 public class BundleFreezeService {
@@ -284,9 +288,11 @@ public class BundleFreezeService {
             byte[] contentHash = dao.computeContentHash(bundleId);
             bundle.recordFreeze(freezer, freezerSubject, frozenAt, motivation, contentHash);
             // 5P-3: enkel bij minstens één snapshotrij; een bundel zonder publiceerbare mutaties houdt beide null.
-            byte[] snapshotHash = snapshotDao.computeSnapshotHash(bundleId);
+            // P4b: de versie waarmee gehasht wordt is exact de versie die bewaard wordt (en waarmee gevuld is).
+            String snapshotSpecVersion = PublicationBundleSnapshotDao.SNAPSHOT_SPEC_VERSION;
+            byte[] snapshotHash = snapshotDao.computeSnapshotHash(bundleId, snapshotSpecVersion);
             if (snapshotHash != null) {
-                bundle.recordSnapshot(snapshotHash, PublicationBundleSnapshotDao.SNAPSHOT_SPEC_VERSION);
+                bundle.recordSnapshot(snapshotHash, snapshotSpecVersion);
             }
             bundles.saveAndFlush(bundle);
 

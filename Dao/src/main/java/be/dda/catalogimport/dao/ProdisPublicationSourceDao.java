@@ -25,8 +25,9 @@ import org.springframework.stereotype.Repository;
  * Vaste volgorde {@code mutation_id asc} (dezelfde als de {@code snapshot_hash}), met keyset-paginering op
  * {@code mutation_id}: deterministisch, ook als er tussen twee pagina's niets verandert.
  * <p>
- * {@code before_percentage} bestaat nog niet (kolom en snapshot spec v2 komen in P4b): {@link SourcePrice#beforePercentage()}
- * is daarom altijd {@code null}, wat de projectie als "niet beschikbaar" behandelt.
+ * {@link SourcePrice#beforePercentage()} is {@code publication_bundle_snapshot_price.before_percentage}, letterlijk: gevuld
+ * door het bevriezen sinds snapshot spec v2 (P4b), {@code null} voor spec-v1-bundels, voor CREATE en voor een component zonder
+ * bronstaatwaarde. Deze lezer kijkt niet naar de specversie; de projectie gebruikt de waarde enkel bij spec &ge; 2.
  */
 @Repository
 public class ProdisPublicationSourceDao {
@@ -37,7 +38,7 @@ public class ProdisPublicationSourceDao {
     /**
      * Eén prijscomponent van de snapshot, ongewijzigd uit {@code publication_bundle_snapshot_price}.
      *
-     * @param beforePercentage het percentage vóór deze levering (snapshot spec v2, P4b); nu altijd {@code null}
+     * @param beforePercentage het percentage vóór deze levering (snapshot spec v2, P4b); {@code null} = niet beschikbaar
      */
     public record SourcePrice(String componentCode, BigDecimal sourceAmount, BigDecimal percentage, String currency,
                               String status, BigDecimal beforePercentage) {
@@ -46,7 +47,8 @@ public class ProdisPublicationSourceDao {
     /**
      * Eén snapshotrij met de bijhorende mutatie- en koppelingsvelden, letterlijk uit de database.
      *
-     * @param snapshotSpecVersion {@code publication_bundle.snapshot_spec_version} ("1" tot P4b)
+     * @param snapshotSpecVersion {@code publication_bundle.snapshot_spec_version} ("1" vóór P4b, "2" sindsdien; {@code null}
+     *                            zonder snapshot)
      * @param prices              alle prijscomponenten van de snapshotrij, oplopend op {@code component_code}
      */
     public record SourceRow(long bundleId, long snapshotId, long mutationId, String actionType, String identitySupplier,
@@ -103,13 +105,13 @@ public class ProdisPublicationSourceDao {
         // Tweede query per pagina voor de prijscomponenten: geen rijvermenigvuldiging in de paginering.
         Object[] snapshotIds = base.stream().map(SourceRow::snapshotId).toArray();
         Map<Long, List<SourcePrice>> pricesBySnapshot = new HashMap<>();
-        jdbc.query("select snapshot_id, component_code, source_amount, percentage, currency, status "
+        jdbc.query("select snapshot_id, component_code, source_amount, percentage, currency, status, before_percentage "
                         + "from publication_bundle_snapshot_price where snapshot_id in ("
                         + String.join(",", Collections.nCopies(snapshotIds.length, "?")) + ")",
                 rs -> {
                     pricesBySnapshot.computeIfAbsent(rs.getLong(1), key -> new ArrayList<>())
                             .add(new SourcePrice(rs.getString(2), rs.getBigDecimal(3), rs.getBigDecimal(4),
-                                    rs.getString(5), rs.getString(6), null));
+                                    rs.getString(5), rs.getString(6), rs.getBigDecimal(7)));
                 }, snapshotIds);
         // Sorteren in Java (String.compareTo), niet met de collatie van de database: die verschilt tussen H2 en
         // PostgreSQL (zelfde keuze als de snapshot_hash).

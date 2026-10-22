@@ -5,14 +5,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import be.dda.catalogimport.dao.CatalogImportTaskRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
+import be.dda.catalogimport.dao.ImportFieldCatalogRepository;
+import be.dda.catalogimport.dao.ImportFieldMappingRepository;
 import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.dao.PublicationBundleRepository;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import be.dda.catalogimport.domain.BundleDecisionKind;
 import be.dda.catalogimport.domain.CatalogImportTask;
+import be.dda.catalogimport.domain.FieldValueKind;
 import be.dda.catalogimport.domain.IdentityProfileKind;
 import be.dda.catalogimport.domain.ImportDefinition;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
+import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
+import be.dda.catalogimport.domain.ImportFieldMapping;
 import be.dda.catalogimport.domain.ImportLink;
 import be.dda.catalogimport.domain.MutationStatus;
 import be.dda.catalogimport.domain.PublicationBundleStatus;
@@ -69,9 +74,10 @@ import org.springframework.test.context.DynamicPropertySource;
  *   <li>Onbereikbare leesbron → {@code PARALLEL_RUN_UNAVAILABLE}, geen item, de SIMULATION slaagt zoals voorheen.</li>
  *   <li>Modus PRODIS (ook: geen rij) → vaste waarschuwing, niets geweigerd; onleesbaar → UNKNOWN + waarschuwing.</li>
  * </ul>
- * {@code PRICE_ROUNDING_DIFFERENCE} kan end-to-end nog niet voorkomen (percentages worden pas geschreven met snapshot spec 2,
- * P4b); de telling en rapportering ervan bewijst {@code PublicationParallelRunServiceTest}. Elke test gebruikt een eigen
- * leveranciersnummer: de H2-bron en de database zijn gedeeld.
+ * Sinds P4b (snapshot spec 2, {@code before_percentage} bij het bevriezen) worden VKP-percentages end-to-end bewaakt en
+ * geschreven: {@code WOULD_UPDATE} op een percentage, {@code PRICE_ROUNDING_DIFFERENCE} en een percentage-{@code CONFLICT};
+ * dezelfde bundel als spec 1 behandeld houdt de percentages op KEEP ({@code EXPECTED_NOT_AVAILABLE}). Elke test gebruikt een
+ * eigen leveranciersnummer: de H2-bron en de database zijn gedeeld.
  */
 @SpringBootTest(properties = {
         "catalogimport.screening.stage-batch-size=50",
@@ -96,6 +102,7 @@ class PublicationParallelRunTest {
     private static final AtomicInteger SEQUENCE = new AtomicInteger();
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String HEADER = "LEVERANCIER;GROEP;REFERENTIE;PRIJS;OMSCHRIJVING\n";
+    private static final String HEADER_WITH_VKP1 = "LEVERANCIER;GROEP;REFERENTIE;PRIJS;OMSCHRIJVING;VKP1\n";
     private static final String CREATOR = "jan.peeters@example.test";
     private static final String FREEZER = "an.janssens@example.test";
     private static final String DECIDER = "piet.willems@example.test";
@@ -130,6 +137,10 @@ class PublicationParallelRunTest {
     private ImportDefinitionRepository definitions;
     @Autowired
     private ImportDefinitionRevisionRepository revisions;
+    @Autowired
+    private ImportFieldCatalogRepository fieldCatalog;
+    @Autowired
+    private ImportFieldMappingRepository fieldMappings;
     @Autowired
     private ImportLinkRepository links;
     @Autowired
@@ -318,6 +329,157 @@ class PublicationParallelRunTest {
         assertThat(summary.itemCount()).isEqualTo(6L);
     }
 
+    // --- P4b: percentages met snapshot spec 2 -----------------------------------------------------------------------
+
+    /**
+     * P4b end-to-end: de bevriezing vult {@code before_percentage} uit de nulmeting en zet spec 2, dus de projectie bewaakt
+     * en schrijft VKP1. P1 → {@code WOULD_UPDATE} met een percentagewijziging 10 → 15; P2 → {@code WOULD_UPDATE} met
+     * {@code PRICE_ROUNDING_DIFFERENCE} (bron 15,005, Prg_1185 rekent 2 decimalen; de berekende waarde wordt geschreven);
+     * P3 → {@code CONFLICT}: Prodis staat op 12 %, niet de verwachte 10 en niet het doel 15.
+     */
+    @Test
+    void withSnapshotSpec2PercentagesAreGuardedAndWrittenWithRoundingDifferencesAndConflicts() throws Exception {
+        Scenario scenario = percentageScenario("PCT");
+        assertThat(bundles.findById(scenario.bundleId()).orElseThrow().getSnapshotSpecVersion()).isEqualTo("2");
+
+        PublicationRunView view = runService.requestRun(scenario.bundleId(), "SIMULATION", REQUESTER);
+
+        ParallelRunSummary parallel = view.parallelRun();
+        assertThat(parallel.status()).isEqualTo(PublicationParallelRunService.STATUS_COMPLETED);
+        assertThat(parallel.itemCount()).isEqualTo(3L);
+        assertThat(parallel.outcomeCounts()).isEqualTo(Map.of("WOULD_UPDATE", 2L, "UNCHANGED", 0L, "CONFLICT", 1L,
+                "REJECTED", 0L, "NOT_SENT", 0L));
+        assertThat(parallel.reasonCounts()).containsOnly(Map.entry("VALUE_CHANGED_IN_PRODIS", 1L));
+        assertThat(parallel.noticeCounts()).containsEntry("PRICE_ROUNDING_DIFFERENCE", 1L)
+                .doesNotContainKey("EXPECTED_NOT_AVAILABLE");
+
+        JsonNode report = report(view.id());
+        assertThat(report.path("snapshotSpecVersion").asText()).isEqualTo("2");
+        Map<String, JsonNode> items = itemsByReference(report);
+
+        JsonNode p1 = items.get("P1");
+        assertThat(p1.path("outcome").asText()).isEqualTo("WOULD_UPDATE");
+        assertThat(p1.path("salesPercentages").path("1").path("state").asText()).isEqualTo("VALUE");
+        assertThat(new BigDecimal(p1.path("salesPercentages").path("1").path("value").asText())).isEqualByComparingTo("15");
+        assertThat(new BigDecimal(p1.path("salesPercentages").path("1").path("expected").asText()))
+                .isEqualByComparingTo("10");
+        assertThat(detailChange(p1, "percentage")).isNotNull();
+        assertThat(new BigDecimal(detailChange(p1, "percentage").path("target").asText())).isEqualByComparingTo("15");
+        assertThat(new BigDecimal(detailChange(p1, "price").path("target").asText())).isEqualByComparingTo("15");
+        assertThat(p1.path("salesPriceLastUpdated").asBoolean()).isTrue();
+        assertThat(p1.path("notices").findValuesAsText("code")).doesNotContain("PRICE_ROUNDING_DIFFERENCE",
+                "EXPECTED_NOT_AVAILABLE");
+
+        JsonNode p2 = items.get("P2");
+        assertThat(p2.path("outcome").asText()).isEqualTo("WOULD_UPDATE");
+        assertThat(p2.path("notices").findValuesAsText("code")).contains("PRICE_ROUNDING_DIFFERENCE",
+                "EXCEEDS_LEGACY_PRECISION");
+        // Nooit stil gecorrigeerd: het doel is de berekende prijs, de melding toont de afwijking van het bronbedrag.
+        BigDecimal written = new BigDecimal(detailChange(p2, "price").path("target").asText());
+        assertThat(written).isNotEqualByComparingTo("15.005");
+        assertThat(written.scale()).isLessThanOrEqualTo(2);
+
+        JsonNode p3 = items.get("P3");
+        assertThat(p3.path("outcome").asText()).isEqualTo("CONFLICT");
+        assertThat(p3.path("reasonCode").asText()).isEqualTo("VALUE_CHANGED_IN_PRODIS");
+        assertThat(p3.path("changes")).isEmpty();
+        assertThat(p3.path("notices")).anySatisfy(notice -> {
+            assertThat(notice.path("code").asText()).isEqualTo("VALUE_CHANGED_IN_PRODIS");
+            assertThat(notice.path("field").asText()).isEqualTo("VKP1_PCT");
+        });
+
+        // Deterministisch: een tweede run geeft dezelfde items en tellers.
+        PublicationRunView again = runService.requestRun(scenario.bundleId(), "SIMULATION", REQUESTER);
+        assertThat(withoutVolatile(report(again.id()))).isEqualTo(withoutVolatile(report));
+    }
+
+    /**
+     * Dezelfde bundel zoals ze vóór P4b bevroren zou zijn (spec 1, {@code before_percentage} leeg): de percentages blijven
+     * KEEP met {@code EXPECTED_NOT_AVAILABLE}, er wordt geen percentage geschreven en dus ook geen percentageconflict gemeld
+     * — exact het gedrag van vóór P4b. (Dat de projectie de spec ook bij een gevulde kolom respecteert, bewijst
+     * {@code ProdisPublicationSourceDaoTest}.)
+     */
+    @Test
+    void theSameBundleFrozenAsBeforeP4bKeepsThePercentages() throws Exception {
+        Scenario scenario = percentageScenario("PCTV1");
+        jdbc.update("update publication_bundle_snapshot_price set before_percentage = null where snapshot_id in "
+                + "(select id from publication_bundle_snapshot where bundle_id = ?)", scenario.bundleId());
+        jdbc.update("update publication_bundle set snapshot_spec_version = '1' where id = ?", scenario.bundleId());
+
+        PublicationRunView view = runService.requestRun(scenario.bundleId(), "SIMULATION", REQUESTER);
+
+        ParallelRunSummary parallel = view.parallelRun();
+        assertThat(parallel.outcomeCounts()).isEqualTo(Map.of("WOULD_UPDATE", 0L, "UNCHANGED", 3L, "CONFLICT", 0L,
+                "REJECTED", 0L, "NOT_SENT", 0L));
+        assertThat(parallel.noticeCounts()).containsEntry("EXPECTED_NOT_AVAILABLE", 3L)
+                .doesNotContainKey("PRICE_ROUNDING_DIFFERENCE");
+        JsonNode p1 = itemsByReference(report(view.id())).get("P1");
+        assertThat(p1.path("salesPercentages").path("1").path("state").asText()).isEqualTo("KEEP");
+        assertThat(p1.path("changes")).isEmpty();
+    }
+
+    /**
+     * Nulmeting P1..P3 aan basis 100 met VKP1 10,00 (= 10 %); de tweede levering houdt de basis en zet VKP1 op 15,00, 15,005
+     * en 15,00. Prodis: VKP1 10 % voor P1 en P2, 12 % voor P3; VKP2..5 20..50 %, prijzen consistent.
+     */
+    private Scenario percentageScenario(String prefix) {
+        String supplier = ("S" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet()).toUpperCase();
+        Fixture fixture = fixture(prefix, true);
+        long first = screenedBatchWithHeader(fixture, "NULMETING", HEADER_WITH_VKP1,
+                supplier + ";G1;P1;100,00;Boormachine;10,00",
+                supplier + ";G1;P2;100,00;Schroevendraaier;10,00",
+                supplier + ";G1;P3;100,00;Hamer;10,00");
+        baseline.acceptBaseline(first, CREATOR, "Nulmeting");
+        long batchId = screenedBatchWithHeader(fixture, "PRIJSRONDE", HEADER_WITH_VKP1,
+                supplier + ";G1;P1;100,00;Boormachine;15,00",
+                supplier + ";G1;P2;100,00;Schroevendraaier;15,005",
+                supplier + ";G1;P3;100,00;Hamer;15,00");
+        BundleReference bundle = bundleService.createBundle("BND-" + fixture.unique(), null,
+                PublicationTargetMode.SIMULATION, null, null, CREATOR);
+        bundleService.addBatches(bundle.id(), List.of(batchId), CREATOR);
+        decisions.decideGroup(bundle.id(), BundleDecisionKind.APPROVE, DECIDER, "Levering nagekeken",
+                new DecisionFilter(null, MutationStatus.AWAITING_APPROVAL, null, null, null));
+        freezeService.freeze(bundle.id(), FREEZER, "Prijsronde goedgekeurd");
+
+        long prodisSupplier = PRODIS.insertSupplier(supplier, "Leverancier " + supplier);
+        long group = PRODIS.insertGroup(prodisSupplier, supplier + "|G1|", "G1", "");
+        long catalog = PRODIS.insertCatalog(prodisSupplier, LIBRARY, "50", "CATALOGUS", "ACTIVE");
+        prodisArticleWithVkp1(prodisSupplier, group, catalog, "P1", "Boormachine", 10d);
+        prodisArticleWithVkp1(prodisSupplier, group, catalog, "P2", "Schroevendraaier", 10d);
+        prodisArticleWithVkp1(prodisSupplier, group, catalog, "P3", "Hamer", 12d);
+        return new Scenario(bundle.id(), batchId, supplier);
+    }
+
+    /** Prijscode 0, bruto-politiek 1, basis 100; VKP1 {@code vkp1Percentage} %, VKP2..5 20..50 %, prijzen consistent. */
+    private static void prodisArticleWithVkp1(long supplierId, long groupId, long catalogId, String reference,
+                                              String description, double vkp1Percentage) {
+        long article = PRODIS.insertArticle(supplierId, groupId, catalogId, reference, true, false);
+        List<Double> percentages = List.of(vkp1Percentage, 20d, 30d, 40d, 50d);
+        long price = PRODIS.insertPrice(article, "0", "1", new BigDecimal("100"), vkp1Percentage, 0d);
+        for (int code = 1; code <= 5; code++) {
+            double percentage = percentages.get(code - 1);
+            PRODIS.insertPriceDetail(price, Integer.toString(code), percentage, percentage);
+        }
+        PRODIS.insertDescription(article, LANGUAGE_NL, description);
+    }
+
+    private static Map<String, JsonNode> itemsByReference(JsonNode report) {
+        Map<String, JsonNode> items = new LinkedHashMap<>();
+        report.path("items").forEach(item -> items.put(item.path("identity").path("supplierReference").asText(), item));
+        return items;
+    }
+
+    /** De wijziging op {@code catalog_article_price_detail.<column>} van VKP1, of {@code null}. */
+    private static JsonNode detailChange(JsonNode item, String column) {
+        for (JsonNode change : item.path("changes")) {
+            if ("catalog_article_price_detail".equals(change.path("table").asText())
+                    && column.equals(change.path("column").asText()) && change.path("detailCode").asInt() == 1) {
+                return change;
+            }
+        }
+        return null;
+    }
+
     // --- scenario ----------------------------------------------------------------------------------------------------
 
     private record Scenario(long bundleId, long batchId, String supplier) {
@@ -331,7 +493,7 @@ class PublicationParallelRunTest {
      */
     private Scenario scenario(String prefix) {
         String supplier = ("S" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet()).toUpperCase();
-        Fixture fixture = fixture(prefix);
+        Fixture fixture = fixture(prefix, false);
         long first = screenedBatch(fixture, "NULMETING",
                 supplier + ";G1;R1;100,00;Boormachine",
                 supplier + ";G1;R2;100,00;Schroevendraaier",
@@ -381,7 +543,11 @@ class PublicationParallelRunTest {
     }
 
     private long screenedBatch(Fixture fixture, String deliveryReference, String... rows) {
-        StringBuilder csv = new StringBuilder(HEADER);
+        return screenedBatchWithHeader(fixture, deliveryReference, HEADER, rows);
+    }
+
+    private long screenedBatchWithHeader(Fixture fixture, String deliveryReference, String header, String... rows) {
+        StringBuilder csv = new StringBuilder(header);
         for (String row : rows) {
             csv.append(row).append('\n');
         }
@@ -396,8 +562,11 @@ class PublicationParallelRunTest {
         return batchId;
     }
 
-    /** Zelfde fixture als {@code PublicationRunSimulationTest} (omschrijving gemapt, geen prijscomponenten). */
-    private Fixture fixture(String prefix) {
+    /**
+     * Zelfde fixture als {@code PublicationRunSimulationTest} (omschrijving gemapt); met {@code withVkp1} ook VKP1 als
+     * prijscomponent (canonicalisatieversie 2, geseed catalogusveld {@code VKP1_PCT}, zoals {@code BundleFreezeSnapshotTest}).
+     */
+    private Fixture fixture(String prefix, boolean withVkp1) {
         String unique = "PPR" + Long.toString(System.nanoTime(), 36) + SEQUENCE.incrementAndGet() + "-" + prefix;
         SourceOrganisation organisation = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-ORG", unique + "-ORG BV", SourceOrganisationType.SUPPLIER));
@@ -416,8 +585,19 @@ class PublicationParallelRunTest {
         revision.setRecordBasePriceField("PRIJS");
         revision.setRecordDescriptionField("OMSCHRIJVING");
         revision.setMaxCriticalSharePercent(new BigDecimal("100"));
+        if (withVkp1) {
+            revision.setRecordCanonicalisationVersion(2);
+        }
         revision.setStatus(RevisionStatus.ACTIVE);
-        revisions.saveAndFlush(revision);
+        ImportDefinitionRevision stored = revisions.saveAndFlush(revision);
+        if (withVkp1) {
+            ImportFieldCatalogEntry target = fieldCatalog.findById("VKP1_PCT").orElseThrow();
+            ImportFieldMapping mapping = new ImportFieldMapping(stored, 1, target, FieldValueKind.SOURCE_FIELD,
+                    target.getDataType(), target.getDefaultOwner(), target.getIdentityClass());
+            mapping.setSourceReference("VKP1");
+            mapping.setPriceComponentCode(target.getPriceComponentCode());
+            fieldMappings.saveAndFlush(mapping);
+        }
         SourceOrganisation supplier = sourceOrganisations.saveAndFlush(
                 new SourceOrganisation(unique + "-SUP", unique + "-SUP BV", SourceOrganisationType.SUPPLIER));
         ImportLink link = links.saveAndFlush(
