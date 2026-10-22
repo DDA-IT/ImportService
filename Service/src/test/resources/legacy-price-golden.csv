@@ -1,0 +1,58 @@
+# Golden voor LegacyCatalogPriceFormula (CatalogImport), slice P2a, design publicatie-prodis-db-direct-design.md par. 3.
+# Verwachte waarden (exp_*) gegenereerd door de Prodis-klasse be.dda.prodis.service.suppliergroup.pricing.LegacyPriceCalculator#calculate
+# zelf (niet zelf uitgerekend), gecompileerd uit git -C C:\javaProject\prodis show HEAD:Service/src/main/java/be/dda/prodis/service/suppliergroup/pricing/*.java
+# prodis-commit: 296b66886987dcbf4d15ee3fa87122ae990c1716
+# Invoer naar Prodis: priceCode, brutCode, decimals, coefficient, basePrice, salesBasePrice, salesPercentages, brutPercentage, salesPrices,
+# brutPrice; pricePolicy/purchasePercentage/purchasePrice niet meegegeven (enkel van invloed op purchase_price, buiten scope Q1 = b).
+# Getallen: invoer = decimale tekst (Double.parseDouble / new BigDecimal), uitvoer = Double.toString (exacte round-trip).
+# Cel: leeg = sleutel afwezig of scalar null; 'null' = sleutel aanwezig met waarde null. catalog=Y: catalogusparameters (coef 1,
+# 2 decimalen, geen salesBase, prijscode 0/1/2, dezelfde codes voor % en prijs) -> ook via LegacyCatalogPriceFormula.calculate getest.
+case_id;source;price_code;brut_code;decimals;coefficient;base_price;sales_base_price;pct1;pct2;pct3;pct4;pct5;price1;price2;price3;price4;price5;brut_pct;brut_price;catalog;exp_pct1;exp_pct2;exp_pct3;exp_pct4;exp_pct5;exp_price1;exp_price2;exp_price3;exp_price4;exp_price5;exp_brut_pct;exp_brut_price;exp_sales_base_price
+T1;LegacyPriceCalculatorTest r.17 percentagePriceCodeRecalculatesSalesPurchaseAndBrutPrices;0;0;2;1;100;;55;50;;;;;;;;;120;;N;55.0;50.0;;;;55.0;50.0;;;;120.0;120.0;100.0
+T2;LegacyPriceCalculatorTest r.36 coefficientIsAppliedAndResultIsRoundedHalfUpToTheArticleDecimals;0;0;2;1.2;33.333;;45;;;;;;;;;;;;N;45.0;;;;;18.0;;;;;;0.0;33.333
+T3;LegacyPriceCalculatorTest r.47 zeroCoefficientCountsAsOne;2;0;2;0;80;;50;;;;;;;;;;;;N;50.0;;;;;40.0;;;;;;0.0;80.0
+T4;LegacyPriceCalculatorTest r.54 salesBasePriceDrivesSalesAndBrutPricesButPurchaseUsesTheBasePrice;0;0;2;1;100;200;50;;;;;;;;;;100;;N;50.0;;;;;100.0;;;;;100.0;200.0;200.0
+T5;LegacyPriceCalculatorTest r.74 missingSalesBasePriceFallsBackToTheBasePrice;0;0;2;1;60;0;50;;;;;;;;;;;;N;50.0;;;;;30.0;;;;;;0.0;60.0
+T6;LegacyPriceCalculatorTest r.84 manualPriceCodeClearsPercentagesAndKeepsTheExistingPrices;1;0;2;1;100;;55;;;;;12.5;;;;;;;Y;0.0;;;;;12.5;;;;;;0.0;100.0
+T7;LegacyPriceCalculatorTest r.103 brutCodeOtherThanZeroCopiesTheMatchingSalesPriceAndClearsTheBrutPercentage;0;2;2;1;100;;55;50;;;;;;;;;130;;N;55.0;50.0;;;;55.0;50.0;;;;0.0;50.0;100.0
+T8;LegacyPriceCalculatorTest r.119 purchasePriceIsKeptForPricePolicyOneWithoutPurchasePercentage (purchase buiten scope);0;0;2;1;100;;;;;;;;;;;;;;Y;;;;;;;;;;;;0.0;100.0
+T9;LegacyPriceCalculatorTest r.126 purchasePriceIsRecalculatedToZeroForOtherPolicies (purchase buiten scope);0;0;2;1;100;;;;;;;;;;;;;;Y;;;;;;;;;;;;0.0;100.0
+C1;SupplierGroupPricePropagationServiceTest r.161 onlyPercentagePricedCatalogArticlesAreRecalculated (Prg_261-parameters);0;0;2;1;80;;60;50;;;;8;null;;;;120;;Y;60.0;50.0;;;;48.0;40.0;;;;120.0;96.0;80.0
+B01;x.xx5 double-artefact: 1.005 x 100%;0;0;2;1;1.005;;100;null;null;null;null;1;null;null;null;null;100;1;Y;100.0;null;null;null;null;1.01;0.0;0.0;0.0;0.0;100.0;1.01;1.005
+B02;x.xx5 double-artefact: 2.675 x 100%;0;0;2;1;2.675;;100;null;null;null;null;2.67;null;null;null;null;100;2.67;Y;100.0;null;null;null;null;2.68;0.0;0.0;0.0;0.0;100.0;2.68;2.675
+B03;x.xx5 via percentage: 10 x 33.335%;0;0;2;1;10;;33.335;null;null;null;null;3.33;null;null;null;null;;;Y;33.335;null;null;null;null;3.33;0.0;0.0;0.0;0.0;;0.0;10.0
+B04;x.xx5 groot bedrag: 1234.565 x 100% en x 50%;0;0;2;1;1234.565;;100;50;null;null;null;1;2;null;null;null;;;Y;100.0;50.0;null;null;null;1234.57;617.28;0.0;0.0;0.0;;0.0;1234.565
+B05;tussenresultaat met staart: 19.99 x 115.5%, x 70%, x 33.3333%;0;0;2;1;19.99;;115.5;70;33.3333;null;null;0;0;0;null;null;;;Y;115.5;70.0;33.3333;null;null;23.09;13.99;6.66;0.0;0.0;;0.0;19.99
+B06;vijf VKP's realistisch, brut 0 met eigen %;0;0;2;1;47.83;;135;128.5;122;117.25;110;60;60;58;56;52;140.5;67;Y;135.0;128.5;122.0;117.25;110.0;64.57;61.46;58.35;56.08;52.61;140.5;67.2;47.83
+B07;x.xx5 artefact 1.115 x 100% en een percentage met 16 cijfers;0;0;2;1;1.115;;100;6.5022421524663675;null;null;null;0;0;null;null;null;;;Y;100.0;6.502242152466367;null;null;null;1.12;0.07;0.0;0.0;0.0;;0.0;1.115
+B08;coef 0 telt als 1 (geen cataloguspad);0;0;2;0;12.345;;100;null;null;null;null;0;null;null;null;null;;;N;100.0;null;null;null;null;12.35;0.0;0.0;0.0;0.0;;0.0;12.345
+B09;prijscode 1, brut_price_politics 0: VKP ongemoeid, % op 0, AVP1 herberekend;1;0;2;1;100;;55;50;null;null;null;61.5;52;null;null;null;125;99;Y;0.0;0.0;0.0;0.0;0.0;61.5;52.0;null;null;null;125.0;125.0;100.0
+B10;prijscode 1, brut_price_politics 2: AVP1 := bestaande VKP2, AVP% := 0;1;2;2;1;100;;55;50;null;null;null;61.5;52;null;null;null;125;99;Y;0.0;0.0;0.0;0.0;0.0;61.5;52.0;null;null;null;0.0;52.0;100.0
+B11;prijscode 2: herberekend met bestaande %;2;0;2;1;64.99;;140;130;null;null;null;1;1;null;null;null;150;1;Y;140.0;130.0;null;null;null;90.99;84.49;0.0;0.0;0.0;150.0;97.49;64.99
+B12;prijscode ' 2 ' met spaties; 2 ;0;2;1;64.99;;140;130;null;null;null;1;1;null;null;null;150;1;Y;140.0;130.0;null;null;null;90.99;84.49;0.0;0.0;0.0;150.0;97.49;64.99
+B13;brut_price_politics leeg: AVP1 ongemoeid, AVP% := 0;0;;2;1;100;;55;50;null;null;null;1;1;null;null;null;125;99;Y;55.0;50.0;null;null;null;55.0;50.0;0.0;0.0;0.0;0.0;99.0;100.0
+B14;brut_price_politics null: zoals leeg;0;<null>;2;1;100;;55;50;null;null;null;1;1;null;null;null;125;99;Y;55.0;50.0;null;null;null;55.0;50.0;0.0;0.0;0.0;0.0;99.0;100.0
+B15;brut_price_politics 3: AVP1 := VKP3;0;3;2;1;88.88;;150;140;130.555;null;null;1;1;1;null;null;125;99;Y;150.0;140.0;130.555;null;null;133.32;124.43;116.04;0.0;0.0;0.0;116.04;88.88
+B16;brut_price_politics ' 0 ' met spaties;0; 0 ;2;1;100;;55;null;null;null;null;1;null;null;null;null;125.005;99;Y;55.0;null;null;null;null;55.0;0.0;0.0;0.0;0.0;125.005;125.01;100.0
+B17;brut_price_politics 6 (geen VKP6): AVP1 ongemoeid, AVP% := 0;0;6;2;1;100;;55;null;null;null;null;1;null;null;null;null;125;99;Y;55.0;null;null;null;null;55.0;0.0;0.0;0.0;0.0;0.0;99.0;100.0
+B18;null-percentages: VKP-prijs wordt 0 zoals in Prodis;0;0;2;1;100;;null;50;null;null;null;7;7;7;null;null;;99;Y;null;50.0;null;null;null;0.0;50.0;0.0;0.0;0.0;;0.0;100.0
+B19;brut_price_politics 0 met AVP% null: AVP1 wordt 0;0;0;2;1;100;;55;null;null;null;null;1;null;null;null;null;;99;Y;55.0;null;null;null;null;55.0;0.0;0.0;0.0;0.0;;0.0;100.0
+B20;negatieve basis: HALF_UP weg van nul;0;0;2;1;-12.345;;100;50;null;null;null;0;0;null;null;null;100.1;0;Y;100.0;50.0;null;null;null;-12.35;-6.17;0.0;0.0;0.0;100.1;-12.36;-12.345
+B21;negatieve basis x.xx5: -1.005 x 100% en x 0.4975...% (ca. -0.005);0;0;2;1;-1.005;;100;0.4975124378109453;null;null;null;0;0;null;null;null;;;Y;100.0;0.4975124378109453;null;null;null;-1.01;0.0;0.0;0.0;0.0;;0.0;-1.005
+B22;basis 0: alle prijzen 0;0;0;2;1;0;;135;128.5;null;null;null;9;9;null;null;null;140;9;Y;135.0;128.5;null;null;null;0.0;0.0;0.0;0.0;0.0;140.0;0.0;0.0
+B23;expliciet 0%: VKP-prijs 0 (Q2 behandelt de planner);0;0;2;1;100;;0;50;null;null;null;7;7;null;null;null;;;Y;0.0;50.0;null;null;null;0.0;50.0;0.0;0.0;0.0;;0.0;100.0
+B24;onbekende prijscode 9: Prodis rekent enkel brut (catalogus: PRICE_CODE_UNSUPPORTED);9;0;2;1;100;;55;null;null;null;null;7;null;null;null;null;120;99;N;55.0;null;null;null;null;7.0;null;null;null;null;120.0;120.0;100.0
+B25;decimals 3 (geen cataloguspad);0;0;3;1;1.0005;;100;33.3333;null;null;null;0;0;null;null;null;;;N;100.0;33.3333;null;null;null;1.001;0.333;0.0;0.0;0.0;;0.0;1.0005
+B26;decimals -1 valt terug op 2 (geen cataloguspad);0;0;-1;1;2.675;;100;null;null;null;null;0;null;null;null;null;;;N;100.0;null;null;null;null;2.68;0.0;0.0;0.0;0.0;;0.0;2.675
+B27;groot bedrag 999999999999.995 (15 cijfers voor de komma-grens);0;0;2;1;999999999999.995;;100;null;null;null;null;0;null;null;null;null;;;Y;100.0;null;null;null;null;1.0E12;0.0;0.0;0.0;0.0;;0.0;9.99999999999995E11
+B28;brut 0 met AVP% x.xx5: 100 x 99.995%;0;0;2;1;100;;55;null;null;null;null;1;null;null;null;null;99.995;1;Y;55.0;null;null;null;null;55.0;0.0;0.0;0.0;0.0;99.995;100.0;100.0
+B29;brut 2 met prijscode 0: AVP1 := nieuw berekende VKP2;0;2;2;1;47.83;;135;128.5;null;null;null;1;1;null;null;null;140;1;Y;135.0;128.5;null;null;null;64.57;61.46;0.0;0.0;0.0;0.0;61.46;47.83
+B30;salesBase afwijkend (geen cataloguspad): 1.005 / 2.675;0;0;2;1;1.005;2.675;100;null;null;null;null;0;null;null;null;null;100;0;N;100.0;null;null;null;null;2.68;0.0;0.0;0.0;0.0;100.0;2.68;2.675
+B31;6 basisdecimalen 0.000005 x 100%;0;0;2;1;0.000005;;100;100000;null;null;null;0;0;null;null;null;;;Y;100.0;100000.0;null;null;null;0.0;0.01;0.0;0.0;0.0;;0.0;5.0E-6
+B32;prijscode 1 met brut 6 (geen VKP6): alles ongemoeid behalve AVP% := 0;1;6;2;1;100;;55;null;null;null;null;61.5;null;null;null;null;125;99;Y;0.0;0.0;0.0;0.0;0.0;61.5;null;null;null;null;0.0;99.0;100.0
+B33;decimals null valt terug op 2 (geen cataloguspad);0;0;;1;2.675;;100;null;null;null;null;0;null;null;null;null;;;N;100.0;null;null;null;null;2.68;0.0;0.0;0.0;0.0;;0.0;2.675
+B34;volgordegevoelig: 0.1 x 115% (b*(p/100) gaf 0.11), ook als AVP%;0;0;2;1;0.1;;115;null;null;null;null;0;null;null;null;null;115;0;Y;115.0;null;null;null;null;0.12;0.0;0.0;0.0;0.0;115.0;0.12;0.1
+B35;volgordegevoelig: 3 x 128.5% (b*(p/100) gaf 3.85);0;0;2;1;3;;128.5;null;null;null;null;0;null;null;null;null;;;Y;128.5;null;null;null;null;3.86;0.0;0.0;0.0;0.0;;0.0;3.0
+B36;volgordegevoelig: 0.7 x 45% (raw 0.31499999999999995) en x 55% (b/100*p gaf 0.38);0;0;2;1;0.7;;45;55;null;null;null;0;0;null;null;null;;;Y;45.0;55.0;null;null;null;0.31;0.39;0.0;0.0;0.0;;0.0;0.7
+B37;volgordegevoelig: 70 x 117.25% (b/100*p gaf 82.07), ook als AVP%;0;0;2;1;70;;117.25;null;null;null;null;0;null;null;null;null;117.25;0;Y;117.25;null;null;null;null;82.08;0.0;0.0;0.0;0.0;117.25;82.08;70.0
+B38;volgordegevoelig: 0.05 x 70% (b*(p/100) gaf 0.03), prijscode 2;2;0;2;1;0.05;;70;null;null;null;null;0;null;null;null;null;;;Y;70.0;null;null;null;null;0.04;0.0;0.0;0.0;0.0;;0.0;0.05

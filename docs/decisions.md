@@ -2904,3 +2904,19 @@ een zou herroepen wordt niet stil gevolgd maar als open punt gemarkeerd.
 **Beslissing (aanbeveling gevolgd — door de mens te herzien):** enkel een ontbrekende **rij** geeft PRODIS (zoals Prodis
 `LegacyMasterResolver`); een ontbrekende tabel/kolom of ontbrekende rechten is een fout → `UNAVAILABLE` ("nooit stil een default bij een fout").
 **Bron:** P1-bouwerrapport
+
+## 2026-10-22 — P2a: prijsformule (Prg_1185-port)
+**Vraag:** Open invullingen van de P2a-bouwer bij `LegacyCatalogPriceFormula`.
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):**
+1. Prijscode 1: de bestaande Prodis-percentages blijven staan (design §3 "onze VKP% niet schrijven"), ook waar Prg_1185 ze zou nullen.
+2. Prijscode 1, bruto bij politiek n: letterlijke 1185-regel (`brut := bestaande VKPn`, `brut% := 0`).
+3. Nieuwe melding `PERCENTAGE_MISSING`: herberekende VKP zonder percentage wordt 0 zoals in Prodis, maar zichtbaar gemeld.
+4. `PERCENTAGES_NOT_APPLICABLE` enkel per VKP-code met een niet-lege importwaarde.
+5. KEEP en Q2 (`ZERO_KEEPS_EXISTING`) beslist de planner (P2b), niet de formule.
+6. Import-% voor een code zonder bestaand detail krijgt een berekende prijs; de UPDATE-only-vormcontrole zit in planner/writer.
+7. Purchase-tak niet geport (Q1 = b).
+8. **`sales_price_last_updated`** (voor P2b): enkel bij een echte wijziging van een VKP1..5-prijs (Prg_1179 r.510, design §3), niet bij een
+   wijziging van enkel `brut_price` (waar de Prodis-port dat wel meetelt).
+**Ontdekt (bewust aanvaard, P-V2):** Prodis rekent in `double`; op sommige bedragen wijkt dat een cent af van decimale rekenkunde (bv. 0,7 × 45%
+→ 0,31 i.p.v. 0,32). Wij volgen Prodis bit-identiek; de parallelrun tegen legacy kan centverschillen tonen.
+**Bron:** P2a-bouwerrapport / `publicatie-prodis-db-direct-design.md` §3
