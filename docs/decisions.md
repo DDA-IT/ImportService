@@ -2826,3 +2826,12 @@ af op hun Alpha-lengte vóór de opzoeking (wij niet); records met lege leveranc
   `PERMISSION_SOURCE_UNAVAILABLE`. Contractkeuze, blijft fail-closed.
 - Bouw 5B-7a t/m 5B-7e strikt sequentieel, één commit per slice; YAML en Prodis nooit als unie.
 **Bron:** mens / denker-zwaar 5B-7-ontwerp
+
+## 2026-10-22 — Bouwopdracht: alle openstaande punten, validatie op het einde
+**Vraag:** Wat na S0–S9 en 5B-7?
+**Beslissing:** Alles wat openstaat bouwen; validatie (volledige testronde, droge run tegen Zen, lokale end-to-end, visuele controle)
+gebeurt op het einde, daarna bijsturen. Volgorde (strikt sequentieel, Denker vóór Bouwer waar een keuze openstaat):
+G1 ontvangst verwerpen (`discard`) + link naar de aangemaakte conceptversie; G2 ontwerp (denker) voor loskoppelen van een gedeelde
+definitie, één Prodis-rechtenoproep per sessie (single-flight) en het bewerken van de nieuwe revisievelden in de setup-schermen, daarna
+bouwen; P publicatiefase naar de Prodis-database: ontwerp actualiseren (denker), open keuzes V1–V4 aan de mens, daarna bouwen.
+**Bron:** mens
