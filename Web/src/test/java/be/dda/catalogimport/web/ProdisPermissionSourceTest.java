@@ -18,7 +18,17 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import jakarta.servlet.http.HttpSession;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -444,6 +454,252 @@ class ProdisPermissionSourceTest {
                 });
     }
 
+    // --- Single-flight (G2b-1, docs/design/g2-design.md) -------------------------------------------------
+
+    @Test
+    void manyThreadsInOneSessionShareOneProdisRequest() throws Exception {
+        storeClient(validAccessToken(), null);
+        prodis.respond(FakeProdisServer.ACCOUNT_PATH, Response.json(200, "{\"permissions\":[\"catalogImport.read\"]}")
+                .delayedBy(Duration.ofMillis(500)));
+        ProdisPermissionSource source = source();
+
+        List<Object> results = runAll(source, 8, request.getSession(), actor());
+
+        assertThat(results).hasSize(8).allSatisfy(r -> assertThat(r).isEqualTo(Set.of(Permission.READ)));
+        assertThat(prodis.requests(FakeProdisServer.ACCOUNT_PATH)).hasSize(1);
+        assertThat(request.getSession().getAttribute(ProdisPermissionSource.CACHE_ATTRIBUTE))
+                .isInstanceOf(ProdisPermissionSource.CachedPermissions.class);
+        assertThat(source.inFlightCount()).isZero();
+    }
+
+    @Test
+    void aFailureIsSharedWithTheWaitersOnlyTheLeaderLogsAndTheNextCallAsksAgain(CapturedOutput output) throws Exception {
+        storeClient(validAccessToken(), null);
+        prodis.respond(FakeProdisServer.ACCOUNT_PATH, Response.json(500, "{}").delayedBy(Duration.ofMillis(800)));
+        ProdisPermissionSource source = source();
+
+        List<Object> results = runAll(source, 6, request.getSession(), actor());
+
+        assertThat(results).hasSize(6).allSatisfy(r -> assertThat(r)
+                .isInstanceOfSatisfying(PermissionSourceUnavailableException.class,
+                        e -> assertThat(e.getMessage()).startsWith(WARN + "HTTP 500")));
+        // Elke wachtende heeft zijn eigen exceptie-instantie.
+        assertThat(results.stream().map(System::identityHashCode).distinct().count()).isEqualTo(6);
+        assertThat(prodis.requests(FakeProdisServer.ACCOUNT_PATH)).hasSize(1);
+        assertThat(request.getSession().getAttribute(ProdisPermissionSource.CACHE_ATTRIBUTE)).isNull();
+        assertThat(source.inFlightCount()).isZero();
+        assertSingleSafeWarn(output);
+
+        // Daarna een nieuwe oproep (de fout is nooit gecachet).
+        prodis.respond(FakeProdisServer.ACCOUNT_PATH, Response.json(200, "{\"permissions\":[\"catalogImport.manage\"]}"));
+        assertThat(source.permissionsOf(actor())).containsExactly(Permission.MANAGE);
+        assertThat(prodis.requests(FakeProdisServer.ACCOUNT_PATH)).hasSize(2);
+        assertThat(source.inFlightCount()).isZero();
+    }
+
+    @Test
+    void aLostTokenIsSharedAsTheSignInAgainPathWithOneRefreshRequest() throws Exception {
+        assumeJdkHttpClientCanStart();
+        storeClient(expiredAccessToken(), new OAuth2RefreshToken(REFRESH_TOKEN, Instant.now().minusSeconds(600)));
+        prodis.respond(FakeProdisServer.TOKEN_PATH, Response.json(400, "{\"error\":\"invalid_grant\"}")
+                .delayedBy(Duration.ofMillis(800)));
+        ProdisPermissionSource source = source();
+
+        List<Object> results = runAll(source, 5, request.getSession(), actor());
+
+        assertThat(results).hasSize(5).allSatisfy(r -> assertThat(r)
+                .isInstanceOf(PermissionSourceAuthenticationLostException.class));
+        assertThat(prodis.requests(FakeProdisServer.TOKEN_PATH)).hasSize(1);
+        assertThat(prodis.requests(FakeProdisServer.ACCOUNT_PATH)).isEmpty();
+        assertThat(source.inFlightCount()).isZero();
+    }
+
+    @Test
+    void aWaiterThatTimesOutIs503WithoutItsOwnCallAndWithoutAWarn(CapturedOutput output) throws Exception {
+        storeClient(validAccessToken(), null);
+        prodis.respond(FakeProdisServer.ACCOUNT_PATH, Response.json(200, "{\"permissions\":[\"catalogImport.read\"]}")
+                .delayedBy(Duration.ofMillis(1500)));
+        ProdisPermissionSource source = source(properties(), Duration.ofMillis(300));
+        Future<Object> leader = async(source, request.getSession(), actor(), null);
+        awaitRequests(1);
+
+        assertThatThrownBy(() -> source.permissionsOf(actor()))
+                .isInstanceOf(PermissionSourceUnavailableException.class)
+                .hasMessageContaining("timed out");
+
+        assertThat(prodis.requests(FakeProdisServer.ACCOUNT_PATH)).hasSize(1);
+        assertThat(output.getAll()).doesNotContain(WARN);
+        assertThat(leader.get(10, TimeUnit.SECONDS)).isEqualTo(Set.of(Permission.READ));
+        assertThat(source.inFlightCount()).isZero();
+    }
+
+    @Test
+    void anInterruptedWaiterIs503WithoutItsOwnCallAndKeepsTheInterruptFlag() throws Exception {
+        storeClient(validAccessToken(), null);
+        prodis.respond(FakeProdisServer.ACCOUNT_PATH, Response.json(200, "{\"permissions\":[\"catalogImport.read\"]}")
+                .delayedBy(Duration.ofMillis(1500)));
+        ProdisPermissionSource source = source();
+        HttpSession session = request.getSession();
+        Future<Object> leader = async(source, session, actor(), null);
+        awaitRequests(1);
+
+        AtomicReference<Object> outcome = new AtomicReference<>();
+        AtomicBoolean interruptedAfter = new AtomicBoolean();
+        Thread waiter = new Thread(() -> {
+            RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(requestIn(session), new MockHttpServletResponse()));
+            try {
+                outcome.set(source.permissionsOf(actor()));
+            } catch (RuntimeException e) {
+                outcome.set(e);
+            } finally {
+                interruptedAfter.set(Thread.currentThread().isInterrupted());
+                RequestContextHolder.resetRequestAttributes();
+            }
+        });
+        waiter.start();
+        // Pas onderbreken als de wachtende echt in de wachtrij hangt (WAITING/TIMED_WAITING op de future).
+        while (waiter.getState() != Thread.State.TIMED_WAITING && waiter.isAlive()) {
+            Thread.onSpinWait();
+        }
+        waiter.interrupt();
+        waiter.join(10_000);
+
+        assertThat(outcome.get()).isInstanceOfSatisfying(PermissionSourceUnavailableException.class,
+                e -> assertThat(e.getMessage()).contains("interrupted"));
+        assertThat(interruptedAfter).isTrue();
+        assertThat(prodis.requests(FakeProdisServer.ACCOUNT_PATH)).hasSize(1);
+        assertThat(leader.get(10, TimeUnit.SECONDS)).isEqualTo(Set.of(Permission.READ));
+        assertThat(source.inFlightCount()).isZero();
+    }
+
+    @Test
+    void aStaleFlightIsReplacedByANewLeader() throws Exception {
+        storeClient(validAccessToken(), null);
+        prodis.respond(FakeProdisServer.ACCOUNT_PATH, Response.json(200, "{\"permissions\":[\"catalogImport.read\"]}")
+                .delayedBy(Duration.ofMillis(1500)));
+        ProdisPermissionSource source = source(properties(), Duration.ofMillis(100));
+        Future<Object> first = async(source, request.getSession(), actor(), null);
+        awaitRequests(1);
+
+        // Elke wachtende geeft na 100 ms op; na 2 x 100 ms is het item oud en mag een nieuwe leider het vervangen.
+        for (int attempt = 0; attempt < 30 && prodis.requests(FakeProdisServer.ACCOUNT_PATH).size() < 2; attempt++) {
+            try {
+                source.permissionsOf(actor());
+            } catch (PermissionSourceUnavailableException waiterGaveUp) {
+                // Verwacht zolang het item niet oud genoeg is.
+            }
+        }
+
+        assertThat(prodis.requests(FakeProdisServer.ACCOUNT_PATH)).hasSize(2);
+        assertThat(first.get(10, TimeUnit.SECONDS)).isEqualTo(Set.of(Permission.READ));
+        awaitIdle(source);
+        assertThat(source.inFlightCount()).isZero();
+    }
+
+    @Test
+    void twoSessionsOrTwoSubjectsNeverShareAFlight() throws Exception {
+        storeClient(validAccessToken(), null);
+        prodis.respond(FakeProdisServer.ACCOUNT_PATH, Response.json(200, "{\"permissions\":[\"catalogImport.read\"]}")
+                .delayedBy(Duration.ofMillis(800)));
+        ProdisPermissionSource source = source();
+        MockHttpSession other = new MockHttpSession();
+        storeClientFor(other);
+        CountDownLatch gate = new CountDownLatch(1);
+        List<Future<Object>> futures = List.of(
+                async(source, request.getSession(), actor(), gate),
+                async(source, other, actor(), gate));
+        gate.countDown();
+        for (Future<Object> f : futures) {
+            assertThat(f.get(10, TimeUnit.SECONDS)).isEqualTo(Set.of(Permission.READ));
+        }
+        assertThat(prodis.requests(FakeProdisServer.ACCOUNT_PATH)).hasSize(2);
+
+        // Twee subjects in dezelfde (verse) sessie: ook twee oproepen.
+        prodis.reset();
+        prodis.respond(FakeProdisServer.ACCOUNT_PATH, Response.json(200, "{\"permissions\":[\"catalogImport.read\"]}")
+                .delayedBy(Duration.ofMillis(800)));
+        MockHttpSession shared = new MockHttpSession();
+        storeClientFor(shared);
+        CountDownLatch gate2 = new CountDownLatch(1);
+        List<Future<Object>> byActor = List.of(
+                async(source, shared, new ActorIdentity("someone", "subject-a"), gate2),
+                async(source, shared, new ActorIdentity("someone", "subject-b"), gate2));
+        gate2.countDown();
+        for (Future<Object> f : byActor) {
+            assertThat(f.get(10, TimeUnit.SECONDS)).isEqualTo(Set.of(Permission.READ));
+        }
+        assertThat(prodis.requests(FakeProdisServer.ACCOUNT_PATH)).hasSize(2);
+        assertThat(source.inFlightCount()).isZero();
+    }
+
+    private final ExecutorService pool = Executors.newCachedThreadPool();
+
+    @AfterEach
+    void stopPool() {
+        pool.shutdownNow();
+    }
+
+    /** N gelijktijdige oproepen (één startpoort) voor dezelfde sessie en actor; elk resultaat is een set of een exceptie. */
+    private List<Object> runAll(ProdisPermissionSource source, int threads, HttpSession session, ActorIdentity actor)
+            throws Exception {
+        CountDownLatch gate = new CountDownLatch(1);
+        List<Future<Object>> futures = new ArrayList<>();
+        for (int i = 0; i < threads; i++) {
+            futures.add(async(source, session, actor, gate));
+        }
+        gate.countDown();
+        List<Object> results = new ArrayList<>();
+        for (Future<Object> future : futures) {
+            results.add(future.get(20, TimeUnit.SECONDS));
+        }
+        return results;
+    }
+
+    private Future<Object> async(ProdisPermissionSource source, HttpSession session, ActorIdentity actor,
+                                 CountDownLatch gate) {
+        return pool.submit(() -> {
+            RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(requestIn(session), new MockHttpServletResponse()));
+            try {
+                if (gate != null) {
+                    gate.await();
+                }
+                return source.permissionsOf(actor);
+            } catch (RuntimeException e) {
+                return e;
+            } finally {
+                RequestContextHolder.resetRequestAttributes();
+            }
+        });
+    }
+
+    private static MockHttpServletRequest requestIn(HttpSession session) {
+        MockHttpServletRequest threadRequest = new MockHttpServletRequest();
+        threadRequest.setSession(session);
+        return threadRequest;
+    }
+
+    private void storeClientFor(MockHttpSession session) {
+        TestingAuthenticationToken login = new TestingAuthenticationToken(USERNAME, null, "ROLE_USER");
+        authorizedClients.saveAuthorizedClient(new OAuth2AuthorizedClient(registration(), USERNAME, validAccessToken(), null),
+                login, requestIn(session), new MockHttpServletResponse());
+    }
+
+    /** Wacht tot de nep-Prodis minstens {@code count} account-verzoeken ontving (de leider hangt dan op het antwoord). */
+    private void awaitRequests(int count) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        while (prodis.requests(FakeProdisServer.ACCOUNT_PATH).size() < count) {
+            assertThat(System.nanoTime()).as("request %d arrived in time", count).isLessThan(deadline);
+            Thread.sleep(5);
+        }
+    }
+
+    private static void awaitIdle(ProdisPermissionSource source) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        while (source.inFlightCount() > 0 && System.nanoTime() < deadline) {
+            Thread.sleep(5);
+        }
+    }
+
     // --- Hulpmiddelen -------------------------------------------------------------------------------------
 
     private void assertUnavailable(String reasonPrefix) {
@@ -480,10 +736,14 @@ class ProdisPermissionSourceTest {
     }
 
     private ProdisPermissionSource source(PermissionProperties.Prodis properties) {
+        return source(properties, null);
+    }
+
+    private ProdisPermissionSource source(PermissionProperties.Prodis properties, Duration maxWait) {
         DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
         beanFactory.registerSingleton("clientRegistrationRepository", new InMemoryClientRegistrationRepository(registration()));
         ObjectProvider<ClientRegistrationRepository> provider = beanFactory.getBeanProvider(ClientRegistrationRepository.class);
-        return new ProdisPermissionSource(properties, provider, authorizedClients, objectMapper, clock);
+        return new ProdisPermissionSource(properties, provider, authorizedClients, objectMapper, clock, maxWait);
     }
 
     /** De testregistratie, maar met het tokenendpoint op de nep-server (voor de refresh). */

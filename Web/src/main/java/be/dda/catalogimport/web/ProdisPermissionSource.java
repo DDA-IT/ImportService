@@ -14,6 +14,11 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -47,6 +52,13 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  *       gecachet. Gevolg: een intrekking in Prodis geldt hoogstens {@code cache-ttl} later. Eigen sessie-item, nooit de
  *       cache van {@link AppSwitcher} (die is fail-soft en cachet ook fouten).</li>
  * </ul>
+ * <b>Single-flight (G2b, {@code docs/design/g2-design.md}):</b> na een miss in de sessiecache doet per
+ * {@code (sessionId, subject, username)} precies één thread (de leider) de Prodis-oproep; gelijktijdige verzoeken van
+ * dezelfde sessie wachten op die uitkomst (hoogstens {@code connectTimeout + readTimeout + 1s}; daarna 503 zonder eigen
+ * oproep). Een fout wordt gedeeld met de wachtenden van die ene oproep en nooit gecachet; een volgend verzoek roept opnieuw.
+ * Enkel de leider logt de WARN. Zonder sessie is er geen single-flight. Het in-flight-item verdwijnt altijd (ook bij een
+ * fout); een item ouder dan 2 x de maximale wachttijd mag door een nieuwe leider vervangen worden.
+ * <p>
  * Logging: per fout één WARN {@code Permission source (Prodis) unavailable (<reden>)} met enkel een veilige reden
  * (klassenaam, OAuth2-foutcode, HTTP-status) — nooit token, body of username.
  * <p>
@@ -65,9 +77,18 @@ public class ProdisPermissionSource implements PermissionSource {
             implements Serializable {
     }
 
+    /** Eén in-flight-oproep per sessie + login. */
+    private record FlightKey(String sessionId, String subject, String username) {
+    }
+
+    private record Flight(CompletableFuture<Set<Permission>> future, long startedNanos) {
+    }
+
     private final ProdisAccountClient client;
     private final Duration cacheTtl;
     private final Clock clock;
+    private final Duration maxWait;
+    private final ConcurrentHashMap<FlightKey, Flight> flights = new ConcurrentHashMap<>();
 
     /**
      * @throws IllegalStateException zonder {@code catalogimport.permissions.prodis.account-url}
@@ -77,6 +98,16 @@ public class ProdisPermissionSource implements PermissionSource {
                                   OAuth2AuthorizedClientRepository authorizedClients,
                                   ObjectMapper objectMapper,
                                   Clock clock) {
+        this(properties, clientRegistrations, authorizedClients, objectMapper, clock, null);
+    }
+
+    /** Test-naad: een kortere wachttijd van de wachtenden ({@code null} = connect + read + 1s). */
+    ProdisPermissionSource(PermissionProperties.Prodis properties,
+                           ObjectProvider<ClientRegistrationRepository> clientRegistrations,
+                           OAuth2AuthorizedClientRepository authorizedClients,
+                           ObjectMapper objectMapper,
+                           Clock clock,
+                           Duration maxWaitOverride) {
         String accountUrl = properties.getAccountUrl();
         if (accountUrl == null) {
             throw new IllegalStateException(PermissionProperties.Prodis.PREFIX + ".account-url is required when "
@@ -86,6 +117,8 @@ public class ProdisPermissionSource implements PermissionSource {
                 properties.getReadTimeout(), clientRegistrations, authorizedClients, objectMapper);
         this.cacheTtl = properties.getCacheTtl();
         this.clock = clock;
+        this.maxWait = (maxWaitOverride != null) ? maxWaitOverride
+                : properties.getConnectTimeout().plus(properties.getReadTimeout()).plusSeconds(1);
     }
 
     @Override
@@ -100,24 +133,112 @@ public class ProdisPermissionSource implements PermissionSource {
         HttpServletRequest request = attributes.getRequest();
         HttpServletResponse response = attributes.getResponse();
         HttpSession session = request.getSession(false);
-        Instant now = this.clock.instant();
 
-        Set<Permission> cached = cached(session, actor, now);
+        Set<Permission> cached = cached(session, actor, this.clock.instant());
         if (cached != null) {
             return cached;
         }
+        String sessionId = sessionId(session);
+        if (sessionId == null) {
+            try {
+                return fetchAndStore(session, actor, request, response);
+            } catch (ProdisAccountException e) {
+                throw exceptionFor(e);
+            }
+        }
+        FlightKey key = new FlightKey(sessionId, actor.subject(), actor.username());
+        Flight mine = new Flight(new CompletableFuture<>(), System.nanoTime());
+        Flight current = this.flights.putIfAbsent(key, mine);
+        if (current != null && isStale(current) && this.flights.replace(key, current, mine)) {
+            current = null;
+        }
+        if (current == null) {
+            return lead(key, mine, session, actor, request, response);
+        }
+        return await(current);
+    }
+
+    /** De leider: eigen thread (RequestContextHolder en tokenrefresh blijven werken); uitkomst naar de wachtenden. */
+    private Set<Permission> lead(FlightKey key, Flight mine, HttpSession session, ActorIdentity actor,
+                                 HttpServletRequest request, HttpServletResponse response) {
+        try {
+            Set<Permission> cached = cached(session, actor, this.clock.instant());
+            Set<Permission> permissions = (cached != null) ? cached : fetchAndStore(session, actor, request, response);
+            // Eerst het item weg (een nieuw verzoek ziet de cache of start een nieuwe oproep), dan de wachtenden vrijgeven.
+            this.flights.remove(key, mine);
+            mine.future().complete(permissions);
+            return permissions;
+        } catch (ProdisAccountException e) {
+            this.flights.remove(key, mine);
+            mine.future().completeExceptionally(e);
+            throw exceptionFor(e);
+        } catch (RuntimeException | Error e) {
+            this.flights.remove(key, mine);
+            mine.future().completeExceptionally(e);
+            throw e;
+        } finally {
+            this.flights.remove(key, mine);
+        }
+    }
+
+    /** Wachtenden: de uitkomst van de leider, met een eigen exceptie-instantie; bij time-out/onderbreking 503 zonder oproep. */
+    private Set<Permission> await(Flight flight) {
+        try {
+            return flight.future().get(this.maxWait.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof ProdisAccountException shared) {
+                throw exceptionFor(shared);
+            }
+            throw new PermissionSourceUnavailableException(message("shared permission request failed"));
+        } catch (TimeoutException e) {
+            throw new PermissionSourceUnavailableException(message("waiting for the shared permission request timed out"));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new PermissionSourceUnavailableException(
+                    message("interrupted while waiting for the shared permission request"));
+        }
+    }
+
+    /** Voor tests: het aantal lopende gedeelde oproepen (moet na elke oproep 0 zijn). */
+    int inFlightCount() {
+        return this.flights.size();
+    }
+
+    private boolean isStale(Flight flight) {
+        return System.nanoTime() - flight.startedNanos() > this.maxWait.multipliedBy(2).toNanos();
+    }
+
+    private static String sessionId(HttpSession session) {
+        if (session == null) {
+            return null;
+        }
+        try {
+            return session.getId();
+        } catch (IllegalStateException sessionInvalidated) {
+            return null;
+        }
+    }
+
+    /** De oproep zelf; enkel hier (de leider, of zonder sessie) wordt de WARN gelogd. */
+    private Set<Permission> fetchAndStore(HttpSession session, ActorIdentity actor, HttpServletRequest request,
+                                          HttpServletResponse response) {
+        Instant now = this.clock.instant();
         Set<Permission> permissions;
         try {
             permissions = permissions(this.client.fetchAccount(actor.username(), request, response));
         } catch (ProdisAccountException e) {
             LOG.warn("Permission source (Prodis) unavailable ({})", e.getMessage());
-            if (e.kind() == ProdisAccountException.Kind.TOKEN_LOST) {
-                throw new PermissionSourceAuthenticationLostException();
-            }
-            throw new PermissionSourceUnavailableException(message(e.getMessage()));
+            throw e;
         }
         store(session, actor, now, permissions);
         return permissions;
+    }
+
+    private static RuntimeException exceptionFor(ProdisAccountException e) {
+        if (e.kind() == ProdisAccountException.Kind.TOKEN_LOST) {
+            return new PermissionSourceAuthenticationLostException();
+        }
+        return new PermissionSourceUnavailableException(message(e.getMessage()));
     }
 
     /**
