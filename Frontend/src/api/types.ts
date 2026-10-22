@@ -1932,6 +1932,16 @@ export type LegacyPlannedTask = { action: string; id: number | null; name: strin
 export type LegacyPlannedCredential = { credentialRef: string | null; secretOutcome: string | null };
 export type LegacyPlannedTemplate = { action: string; id: number | null; code: string; revisionId: number | null };
 
+/** G2a: `planned.detach` — het loskoppelen van een gedeelde beschrijving (afwezig of `null` zonder loskoppelen). */
+export type LegacyPlannedDetach = {
+  fromDefinitionId: number | null;
+  fromDefinitionCode: string;
+  toDefinitionCode: string;
+  copiedRevisionId: number | null;
+  /** `true`: de actieve versie van de gedeelde beschrijving wordt meteen de actieve versie van de eigen beschrijving. */
+  carriesActive: boolean;
+};
+
 export type LegacyPlanned = {
   sourceOrganisation: LegacyPlannedOrganisation | null;
   definition: LegacyPlannedDefinition | null;
@@ -1939,6 +1949,7 @@ export type LegacyPlanned = {
   task: LegacyPlannedTask | null;
   credential: LegacyPlannedCredential | null;
   template?: LegacyPlannedTemplate | null;
+  detach?: LegacyPlannedDetach | null;
 };
 
 /** be.dda.catalogimport.service.LegacyConfigReport. */
@@ -1963,6 +1974,10 @@ export type LegacyApplyChoices = {
   definitionCodeOverride?: string;
   charsetWhenUndeclared?: string;
   libraryCode?: string;
+  /** G2a: de interface een eigen beschrijving geven in plaats van de gedeelde te volgen. */
+  detachFromShared?: boolean;
+  /** G2a: optionele code van die eigen beschrijving (standaard `LEGACY-<interface>`). */
+  detachedDefinitionCode?: string;
 };
 
 /** Body van `POST /legacy-config/receipts/{id}/discard` (G1a). */

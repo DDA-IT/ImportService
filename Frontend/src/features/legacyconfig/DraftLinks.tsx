@@ -12,12 +12,22 @@ import styles from './LegacyConfig.module.css';
 export function DraftLinks({ planned }: { planned: LegacyPlanned }) {
   const definition = planned.definition;
   const template = planned.template ?? null;
+  const detach = planned.detach ?? null;
   const entries: Array<{ key: string; label: string; href: string }> = [];
   if (definition !== null && definition.id !== null && definition.revisionId !== null) {
     entries.push({
       key: 'definition',
-      label: `Gedeelde beschrijving ${definition.code}`,
+      // Na loskoppelen is `planned.definition` de eigen beschrijving met de nieuwe conceptversie.
+      label:
+        detach !== null ? `Eigen beschrijving ${definition.code}, nieuwe conceptversie` : `Gedeelde beschrijving ${definition.code}`,
       href: revisionDetailHref(definition.id, definition.revisionId),
+    });
+  }
+  if (detach !== null && definition !== null && definition.id !== null && detach.copiedRevisionId !== null) {
+    entries.push({
+      key: 'detached-copy',
+      label: `Eigen beschrijving ${definition.code}, overgenomen actieve versie`,
+      href: revisionDetailHref(definition.id, detach.copiedRevisionId),
     });
   }
   if (template !== null && template.id !== null && template.revisionId !== null) {

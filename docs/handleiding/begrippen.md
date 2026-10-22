@@ -1165,6 +1165,7 @@ Een wachtwoord wordt nergens getoond: u ziet enkel wat ermee gebeurd is.
 | `SUCCESSOR_DRAFT` | Nieuwe conceptversie | Er komt een nieuwe conceptversie naast de bestaande; de actieve versie blijft ongemoeid. |
 | `UNCHANGED` | Blijft ongewijzigd | De inhoud is gelijk aan wat al overgenomen was; er verandert niets. |
 | `NONE` | Geen | Hier is geen actie voor nodig of mogelijk. |
+| `REPOINT` | Wordt verlegd | De bestaande koppeling blijft bestaan maar wijst voortaan naar de eigen beschrijving. |
 
 ### Overname van de legacy-configuratie: controle tegen Prodis
 
@@ -1241,7 +1242,14 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 | `LINK_CODE_CONFLICT_MANUAL` | Code van de koppeling is al in gebruik | Een handmatig gemaakte koppeling heeft al de code die hier zou ontstaan. |
 | `LINK_SCOPE_CONFLICT_MANUAL` | Er bestaat al een koppeling voor deze leverancier en bibliotheek | Dezelfde combinatie van leverancier en bibliotheek is al in gebruik; er wordt nooit stil samengevoegd. |
 | `LINK_DIFFERS_NOT_CHANGED` | Bestaande koppeling wijkt af | De bestaande koppeling is anders dan wat de legacy-interface zegt; ze wordt nooit aangepast. |
-| `SHARED_DEFINITION_DIVERGED` | Gedeelde beschrijving wijkt af | Deze interface wijkt af van de beschrijving die ze met andere interfaces deelt; loskoppelen kan nog niet. |
+| `SHARED_DEFINITION_DIVERGED` | Gedeelde beschrijving wijkt af | Deze interface wijkt af van de beschrijving die ze met andere interfaces deelt; u kunt ze loskoppelen tot een eigen beschrijving. |
+| `DETACH_FROM_SHARED` | Wordt losgekoppeld van de gedeelde beschrijving | Deze interface krijgt een eigen beschrijving; de koppeling wordt verlegd en de actieve versie van de gedeelde beschrijving wordt meteen als eigen versie actief. De nieuwe inhoud wordt een conceptversie. |
+| `DETACH_NOT_NEEDED` | Loskoppelen is niet nodig | Deze interface wijkt niet af van een gedeelde beschrijving, dus er valt niets los te koppelen; de keuze wordt genegeerd. |
+| `DETACHED_DEFINITION` | Eigen beschrijving na loskoppelen | Deze interface heeft een eigen beschrijving gekregen en deelt ze met geen andere interface. |
+| `DETACH_OPEN_BATCH` | Loskoppelen kan niet: er staat nog een bestand open | Voor deze koppeling staat nog een bestand dat niet afgerond is. Rond het eerst af en probeer opnieuw. |
+| `DETACH_RUN_IN_PROGRESS` | Loskoppelen kan niet: er loopt een inname | Voor deze koppeling loopt op dit moment een inname. Wacht tot ze klaar is en probeer opnieuw. |
+| `DETACHED_DEFINITION_CODE_CONFLICT` | Code van de eigen beschrijving is al in gebruik | Een andere beschrijving gebruikt al de code die de eigen beschrijving zou krijgen; kies een andere code. |
+| `DETACHED_DEFINITION_CODE_INVALID` | Gekozen code van de eigen beschrijving is ongeldig | De code die u koos is te lang of bevat tekens die niet mogen. |
 | `MANUAL_CHANGES_SINCE_MIGRATION` | Beschrijving is na de vorige overname handmatig gewijzigd | De laatste versie wijkt af van wat de vorige overname schreef; die wijzigingen worden nooit overschreven. |
 | `OPEN_DRAFT_EXISTS` | Er is al een conceptversie | Rond de bestaande conceptversie eerst af of verwijder ze voor er een nieuwe komt. |
 | `REVISION_NOT_CLONEABLE` | Laatste versie kan niet gekopieerd worden | Van de laatste versie kan geen nieuwe conceptversie gemaakt worden. |

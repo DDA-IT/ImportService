@@ -1653,6 +1653,10 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       label: 'Geen',
       uitleg: 'Hier is geen actie voor nodig of mogelijk.',
     },
+    REPOINT: {
+      label: 'Wordt verlegd',
+      uitleg: 'De bestaande koppeling blijft bestaan maar wijst voortaan naar de eigen beschrijving.',
+    },
   },
   // S9: Overname van de legacy-configuratie: controle tegen Prodis.
   legacyProdisReference: {
@@ -1867,7 +1871,35 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     SHARED_DEFINITION_DIVERGED: {
       label: 'Gedeelde beschrijving wijkt af',
-      uitleg: 'Deze interface wijkt af van de beschrijving die ze met andere interfaces deelt; loskoppelen kan nog niet.',
+      uitleg: 'Deze interface wijkt af van de beschrijving die ze met andere interfaces deelt; u kunt ze loskoppelen tot een eigen beschrijving.',
+    },
+    DETACH_FROM_SHARED: {
+      label: 'Wordt losgekoppeld van de gedeelde beschrijving',
+      uitleg: 'Deze interface krijgt een eigen beschrijving; de koppeling wordt verlegd en de actieve versie van de gedeelde beschrijving wordt meteen als eigen versie actief. De nieuwe inhoud wordt een conceptversie.',
+    },
+    DETACH_NOT_NEEDED: {
+      label: 'Loskoppelen is niet nodig',
+      uitleg: 'Deze interface wijkt niet af van een gedeelde beschrijving, dus er valt niets los te koppelen; de keuze wordt genegeerd.',
+    },
+    DETACHED_DEFINITION: {
+      label: 'Eigen beschrijving na loskoppelen',
+      uitleg: 'Deze interface heeft een eigen beschrijving gekregen en deelt ze met geen andere interface.',
+    },
+    DETACH_OPEN_BATCH: {
+      label: 'Loskoppelen kan niet: er staat nog een bestand open',
+      uitleg: 'Voor deze koppeling staat nog een bestand dat niet afgerond is. Rond het eerst af en probeer opnieuw.',
+    },
+    DETACH_RUN_IN_PROGRESS: {
+      label: 'Loskoppelen kan niet: er loopt een inname',
+      uitleg: 'Voor deze koppeling loopt op dit moment een inname. Wacht tot ze klaar is en probeer opnieuw.',
+    },
+    DETACHED_DEFINITION_CODE_CONFLICT: {
+      label: 'Code van de eigen beschrijving is al in gebruik',
+      uitleg: 'Een andere beschrijving gebruikt al de code die de eigen beschrijving zou krijgen; kies een andere code.',
+    },
+    DETACHED_DEFINITION_CODE_INVALID: {
+      label: 'Gekozen code van de eigen beschrijving is ongeldig',
+      uitleg: 'De code die u koos is te lang of bevat tekens die niet mogen.',
     },
     MANUAL_CHANGES_SINCE_MIGRATION: {
       label: 'Beschrijving is na de vorige overname handmatig gewijzigd',

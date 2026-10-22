@@ -7,9 +7,19 @@ import { ALLOWED, denied, type Gate } from '../../actor/gate.ts';
 import { LEGACY_REPORT_STATUSES, type LegacyApplyChoices, type LegacyConfigReport, type LegacyReportItem } from '../../api/types.ts';
 
 /** De keuzes zoals het formulier ze bijhoudt: een lege tekst betekent "niet gekozen". */
-export type LegacyChoicesForm = { definitionCodeOverride: string; charsetWhenUndeclared: string; libraryCode: string };
+export type LegacyChoicesForm = {
+  definitionCodeOverride: string;
+  charsetWhenUndeclared: string;
+  libraryCode: string;
+  detachFromShared: boolean;
+  detachedDefinitionCode: string;
+};
 
-export const NO_CHOICES: LegacyChoicesForm = { definitionCodeOverride: '', charsetWhenUndeclared: '', libraryCode: '' };
+export const NO_CHOICES: LegacyChoicesForm = { definitionCodeOverride: '', charsetWhenUndeclared: '',
+  libraryCode: '',
+  detachFromShared: false,
+  detachedDefinitionCode: '',
+};
 
 /** Enkel de ingevulde keuzes (getrimd), zoals PREVIEW en APPLY ze verwachten; een lege keuze wordt niet meegestuurd. */
 export function toChoices(form: LegacyChoicesForm): LegacyApplyChoices {
@@ -17,7 +27,16 @@ export function toChoices(form: LegacyChoicesForm): LegacyApplyChoices {
   if (form.definitionCodeOverride.trim() !== '') choices.definitionCodeOverride = form.definitionCodeOverride.trim();
   if (form.charsetWhenUndeclared.trim() !== '') choices.charsetWhenUndeclared = form.charsetWhenUndeclared.trim();
   if (form.libraryCode.trim() !== '') choices.libraryCode = form.libraryCode.trim();
+  if (form.detachFromShared) {
+    choices.detachFromShared = true;
+    if (form.detachedDefinitionCode.trim() !== '') choices.detachedDefinitionCode = form.detachedDefinitionCode.trim();
+  }
   return choices;
+}
+
+/** G2a: het loskoppelen is te kiezen zodra het rapport een afwijkende gedeelde beschrijving meldt, of zolang het gekozen is. */
+export function detachChoiceVisible(report: LegacyConfigReport | null, detachChosen: boolean): boolean {
+  return detachChosen || (report?.items.some((item) => item.code === 'SHARED_DEFINITION_DIVERGED') ?? false);
 }
 
 /** De sleutel van een rapportcode in het woordenboek: de berekeningscodes (`LEGACY_CALC_<n>_NOT_MIGRATED`) delen één ingang. */

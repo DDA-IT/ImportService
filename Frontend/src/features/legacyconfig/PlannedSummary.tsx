@@ -52,6 +52,20 @@ export function PlannedSummary({ report }: { report: LegacyConfigReport }) {
           </span>
         </Row>
       )}
+      {planned.detach !== undefined && planned.detach !== null && (
+        <Row label="Loskoppelen">
+          <span data-testid="legacy-detach">
+            De interface verlaat de gedeelde beschrijving <strong>{planned.detach.fromDefinitionCode}</strong> en krijgt een
+            eigen beschrijving <strong>{planned.detach.toDefinitionCode}</strong>. De andere interfaces blijven de gedeelde
+            beschrijving volgen.
+          </span>
+          <span>
+            {planned.detach.carriesActive
+              ? 'De huidige actieve versie van de gedeelde beschrijving wordt meteen als eigen versie actief; de nieuwe inhoud van legacy wordt een conceptversie.'
+              : 'De gedeelde beschrijving heeft geen actieve versie; de eigen beschrijving start met een conceptversie met de nieuwe inhoud.'}
+          </span>
+        </Row>
+      )}
       {planned.link !== null && (
         <Row label="Koppeling">
           <Action code={planned.link.action} />

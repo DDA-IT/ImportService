@@ -32,7 +32,7 @@ import { ApplyDialog } from './ApplyDialog.tsx';
 import { BundleSummary } from './BundleSummary.tsx';
 import { DiscardDialog } from './DiscardDialog.tsx';
 import { DraftLinks } from './DraftLinks.tsx';
-import { applyGate, discardPolicyGate, NO_CHOICES, toChoices, type LegacyChoicesForm } from './legacyPolicy.ts';
+import { applyGate, detachChoiceVisible, discardPolicyGate, NO_CHOICES, toChoices, type LegacyChoicesForm } from './legacyPolicy.ts';
 import { LegacyReportView } from './LegacyReportView.tsx';
 import { PlannedSummary } from './PlannedSummary.tsx';
 import { PreviewChoices } from './PreviewChoices.tsx';
@@ -131,7 +131,7 @@ function ReceiptBody({ receiptId }: { receiptId: number }) {
   const receipt = detail.data?.receipt ?? null;
   const previewEnabled = receipt !== null && receipt.status === 'RECEIVED' && result === null;
   const choices = toChoices(applied);
-  const previewKey = `legacy-preview:${receiptId}:${previewEnabled}:${choices.definitionCodeOverride ?? ''}:${choices.charsetWhenUndeclared ?? ''}:${choices.libraryCode ?? ''}`;
+  const previewKey = `legacy-preview:${receiptId}:${previewEnabled}:${choices.definitionCodeOverride ?? ''}:${choices.charsetWhenUndeclared ?? ''}:${choices.libraryCode ?? ''}:${choices.detachFromShared === true}:${choices.detachedDefinitionCode ?? ''}`;
   const preview = useQuery(previewKey, (signal) =>
     previewEnabled ? legacyConfigApi.previewLegacyReceipt(receiptId, choices, signal) : Promise.resolve(null),
   );
@@ -235,6 +235,7 @@ function ReceiptBody({ receiptId }: { receiptId: number }) {
                   draft={draft}
                   onDraftChange={setDraft}
                   libraryCandidates={candidates}
+                  detachVisible={detachChoiceVisible(report, draft.detachFromShared || applied.detachFromShared)}
                   onApply={setApplied}
                   loading={preview.loading}
                 />

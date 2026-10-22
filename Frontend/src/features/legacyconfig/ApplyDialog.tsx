@@ -91,11 +91,20 @@ export function ApplyDialog({
             {receipt.originDossier} over. Hieronder staat wat er aangemaakt of hergebruikt wordt.
           </p>
           {report !== null ? <PlannedSummary report={report} /> : <p className={styles.muted}>De samenvatting wordt geladen…</p>}
+          {report?.planned.detach != null && (
+            <p data-testid="legacy-detach-confirm">
+              <strong>Let op, uitzondering:</strong> omdat u loskoppelt, wordt
+              {report.planned.detach.carriesActive
+                ? ' de huidige actieve versie van de gedeelde beschrijving meteen als eigen versie geactiveerd (de koppeling wordt verlegd naar de eigen beschrijving). De nieuwe inhoud blijft een conceptversie.'
+                : ' de koppeling verlegd naar de eigen beschrijving; er is geen actieve versie om te activeren en de nieuwe inhoud blijft een conceptversie.'}
+            </p>
+          )}
           <WhatIsThis>
             <p>
               Overnemen maakt de beschrijving van het bestand als conceptversie aan, samen met de koppeling en een
               handmatige taak. Er wordt niets geactiveerd en er wordt nooit een bestaande koppeling of actieve versie
-              gewijzigd.
+              gewijzigd. Enige uitzondering: bij loskoppelen wordt de koppeling verlegd en de kopie van de actieve versie
+              geactiveerd.
             </p>
             <p>
               Verandert er tussen uw controle en uw bevestiging iets, dan weigert de server het overnemen en toont de

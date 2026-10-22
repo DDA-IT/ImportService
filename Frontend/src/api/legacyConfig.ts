@@ -46,6 +46,8 @@ export function previewLegacyReceipt(
     definitionCodeOverride: choices.definitionCodeOverride,
     charsetWhenUndeclared: choices.charsetWhenUndeclared,
     libraryCode: choices.libraryCode,
+    detachFromShared: choices.detachFromShared === true ? true : undefined,
+    detachedDefinitionCode: choices.detachFromShared === true ? choices.detachedDefinitionCode : undefined,
   });
   return request<LegacyPreviewResult>(`/legacy-config/receipts/${receiptId}/preview${query}`, { signal });
 }

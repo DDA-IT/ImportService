@@ -21,6 +21,8 @@ export type PreviewChoicesProps = {
   onDraftChange: (draft: LegacyChoicesForm) => void;
   /** De te kiezen bibliotheken; leeg = vrije tekst. */
   libraryCandidates: readonly LegacyLibraryCandidate[];
+  /** G2a: toon de keuze om los te koppelen (enkel bij een afwijkende gedeelde beschrijving, of zolang ze gekozen is). */
+  detachVisible?: boolean;
   /** Past de keuzes toe: de controle vooraf wordt opnieuw berekend. */
   onApply: (choices: LegacyChoicesForm) => void;
   loading: boolean;
@@ -32,11 +34,13 @@ function candidateLabel(candidate: LegacyLibraryCandidate): string {
   return `${candidate.scopeKey} — ${name}${number}`;
 }
 
-export function PreviewChoices({ draft, onDraftChange, libraryCandidates, onApply, loading }: PreviewChoicesProps) {
+export function PreviewChoices({ draft, onDraftChange, libraryCandidates, detachVisible = false, onApply, loading }: PreviewChoicesProps) {
   const overrideId = useId();
   const charsetId = useId();
   const libraryId = useId();
   const charsetListId = useId();
+  const detachId = useId();
+  const detachCodeId = useId();
 
   return (
     <form
@@ -118,6 +122,44 @@ export function PreviewChoices({ draft, onDraftChange, libraryCandidates, onAppl
           )}
         </Field>
       </div>
+      {detachVisible && (
+        <div className={styles.choices}>
+          <div>
+            <input
+              id={detachId}
+              type="checkbox"
+              checked={draft.detachFromShared}
+              disabled={loading}
+              style={{ width: 'auto' }}
+              onChange={(event) => {
+                const next = { ...draft, detachFromShared: event.target.checked };
+                onDraftChange(next);
+                onApply(next);
+              }}
+            />{' '}
+            <label htmlFor={detachId}>Loskoppelen tot een eigen beschrijving</label>
+            <p className={styles.muted}>
+              Deze interface wijkt af van de beschrijving die ze met andere interfaces deelt. Loskoppelen geeft ze een
+              eigen beschrijving; de andere interfaces blijven de gedeelde beschrijving volgen.
+            </p>
+          </div>
+          {draft.detachFromShared && (
+            <Field
+              label="Code van de eigen beschrijving"
+              htmlFor={detachCodeId}
+              hint="Leeg laten voor de standaardcode (LEGACY- gevolgd door de interface). Hoogstens 47 tekens."
+            >
+              <input
+                id={detachCodeId}
+                type="text"
+                value={draft.detachedDefinitionCode}
+                maxLength={47}
+                onChange={(event) => onDraftChange({ ...draft, detachedDefinitionCode: event.target.value })}
+              />
+            </Field>
+          )}
+        </div>
+      )}
       <div className={styles.choicesActions}>
         <button type="submit" className={`${button.secondary} ${button.small}`} disabled={loading}>
           Controle opnieuw uitvoeren
