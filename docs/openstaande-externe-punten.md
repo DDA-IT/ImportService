@@ -16,6 +16,9 @@ opgeheven: dat hier doorhalen of verwijderen, niet stilzwijgend laten verouderen
   redirect-URI's `http://localhost:8081/login/oauth2/code/keycloak` en
   `http://localhost:5173/login/oauth2/code/keycloak` (zie `docs/design/fase5-auth-design.md`
   aanname A1, §2.3, C7). Dit is geen infra-verzoek maar een kleine wijziging in hún repo.
+  **Stand 2026-10-22:** lokaal gebruikt CatalogImport sinds 2026-10-20 de Prodis-client `web_app` (secret `web_app`, standaard in de
+  lokale profielen; zie `docs/decisions.md`, blok "2026-10-20 — Lokale OIDC-client zoals Prodis"). Een eigen client `catalog-import`
+  is voor lokaal gebruik daarmee niet meer nodig. Deze tekst hierboven is daarmee voor lokaal gebruik achterhaald.
 - **(b) Echte (staging/productie) realm — blokkeert vandaag niets:** Jeff/DDA-infra maakt
   dezelfde client daar aan met productie-redirect-URI's en een secret via env. Vroeg aanvragen
   voorkomt latere wachttijd, maar dit is geen huidige blokkade.
@@ -61,6 +64,10 @@ blijft de YAML-bron (`CONFIGURED`) werken.
 
 ## 3. Verwerkingscontract 252 IMPORT / 1179
 
+> **Achterhaald (stand 2026-10-22).** Dit punt is niet meer nodig: het publicatiedoel is herzien naar de Prodis-PostgreSQL, niet Zen/Pervasive
+> (`docs/decisions.md`, blok "2026-10-20 — Publicatiedoel herzien: Prodis-PostgreSQL, niet Zen"), en de publicatie loopt rechtstreeks in de
+> Prodis-DB (2026-10-22). De functionele legacy-info hieronder (1170/1171/1179, leeg veld, ARIMP_DELETE) blijft bruikbaar als spec.
+
 **Wat is nodig:** bevestiging van het verwerkingscontract 252 IMPORT/1179: de betekenis van een leeg veld
 (behoud van de bestaande waarde of wissen), de `ARIMP_DELETE`-codes, en het resultaat/OUT02-terugmeldpad.
 
@@ -97,8 +104,6 @@ van kracht. Een eventuele herziening daarvan is een apart mens-besluit, buiten d
 
 **Wie levert dit:** Prodis/extern (eigenaar van ProDisWebbase/Pervasive en het 252 IMPORT-verwerkingsproces).
 
-**Blokkeert:** 5-PUB-b/c (echt schrijven naar TRIAL_LIBRARY/PRODUCTION), en de stories ST-12, ST-13, ST-14.
-
 ## 4. ERP-datasetinventaris (D11)
 
 **Wat is nodig:** een inventaris van de relevante ERP-datasets (zie `businessanalyse-catalogimport.md`
@@ -115,6 +120,9 @@ het volledige legacy-ERP.
 legacy-Zen is).
 
 ## 5. Adapterplaats/toegang Pervasive + controlebibliotheek voor de proef
+
+> **Achterhaald (stand 2026-10-22).** Zie punt 3: het publicatiedoel is de Prodis-PostgreSQL, niet Pervasive. Er is dus geen Pervasive-adapter
+> of controlebibliotheek meer nodig voor de publicatie. De tekst hieronder wordt niet meer uitgezet.
 
 **Wat is nodig:** een vastgelegde adapterplaats en toegang tot Pervasive, plus een controlebibliotheek
 (`PSARFxxx`) om de eerste publicatieproef tegen te draaien zonder een productiebibliotheek te raken.
@@ -133,8 +141,6 @@ DDF-item (SQL-dictionary-entry) per tabel; niet elke tabel heeft er een.
 en van de leesbehoefte richting legacy-Zen, zie punt 4) voordat het verder uitgezet kan worden.
 
 **Wie levert dit:** Prodis/extern (beheerder van de Pervasive-omgeving).
-
-**Blokkeert:** 5-PUB-b (TRIAL_LIBRARY).
 
 ## 6. Secrets en sleutelbeheer bij DDA-infra (versleutelde credentials)
 
@@ -211,3 +217,14 @@ GRANT SELECT (id, catalog_article_id, language_id, description, record_active, d
 **Blokkeert:** niet de bouw (de H2-testbron bevat deze kolommen). Wel de parallelrun (P2c) en de modusweergave
 tegen een echte Prodis-database: zonder deze rechten geeft de leesbron `UNAVAILABLE` (fail-closed, nooit "niet gevonden"
 of een stille standaardmodus).
+
+## 9. Publicatie naar de Prodis-DB: rol `catalogimport_pub` en client `prodis-datasync-catalogimport`
+
+**Wat is nodig:**
+
+- **DBA:** de schrijfrol `catalogimport_pub` aanmaken met het script `docs/ops/prodis-catalogimport-pub-role.sql` (publicatie rechtstreeks in de Prodis-DB, zie `docs/design/publicatie-prodis-db-direct-design.md` par. 2.3).
+- **Prodis-repo:** de Keycloak-client `prodis-datasync-catalogimport` opnemen in `prodis-realm.json` (zie ook punt 1 en `docs/decisions.md` 2026-10-20 M2).
+
+**Wie levert dit:** (a) DBA van de Prodis-database; (b) Prodis (repo-bestand `prodis-realm.json`).
+
+**Blokkeert:** het echte schrijven naar de Prodis-DB (P5c/P6 in productie); lokaal en tegen de testdatabase `prodis_pubtest` blijft dit werken met de testrol.

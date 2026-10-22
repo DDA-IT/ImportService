@@ -2,12 +2,12 @@
 
 > Opgesteld 2026-10-22 (denker-licht, lezend; aangevuld door de hoofdsessie). Doel: in één keer overlopen wat sinds 2026-10-20 gebouwd is,
 > welke keuzes als **"aanbeveling gevolgd — door de mens te herzien"** genomen zijn (`docs/decisions.md`), wat nog open staat, en hoe te
-> valideren. Wordt bijgewerkt zodra P5c, P6 en P7 klaar zijn.
+> valideren. Stand 2026-10-22: P5c (`5f22eca`), P6 (`3e42e87`) en P7 (`431e599`) zijn gebouwd.
 
 ## 1. Eerst bekijken (financieel of moeilijk terug te draaien)
 
 1. **Rechtstreeks schrijven in de Prodis-DB, ook bij `legacy_master = PRODIS`** (2026-10-22 "Publicatiefase: P-V1..P-V5"): bewust aanvaard;
-   de datasync draait die wijzigingen terug. Noodrem-vlag `catalogimport.publication.prodis.enabled` komt in P5c.
+   de datasync draait die wijzigingen terug. Noodrem-vlag `catalogimport.publication.prodis.enabled` bestaat sinds P5c.
 2. **Cent-afwijking door `double`** (2026-10-22 "P2a"): we volgen Prodis bit-identiek, dus 0,7 × 45 % = 0,31 i.p.v. 0,32 (decimaal). Dat is
    een afrondingsverschil van de rekenwijze, geen opslagprecisie (`PRECISION_LOSS` gaat over opslag) — maar wel een financiële afwijking van
    legacy om te beoordelen.
@@ -42,6 +42,8 @@
 | Legacy-config | S1, S2, S4-vervolg, S5, S7 | Idempotentie tegen laatste ontvangst; `libraryCode`; secret alsnog bij UNCHANGED; `unverified:<hash>`; altijd sjabloon + gedeelde definitie | contract/security |
 | Loskoppelen | G2a nieuwe interface | Nieuwe afwijkende interface activeert niets | |
 | Rechten | 5B-7 V1–V4 | Cache 30 s; default PRODIS; System Admin = alles; verloren token → 401 | autorisatie |
+| Publicatie-orchestratie | P5c.1–.9 | Begrenzing na `max-not-applied-attempts` (5) → REJECTED `PRODIS_NOT_APPLIED_REPEATEDLY`; RESULT_UNKNOWN nooit begrensd; chunk = RESULT_UNKNOWN eerst; lease-owner `continue:<UUID>`; start herberekent bundel- én snapshothash; run-eindstatus altijd APPLIED; bronstaat niet bijgewerkt bij ontbrekende stagerij/wijziging/CREATE (`SOURCE_STATE_NOT_UPDATED`) | financieel / statusflow |
+| Publicatie-endpoints | P6 | Facade `PublicationRunApiService`; items op SIMULATION = lege pagina; `continue` op SIMULATION = 409 `PUBLICATION_RUN_NOT_PRODUCTION`; `prior`/`result`/`severity` letterlijk uit de opgeslagen JSON (onleesbaar = 500); `continue` tekent als niet-systeem-actor met APPROVE | contract / autorisatie |
 
 ## 3. Open punten bij de mens
 - Behandelgevallen na loskoppelen volgen de kopie (`IssueCaseService.activeRevision`, `LinkBookmarkValueService`, `SourceStateDao`) — bevestigen.
@@ -49,11 +51,12 @@
 - `DERIVED_PRICE_DRIFT` aanvaarden of afgeleide prijzen altijd herberekenen.
 - Cent-afwijking door `double` (P2a).
 - Ontbrekende munt bij publicatie (P2b.2 t.o.v. 2026-09-26).
-- P5c-restpunten (worden in P5c gebouwd): marker-/finished-checks, herstel IN_PROGRESS, herhalingsgrens, noodrem-vlag, `source-id`.
+- **PARTIALLY_PUBLISHED-bundels (P5c, statusflow):** REJECTED/CONFLICT/NOT_SENT-mutaties blijven READY_FOR_PUBLICATION in een
+  PARTIALLY_PUBLISHED-bundel. De conflictregel tussen bundels (R-FRZ-04) telt ze als publiceerbaar, waardoor een latere bundel met een
+  mutatie voor dezelfde aanbieding niet bevroren kan worden; en er is geen pad om een PARTIALLY_PUBLISHED-bundel opnieuw te publiceren.
+  Vraagt een mens-beslissing (bv. de rest vrijgeven aan een nieuwe bundel vs. de bundel herpubliceren). Bron: `docs/decisions.md`, blok "2026-10-22 — P5c".
 - Oudere punten: visuele controle frontend-ombouw; Prodis-wijziging (seed, `prodis.catalog-import.url`) reviewen; prestatietest ~1M regels;
   asynchrone screening.
-- **Achterhaalde tekst in `openstaande-externe-punten.md`:** punt 1(a) noemt client `catalog-import` (lokaal is het `web_app`); punten 3 en 5
-  (252 IMPORT/1179, Pervasive-adapter) zijn achterhaald door "Publicatiedoel herzien" (2026-10-20).
 
 ## 4. Validatie-checklist (in volgorde)
 
@@ -78,7 +81,7 @@ Verwacht: `/me` toont de codes; intrekken werkt binnen 30 s; Prodis weg → 503;
 
 **(f) Publiceren naar `prodis_pubtest`** — al aangemaakt (`scripts/test/setup-prodis-pubtest.sql`);
 `CATALOG_PRODIS_DB_WRITE_URL=jdbc:postgresql://localhost:5432/prodis_pubtest`, gebruiker/wachtwoord `catalogimport_pub_test`; noodrem-vlag
-aan (na P5c). Daarna eventueel naar een lokale kopie van `Prodis` (naam door de mens te bepalen). De echte `Prodis` nooit.
+`catalogimport.publication.prodis.enabled=true` + `catalogimport.publication.source-id` (beide bestaan nu) aan. Daarna eventueel naar een lokale kopie van `Prodis` (naam door de mens te bepalen). De echte `Prodis` nooit.
 
 **(g) Visuele controle** — licht, donker, mini, mobiel; schermen Overname uit legacy, revisiebewerking (vaste waarden, keten, filtergroepen),
 publicatietab.
