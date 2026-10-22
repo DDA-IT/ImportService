@@ -155,6 +155,7 @@ class PermissionCoverageTest {
         // setup-API: MANAGE (sinds NT-3 niet meer achter catalogimport.setup-api.enabled).
         m.put("PATCH " + s + "/revisions/{}", "MANAGE");
         m.put("DELETE " + s + "/revisions/{}/mappings/{}", "MANAGE");
+        m.put("PUT " + s + "/revisions/{}/mappings/{}", "MANAGE");
         m.put("DELETE " + s + "/revisions/{}/filters/{}", "MANAGE");
         // Templates en links. Sinds NT-3 staan enkel de twee declaratiepaden (bookmarks, usages - sjabloonbeheer,
         // CatalogImportTemplateDeclarationController) nog achter catalogimport.setup-api.enabled; lezen,

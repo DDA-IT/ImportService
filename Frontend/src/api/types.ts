@@ -767,6 +767,17 @@ export type MappingView = {
   valueMap?: ValueMapEntryView[];
   /** Legacy-config S8c (additief): de stappen van een keten; leeg of afwezig als er geen zijn. */
   steps?: TransformStepView[];
+  /** G2c-1 (additief): de overige aanmaakvelden, zodat een mapping vervangen kan worden. */
+  expectedPosition?: number | null;
+  fixedValue?: string | null;
+  defaultValue?: string | null;
+  required?: boolean;
+  maxLength?: number | null;
+  decimalScale?: number | null;
+  zeroAllowed?: boolean;
+  negativeAllowed?: boolean;
+  transformKind?: string;
+  transformConfig?: string | null;
 };
 
 // be.dda.catalogimport.service.SetupService.FilterView — één recordfilter van een revisie.
@@ -780,6 +791,11 @@ export type FilterView = {
   outcome: string;
   /** Legacy-config S8f (additief): filterrijen met dezelfde groep vormen één EN-regel; `null` = losse rij. */
   matchGroup?: number | null;
+  /** G2c-1 (additief): de overige aanmaakvelden. */
+  caseSensitive?: boolean;
+  trimBeforeCompare?: boolean;
+  nullBehaviour?: string;
+  missingColumnBehaviour?: string;
 };
 
 // be.dda.catalogimport.service.SetupService.FieldCriticalityView — één kritiek-overrule. Heeft geen

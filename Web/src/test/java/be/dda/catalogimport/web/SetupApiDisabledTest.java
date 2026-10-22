@@ -138,6 +138,7 @@ class SetupApiDisabledTest {
                 post(SETUP + "/source-organisations"), post(SETUP + "/definitions"),
                 post(SETUP + "/definitions/{id}/revisions", 1L), patch(SETUP + "/revisions/{id}", 1L),
                 post(SETUP + "/revisions/{id}/mappings", 1L), delete(SETUP + "/revisions/{id}/mappings/{m}", 1L, 1L),
+                put(SETUP + "/revisions/{id}/mappings/{m}", 1L, 1L),
                 post(SETUP + "/revisions/{id}/filters", 1L), delete(SETUP + "/revisions/{id}/filters/{f}", 1L, 1L),
                 post(SETUP + "/revisions/{id}/field-criticality", 1L), post(SETUP + "/revisions/{id}/activate", 1L),
                 post(SETUP + "/revisions/{id}/successor", 1L), post(SETUP + "/links"), post(SETUP + "/tasks"),
@@ -220,6 +221,8 @@ class SetupApiDisabledTest {
     @Test
     void withRightsAnUnknownObjectGivesTheServiceAnswerNotAMissingRoute() throws Exception {
         assertHandledByTheService(json(delete(SETUP + "/revisions/{id}/mappings/{m}", UNKNOWN, UNKNOWN), ""));
+        assertHandledByTheService(json(put(SETUP + "/revisions/{id}/mappings/{m}", UNKNOWN, UNKNOWN),
+                "{\"targetFieldCode\":\"E_SUPPLIER\"}"));
         assertHandledByTheService(json(post(SETUP + "/revisions/{id}/successor", UNKNOWN),
                 "{\"changeReason\":\"x\"}"));
         assertHandledByTheService(json(put(API + "/links/{id}/bookmark-values/{name}", UNKNOWN, "X"),

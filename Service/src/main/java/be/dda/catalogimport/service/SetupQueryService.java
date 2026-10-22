@@ -238,13 +238,19 @@ public class SetupQueryService {
                 .map(mapping -> new MappingView(mapping.getId(), revisionId, mapping.getSequenceNumber(),
                         mapping.getTargetField().getCode(), mapping.getSourceReference(),
                         mapping.getValueKind().name(), mapping.getCriticality().name(),
-                        valueMapsByMapping.get(mapping.getId()), stepsByMapping.get(mapping.getId())))
+                        valueMapsByMapping.get(mapping.getId()), stepsByMapping.get(mapping.getId()),
+                        mapping.getExpectedPosition(), mapping.getFixedValue(), mapping.getDefaultValue(),
+                        mapping.isRequired(), mapping.getMaxLength(), mapping.getDecimalScale(),
+                        mapping.isZeroAllowed(), mapping.isNegativeAllowed(), mapping.getTransformKind().name(),
+                        mapping.getTransformConfig()))
                 .toList();
         List<FilterView> filterViews =
                 recordFilters.findByDefinitionRevisionIdOrderBySequenceNumberAsc(revisionId).stream()
                         .map(filter -> new FilterView(filter.getId(), revisionId, filter.getSequenceNumber(),
                                 filter.getSourceReference(), filter.getOperator().name(),
-                                filter.getCompareValue(), filter.getOutcome().name(), filter.getMatchGroup()))
+                                filter.getCompareValue(), filter.getOutcome().name(), filter.getMatchGroup(),
+                                filter.isCaseSensitive(), filter.isTrimBeforeCompare(),
+                                filter.getNullBehaviour().name(), filter.getMissingColumnBehaviour().name()))
                         .toList();
         List<FieldCriticalityView> fieldCriticalityViews = fieldCriticalities.findByDefinitionRevisionId(revisionId)
                 .stream()

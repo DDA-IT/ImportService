@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -232,6 +233,21 @@ public class CatalogImportSetupController {
                            @RequestBody CreateMappingCommand request) {
         ActorIdentity actor = currentActor.signer(request == null ? null : request.createdBy(), "createdBy");
         return setup.addMapping(revisionId, request, actor);
+    }
+
+    /**
+     * Vervangt één veldmapping van een {@code DRAFT}-revisie (G2c-1): zelfde body als {@code addMapping}, zelfde
+     * volgnummer, nieuw id. 200 met de nieuwe weergave; 404 {@code REVISION_NOT_FOUND}/{@code MAPPING_NOT_FOUND};
+     * 409 {@code REVISION_NOT_EDITABLE} of {@code CONFIG_BOOKMARK_*}; 400 bij een ongeldige configuratie. Bij een
+     * fout is er niets gewijzigd.
+     */
+    @RequiresPermission(Permission.MANAGE)
+    @PutMapping("/revisions/{revisionId}/mappings/{mappingId}")
+    MappingView replaceMapping(@PathVariable("revisionId") long revisionId,
+                               @PathVariable("mappingId") long mappingId,
+                               @RequestBody CreateMappingCommand request) {
+        ActorIdentity actor = currentActor.signer(request == null ? null : request.createdBy(), "createdBy");
+        return setup.replaceMapping(revisionId, mappingId, request, actor);
     }
 
     @RequiresPermission(Permission.MANAGE)

@@ -406,10 +406,15 @@ public class SetupService {
     /**
      * @param valueMap de vertaalrijen (S8a, additief) in volgorde; leeg als de mapping er geen heeft
      * @param steps    de ketenstappen (S8c, additief) in volgorde; leeg als de mapping er geen heeft
+     * @param expectedPosition vanaf hier de overige aanmaakvelden (G2c-1, additief), zodat een mapping vervangen
+     *                         kan worden zonder te gissen wat er stond
      */
     public record MappingView(long id, long revisionId, int sequenceNumber, String targetFieldCode,
                               String sourceReference, String valueKind, String criticality,
-                              List<ValueMapEntry> valueMap, List<TransformStepEntry> steps) {
+                              List<ValueMapEntry> valueMap, List<TransformStepEntry> steps,
+                              Integer expectedPosition, String fixedValue, String defaultValue, boolean required,
+                              Integer maxLength, Integer decimalScale, boolean zeroAllowed, boolean negativeAllowed,
+                              String transformKind, String transformConfig) {
 
         public MappingView {
             valueMap = valueMap == null ? List.of() : List.copyOf(valueMap);
@@ -417,9 +422,14 @@ public class SetupService {
         }
     }
 
-    /** @param matchGroup de EN-groep (S8f, additief), of {@code null} voor een losse rij */
+    /**
+     * @param matchGroup    de EN-groep (S8f, additief), of {@code null} voor een losse rij
+     * @param caseSensitive vanaf hier de overige aanmaakvelden (G2c-1, additief)
+     */
     public record FilterView(long id, long revisionId, int sequenceNumber, String sourceReference,
-                             String operator, String compareValue, String outcome, Integer matchGroup) {
+                             String operator, String compareValue, String outcome, Integer matchGroup,
+                             boolean caseSensitive, boolean trimBeforeCompare, String nullBehaviour,
+                             String missingColumnBehaviour) {
     }
 
     public record FieldCriticalityView(long revisionId, String fieldKey, String criticality) {
@@ -1141,7 +1151,9 @@ public class SetupService {
         validateConfiguration(revision);
         return new MappingView(stored.getId(), revisionId, stored.getSequenceNumber(), targetFieldCode,
                 stored.getSourceReference(), stored.getValueKind().name(), stored.getCriticality().name(),
-                valueMap, steps);
+                valueMap, steps, stored.getExpectedPosition(), stored.getFixedValue(), stored.getDefaultValue(),
+                stored.isRequired(), stored.getMaxLength(), stored.getDecimalScale(), stored.isZeroAllowed(),
+                stored.isNegativeAllowed(), stored.getTransformKind().name(), stored.getTransformConfig());
     }
 
     /**
@@ -1282,7 +1294,9 @@ public class SetupService {
         validateConfiguration(revision);
         return new FilterView(stored.getId(), revisionId, stored.getSequenceNumber(),
                 stored.getSourceReference(), stored.getOperator().name(), stored.getCompareValue(),
-                stored.getOutcome().name(), stored.getMatchGroup());
+                stored.getOutcome().name(), stored.getMatchGroup(), stored.isCaseSensitive(),
+                stored.isTrimBeforeCompare(), stored.getNullBehaviour().name(),
+                stored.getMissingColumnBehaviour().name());
     }
 
     /**
@@ -1362,6 +1376,41 @@ public class SetupService {
         fieldMappings.delete(mapping);
         fieldMappings.flush();
         requireBookmarkDeclarationsStillResolve(revisionId);
+    }
+
+    /**
+     * Vervangt één veldmapping van een {@link RevisionStatus#DRAFT}-revisie door de mapping uit {@code command}
+     * (G2c-1): verwijderen (met vertaalrijen en ketenstappen als entiteit) en opnieuw toevoegen in dezelfde
+     * transactie. De nieuwe mapping behoudt het volgnummer van de oude; een {@code sequenceNumber} in het verzoek
+     * wordt genegeerd. De nieuwe mapping krijgt een nieuw id. De bookmarkhercontrole van {@link #deleteMapping}
+     * gebeurt na het toevoegen, zodat een usage die op dezelfde doelveldcode steunt geldig blijft.
+     *
+     * @throws NotFoundException        {@code REVISION_NOT_FOUND}, {@code MAPPING_NOT_FOUND}, {@code FIELD_NOT_FOUND}
+     * @throws ConflictException        {@code REVISION_NOT_EDITABLE} of een {@code CONFIG_BOOKMARK_*}-code; er is
+     *                                  dan niets gewijzigd
+     * @throws IllegalArgumentException een {@code CONFIG_*}-fout; er is niets gewijzigd
+     */
+    public MappingView replaceMapping(long revisionId, long mappingId, CreateMappingCommand command,
+                                      ActorIdentity actor) {
+        ImportDefinitionRevision revision = editableRevision(revisionId);
+        ImportFieldMapping mapping = fieldMappings.findById(mappingId)
+                .filter(row -> row.getDefinitionRevision().getId().equals(revision.getId()))
+                .orElseThrow(() -> new NotFoundException("MAPPING_NOT_FOUND", "Field mapping " + mappingId
+                        + " does not exist in revision " + revisionId));
+        int sequenceNumber = mapping.getSequenceNumber();
+        valueMaps.deleteAll(valueMaps.findByMappingIdOrderBySequenceNumberAsc(mapping.getId()));
+        transformSteps.deleteAll(transformSteps.findByMappingIdOrderByStepNumberAsc(mapping.getId()));
+        fieldMappings.delete(mapping);
+        fieldMappings.flush();
+        CreateMappingCommand replacement = new CreateMappingCommand(command.targetFieldCode(),
+                command.sourceReference(), sequenceNumber, command.valueKind(), command.expectedPosition(),
+                command.fixedValue(), command.defaultValue(), command.required(), command.maxLength(),
+                command.decimalScale(), command.zeroAllowed(), command.negativeAllowed(), command.transformKind(),
+                command.transformConfig(), command.criticality(), command.createdBy(), command.valueMap(),
+                command.steps());
+        MappingView view = addMapping(revisionId, replacement, actor);
+        requireBookmarkDeclarationsStillResolve(revisionId);
+        return view;
     }
 
     /**
