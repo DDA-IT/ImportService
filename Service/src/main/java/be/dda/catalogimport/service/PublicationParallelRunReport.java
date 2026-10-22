@@ -141,20 +141,12 @@ public final class PublicationParallelRunReport {
         json.writeStringField("outcome", plan.outcome().name());
         json.writeStringField("reasonCode", plan.reasonCode());
         json.writeBooleanField("salesPriceLastUpdated", plan.salesPriceLastUpdated());
-        writeChanges("changes", plan.changes());
-        writeChanges("derivedDrift", plan.derivedDrift());
-        json.writeArrayFieldStart("notices");
-        for (Notice notice : plan.notices()) {
-            json.writeStartObject();
-            json.writeStringField("code", notice.code());
-            json.writeStringField("severity", notice.severity().name());
-            json.writeStringField("field", notice.field());
-            json.writeStringField("message", notice.message());
-            json.writeEndObject();
-        }
-        json.writeEndArray();
-        writeState("prior", plan.prior());
-        writeState("target", plan.target());
+        writeChanges(json, "changes", plan.changes());
+        writeChanges(json, "derivedDrift", plan.derivedDrift());
+        json.writeFieldName("notices");
+        writeNotices(json, plan.notices());
+        writeState(json, "prior", plan.prior());
+        writeState(json, "target", plan.target());
         json.writeEndObject();
     }
 
@@ -256,7 +248,11 @@ public final class PublicationParallelRunReport {
         json.writeEndObject();
     }
 
-    private void writeChanges(String name, List<Change> changes) throws IOException {
+    /**
+     * Een lijst wijzigingen ({@code table}, {@code column}, {@code detailCode}, {@code prior}, {@code target}); ook gebruikt
+     * voor {@code publication_run_item.result_json} (P5b), zodat rapport en item dezelfde vorm hebben.
+     */
+    static void writeChanges(JsonGenerator json, String name, List<Change> changes) throws IOException {
         json.writeArrayFieldStart(name);
         for (Change change : changes) {
             json.writeStartObject();
@@ -274,7 +270,22 @@ public final class PublicationParallelRunReport {
         json.writeEndArray();
     }
 
-    private void writeState(String name, ArticleState state) throws IOException {
+    /** De meldingen als array ({@code code}, {@code severity}, {@code field}, {@code message}); ook voor P5b. */
+    static void writeNotices(JsonGenerator json, List<Notice> notices) throws IOException {
+        json.writeStartArray();
+        for (Notice notice : notices) {
+            json.writeStartObject();
+            json.writeStringField("code", notice.code());
+            json.writeStringField("severity", notice.severity().name());
+            json.writeStringField("field", notice.field());
+            json.writeStringField("message", notice.message());
+            json.writeEndObject();
+        }
+        json.writeEndArray();
+    }
+
+    /** Een Prodis-toestand (bedragen als tekst); ook voor {@code prior_json}/{@code result_json} (P5b). */
+    static void writeState(JsonGenerator json, String name, ArticleState state) throws IOException {
         if (state == null) {
             json.writeNullField(name);
             return;
@@ -285,15 +296,15 @@ public final class PublicationParallelRunReport {
         json.writeStringField("basePrice", plain(state.basePrice()));
         json.writeStringField("brutPrice", plain(state.brutPrice()));
         json.writeStringField("brutPricePercentage", plain(state.brutPricePercentage()));
-        writeDoubles("percentages", state.percentages());
-        writeDoubles("prices", state.prices());
+        writeDoubles(json, "percentages", state.percentages());
+        writeDoubles(json, "prices", state.prices());
         json.writeStringField("description", state.description());
         json.writeStringField("salesPriceLastUpdated",
                 state.salesPriceLastUpdated() == null ? null : state.salesPriceLastUpdated().toString());
         json.writeEndObject();
     }
 
-    private void writeDoubles(String name, Map<Integer, Double> values) throws IOException {
+    private static void writeDoubles(JsonGenerator json, String name, Map<Integer, Double> values) throws IOException {
         json.writeObjectFieldStart(name);
         for (Map.Entry<Integer, Double> entry : values.entrySet()) {
             json.writeStringField(Integer.toString(entry.getKey()), plain(entry.getValue()));

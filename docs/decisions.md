@@ -3005,3 +3005,24 @@ een SIMULATION-run wacht nu synchroon op de Prodis-lookups (risico op HTTP-time-
 rolinstellingen zijn sessiedefaults, geen harde grenzen; PUBLIC heeft standaard TEMP op `Prodis`; `catalog_article_description.description`
 is `varchar(4000)` — langere omschrijving best vooraf afvangen in de planner.
 **Bron:** P5a-bouwerrapport
+
+## 2026-10-22 — P5b: schrijven per item
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):**
+1. Mutatiestatus bij SENT `READY_FOR_PUBLICATION → IN_PROGRESS` (uit het eerste publicatie-ontwerp); blijft IN_PROGRESS bij PENDING en
+   RESULT_UNKNOWN; → PUBLISHED bij APPLIED/UNCHANGED, terug READY_FOR_PUBLICATION bij REJECTED/CONFLICT.
+2. `request_json` = deterministische JSON van het projectie-item met dubbele integriteitscontrole; fout → 409 `PUBLICATION_ITEM_REQUEST_INVALID`.
+3. Items die zonder Prodis vaststaan: CREATE → `NOT_SENT`; projectie-REJECTED of `DESCRIPTION_TOO_LONG` (> 4000 code points, nooit
+   afkappen) → SENT+REJECTED in één CI-transactie zonder Prodis-contact (`sent_at`/`send_count=1` wegens de check).
+4. Ook UNCHANGED wordt teruggedraaid (geen commit), zodat een no-op nooit RESULT_UNKNOWN wordt.
+5. Foutcodes in `last_error_code`: `PRODIS_NOT_APPLIED:<SQLState>`, `PRODIS_COMMIT_UNKNOWN:<SQLState>`, `CI_ANSWER_NOT_RECORDED`,
+   `PRODIS_UPDATE_COUNT_MISMATCH`, `PRODIS_WRITE_UNEXPECTED_ERROR`; een geslaagd antwoord wist de code niet (historiek).
+6. CI-tx 2 mislukt → RESULT_UNKNOWN (conservatief).
+7. `legacy_master` per item vastgelegd bij SENT; niet geconfigureerd/onleesbaar = UNKNOWN, niets geweigerd.
+8. `reason_detail` > 1000 tekens zichtbaar ingekort, volledige tekst in `warnings_json`.
+9. `send_count` als fencing-token tegen een verdrongen poging.
+**Ontdekt:** `FOR UPDATE` met een join vergrendelt ook `language` (42501) → `FOR UPDATE OF x`. Een RESULT_UNKNOWN-item waarvan de eerste
+poging toch gecommit was, eindigt als **UNCHANGED** (niet APPLIED): de teller APPLIED kan te laag uitvallen; de mutatie wordt wel PUBLISHED —
+**door de mens te beslissen of dat als "gepubliceerd" telt in rapportage.**
+**Open voor P5c:** herstel/afronding van IN_PROGRESS-mutaties bij een verlaten run; begrenzing van herhaalde pogingen bij een fout die altijd
+terugkomt (bv. 22021); vlag `catalogimport.publication.prodis.enabled` en itemsleutel/`source-id` bij het aanmaken van items.
+**Bron:** P5b-bouwerrapport

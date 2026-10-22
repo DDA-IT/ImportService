@@ -213,6 +213,67 @@ class ProdisPublicationPlannerTest {
         assertThat(plan.changes()).isEmpty();
     }
 
+    // --- omschrijving > 4000 tekens (P5b; Prodis varchar(4000), nooit afkappen) ----------------------------------------
+
+    @Test
+    void aDescriptionOfExactly4000CharactersIsWritten() {
+        Plan plan = plan(r -> r.description = "x".repeat(4000), p -> {
+        });
+
+        assertThat(plan.outcome()).isEqualTo(PlanOutcome.WOULD_UPDATE);
+        assertThat(plan.target().description()).hasSize(4000);
+    }
+
+    @Test
+    void aDescriptionLongerThan4000CharactersIsRejectedWithoutLookupAndNeverTruncated() {
+        Item item = item(r -> r.description = "x".repeat(4001));
+
+        Plan withoutLookup = ProdisPublicationPlanner.plan(item, null, LegacyMasterMode.NONE);
+        Plan withLookup = ProdisPublicationPlanner.plan(item, prodis(p -> {
+        }), LegacyMasterMode.NONE);
+
+        assertRejected(withoutLookup, "DESCRIPTION_TOO_LONG");
+        assertThat(withLookup).isEqualTo(withoutLookup);
+        assertThat(withoutLookup.prior()).isNull();
+        assertThat(withoutLookup.target()).isNull();
+        assertThat(withoutLookup.notices().get(withoutLookup.notices().size() - 1).message()).contains("4001")
+                .contains("never truncated");
+    }
+
+    @Test
+    void theDescriptionLimitCountsCharactersNotUtf16Units() {
+        // 4000 tekens buiten het BMP = 8000 UTF-16-eenheden: PostgreSQL varchar(4000) telt tekens, dus dit past.
+        String astral = new String(Character.toChars(0x1F600)).repeat(4000);
+
+        assertThat(plan(r -> r.description = astral, p -> {
+        }).outcome()).isEqualTo(PlanOutcome.WOULD_UPDATE);
+        assertRejected(ProdisPublicationPlanner.plan(item(r -> r.description = astral + "x"), null, LegacyMasterMode.NONE),
+                "DESCRIPTION_TOO_LONG");
+    }
+
+    @Test
+    void aLongDescriptionThatIsKeptIsNoProblem() {
+        assertThat(ProdisPublicationPlanner.planWithoutProdis(item(r -> {
+            r.description = null;
+            r.descriptionState = "EMPTY";
+        }), LegacyMasterMode.NONE)).isNull();
+    }
+
+    @Test
+    void planWithoutProdisDecidesOnlyWhatNeedsNoProdisState() {
+        assertThat(ProdisPublicationPlanner.planWithoutProdis(item(r -> {
+        }), LegacyMasterMode.NONE)).isNull();
+        assertThat(ProdisPublicationPlanner.planWithoutProdis(item(r -> r.actionType = "CREATE"), LegacyMasterMode.NONE)
+                .outcome()).isEqualTo(PlanOutcome.NOT_SENT);
+        assertThat(ProdisPublicationPlanner.planWithoutProdis(item(r -> r.currency = "USD"), LegacyMasterMode.NONE)
+                .reasonCode()).isEqualTo("CURRENCY_NOT_SUPPORTED_BY_PRODIS");
+        assertThat(ProdisPublicationPlanner.planWithoutProdis(item(r -> r.description = "y".repeat(5000)),
+                LegacyMasterMode.PRODIS)).satisfies(plan -> {
+                    assertThat(plan.reasonCode()).isEqualTo("DESCRIPTION_TOO_LONG");
+                    assertThat(plan.legacyMaster()).isEqualTo(LegacyMasterMode.PRODIS);
+                });
+    }
+
     @Test
     void anUpdateWithoutLookupOrWithAnotherIdentityIsAProgrammingError() {
         Item item = item(r -> {

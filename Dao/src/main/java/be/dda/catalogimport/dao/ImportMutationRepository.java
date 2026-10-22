@@ -8,6 +8,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -114,4 +115,20 @@ public interface ImportMutationRepository extends JpaRepository<ImportMutation, 
                                                           @Param("statusReason") String statusReason,
                                                           @Param("identityHash") byte[] identityHash,
                                                           Pageable pageable);
+
+    // --- Publicatie naar Prodis (P5b) ---------------------------------------------------------------------------
+
+    /** De huidige status van de mutatie, zonder de entiteit te laden. */
+    @Query("select m.status from ImportMutation m where m.id = :id")
+    Optional<MutationStatus> findStatusById(@Param("id") Long id);
+
+    /**
+     * Compare-and-set van de status (zelfde patroon als de beslissingen in {@code PublicationBundleDao}): enkel als de
+     * mutatie nog {@code from} is. Raakt geen enkel ander veld (geen prijs, geen beslissingsvelden).
+     *
+     * @return het aantal gewijzigde rijen (0 = de status was niet {@code from})
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("update ImportMutation m set m.status = :to where m.id = :id and m.status = :from")
+    int transitionStatus(@Param("id") Long id, @Param("from") MutationStatus from, @Param("to") MutationStatus to);
 }

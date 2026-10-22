@@ -42,6 +42,9 @@ import java.util.TreeSet;
  *   <li>CREATE → {@link PlanOutcome#NOT_SENT} ({@code CREATE_NOT_SUPPORTED_IN_V1}, P-V3); bestaat het artikel al, dan
  *       extra {@code ARTICLE_ALREADY_EXISTS} (wordt CONFLICT zodra CREATE gebouwd is, P-V4).</li>
  *   <li>Een door de projectie geblokkeerd item → {@link PlanOutcome#REJECTED} met de eerste blokkerende code.</li>
+ *   <li>Een te schrijven omschrijving van meer dan {@value #DESCRIPTION_MAX_LENGTH} tekens (Prodis
+ *       {@code catalog_article_description.description varchar(4000)}) → REJECTED {@code DESCRIPTION_TOO_LONG}: nooit
+ *       afkappen (slice P5b; P5a-ontdekking).</li>
  *   <li>Identiteit: meer dan één leverancier met dit nummer → {@code SUPPLIER_AMBIGUOUS}; geen leverancier of geen
  *       artikel → {@code ARTICLE_NOT_FOUND}; meer dan één artikel → {@code ARTICLE_AMBIGUOUS} (alle REJECTED).</li>
  *   <li>Vorm (UPDATE-only): het artikel actief, precies één actieve prijsrij, detailcodes "1".."5" elk precies één keer
@@ -89,6 +92,13 @@ public final class ProdisPublicationPlanner {
     public static final String CODE_DESCRIPTION_OVERWRITTEN = "DESCRIPTION_OVERWRITTEN";
     public static final String CODE_PRICE_ROUNDING_DIFFERENCE = "PRICE_ROUNDING_DIFFERENCE";
     public static final String CODE_DERIVED_PRICE_DRIFT = "DERIVED_PRICE_DRIFT";
+    public static final String CODE_DESCRIPTION_TOO_LONG = "DESCRIPTION_TOO_LONG";
+
+    /**
+     * Prodis {@code catalog_article_description.description} is {@code varchar(4000)}: PostgreSQL telt tekens (code
+     * points), niet bytes of UTF-16-eenheden.
+     */
+    public static final int DESCRIPTION_MAX_LENGTH = 4000;
 
     public static final String FIELD_ARTICLE = "ARTICLE";
     public static final String FIELD_SALES_PRICE_PREFIX = "VKP";
@@ -229,6 +239,11 @@ public final class ProdisPublicationPlanner {
         }
         if (item.rejected()) {
             return blocked(item, PlanOutcome.REJECTED, item.rejection().code(), mode, null, notices);
+        }
+        if (descriptionTooLong(item)) {
+            int length = item.description().value().codePointCount(0, item.description().value().length());
+            return rejected(item, CODE_DESCRIPTION_TOO_LONG, "the description has " + length + " characters; Prodis "
+                    + "holds at most " + DESCRIPTION_MAX_LENGTH + " (it is never truncated)", mode, null, notices);
         }
         if (lookup == null) {
             throw new IllegalArgumentException("a Prodis lookup is required to plan an UPDATE (mutation "
@@ -372,6 +387,28 @@ public final class ProdisPublicationPlanner {
         PlanOutcome outcome = changes.isEmpty() ? PlanOutcome.UNCHANGED : PlanOutcome.WOULD_UPDATE;
         return new Plan(item.mutationId(), item.requestHash(), outcome, null, mode, prior, target, changes,
                 salesPriceChanged, derivedDrift, notices);
+    }
+
+    /**
+     * Het plan als het zonder Prodis-toestand vaststaat: CREATE ({@link PlanOutcome#NOT_SENT}), een door de projectie
+     * geblokkeerd item of een te lange omschrijving ({@link PlanOutcome#REJECTED}). Anders {@code null}: dan is de
+     * Prodis-toestand nodig ({@link #plan}). De writer (P5b) gebruikt dit om zulke items nooit naar Prodis te sturen.
+     * Voor CREATE ontbreekt hier de melding {@code ARTICLE_ALREADY_EXISTS} (die vraagt een lookup).
+     */
+    public static Plan planWithoutProdis(Item item, LegacyMasterMode legacyMaster) {
+        Objects.requireNonNull(item, "item");
+        if (item.action() == Action.CREATE || item.rejected() || descriptionTooLong(item)) {
+            return plan(item, null, legacyMaster);
+        }
+        return null;
+    }
+
+    private static boolean descriptionTooLong(Item item) {
+        if (item.description() == null || item.description().state() != FieldState.VALUE) {
+            return false;
+        }
+        String value = item.description().value();
+        return value.codePointCount(0, value.length()) > DESCRIPTION_MAX_LENGTH;
     }
 
     private static boolean isDerived(Column column) {
