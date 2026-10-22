@@ -2879,3 +2879,14 @@ rechtstreeks schrijven); de mens bevestigde bewust.
 - **P-V5:** leeg = Prodis-waarde behouden, nooit wissen in v1, WARNING `EMPTY_KEEPS_EXISTING`.
 - Gevolg: het publicatie-ontwerp wordt door een denker herwerkt voor rechtstreeks schrijven vóór de bouw.
 **Bron:** mens / `publicatie-prodis-db-design.md`
+
+## 2026-10-22 — Publicatie rechtstreeks in de Prodis-DB: Q1–Q3
+**Vraag:** Open punten uit `docs/design/publicatie-prodis-db-direct-design.md` §7.
+**Beslissing:**
+- **Q1 = b:** naast basisprijs en VKP-percentages schrijft CatalogImport de afgeleide VKP1..5-prijzen (herberekend volgens Prg_1185) en
+  `brut_price` (AVP1) met de 1185-regel voor `brut_price_percentage`; **niet** `purchase_price`.
+- **Q2:** een expliciete 0 voor basisprijs of VKP% behoudt de bestaande Prodis-waarde (zoals Prg_1179), WARNING `ZERO_KEEPS_EXISTING`.
+- **Q3:** bij APPLIED/UNCHANGED worden in dezelfde CI-transactie de bronwaarden vastgelegd in `catalog_source_state`, `_price` en
+  `catalog_price_observation` (`state_origin=PUBLISHED`); bij REJECTED/CONFLICT niets. Herroept aanname A7 van het vorige ontwerp.
+- Aannames uit het ontwerp §7 aanvaard; bouwvolgorde P1 → P2a → P2b → P2c → P4a → P4b → P5a → P5b → P5c → P6 → P7 (P8 CREATE later).
+**Bron:** mens / `publicatie-prodis-db-direct-design.md`
