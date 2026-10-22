@@ -176,6 +176,9 @@ class ConnectionProfileHttpTest {
         revoked.recordRevocation(USER, null, Instant.now(), "Test");
         credentials.saveAndFlush(revoked);
         ExternalCredential keyKind = credential("sftp.weiger.test", ExternalCredentialSecretKind.SSH_PRIVATE_KEY);
+        // LF: FTP_PASSWORD/API_PASSWORD zijn enkel bewaring en passen nooit in een (SFTP-)profiel.
+        ExternalCredential ftpKind = credential("sftp.weiger.test", ExternalCredentialSecretKind.FTP_PASSWORD);
+        ExternalCredential apiKind = credential("sftp.weiger.test", ExternalCredentialSecretKind.API_PASSWORD);
         long before = profileCount();
 
         refused(body(unique("OH"), "sftp.weiger.test", null, otherHost.getCredentialRef()), 409,
@@ -183,6 +186,10 @@ class ConnectionProfileHttpTest {
         refused(body(unique("RV"), "sftp.weiger.test", null, revoked.getCredentialRef()), 409,
                 ConnectionProfileService.CODE_CREDENTIAL_NOT_ACTIVE);
         refused(body(unique("KK"), "sftp.weiger.test", null, keyKind.getCredentialRef()), 409,
+                ConnectionProfileService.CODE_CREDENTIAL_KIND_MISMATCH);
+        refused(body(unique("FK"), "sftp.weiger.test", null, ftpKind.getCredentialRef()), 409,
+                ConnectionProfileService.CODE_CREDENTIAL_KIND_MISMATCH);
+        refused(body(unique("AK"), "sftp.weiger.test", null, apiKind.getCredentialRef()), 409,
                 ConnectionProfileService.CODE_CREDENTIAL_KIND_MISMATCH);
         refused(body(unique("UN"), "sftp.weiger.test", null, UUID.randomUUID()), 404, "CREDENTIAL_NOT_FOUND");
         Map<String, Object> malformed = body(unique("MF"), "sftp.weiger.test", null, UUID.randomUUID());

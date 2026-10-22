@@ -18,6 +18,13 @@
 > nieuw veld, geen andere canonicalisatie; de golden fixtures en hun hashes blijven ongewijzigd (hun `FTP` heeft geen userinfo en er
 > is geen `FTP2`). Een bundel die vroeger aanvaard werd met userinfo verdeeld over `FTP`/`FTP2`, wordt nu geweigerd: dat is precies het
 > lek dat hiermee dicht gaat.
+>
+> **Addendum LF (2026-10-22, beslissingslog "Legacy-config: ook FTP- en API-wachtwoorden bewaren" en "LF: uitwerking
+> FTP-/API-wachtwoorden bewaren (ontwerp)"):** de ontvanger bewaart het secret voortaan ook bij een FTP- of API-bestemming, niet
+> enkel bij SFTP (§2.1 regel 7, §8 rij `UNCHANGED`); welk protocol een bestemming heeft, staat in `legacy-config-bundle-design.md`
+> §2 (aanname A7, verfijnd 2026-10-22). Enkel formulering van het ontvangergedrag: geen nieuw veld, geen andere canonicalisatie,
+> golden fixtures en hashes ongewijzigd, dus nog altijd `version = 1`. Een ontvangst die vroeger `DISCARDED_PROTOCOL_UNSUPPORTED`
+> kreeg, wordt bij een herhaalde push van dezelfde inhoud met secret alsnog `STORED`.
 
 ## 1. Envelop
 
@@ -110,8 +117,8 @@ Alle string-velden zijn korter dan 2000 tekens tenzij hierboven anders vermeld; 
 6. **Waarde (S4):** de verzender trimt Magic-padding (zoals elk tekstveld, §2); een lege waarde na trim = `secret = null`. Komt
    `FTP_password` meer dan eens voor met verschillende niet-lege waarden, dan wordt de bundel niet gebouwd (de verzender kiest nooit).
 7. **Ontvanger (S4, verfijnd in het S4-vervolg 2026-10-21):** het secret wordt meteen versleuteld in de credentialopslag bewaard
-   als de herkomst nog **geen** credential heeft en de bestemming SFTP met een geldige host is (zie `legacy-config-bundle-design.md`
-   §2 "Credential bij ontvangst"), zowel bij een nieuwe ontvangst (`RECEIVED`) als bij `UNCHANGED`. Het secret telt niet mee in de
+   als de herkomst nog **geen** credential heeft en het een bestemming met een ondersteund protocol (SFTP, FTP of API, zie design
+   §2) en een geldige host is (zie `legacy-config-bundle-design.md` §2 "Credential bij ontvangst"; verruimd 2026-10-22), zowel bij een nieuwe ontvangst (`RECEIVED`) als bij `UNCHANGED`. Het secret telt niet mee in de
    hash: een secret dat later verschijnt zonder andere inhoudswijziging (bv. de inhoud kwam eerst zonder secret binnen), levert
    `UNCHANGED` en wordt dan toch overgenomen. Heeft de herkomst al een credential (ook ingetrokken), dan wordt het secret
    weggegooid, ook als het verschilt: een bestaande credential wordt nooit vervangen (aanname A1: vervangen is een menselijke actie).
@@ -245,7 +252,7 @@ herkomst `(origin.environment, origin.dossier, interface.code)`, ongeacht haar s
 | HTTP | `outcome` | Wanneer | Effect |
 |---|---|---|---|
 | 201 | `RECEIVED` | geen eerdere ontvangst, of de laatste heeft een andere `contentHash` | nieuwe ontvangst `RECEIVED`; een open ontvangst van de herkomst wordt `SUPERSEDED` (`supersededReceiptId` ingevuld); `APPLIED`/`DISCARDED` blijven ongemoeid (`supersededReceiptId = null`) |
-| 200 | `UNCHANGED` | de laatste ontvangst heeft dezelfde `contentHash` | geen nieuwe ontvangst; `receiptId` en `status` zijn die van de laatste ontvangst. Enige schrijfactie (S4-vervolg): draagt de push een secret, heeft de herkomst nog geen credential en is de bestemming SFTP met geldige host, dan ontstaat de credential (op de herkomst, en op die laatste ontvangst `secretOutcome = STORED` + credential, tenzij ze al `STORED` is); anders niets geschreven |
+| 200 | `UNCHANGED` | de laatste ontvangst heeft dezelfde `contentHash` | geen nieuwe ontvangst; `receiptId` en `status` zijn die van de laatste ontvangst. Enige schrijfactie (S4-vervolg): draagt de push een secret, heeft de herkomst nog geen credential en is het een bestemming met een ondersteund protocol (SFTP, FTP of API, zie design §2) en een geldige host, dan ontstaat de credential (op de herkomst, en op die laatste ontvangst `secretOutcome = STORED` + credential, tenzij ze al `STORED` is); anders niets geschreven |
 
 Een terugkerende inhoud (A → B → A) is dus een nieuwe ontvangst A'. Invariant: de laatste ontvangst is nooit `SUPERSEDED`; een open
 ontvangst is altijd de laatste. Gelijktijdige pushes van dezelfde herkomst leveren hoogstens één nieuwe ontvangst per inhoud op.

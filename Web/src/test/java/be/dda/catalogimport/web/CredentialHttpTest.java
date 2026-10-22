@@ -14,6 +14,7 @@ import be.dda.catalogimport.dao.ExternalCredentialEventRepository;
 import be.dda.catalogimport.dao.ExternalCredentialRepository;
 import be.dda.catalogimport.domain.ExternalCredentialEventSource;
 import be.dda.catalogimport.service.ActorIdentity;
+import be.dda.catalogimport.service.BadRequestException;
 import be.dda.catalogimport.service.ConflictException;
 import be.dda.catalogimport.service.CredentialService;
 import be.dda.catalogimport.service.SecretsNotConfiguredException;
@@ -259,6 +260,56 @@ class CredentialHttpTest {
         assertLogsDoNotContain(plain);
     }
 
+    /**
+     * LF (beslissingslog 2026-10-22): de SYSTEM-overload aanvaardt ook {@code FTP_PASSWORD} en {@code API_PASSWORD}
+     * (enkel bewaring); de HUMAN-overload niet, en {@code SSH_PRIVATE_KEY} blijft voor beide gereserveerd. Een mens
+     * kan de waarde van zo'n credential wel vervangen (PUT): soort en host blijven.
+     */
+    @Test
+    void theSystemOverloadAlsoRetainsFtpAndApiPasswordsAndAPersonMayReplaceTheirValue() throws Exception {
+        ActorIdentity client = new ActorIdentity("svc:prodis-datasync-catalogimport", "service-account-sub");
+        for (String kind : new String[] {"FTP_PASSWORD", "API_PASSWORD"}) {
+            String plain = secretValue(kind);
+            CredentialService.CredentialView view = credentialService.create("Legacy TEST/" + kind, kind,
+                    " 84.199.80.12 ", plain, "Overgenomen uit legacy INDET IFACE (ontvangst 1)", client,
+                    ExternalCredentialEventSource.SYSTEM);
+            assertThat(view.secretKind()).isEqualTo(kind);
+            Map<String, Object> credential = row(view.credentialRef());
+            assertThat(credential.get("secret_kind")).isEqualTo(kind);
+            assertThat(credential.get("bound_host")).isEqualTo("84.199.80.12");
+            assertThat(secrets.decrypt((String) credential.get("ciphertext"), view.credentialRef(), kind))
+                    .isEqualTo(plain);
+            assertLogsDoNotContain(plain);
+        }
+        long before = credentialCount();
+        for (ExternalCredentialEventSource source : ExternalCredentialEventSource.values()) {
+            String kinds = source == ExternalCredentialEventSource.HUMAN ? "FTP_PASSWORD,API_PASSWORD,SSH_PRIVATE_KEY"
+                    : "SSH_PRIVATE_KEY";
+            for (String kind : kinds.split(",")) {
+                assertThatThrownBy(() -> credentialService.create("L", kind, "ftp.test", "x", "R",
+                        source == ExternalCredentialEventSource.HUMAN ? ActorIdentity.unverified(USER) : client,
+                        source)).as(source + " " + kind).isInstanceOf(BadRequestException.class)
+                        .hasFieldOrPropertyWithValue("code", CredentialService.CODE_SECRET_KIND_NOT_SUPPORTED);
+            }
+        }
+        assertThat(credentialCount()).isEqualTo(before);
+
+        // Vervangen van een FTP-credential door een mens: nieuwe ciphertext met dezelfde soort in de associated data.
+        String first = secretValue("ftp-oud");
+        UUID ref = credentialService.create("Legacy TEST/FTP-PUT", "FTP_PASSWORD", "ftp.vervang.test", first,
+                "Overgenomen uit legacy INDET IFACE (ontvangst 2)", client, ExternalCredentialEventSource.SYSTEM)
+                .credentialRef();
+        String second = secretValue("ftp-nieuw");
+        json(put(API + "/{ref}/secret", ref), replaceBody(second, "Wachtwoord gewijzigd door leverancier"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.secretKind").value("FTP_PASSWORD"))
+                .andExpect(jsonPath("$.boundHost").value("ftp.vervang.test"))
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+        assertThat(secrets.decrypt((String) row(ref).get("ciphertext"), ref, "FTP_PASSWORD")).isEqualTo(second);
+        assertThat(eventKinds(ref)).containsExactly("CREATED", "REPLACED");
+        assertLogsDoNotContain(first, second);
+    }
+
     // --- Validatie: 400 zonder echo van de waarde -----------------------------------------------------------------
 
     @Test
@@ -284,6 +335,11 @@ class CredentialHttpTest {
         invalid(createBody("Label", "WACHTWOORD", "sftp.test", plain, "Reden"), "CREDENTIAL_SECRET_KIND_INVALID",
                 plain);
         invalid(createBody("Label", "SSH_PRIVATE_KEY", "sftp.test", plain, "Reden"),
+                "CREDENTIAL_SECRET_KIND_NOT_SUPPORTED", plain);
+        // LF (V-a): FTP_PASSWORD en API_PASSWORD maakt enkel de legacy-config-overname (bron SYSTEM) aan.
+        invalid(createBody("Label", "FTP_PASSWORD", "ftp.test", plain, "Reden"),
+                "CREDENTIAL_SECRET_KIND_NOT_SUPPORTED", plain);
+        invalid(createBody("Label", "API_PASSWORD", "api.test", plain, "Reden"),
                 "CREDENTIAL_SECRET_KIND_NOT_SUPPORTED", plain);
         // Te lange reden: 400 (bestaande tekstregel, zonder code), nooit afgekapt.
         String longReason = json(post(API), "{\"label\":\"L\",\"secretKind\":\"SFTP_PASSWORD\",\"boundHost\":\"a.test\","

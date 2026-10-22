@@ -13,9 +13,11 @@ import be.dda.catalogimport.service.support.HostNames;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,7 +68,10 @@ public class CredentialService {
     public static final String CODE_CREDENTIAL_NOT_FOUND = "CREDENTIAL_NOT_FOUND";
     public static final String CODE_LABEL_REQUIRED = "CREDENTIAL_LABEL_REQUIRED";
     public static final String CODE_SECRET_KIND_INVALID = "CREDENTIAL_SECRET_KIND_INVALID";
-    /** {@code SSH_PRIVATE_KEY} is gereserveerd: v1 kent enkel wachtwoorden (A5). */
+    /**
+     * {@code SSH_PRIVATE_KEY} is gereserveerd: v1 kent enkel wachtwoorden (A5). {@code FTP_PASSWORD} en
+     * {@code API_PASSWORD} maakt enkel de legacy-config-overname aan (bron SYSTEM, beslissingslog 2026-10-22 "LF").
+     */
     public static final String CODE_SECRET_KIND_NOT_SUPPORTED = "CREDENTIAL_SECRET_KIND_NOT_SUPPORTED";
     public static final String CODE_HOST_INVALID = "CREDENTIAL_HOST_INVALID";
     public static final String CODE_SECRET_REQUIRED = "CREDENTIAL_SECRET_REQUIRED";
@@ -82,6 +87,13 @@ public class CredentialService {
     static final int MAX_ACTOR_LENGTH = 100;
     /** Bovengrens voor een wachtwoord; nooit afgekapt, een langere waarde wordt geweigerd. */
     public static final int MAX_SECRET_LENGTH = 1024;
+
+    /**
+     * Soorten die enkel een automatische overname ({@link ExternalCredentialEventSource#SYSTEM}) mag aanmaken, naast
+     * {@code SFTP_PASSWORD}: bewaring van legacy-FTP-/API-wachtwoorden (beslissingslog 2026-10-22 "LF").
+     */
+    private static final Set<ExternalCredentialSecretKind> SYSTEM_RETAINED_KINDS =
+            EnumSet.of(ExternalCredentialSecretKind.FTP_PASSWORD, ExternalCredentialSecretKind.API_PASSWORD);
 
     private static final Logger LOG = LoggerFactory.getLogger(CredentialService.class);
 
@@ -160,7 +172,9 @@ public class CredentialService {
      *       {@code ck_external_credential_event_source}); de credential zelf draagt de technische client als
      *       {@code created_by}/{@code secret_updated_by} (bv. {@code svc:<azp>}) met diens subject.</li>
      * </ul>
-     * Zelfde validatie, versleuteling en foutcodes als de gewone aanmaak. De transactie sluit aan bij een lopende
+     * Zelfde validatie, versleuteling en foutcodes als de gewone aanmaak, met één verschil in de soort: bron SYSTEM
+     * aanvaardt naast {@code SFTP_PASSWORD} ook {@code FTP_PASSWORD} en {@code API_PASSWORD} (enkel bewaring,
+     * beslissingslog 2026-10-22 "LF"); bron HUMAN enkel {@code SFTP_PASSWORD}. De transactie sluit aan bij een lopende
      * transactie van de aanroeper (standaardpropagatie): een fout daarna rolt de credential mee terug.
      *
      * @throws BadRequestException           400 label, soort, host, waarde of reden ongeldig
@@ -174,7 +188,7 @@ public class CredentialService {
         }
         String by = requireActor(actor);
         String name = requireLabel(label);
-        ExternalCredentialSecretKind kind = requireKind(secretKind);
+        ExternalCredentialSecretKind kind = requireKind(secretKind, source);
         String host = requireHost(boundHost);
         requireSecret(secret);
         String motivation = requireReason(reason);
@@ -354,7 +368,12 @@ public class CredentialService {
         return ActorNames.requireText(label, "label", MAX_LABEL_LENGTH);
     }
 
-    private static ExternalCredentialSecretKind requireKind(String raw) {
+    /**
+     * Een mens ({@link ExternalCredentialEventSource#HUMAN}) maakt enkel {@code SFTP_PASSWORD} aan (V-a, beslissingslog
+     * 2026-10-22 "LF"); een automatische overname ({@link ExternalCredentialEventSource#SYSTEM}) daarnaast ook
+     * {@code FTP_PASSWORD} en {@code API_PASSWORD} (enkel bewaring). {@code SSH_PRIVATE_KEY} blijft gereserveerd.
+     */
+    private static ExternalCredentialSecretKind requireKind(String raw, ExternalCredentialEventSource source) {
         if (raw == null || raw.isBlank()) {
             throw new BadRequestException(CODE_SECRET_KIND_INVALID, "Missing secretKind");
         }
@@ -364,9 +383,12 @@ public class CredentialService {
         } catch (IllegalArgumentException unknown) {
             throw new BadRequestException(CODE_SECRET_KIND_INVALID, "Unknown secretKind; allowed: SFTP_PASSWORD");
         }
-        if (kind != ExternalCredentialSecretKind.SFTP_PASSWORD) {
-            throw new BadRequestException(CODE_SECRET_KIND_NOT_SUPPORTED,
-                    "secretKind " + kind + " is reserved and not supported yet; use SFTP_PASSWORD");
+        boolean allowed = kind == ExternalCredentialSecretKind.SFTP_PASSWORD
+                || (source == ExternalCredentialEventSource.SYSTEM && SYSTEM_RETAINED_KINDS.contains(kind));
+        if (!allowed) {
+            throw new BadRequestException(CODE_SECRET_KIND_NOT_SUPPORTED, "secretKind " + kind
+                    + (SYSTEM_RETAINED_KINDS.contains(kind) ? " is only retained from the legacy configuration"
+                    : " is reserved and not supported yet") + "; use SFTP_PASSWORD");
         }
         return kind;
     }

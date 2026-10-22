@@ -42,18 +42,23 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       {@code SECRETS_NOT_CONFIGURED}, ook als hij {@code UNCHANGED} zou zijn; er wordt niets bewaard.</li>
  *   <li><b>Secret bij een nieuwe ontvangst (S4, "Credential bij ontvangst"):</b> heeft de herkomst
  *       ({@code legacy_config_origin}) al een credential, dan {@code DISCARDED_ALREADY_PRESENT} (niets ontsleuteld of
- *       vergeleken; vervangen is een menselijke actie, A1). Anders bepaalt het URL-schema van {@code FTP}+{@code FTP2}
- *       het protocol (A7): niet SFTP → {@code DISCARDED_PROTOCOL_UNSUPPORTED}; geen bestemming of geen geldige host →
- *       {@code DISCARDED_NO_HOST}; anders een nieuwe credential ({@code SFTP_PASSWORD}, gebonden aan de
- *       genormaliseerde host, eventbron SYSTEM, {@code created_by = svc:<azp>}, A2) → {@code STORED}, met
+ *       vergeleken; vervangen is een menselijke actie, A1). Geen bestemming → {@code DISCARDED_NO_HOST}. Anders
+ *       bepaalt {@link LegacyFtpLocation} het protocol zoals legacy (A7, verfijnd 2026-10-22: schema van
+ *       {@code FTP}+{@code FTP2}, {@code FTP/LOCAL/API}, hint {@code SFTP}): lokaal bestand of onduidelijk/tegenstrijdig
+ *       → {@code DISCARDED_PROTOCOL_UNSUPPORTED}; geen geldige host → {@code DISCARDED_NO_HOST}; anders een nieuwe
+ *       credential van de soort van het protocol ({@code SFTP_PASSWORD}, {@code FTP_PASSWORD} of
+ *       {@code API_PASSWORD}; de laatste twee enkel bewaring, beslissingslog 2026-10-22 "LF"), gebonden aan de
+ *       genormaliseerde host, eventbron SYSTEM, {@code created_by = svc:<azp>} (A2) → {@code STORED}, met
  *       {@code credential_id} op de ontvangst en op de herkomst (die zo nodig hier ontstaat). Credential en ontvangst
  *       zitten in één transactie.</li>
  *   <li><b>Secret bij {@code UNCHANGED}</b> (S4-vervolg, beslissingslog 2026-10-21; verfijnt A1): dezelfde regels als
- *       hierboven, onder hetzelfde rijslot op de herkomst. Heeft de herkomst al een credential, of is het geen SFTP met
- *       geldige host, dan wordt het secret weggegooid en niets geschreven. Anders ontstaat de credential toch (eventbron
- *       SYSTEM, reden met "herhaalde push"), komt ze op de herkomst en op de laatste ontvangst (de ontvangst die
+ *       hierboven, onder hetzelfde rijslot op de herkomst. Heeft de herkomst al een credential, of is het geen
+ *       ondersteund protocol (SFTP, FTP of API) met geldige host, dan wordt het secret weggegooid en niets
+ *       geschreven. Anders ontstaat de credential toch (eventbron SYSTEM, reden met "herhaalde push"), komt ze op de herkomst en op de laatste ontvangst (de ontvangst die
  *       {@code UNCHANGED} teruggaf: {@code secret_outcome = STORED}, {@code credential_id}), tenzij die al
- *       {@code STORED} is. Het antwoord blijft {@code UNCHANGED}. Een bestaande credential wordt nooit vervangen.</li>
+ *       {@code STORED} is (ook een ontvangst met {@code DISCARDED_PROTOCOL_UNSUPPORTED} van vóór 2026-10-22 wordt zo
+ *       {@code STORED}; haar status blijft ongemoeid). Het antwoord blijft {@code UNCHANGED}. Een bestaande credential
+ *       wordt nooit vervangen.</li>
  *   <li><b>Idempotentie tegenover de laatste ontvangst:</b> een push wordt enkel vergeleken met de <b>laatste</b>
  *       ontvangst (hoogste id) van dezelfde herkomst, ongeacht haar status. Zelfde {@code contentHash} = 200
  *       {@value #OUTCOME_UNCHANGED} met dat id en die status; er wordt niets geschreven.</li>
@@ -253,43 +258,55 @@ public class LegacyConfigReceiptService {
                 supersededId);
     }
 
-    /** Wat er met het secret van een nieuwe ontvangst gebeurt; {@code host} enkel bij {@code STORED}. */
-    private record SecretDecision(LegacyConfigSecretOutcome outcome, LegacyConfigOrigin origin, String host) {
+    /** Wat er met het secret van een nieuwe ontvangst gebeurt; {@code kind} en {@code host} enkel bij {@code STORED}. */
+    private record SecretDecision(LegacyConfigSecretOutcome outcome, LegacyConfigOrigin origin,
+                                  ExternalCredentialSecretKind kind, String host) {
     }
 
     /**
      * Design par. 2 "Credential bij ontvangst", in deze volgorde: de herkomst heeft al een credential (ongeacht haar
-     * status) → {@code DISCARDED_ALREADY_PRESENT}, zonder iets te ontsleutelen of te vergelijken (A1); geen bestemming
-     * → {@code DISCARDED_NO_HOST}; protocol niet SFTP volgens het URL-schema (A7) →
-     * {@code DISCARDED_PROTOCOL_UNSUPPORTED}; geen geldige host → {@code DISCARDED_NO_HOST}; anders {@code STORED}.
-     * De herkomstrij wordt vergrendeld, zodat twee pushes nooit allebei een credential aanmaken.
+     * status en soort) → {@code DISCARDED_ALREADY_PRESENT}, zonder iets te ontsleutelen of te vergelijken (A1); geen
+     * bestemming → {@code DISCARDED_NO_HOST}; protocol lokaal of onbekend/tegenstrijdig ({@link LegacyFtpLocation},
+     * A7) → {@code DISCARDED_PROTOCOL_UNSUPPORTED}; geen geldige host → {@code DISCARDED_NO_HOST}; anders
+     * {@code STORED} met de soort van het protocol (SFTP → {@code SFTP_PASSWORD}, FTP → {@code FTP_PASSWORD}, API →
+     * {@code API_PASSWORD}; beslissingslog 2026-10-22 "LF"). De herkomstrij wordt vergrendeld, zodat twee pushes nooit
+     * allebei een credential aanmaken.
      */
     private SecretDecision decideSecret(LegacyBundle bundle) {
         LegacyConfigOrigin origin = origins.findForUpdate(bundle.environment(), bundle.dossier(),
                 bundle.interfaceCode()).orElse(null);
         if (origin != null && origin.getCredentialId() != null) {
-            return new SecretDecision(LegacyConfigSecretOutcome.DISCARDED_ALREADY_PRESENT, origin, null);
+            return new SecretDecision(LegacyConfigSecretOutcome.DISCARDED_ALREADY_PRESENT, origin, null, null);
         }
         LegacyFtpLocation location = LegacyFtpLocation.of(bundle.withoutSecret());
         if (location.protocol() == LegacyFtpLocation.Protocol.NONE) {
-            return new SecretDecision(LegacyConfigSecretOutcome.DISCARDED_NO_HOST, origin, null);
+            return new SecretDecision(LegacyConfigSecretOutcome.DISCARDED_NO_HOST, origin, null, null);
         }
-        if (location.protocol() != LegacyFtpLocation.Protocol.SFTP) {
-            return new SecretDecision(LegacyConfigSecretOutcome.DISCARDED_PROTOCOL_UNSUPPORTED, origin, null);
+        ExternalCredentialSecretKind kind = switch (location.protocol()) {
+            case SFTP -> ExternalCredentialSecretKind.SFTP_PASSWORD;
+            case FTP -> ExternalCredentialSecretKind.FTP_PASSWORD;
+            case API -> ExternalCredentialSecretKind.API_PASSWORD;
+            case LOCAL, UNKNOWN, NONE -> null;
+        };
+        if (kind == null) {
+            return new SecretDecision(LegacyConfigSecretOutcome.DISCARDED_PROTOCOL_UNSUPPORTED, origin, null, null);
         }
         if (!location.hasValidHost()) {
-            return new SecretDecision(LegacyConfigSecretOutcome.DISCARDED_NO_HOST, origin, null);
+            return new SecretDecision(LegacyConfigSecretOutcome.DISCARDED_NO_HOST, origin, null, null);
         }
-        return new SecretDecision(LegacyConfigSecretOutcome.STORED, origin, location.host());
+        return new SecretDecision(LegacyConfigSecretOutcome.STORED, origin, kind, location.host());
     }
 
     /**
      * S4-vervolg (beslissingslog 2026-10-21 "wachtwoord bij UNCHANGED"; verfijnt A1): een identieke push draagt een
      * secret. Dezelfde regels als bij een nieuwe ontvangst ({@link #decideSecret}, onder hetzelfde rijslot op de
-     * herkomst): heeft de herkomst nog geen credential en is het SFTP met een geldige host, dan wordt het secret toch
-     * versleuteld opgeslagen (eventbron SYSTEM) en op de herkomst gezet. De credential ontstond uit de inhoud van de
+     * herkomst): heeft de herkomst nog geen credential en is het een ondersteund protocol (SFTP, FTP of API) met een
+     * geldige host, dan wordt het secret toch versleuteld opgeslagen (eventbron SYSTEM, soort volgens het protocol) en
+     * op de herkomst gezet. De credential ontstond uit de inhoud van de
      * laatste ontvangst, dus krijgt <b>die</b> ontvangst {@code secret_outcome = STORED} en {@code credential_id}, tenzij
-     * ze al {@code STORED} is. Elke andere uitkomst ({@code DISCARDED_*}) wordt enkel gelogd: niets geschreven, net als
+     * ze al {@code STORED} is; zo krijgt ook een ontvangst die vóór 2026-10-22 {@code DISCARDED_PROTOCOL_UNSUPPORTED}
+     * kreeg (FTP/API), bij een herhaalde push alsnog {@code STORED}, zonder migratie en zonder statuswijziging. Elke
+     * andere uitkomst ({@code DISCARDED_*}) wordt enkel gelogd: niets geschreven, net als
      * vroeger bij {@code UNCHANGED}. Een bestaande credential wordt nooit vervangen (A1).
      *
      * @return de lognotitie (uitkomst en eventueel de credentialreferentie, nooit de waarde)
@@ -322,7 +339,7 @@ public class LegacyConfigReceiptService {
                                              ActorIdentity client, boolean repeated) {
         CredentialService.CredentialView created = credentialService.create(
                 CREDENTIAL_LABEL_PREFIX + bundle.dossier() + "/" + bundle.interfaceCode(),
-                ExternalCredentialSecretKind.SFTP_PASSWORD.name(), decision.host(), bundle.secret().value(),
+                decision.kind().name(), decision.host(), bundle.secret().value(),
                 "Overgenomen uit legacy INDET " + bundle.interfaceCode() + " (ontvangst " + receiptId
                         + (repeated ? ", herhaalde push" : "") + ")",
                 client, ExternalCredentialEventSource.SYSTEM);

@@ -185,6 +185,10 @@ final class LegacyConfigTranslator {
     static final String LABEL_SKIP_EXCLUDES = "Skip_Excludes";
     private static final List<String> CONNECTION_LABELS =
             List.of("FTP", "FTP2", "FTP_login", "FTP_directory", "FTP_filename");
+    /** Standaardpoorten in het voorstel voor een FTP-/API-bestemming (LF); SFTP gebruikt {@code DEFAULT_PORT} (22). */
+    private static final int FTP_DEFAULT_PORT = 21;
+    private static final int HTTP_DEFAULT_PORT = 80;
+    private static final int HTTPS_DEFAULT_PORT = 443;
     private static final Set<String> GOVERNED_LABELS = Set.of(LABEL_DEFINITION, LABEL_SUPPLIER, LABEL_LIBRARY,
             LABEL_SEPARATOR, LABEL_ENCODING, LABEL_SKIP_HEADER, LABEL_DECIMAL_COMMA, LABEL_KEY_SUPPLIER,
             LABEL_KEY_REFERENCE, LABEL_KEY_GROUP, LABEL_KEY_DISCOUNT, LABEL_KEY_BARCODE, LABEL_RATE,
@@ -640,9 +644,11 @@ final class LegacyConfigTranslator {
     }
 
     /**
-     * Het voorstel voor een verbindingsprofiel (S4): protocol, host, poort en map uit {@code FTP}+{@code FTP2}
-     * ({@link LegacyFtpLocation}, A7), login uit {@code FTP_login}, en de credential van de herkomst. Geen waarde van
-     * een secret: de bundel heeft er geen.
+     * Het voorstel voor een verbindingsprofiel (S4): protocol, host, poort en map uit {@code FTP}+{@code FTP2},
+     * {@code FTP/LOCAL/API} en {@code SFTP} ({@link LegacyFtpLocation}, A7), login uit {@code FTP_login}, en de
+     * credential van de herkomst. FTP (standaardpoort 21) en API (443 bij {@code https}, 80 bij {@code http}) zijn
+     * enkel bewaring van het wachtwoord, nog zonder connector (beslissingslog 2026-10-22 "LF"). Geen waarde van een
+     * secret: de bundel heeft er geen.
      */
     private String connectionProposal(Map<String, List<JsonNode>> details) {
         LegacyFtpLocation location = LegacyFtpLocation.of(bundle);
@@ -659,8 +665,13 @@ final class LegacyConfigTranslator {
                     proposal.append("protocol=SFTP, no valid host");
                 }
             }
-            case FTP -> proposal.append("protocol=FTP is not supported (SFTP only)");
-            case UNKNOWN -> proposal.append("protocol unknown (FTP+FTP2 has no sftp:// scheme)");
+            case FTP -> retainedOnly(proposal, "FTP", location, FTP_DEFAULT_PORT, "no FTP connector yet");
+            case API -> retainedOnly(proposal, "API", location,
+                    "http".equals(location.scheme()) ? HTTP_DEFAULT_PORT : HTTPS_DEFAULT_PORT, "no API connector yet");
+            case LOCAL -> proposal.append("protocol=LOCAL (FTP/LOCAL/API=L, a local file; no connection, no password "
+                    + "retained)");
+            case UNKNOWN -> proposal.append("protocol unknown (FTP+FTP2, FTP/LOCAL/API and SFTP do not determine one "
+                    + "protocol; no password retained)");
             case NONE -> proposal.append("no destination (FTP and FTP2 are empty)");
         }
         String directoryLabel = firstValue(details, "FTP_directory");
@@ -671,6 +682,23 @@ final class LegacyConfigTranslator {
         proposal.append(", login=").append(login.isEmpty() ? "(none)" : login);
         proposal.append(", credentialRef=").append(credentialRef == null ? "(none)" : credentialRef);
         return proposal.toString();
+    }
+
+    /**
+     * Voorstel voor een FTP- of API-bestemming: enkel het wachtwoord wordt bewaard (beslissingslog 2026-10-22 "LF"), er
+     * bestaat nog geen connector. Nooit {@link ConnectionProfileService#DEFAULT_PORT} (SFTP).
+     */
+    private static void retainedOnly(StringBuilder proposal, String protocol, LegacyFtpLocation location,
+                                     int defaultPort, String note) {
+        proposal.append("protocol=").append(protocol);
+        if (location.hasValidHost()) {
+            proposal.append(", host=").append(location.host()).append(", port=")
+                    .append(location.port() == null ? defaultPort + " (default)" : location.port())
+                    .append(", directory=").append(location.directory().isEmpty() ? "(none)" : location.directory());
+        } else {
+            proposal.append(", no valid host");
+        }
+        proposal.append(" (password retained, ").append(note).append(')');
     }
 
     private static String firstValue(Map<String, List<JsonNode>> details, String label) {

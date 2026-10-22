@@ -26,6 +26,9 @@ import org.springframework.http.MediaType;
  *   <li>Een afgeleide bundel is APPLICABLE en plant organisatie, definitie, revisie, koppeling en taak.</li>
  *   <li>Ontbrekende definitie, charset, separator, wisselkoers en libraryCode volgen de vertaalregels.</li>
  *   <li>403 zonder MANAGE vóór 404.</li>
+ *   <li>LF (beslissingslog 2026-10-22): het verbindingsvoorstel noemt FTP (poort 21) en API (443/80) met host, als
+ *       enkel bewaring zonder connector; nooit de SFTP-standaardpoort 22. Een lokaal bestand en een onduidelijk protocol
+ *       krijgen hun eigen tekst.</li>
  *   <li>S5, zonder Prodis-configuratie (functie uit): de context start, PREVIEW blijft S2-gedrag
  *       ({@code prodisReference = NOT_CONFIGURED}) en de keuzelijsten geven 409 {@code PRODIS_DB_NOT_CONFIGURED}.</li>
  * </ul>
@@ -255,6 +258,46 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.code").value("PRODIS_DB_NOT_CONFIGURED"));
         }
+    }
+
+    @Test
+    void theConnectionProposalNamesFtpAndApiWithTheirOwnDefaultPortsAndNeverSftpPort22() throws Exception {
+        assertThat(connectionProposal("ftp.vrooamgrossier.be", null, "F"))
+                .contains("protocol=FTP", "host=ftp.vrooamgrossier.be", "port=21 (default)",
+                        "password retained, no FTP connector yet")
+                .doesNotContain("port=22");
+        assertThat(connectionProposal("84.199.80.12:2121", "/in/", null))
+                .contains("protocol=FTP", "host=84.199.80.12", "port=2121", "directory=/in/");
+        assertThat(connectionProposal("https://data.webapi.intercars.eu/customer/P00675/ProductInformation/",
+                "ProductInformation_[YYYY]-[MM]-[DD].csv.zip", "A"))
+                .contains("protocol=API", "host=data.webapi.intercars.eu", "port=443 (default)",
+                        "password retained, no API connector yet", "date pattern")
+                .doesNotContain("port=22");
+        assertThat(connectionProposal("http://api.example.test/v1", null, "A"))
+                .contains("protocol=API", "host=api.example.test", "port=80 (default)");
+        assertThat(connectionProposal("C:\\import\\kramp", null, "L"))
+                .contains("protocol=LOCAL", "no password retained").doesNotContain("host=");
+        assertThat(connectionProposal("https://api.example.test/x", null, "F"))
+                .contains("protocol unknown", "no password retained").doesNotContain("host=");
+        // Regressie: SFTP houdt poort 22.
+        assertThat(connectionProposal("sftp://sftp.example.test/exports/", null, null))
+                .contains("protocol=SFTP", "host=sftp.example.test", "port=22 (default)");
+    }
+
+    /** Het CONNECTION_NOT_MIGRATED-bericht van een PREVIEW met deze bestemming. */
+    private String connectionProposal(String ftp, String ftp2, String mode) throws Exception {
+        ObjectNode bundle = applicable();
+        detail(bundle, "FTP", ftp);
+        if (ftp2 != null) {
+            detail(bundle, "FTP2", ftp2);
+        }
+        if (mode != null) {
+            detail(bundle, "FTP/LOCAL/API", mode);
+        }
+        List<String> messages = JsonPath.read(previewBody(receive(bundle), "libraryCode", "LIB"),
+                "$.report.items[?(@.code == 'CONNECTION_NOT_MIGRATED')].message");
+        assertThat(messages).hasSize(1);
+        return messages.get(0);
     }
 
     @Test

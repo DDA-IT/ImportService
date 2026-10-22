@@ -119,21 +119,35 @@ open ontvangst met rijslot lezen, dan de laatste ontvangst; een race op de open-
 6. Controleren dat geen request-loggingfilter actief is; `logServerErrorDetail=false` geldt al.
 
 **Credential bij ontvangst:**
-- Nog geen credential voor de herkomst, protocol SFTP, geldige host → `CredentialService.create(...)` met `SFTP_PASSWORD`,
-  `boundHost` uit `FTP`+`FTP2`, label `Legacy <dossier>/<interface>`, reden `Overgenomen uit legacy INDET <interface> (ontvangst <id>)`,
-  nieuwe additieve overload met eventbron SYSTEM (`changed_by` null), `created_by = svc:<azp>` → `secretOutcome=STORED`.
-- Credential bestaat al → `DISCARDED_ALREADY_PRESENT` (niets ontsleutelen of vergelijken; vervangen = menselijke PUT).
-- FTP/onbekend protocol → `DISCARDED_PROTOCOL_UNSUPPORTED`; geen/ongeldige host → `DISCARDED_NO_HOST`.
+- Nog geen credential voor de herkomst, ondersteund protocol, geldige host → `CredentialService.create(...)` met de soort van het
+  protocol: SFTP → `SFTP_PASSWORD`, FTP → `FTP_PASSWORD`, API → `API_PASSWORD` (verruimd 2026-10-22, beslissingslog "Legacy-config:
+  ook FTP- en API-wachtwoorden bewaren" en "LF"; FTP/API is enkel bewaring tot er een connector is), `boundHost` uit de bestemming,
+  label `Legacy <dossier>/<interface>`, reden `Overgenomen uit legacy INDET <interface> (ontvangst <id>)`, nieuwe additieve overload
+  met eventbron SYSTEM (`changed_by` null), `created_by = svc:<azp>` → `secretOutcome=STORED` (voor elke soort; de soort staat op de
+  credential).
+- Credential bestaat al (welke status of soort ook) → `DISCARDED_ALREADY_PRESENT` (niets ontsleutelen of vergelijken; vervangen =
+  menselijke PUT).
+- Lokaal bestand of onduidelijk/tegenstrijdig protocol → `DISCARDED_PROTOCOL_UNSUPPORTED`; geen/ongeldige host → `DISCARDED_NO_HOST`.
+- **Protocolherkenning (LF, 2026-10-22; `LegacyFtpLocation`, volgt `Prg_1232` r.454-499 en r.622-624).** C = `Trim(FTP) &
+  Trim(FTP2)`, M = eerste teken van `FTP/LOCAL/API` (zoals Magic `Left(...,1)`). C leeg → geen bestemming; `FTP/LOCAL/API` of `SFTP`
+  dubbel → onduidelijk; M = `L` → lokaal bestand; M = `A` met `http(s)://` → API (host = authority van C), anders onduidelijk;
+  anders beslist het schema: `sftp://` → SFTP, `ftp://`/`ftps://`/`ftpes://` → FTP, ander schema → onduidelijk; zonder schema met
+  hint `SFTP` gezet (niet leeg, niet `N`) → onduidelijk (V-b: wat ProDisWebbase dan doet, is niet gekend); zonder schema en zonder
+  hint → FTP met als host de authority van `ftp://`+`Trim(FTP)`, enkel als die gelijk is aan de authority van `ftp://`+C. Hostregels
+  ongewijzigd (`HostNames`; IP-adres mag; `[YYYY]` of `@` in de authority → geen host). Een menselijke `POST /credentials` blijft
+  enkel `SFTP_PASSWORD` (V-a); `FTP_PASSWORD`/`API_PASSWORD` passen niet in een verbindingsprofiel (bestaande checks).
 - UNCHANGED (S4-vervolg 2026-10-21, verfijnt A1): dezelfde regels; zie "Uitwerking S4-vervolg" hieronder.
 
 **Uitwerking S4 (gebouwd 2026-10-20):**
 - Volgorde: (1) bundel met secret en geen sleutelring → 409 `SECRETS_NOT_CONFIGURED`, niets bewaard (ook bij `UNCHANGED`);
   (2) `UNCHANGED` → secret weggegooid, niets geschreven (sinds het S4-vervolg: zie hieronder); (3) herkomst (`legacy_config_origin`, rijslot) heeft al een credential,
-  ongeacht status (ook `REVOKED`) → `DISCARDED_ALREADY_PRESENT`; (4) `FTP`+`FTP2` leeg → `DISCARDED_NO_HOST`; (5) URL-schema niet
-  `sftp` (ook geen schema) → `DISCARDED_PROTOCOL_UNSUPPORTED`; (6) geen geldige host → `DISCARDED_NO_HOST`; anders `STORED`.
+  ongeacht status (ook `REVOKED`) → `DISCARDED_ALREADY_PRESENT`; (4) `FTP`+`FTP2` leeg → `DISCARDED_NO_HOST`; (5) protocol lokaal
+  of onduidelijk (sinds LF 2026-10-22, zie "Protocolherkenning" hierboven; tot dan: URL-schema niet `sftp`) →
+  `DISCARDED_PROTOCOL_UNSUPPORTED`; (6) geen geldige host → `DISCARDED_NO_HOST`; anders `STORED` met de soort van het protocol.
 - Bestemming = `Trim(FTP) & Trim(FTP2)` (`Prg_1232` r.300), ontleed door `service.support.LegacyFtpLocation`: host zonder poort,
   genormaliseerd met `HostNames`; ongeldig bij lege authority, `@`, poort buiten 1-65535, haken die geen IPv6-literal zijn
-  (bv. `[YYYY]`), meer dan één `:` buiten haken, of een dubbel `FTP`/`FTP2`-label. Het `SFTP`-label wordt niet gelezen (A7).
+  (bv. `[YYYY]`), meer dan één `:` buiten haken, of een dubbel `FTP`/`FTP2`-label. Het `SFTP`-label wordt niet gelezen (A7;
+  verfijnd 2026-10-22: zonder schema telt het als hint, zie "Protocolherkenning").
 - `credential_id` staat enkel bij `STORED` op de ontvangst (de credential die uit díe ontvangst ontstond) en altijd op de herkomst;
   de herkomstrij ontstaat hier als ze nog niet bestond. Ontvangst, credential, event en herkomst zitten in één transactie; een
   gelijktijdige eerste insert van de herkomst (`uk_legacy_config_origin`) wordt net als `uk_legacy_config_receipt_open` herhaald.
@@ -543,7 +557,8 @@ heeft de herkomst nog geen credential, dan wordt een secret ook bij `UNCHANGED` 
 eventbron SYSTEM, `created_by=svc:<azp>`; A3 `library_code` = `supplier_catalog.scope_key` via `legacy_number` (sinds S5 automatisch bij precies één `scope_key` met dat
 `legacy_number`; anders, of zonder/met onbereikbare Prodis, door de mens als `libraryCode` gegeven, zie §5); A4 rechtstreekse
 SELECT op 3 tabellen; A5 wisselkoers ≠ 1 blokkeert APPLY; A6 export van alle interfaces met `ArtImp_Importsoort`; A7 protocol uit
-het URL-schema, `SFTP`-label enkel als hint; A8 enkel MANUAL-taken; A9 ook GET op preview/apply vraagt MANAGE (L7b).
+het URL-schema, `SFTP`-label enkel als hint (verfijnd 2026-10-22: zonder schema telt `FTP/LOCAL/API`, zoals Magic; zie §2
+"Protocolherkenning"); A8 enkel MANUAL-taken; A9 ook GET op preview/apply vraagt MANAGE (L7b).
 
 ## 10. Voorgestelde ontdekkingsblokken (nog niet teruggeschreven)
 
@@ -581,6 +596,19 @@ het URL-schema, `SFTP`-label enkel als hint; A8 enkel MANUAL-taken; A9 ook GET o
 > In Prodis is `supplier.number` niet uniek (enkel `idx_supplier__number_coalesced`) en heeft `supplier_catalog` per `scope_key`
 > meerdere rijen (historiek per `status`; uniek enkel `(supplier_id, catalog_name, scope_key) WHERE status='ACTIVE'`). Matching op
 > `legacy_number` telt daarom `scope_key`s, geen rijen, en een dubbel leveranciersnummer blokkeert (nooit stil de eerste nemen).
+
+> **Important technical constraint discovered** (LF, 2026-10-22)
+>
+> De FTP-route van de legacy-artikelimport (`Prg_1232` r.609-698, taak "Import - FTP full folder") negeert `FTP2` en zet er altijd
+> `ftp://` voor (`'ftp://'&Trim(FTP)&Trim(FTP_directory)`, r.624). SFTP via de legacy-artikelimport kan dus enkel via ProDisWebbase
+> (`RunWebserver` = `I`, r.454-455); dat is niet geverifieerd. Daarom wordt een bestemming zonder schema met de hint `SFTP` gezet
+> niet bewaard (V-b) tot het ProDisWebbase-gedrag gekend is.
+
+> **Important technical constraint discovered** (LF, 2026-10-22)
+>
+> Met `FTP/LOCAL/API` = `A` kan legacy het wachtwoord in de URL zelf zetten via de plaatshouder `[PASSWORD]` (en `[LOGIN]`,
+> `Prg_1232` r.463). Een latere API-connector moet die plaatshouders zelf invullen uit de credential en mag de ingevulde URL nooit
+> loggen of in een foutmelding zetten; de bewaarde bestemming (`bundle_json`) bevat enkel de plaatshouder, nooit de waarde.
 
 > **Important technical constraint discovered**
 >

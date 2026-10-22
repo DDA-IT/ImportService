@@ -264,9 +264,14 @@ class ExternalCredentialSchemaTest {
         assertThat(found.toString()).contains("secretSet=false");
     }
 
-    /** A5: {@code SSH_PRIVATE_KEY} is gereserveerd maar toegelaten; elke andere soort niet. */
+    /**
+     * A5: {@code SSH_PRIVATE_KEY} is gereserveerd maar toegelaten; LF (changeset 029-1): ook {@code FTP_PASSWORD} en
+     * {@code API_PASSWORD}; elke andere soort niet.
+     */
     @Test
     void allowsOnlyTheDocumentedSecretKinds() {
+        assertThat(ExternalCredentialSecretKind.values()).extracting(Enum::name).containsExactly("SFTP_PASSWORD",
+                "SSH_PRIVATE_KEY", "FTP_PASSWORD", "API_PASSWORD");
         for (ExternalCredentialSecretKind kind : ExternalCredentialSecretKind.values()) {
             Map<String, Object> row = activeRow();
             row.put("secret_kind", kind.name());

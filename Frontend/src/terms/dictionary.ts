@@ -1623,7 +1623,8 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
   legacySecretOutcome: {
     STORED: {
       label: 'Wachtwoord veilig bewaard',
-      uitleg: 'Het wachtwoord is versleuteld bewaard en alleen via een verwijzing te gebruiken.',
+      uitleg:
+        'Het wachtwoord is versleuteld bewaard en alleen via een verwijzing te gebruiken; het gebruik voor FTP en API volgt later.',
     },
     DISCARDED_ALREADY_PRESENT: {
       label: 'Wachtwoord niet overgenomen: bestaat al',
@@ -1631,7 +1632,8 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     DISCARDED_PROTOCOL_UNSUPPORTED: {
       label: 'Wachtwoord niet overgenomen: protocol',
-      uitleg: 'Enkel bij SFTP wordt een wachtwoord overgenomen; dit wachtwoord is weggegooid.',
+      uitleg:
+        'Een wachtwoord wordt bewaard voor SFTP, FTP en API; bij een lokaal bestand of een onduidelijk of tegenstrijdig protocol is het weggegooid.',
     },
     DISCARDED_NO_HOST: {
       label: 'Wachtwoord niet overgenomen: geen server',

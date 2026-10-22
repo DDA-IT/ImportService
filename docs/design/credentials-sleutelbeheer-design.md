@@ -168,7 +168,7 @@ Het eerdere voorlopige model is opgeheven. Definitief volgens `docs/decisions.md
 | `id` | bigint identity | PK |
 | `credential_ref` | uuid not null, unique | vooraf in Java gegenereerd (A19), permanent, deel van de AAD |
 | `label` | varchar(200) not null | herkenbare naam, geen geheim |
-| `secret_kind` | varchar(40) not null | check `SFTP_PASSWORD`, `SSH_PRIVATE_KEY` (laatste gereserveerd; v1 enkel wachtwoord) |
+| `secret_kind` | varchar(40) not null | check `SFTP_PASSWORD`, `SSH_PRIVATE_KEY` (laatste gereserveerd; v1 enkel wachtwoord), `FTP_PASSWORD`, `API_PASSWORD` (changeset 029-1, 2026-10-22: enkel bewaring bij de legacy-config-overname, bron SYSTEM; niet via de menselijke `POST /credentials` en niet toegelaten in een verbindingsprofiel) |
 | `bound_host` | varchar(255) not null | genormaliseerd: kleine letters, geen punt achteraan |
 | `ciphertext` | text null | `v1:<keyId>:<base64(nonce‖ct+tag)>`; null na intrekken |
 | `encryption_key_id` | varchar(32) null | kopie van keyId; null exact wanneer `ciphertext` null is |

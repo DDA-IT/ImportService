@@ -119,7 +119,10 @@ Legende: **B** = bestaand concept · **U** = uitbreiding nodig · **N** = bewust
   vervangen blijft een menselijke `PUT`.
 - **Transport (Q2):** P1 mens tikt opnieuw in (aanbevolen voor de start, bundel zonder secrets); P2 secrets in de
   bundel (enkel in geheugen, niet archiveren); P3 rechtstreeks uit ProDisWebbase.
-- Alleen SFTP (`secret_kind` = `SFTP_PASSWORD`); FTP/API-secrets niet opslaan, wel melden.
+- ~~Alleen SFTP (`secret_kind` = `SFTP_PASSWORD`); FTP/API-secrets niet opslaan, wel melden.~~ **Herroepen 2026-10-22**
+  (beslissingslog "Legacy-config: ook FTP- en API-wachtwoorden bewaren", uitwerking "LF"): ook FTP- en API-wachtwoorden worden
+  versleuteld bewaard (`FTP_PASSWORD`, `API_PASSWORD`; enkel bewaring tot er een connector is); zie
+  `legacy-config-bundle-design.md` §2 "Credential bij ontvangst".
 - **Hostsleutel:** legacy kent die niet en `host_key_fingerprint_sha256` is NOT NULL (L5). De migratie maakt enkel de
   credential; de mens doet scan → vergelijken via ander kanaal → `POST /connection-profiles`.
 - Een FTP-URL met ingebedde login/wachtwoord wordt nooit als host of map bewaard.
