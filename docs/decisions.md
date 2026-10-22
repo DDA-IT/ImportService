@@ -2835,3 +2835,17 @@ G1 ontvangst verwerpen (`discard`) + link naar de aangemaakte conceptversie; G2 
 definitie, één Prodis-rechtenoproep per sessie (single-flight) en het bewerken van de nieuwe revisievelden in de setup-schermen, daarna
 bouwen; P publicatiefase naar de Prodis-database: ontwerp actualiseren (denker), open keuzes V1–V4 aan de mens, daarna bouwen.
 **Bron:** mens
+
+## 2026-10-22 — G2a: loskoppelen van een gedeelde definitie
+**Vraag:** V1 en V2 uit `docs/design/g2-design.md` §4.
+**Beslissing:**
+- **V1 = A:** de bestaande koppeling wordt verlegd naar een eigen kopie van de definitie (code `LEGACY-<interface>` met override,
+  `based_on` de gedeelde definitie); koppelings-/taakcode, leveringsconfiguratie, credential, bronstaat, prijshistoriek en
+  behandelgevallen blijven; enkel zonder open batch of lopende run; getriggerd door APPLY-optie `detachFromShared=true`.
+  **Herroept gedeeltelijk** "een bestaande koppeling wordt nooit gewijzigd / verhuist nooit" (S2/S7), enkel voor deze expliciete actie.
+  Gemelde constraintwijziging op 020-3 (Liquibase 026, design §G2a).
+- **V2 = A:** de loskoppel-APPLY activeert een ongewijzigde kopie van de ACTIVE revisie van de gedeelde definitie (via
+  `SetupService.activateRevision`, volledige validatie, actor als goedkeurder); de nieuwe legacy-inhoud blijft DRAFT. Uitzondering op
+  "APPLY activeert nooit".
+- Aannames design G2 aanvaard (opnieuw aansluiten later; `legacy_definition_codes` van de groep ongewijzigd).
+**Bron:** mens / denker-zwaar G2-ontwerp
