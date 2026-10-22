@@ -2950,3 +2950,21 @@ testrol, via het script `scripts/test/setup-prodis-pubtest.sql`). De echte datab
 VKP-percentages (bedrag/basis, schaal 12) zullen bij spec v2 bijna altijd `EXCEEDS_LEGACY_PRECISION` geven; identiteit met `identity_uppercase`
 kan `ARTICLE_NOT_FOUND` geven bij letterlijke vergelijking (parallelrun maakt het zichtbaar).
 **Bron:** P2b-bouwerrapport
+
+## 2026-10-22 — P2c: parallelrun op de SIMULATION-run
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):**
+1. De parallelrun loopt na het vastleggen van `SIMULATED`, buiten de transactie en zonder run-slot; crasht ze, dan blijft de run SIMULATED
+   met `parallelRun = null` (nieuwe SIMULATION-run volstaat).
+2. Geen schemawijziging: rapport `prodis-parallel-run.json` + samenvatting `prodis-parallel-run-summary.json` naast het PSIMPORT-artefact;
+   tellers zijn afgeleide data in de runview.
+3. JSON i.p.v. CSV (geneste meldingen, prior/target, changes).
+4. Onleesbare `legacy_master` slaat de run niet over (UNKNOWN + `LEGACY_MASTER_UNKNOWN`); een niet-VERIFIED catalogus-lookup → `PARALLEL_RUN_UNAVAILABLE`.
+5. Extra statussen `PARALLEL_RUN_COMPLETED`, `_NO_SNAPSHOT`, `_FAILED`, `_SUMMARY_UNREADABLE` naast `_NOT_CONFIGURED`, `_UNAVAILABLE`.
+6. Lookup ook voor CREATE-items en door de projectie geweigerde items (voor `ARTICLE_ALREADY_EXISTS`).
+7. Overgeslagen of mislukt → tellers `null`, nooit 0.
+8. Waarschuwing `LEGACY_MASTER_DATASYNC_REVERTS` bij PRODIS én PROFAB.
+9. Endpoint `GET /publication-runs/{runId}/parallel-run-artifact` (READ, bestaande 404/409-codes).
+10. Het rapport bevat Prodis-waarden maar nooit Prodis-id's; het staat in de CI-archiefmap met dezelfde retentie als het PSIMPORT-artefact.
+**Ontdekt:** `PRICE_ROUNDING_DIFFERENCE` kan end-to-end pas na P4b (tot dan zijn alle VKP% KEEP met `EXPECTED_NOT_AVAILABLE`); de POST van
+een SIMULATION-run wacht nu synchroon op de Prodis-lookups (risico op HTTP-time-out bij grote bundels).
+**Bron:** P2c-bouwerrapport

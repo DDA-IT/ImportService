@@ -214,6 +214,43 @@ class PublicationRunSimulationTest {
                 .isEqualTo(HexFormat.of().formatHex(bundles.findById(bundleId).orElseThrow().getSnapshotHash()));
     }
 
+    /**
+     * P2c ({@code publicatie-prodis-db-direct-design.md} par. 6): deze context heeft geen Prodis-leesbron. De parallelrun
+     * wordt dan expliciet overgeslagen ({@code PARALLEL_RUN_NOT_CONFIGURED}, tellers {@code null}, nooit "0 items" of
+     * "niet gevonden"), terwijl de SIMULATION exact zoals voorheen slaagt. Naast het PSIMPORT-artefact staan enkel het
+     * statusrapport en de samenvatting; runrij en artefact zijn ongewijzigd.
+     */
+    @Test
+    void withoutAProdisSourceTheParallelRunIsSkippedExplicitlyAndTheSimulationIsUnchanged() throws Exception {
+        long bundleId = frozenBundle("PARNC", HEADER, "ACME;G1;R1;1,00;Boormachine", "ACME;G1;R2;2,50;Hamer");
+
+        PublicationRunView view = runService.requestRun(bundleId, "SIMULATION", REQUESTER);
+
+        assertThat(view.status()).isEqualTo("SIMULATED");
+        assertThat(view.rowCount()).isEqualTo(2L);
+        assertThat(view.incompleteRowCount()).isZero();
+        assertThat(view.failureCode()).isNull();
+        PublicationParallelRunService.ParallelRunSummary parallel = view.parallelRun();
+        assertThat(parallel.status()).isEqualTo(PublicationParallelRunService.STATUS_NOT_CONFIGURED);
+        assertThat(parallel.itemCount()).isNull();
+        assertThat(parallel.outcomeCounts()).isNull();
+        assertThat(parallel.writesToProdis()).isFalse();
+        assertThat(runService.getRun(view.id()).parallelRun()).isEqualTo(parallel);
+
+        Map<String, Object> row = runRow(view.id());
+        assertThat(row.get("status")).isEqualTo("SIMULATED");
+        assertThat(row.get("active_marker")).isNull();
+        Path artifact = archiveRoot.resolve((String) row.get("artifact_reference"));
+        assertThat(sha256Hex(Files.readAllBytes(artifact))).isEqualTo(view.artifactSha256());
+        try (Stream<Path> files = Files.list(artifact.getParent())) {
+            assertThat(files.map(path -> path.getFileName().toString())).containsExactlyInAnyOrder(
+                    PublicationParallelRunService.REPORT_FILE_NAME, PublicationParallelRunService.SUMMARY_FILE_NAME,
+                    PublicationArtifactStore.ARTIFACT_FILE_NAME);
+        }
+        String report = Files.readString(artifact.resolveSibling(PublicationParallelRunService.REPORT_FILE_NAME));
+        assertThat(report).contains("PARALLEL_RUN_NOT_CONFIGURED").contains("\"items\" : [ ]");
+    }
+
     /** Het subject wordt bewaard maar komt in geen enkel antwoord; het serverpad evenmin. */
     @Test
     void theSubjectIsStoredOnTheRowButNeverExposedAndTheViewCarriesNoFilePath() {

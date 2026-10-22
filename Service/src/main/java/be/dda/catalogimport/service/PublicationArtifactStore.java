@@ -40,7 +40,8 @@ import org.springframework.stereotype.Component;
  * <h2>Pad</h2>
  * {@code <root>/publication-runs/<yyyy>/<MM>/<dd>/<runId>/psimport-preview.csv}. De runId-map maakt het
  * pad uniek zonder dat er ooit een bestaand artefact overschreven kan worden: het bestand wordt met
- * {@code CREATE_NEW} aangemaakt.
+ * {@code CREATE_NEW} aangemaakt. Extra artefacten van dezelfde run (publicatie P2c: het rapport en de samenvatting van de
+ * Prodis-parallelrun) komen via {@link #writeSibling} in diezelfde map, met een eigen vaste bestandsnaam.
  *
  * <h2>Atomair schrijven</h2>
  * Er wordt eerst naar {@code psimport-preview.csv.tmp} in dezelfde map geschreven en pas daarna
@@ -113,7 +114,52 @@ public class PublicationArtifactStore {
                 .resolve(String.format(Locale.ROOT, "%02d", today.getDayOfMonth()))
                 .resolve(Long.toString(runId));
         Path target = directory.resolve(ARTIFACT_FILE_NAME).normalize();
-        Path temporary = directory.resolve(ARTIFACT_FILE_NAME + TEMP_SUFFIX).normalize();
+        if (!target.startsWith(root) || target.equals(root)) {
+            throw new IllegalArgumentException("Publication artifact target outside archive root");
+        }
+        return writeAtomically(directory, ARTIFACT_FILE_NAME, Long.toString(runId), content);
+    }
+
+    /**
+     * Schrijft een <b>extra</b> artefact van dezelfde run in dezelfde map als een eerder geschreven artefact (publicatie
+     * P2c: het parallelrunrapport naast het PSIMPORT-artefact). De map komt uit de bewaarde referentie, nooit opnieuw
+     * uit de klok: een extra artefact dat na middernacht geschreven wordt, belandt dus toch naast het eerste. Zelfde
+     * belofte als {@link #write}: atomair, SHA-256 en grootte tijdens het schrijven, geen half bestand na een fout, en
+     * een bestaand bestand wordt nooit overschreven.
+     *
+     * @param reference de referentie van het bestaande artefact van de run
+     * @param fileName  een eenvoudige bestandsnaam ({@code [a-z0-9.-]}), verschillend van {@link #ARTIFACT_FILE_NAME}
+     * @throws IllegalArgumentException ongeldige referentie of bestandsnaam
+     * @throws IllegalStateException    het extra artefact bestaat al
+     * @throws UncheckedIOException     het artefact kon niet geschreven worden
+     */
+    public StoredArtifact writeSibling(String reference, String fileName, ArtifactContent content) {
+        Path sibling = resolve(siblingReference(reference, fileName));
+        if (Files.exists(sibling)) {
+            throw new IllegalStateException("Publication artifact " + fileName + " already exists for this run");
+        }
+        Path directory = sibling.getParent();
+        return writeAtomically(directory, fileName, directory.getFileName().toString(), content);
+    }
+
+    /**
+     * De referentie van een extra artefact {@code fileName} in dezelfde map als {@code reference}. Gevalideerd zoals
+     * {@link #open}: het resultaat ligt altijd binnen {@value #ARTIFACT_SUBDIRECTORY}.
+     *
+     * @throws IllegalArgumentException ongeldige referentie of bestandsnaam
+     */
+    public String siblingReference(String reference, String fileName) {
+        if (fileName == null || !fileName.matches("[a-z0-9][a-z0-9.-]{0,99}") || fileName.endsWith(TEMP_SUFFIX)
+                || fileName.equals(ARTIFACT_FILE_NAME)) {
+            throw new IllegalArgumentException("Invalid publication artifact file name");
+        }
+        Path existing = resolve(reference);
+        return toReference(existing.getParent().resolve(fileName).normalize());
+    }
+
+    private StoredArtifact writeAtomically(Path directory, String fileName, String runLabel, ArtifactContent content) {
+        Path target = directory.resolve(fileName).normalize();
+        Path temporary = directory.resolve(fileName + TEMP_SUFFIX).normalize();
         if (!target.startsWith(root) || target.equals(root)) {
             throw new IllegalArgumentException("Publication artifact target outside archive root");
         }
@@ -141,7 +187,7 @@ public class PublicationArtifactStore {
             deleteDirectoryIfEmpty(directory);
             if (failure instanceof IOException io) {
                 // Bewust zonder pad in de boodschap: die kan in failure_message van de run terechtkomen.
-                throw new UncheckedIOException("Cannot write publication artifact for run " + runId, io);
+                throw new UncheckedIOException("Cannot write publication artifact for run " + runLabel, io);
             }
             throw (RuntimeException) failure;
         }

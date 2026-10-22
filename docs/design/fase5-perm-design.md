@@ -21,6 +21,7 @@ leidt het effectieve recht af (één plek: `CurrentActor`/`PermissionService`). 
 | `POST /bundles/{id}/mutations/{m}/approve`, `/reject`, `POST /{id}/decisions`, `/freeze`, `/cancel` | APPROVE |
 | `POST /bundles/{id}/publication-runs` (5P-8, zie `fase5-pub-design.md` §4) | APPROVE |
 | `GET /bundles/{id}/publication-runs`, `GET /publication-runs/{runId}`, `GET /publication-runs/{runId}/artifact` (5P-8) | READ |
+| `GET /publication-runs/{runId}/parallel-run-artifact` (P2c, rapport van de Prodis-parallelrun; zie `publicatie-prodis-db-direct-design.md` §6) | READ |
 | `POST /tasks/{taskId}/deliveries` (upload) | MANAGE |
 | `GET /local-source/files` (tweede ontvangstweg; bewust MANAGE, niet READ — zie D8, `docs/decisions.md` 2026-09-27) | MANAGE |
 | `POST /tasks/{taskId}/deliveries/local-source` (tweede ontvangstweg, inlezen uit servermap) | MANAGE |

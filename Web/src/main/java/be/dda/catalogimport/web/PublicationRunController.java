@@ -100,4 +100,20 @@ public class PublicationRunController {
             in.transferTo(response.getOutputStream());
         }
     }
+
+    /**
+     * Streamt het JSON-rapport van de Prodis-parallelrun (P2c, {@code docs/design/publicatie-prodis-db-direct-design.md}
+     * par. 6) van een {@code SIMULATED} run. Zelfde patroon en zelfde recht als {@link #artifact}: eerst openen (404/409
+     * vóór de eerste byte), daarna kopiëren; de bestandsnaam bevat enkel het run-id.
+     */
+    @RequiresPermission(Permission.READ)
+    @GetMapping("/publication-runs/{runId}/parallel-run-artifact")
+    void parallelRunArtifact(@PathVariable("runId") long runId, HttpServletResponse response) throws IOException {
+        try (InputStream in = service.openParallelRunArtifact(runId)) {
+            response.setContentType("application/json; charset=UTF-8");
+            response.setHeader("Content-Disposition",
+                    "attachment; filename=\"prodis-parallel-run-" + runId + ".json\"");
+            in.transferTo(response.getOutputStream());
+        }
+    }
 }

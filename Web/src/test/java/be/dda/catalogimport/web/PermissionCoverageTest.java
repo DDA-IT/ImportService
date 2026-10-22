@@ -111,6 +111,8 @@ class PermissionCoverageTest {
         m.put("GET /api/catalog-import/bundles/{}/publication-runs", "READ");
         m.put("GET /api/catalog-import/publication-runs/{}", "READ");
         m.put("GET /api/catalog-import/publication-runs/{}/artifact", "READ");
+        // Rapport van de Prodis-parallelrun (P2c, publicatie-prodis-db-direct-design.md par. 6): zelfde recht als het artefact.
+        m.put("GET /api/catalog-import/publication-runs/{}/parallel-run-artifact", "READ");
         // Herstel van een vastgelopen PREPARING-run (docs/decisions.md 2026-09-27, optie A): zelfde
         // rechtenconventie als het aanvragen zelf.
         m.put("POST /api/catalog-import/publication-runs/{}/abort", "APPROVE");

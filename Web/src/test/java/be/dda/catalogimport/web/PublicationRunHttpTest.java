@@ -306,6 +306,73 @@ class PublicationRunHttpTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"));
     }
 
+    /**
+     * P2c ({@code publicatie-prodis-db-direct-design.md} par. 6): de runview draagt additief de samenvatting van de
+     * Prodis-parallelrun (deze context heeft geen Prodis-leesbron: expliciet {@code PARALLEL_RUN_NOT_CONFIGURED}), en het
+     * rapport is te downloaden met READ, volgens het patroon van het artefact. Geen pad in antwoord of rapport.
+     */
+    @Test
+    void theRunViewCarriesTheParallelRunSummaryAndItsReportIsDownloadableWithRead() throws Exception {
+        long bundleId = frozenBundle("PARALLEL", 2);
+
+        String body = run(bundleId, as(USER, Permission.APPROVE), SIMULATION).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SIMULATED"))
+                .andExpect(jsonPath("$.parallelRun.status").value("PARALLEL_RUN_NOT_CONFIGURED"))
+                .andExpect(jsonPath("$.parallelRun.writesToProdis").value(false))
+                .andExpect(jsonPath("$.parallelRun.legacyMasterAvailability").value("NOT_CONFIGURED"))
+                .andExpect(jsonPath("$.parallelRun.reportSha256").isString())
+                .andReturn().getResponse().getContentAsString();
+        assertThat((Object) JsonPath.read(body, "$.parallelRun.itemCount")).isNull();
+        assertThat((Object) JsonPath.read(body, "$.parallelRun.outcomeCounts")).isNull();
+        assertThat(body).doesNotContain(archiveRoot.toString()).doesNotContain("publication-runs/")
+                .doesNotContain(".json");
+        long runId = ((Number) JsonPath.read(body, "$.id")).longValue();
+        String sha = JsonPath.read(body, "$.parallelRun.reportSha256");
+
+        mockMvc.perform(get(API + "/publication-runs/{id}", runId).with(as(USER, Permission.READ)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.parallelRun.status").value("PARALLEL_RUN_NOT_CONFIGURED"))
+                .andExpect(jsonPath("$.parallelRun.reportSha256").value(sha));
+        mockMvc.perform(get(API + "/bundles/{id}/publication-runs", bundleId).with(as(USER, Permission.READ)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].parallelRun.status").value("PARALLEL_RUN_NOT_CONFIGURED"));
+
+        MockHttpServletResponse download = mockMvc.perform(get(API + "/publication-runs/{id}/parallel-run-artifact",
+                        runId).with(as(USER, Permission.READ)))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        assertThat(download.getContentType()).startsWith("application/json");
+        assertThat(download.getHeader("Content-Disposition"))
+                .isEqualTo("attachment; filename=\"prodis-parallel-run-" + runId + ".json\"");
+        byte[] report = download.getContentAsByteArray();
+        assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(report))).isEqualTo(sha);
+        String text = new String(report, StandardCharsets.UTF_8);
+        assertThat(text).contains("\"status\" : \"PARALLEL_RUN_NOT_CONFIGURED\"").contains("\"writesToProdis\" : false")
+                .doesNotContain(archiveRoot.toString());
+
+        mockMvc.perform(get(API + "/publication-runs/{id}/parallel-run-artifact", runId)
+                        .with(withoutPermissions(USER)))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+        mockMvc.perform(get(API + "/publication-runs/{id}/parallel-run-artifact", 999_999_999L)
+                        .with(as(USER, Permission.READ)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("PUBLICATION_RUN_NOT_FOUND"));
+    }
+
+    /** Een run zonder parallelrunrapport (hier: een vastgelopen PREPARING-run) geeft 409, zoals het artefact. */
+    @Test
+    void aRunWithoutParallelRunReportIs409() throws Exception {
+        long bundleId = frozenBundle("NOPARALLEL", 1);
+        long runId = insertPreparingRun(bundleId, Instant.now());
+
+        mockMvc.perform(get(API + "/publication-runs/{id}/parallel-run-artifact", runId)
+                        .with(as(USER, Permission.READ)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PUBLICATION_RUN_ARTIFACT_NOT_AVAILABLE"));
+        mockMvc.perform(get(API + "/publication-runs/{id}", runId).with(as(USER, Permission.READ)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.parallelRun").isEmpty());
+        mockMvc.perform(post(API + "/publication-runs/{id}/abort", runId).with(as(USER, Permission.APPROVE)))
+                .andExpect(status().isOk());
+    }
+
     // --- Helpers ---------------------------------------------------------------------------------------
 
     private ResultActions run(long bundleId, org.springframework.test.web.servlet.request.RequestPostProcessor login,

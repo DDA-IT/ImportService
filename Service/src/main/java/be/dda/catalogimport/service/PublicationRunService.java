@@ -13,6 +13,8 @@ import be.dda.catalogimport.domain.PublicationTargetMode;
 import be.dda.catalogimport.service.PsimportPreviewMapper.Row;
 import be.dda.catalogimport.service.PsimportPreviewService.PsimportPreview;
 import be.dda.catalogimport.service.PublicationArtifactStore.StoredArtifact;
+import be.dda.catalogimport.service.PublicationParallelRunService.ParallelRunSummary;
+import be.dda.catalogimport.service.PublicationParallelRunService.RunContext;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -26,6 +28,7 @@ import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -100,6 +103,15 @@ import org.springframework.transaction.support.TransactionTemplate;
  * minuten) op {@code PREPARING} staat ({@link #FAILURE_TIMED_OUT}), en {@link #abortRun} laat wie
  * {@code APPROVE} heeft een {@code PREPARING}-run op elk moment handmatig afbreken, zonder tijdsvoorwaarde
  * ({@link #FAILURE_MANUALLY_ABORTED}). Beide hergebruiken {@link PublicationRun#recordFailed}.
+ *
+ * <h2>Parallelrun naar de Prodis-database (P2c)</h2>
+ * Na een geslaagde run ({@code SIMULATED}, vastgelegd in stap 3) volgt een parallelrun
+ * ({@link PublicationParallelRunService}, design {@code publicatie-prodis-db-direct-design.md} par. 5/6): een dry-run tegen
+ * de <b>alleen-lezen</b> Prodis-leesbron, met als resultaat twee extra artefacten naast het PSIMPORT-artefact en een
+ * samenvatting in {@link PublicationRunView#parallelRun()}. Bewust <b>na</b> stap 3, buiten elke transactie en zonder de
+ * marker: de run zelf is en blijft {@code SIMULATED} zoals voorheen, wat de parallelrun ook oplevert (niet
+ * geconfigureerd, onbereikbaar, mislukt). Een afgebroken of mislukte run krijgt geen parallelrun. Er wordt nooit naar
+ * Prodis geschreven en er is geen schemawijziging: de tellers zijn afgeleide data uit het samenvattingsbestand.
  */
 @Service
 public class PublicationRunService {
@@ -179,6 +191,9 @@ public class PublicationRunService {
      * @param bundleContentHash hex, of {@code null} wanneer de bundel er geen draagt
      * @param snapshotHash      hex, of {@code null} voor een bundel zonder bundelsnapshot
      * @param payloadHash       hex van de artefactbytes; {@code null} zolang er geen artefact is
+     * @param parallelRun       de samenvatting van de Prodis-parallelrun (P2c, afgeleid uit het samenvattingsbestand
+     *                          naast het artefact); {@code null} als de run er geen heeft (niet {@code SIMULATED}, of van
+     *                          voor P2c). Draagt geen bestandspad.
      */
     public record PublicationRunView(long id, long bundleId, String targetMode, int attempt, String status,
                                      String requestedBy, Instant requestedAt, Instant startedAt,
@@ -187,9 +202,14 @@ public class PublicationRunService {
                                      Long rowCount, Long incompleteRowCount, String failureCode,
                                      String failureMessage, boolean simulationOnly, boolean writesToProdis,
                                      String contractStatus, String previewSpecVersion,
-                                     String snapshotSpecVersion) {
+                                     String snapshotSpecVersion, ParallelRunSummary parallelRun) {
 
         private static PublicationRunView of(PublicationRun run, String snapshotSpecVersion) {
+            return of(run, snapshotSpecVersion, null);
+        }
+
+        private static PublicationRunView of(PublicationRun run, String snapshotSpecVersion,
+                                             ParallelRunSummary parallelRun) {
             HexFormat hex = HexFormat.of();
             return new PublicationRunView(run.getId(), run.getBundle().getId(), run.getTargetMode().name(),
                     run.getAttempt(), run.getStatus().name(), run.getRequestedBy(), run.getRequestedAt(),
@@ -200,7 +220,14 @@ public class PublicationRunService {
                     run.getArtifactSha256(), run.getArtifactByteSize(), run.getRowCount(),
                     run.getIncompleteRowCount(), run.getFailureCode(), run.getFailureMessage(),
                     true, false, PsimportPreviewService.CONTRACT_STATUS,
-                    PsimportPreviewService.PREVIEW_SPEC_VERSION, snapshotSpecVersion);
+                    PsimportPreviewService.PREVIEW_SPEC_VERSION, snapshotSpecVersion, parallelRun);
+        }
+
+        private PublicationRunView withParallelRun(ParallelRunSummary summary) {
+            return new PublicationRunView(id, bundleId, targetMode, attempt, status, requestedBy, requestedAt,
+                    startedAt, finishedAt, bundleContentHash, snapshotHash, payloadHash, artifactSha256,
+                    artifactByteSize, rowCount, incompleteRowCount, failureCode, failureMessage, simulationOnly,
+                    writesToProdis, contractStatus, previewSpecVersion, snapshotSpecVersion, summary);
         }
     }
 
@@ -221,12 +248,29 @@ public class PublicationRunService {
     private final TransactionTemplate transaction;
     private final Clock clock;
     private final Duration stuckAfter;
+    /** {@code null} = geen parallelrun (enkel via de oorspronkelijke constructor, voor tests zonder Prodis-kant). */
+    private final PublicationParallelRunService parallelRuns;
 
+    /**
+     * De oorspronkelijke constructor (5P-7), ongewijzigd beschikbaar: zonder parallelrun. Spring gebruikt de
+     * {@link Autowired}-constructor hieronder.
+     */
     public PublicationRunService(PublicationRunRepository runs, PublicationBundleRepository bundles,
                                  PublicationBundleDao bundleDao, PsimportPreviewDao previewDao,
                                  PublicationArtifactStore artifacts,
                                  PlatformTransactionManager transactionManager, Clock clock,
-                                 @Value("${catalogimport.publication-run.stuck-after:PT60M}") Duration stuckAfter) {
+                                 Duration stuckAfter) {
+        this(runs, bundles, bundleDao, previewDao, artifacts, transactionManager, clock, stuckAfter, null);
+    }
+
+    @Autowired
+    public PublicationRunService(PublicationRunRepository runs, PublicationBundleRepository bundles,
+                                 PublicationBundleDao bundleDao, PsimportPreviewDao previewDao,
+                                 PublicationArtifactStore artifacts,
+                                 PlatformTransactionManager transactionManager, Clock clock,
+                                 @Value("${catalogimport.publication-run.stuck-after:PT60M}") Duration stuckAfter,
+                                 PublicationParallelRunService parallelRuns) {
+        this.parallelRuns = parallelRuns;
         this.runs = runs;
         this.bundles = bundles;
         this.bundleDao = bundleDao;
@@ -289,7 +333,15 @@ public class PublicationRunService {
         } catch (RuntimeException failure) {
             return failRun(start, failure);
         }
-        return completeRun(start, artifact);
+        PublicationRunView completed = completeRun(start, artifact);
+        if (parallelRuns == null || !PublicationRunStatus.SIMULATED.name().equals(completed.status())) {
+            return completed;
+        }
+        // P2c: na het vastleggen van SIMULATED, buiten elke transactie; gooit nooit.
+        ParallelRunSummary parallelRun = parallelRuns.run(new RunContext(start.runId(), start.bundleId(),
+                start.bundleContentHash(), start.snapshotHash(), start.snapshotSpecVersion(),
+                artifact.stored().reference()));
+        return completed.withParallelRun(parallelRun);
     }
 
     /** Alle runs van één bundel, oudste eerst. */
@@ -299,7 +351,7 @@ public class PublicationRunService {
                 CODE_BUNDLE_NOT_FOUND, "Bundle " + bundleId + " not found"));
         String snapshotSpecVersion = bundle.getSnapshotSpecVersion();
         return runs.findByBundleIdOrderByIdAsc(bundleId).stream()
-                .map(run -> PublicationRunView.of(run, snapshotSpecVersion)).toList();
+                .map(run -> view(run, snapshotSpecVersion)).toList();
     }
 
     /**
@@ -310,7 +362,7 @@ public class PublicationRunService {
     @Transactional(readOnly = true)
     public PublicationRunView getRun(long runId) {
         PublicationRun run = requireRun(runId);
-        return PublicationRunView.of(run, run.getBundle().getSnapshotSpecVersion());
+        return view(run, run.getBundle().getSnapshotSpecVersion());
     }
 
     /**
@@ -330,6 +382,25 @@ public class PublicationRunService {
                     + " and carries no artifact; only a SIMULATED run has one");
         }
         return artifacts.open(reference);
+    }
+
+    /**
+     * Opent het rapport van de Prodis-parallelrun (P2c) van een run: zelfde patroon en dezelfde foutcodes als
+     * {@link #openArtifact}. De aanroeper sluit de stroom.
+     *
+     * @throws NotFoundException {@link #CODE_RUN_NOT_FOUND}
+     * @throws ConflictException {@link #CODE_ARTIFACT_NOT_AVAILABLE} zolang de run geen parallelrunrapport draagt
+     */
+    @Transactional(readOnly = true)
+    public InputStream openParallelRunArtifact(long runId) {
+        PublicationRun run = requireRun(runId);
+        String reference = run.getArtifactReference();
+        if (run.getStatus() != PublicationRunStatus.SIMULATED || reference == null || parallelRuns == null
+                || !parallelRuns.hasReport(reference)) {
+            throw new ConflictException(CODE_ARTIFACT_NOT_AVAILABLE, "Run " + runId + " is " + run.getStatus()
+                    + " and carries no Prodis parallel run report");
+        }
+        return parallelRuns.openReport(reference);
     }
 
     /**
@@ -644,6 +715,16 @@ public class PublicationRunService {
     }
 
     // --- Gedeeld ---------------------------------------------------------------------------------------
+
+    /** De runview met de bewaarde parallelrunsamenvatting (enkel een {@code SIMULATED}-run kan er een hebben). */
+    private PublicationRunView view(PublicationRun run, String snapshotSpecVersion) {
+        ParallelRunSummary parallelRun = null;
+        if (parallelRuns != null && run.getStatus() == PublicationRunStatus.SIMULATED
+                && run.getArtifactReference() != null) {
+            parallelRun = parallelRuns.readSummary(run.getArtifactReference());
+        }
+        return PublicationRunView.of(run, snapshotSpecVersion, parallelRun);
+    }
 
     private PublicationRun requireRun(long runId) {
         return runs.findById(runId).orElseThrow(
