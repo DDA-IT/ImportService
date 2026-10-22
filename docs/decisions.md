@@ -2890,3 +2890,11 @@ rechtstreeks schrijven); de mens bevestigde bewust.
   `catalog_price_observation` (`state_origin=PUBLISHED`); bij REJECTED/CONFLICT niets. Herroept aanname A7 van het vorige ontwerp.
 - Aannames uit het ontwerp §7 aanvaard; bouwvolgorde P1 → P2a → P2b → P2c → P4a → P4b → P5a → P5b → P5c → P6 → P7 (P8 CREATE later).
 **Bron:** mens / `publicatie-prodis-db-direct-design.md`
+
+## 2026-10-22 — Werkwijze: aanbevelingen volgen tot de mens alles herziet
+**Vraag:** Hoe omgaan met nieuwe §6-keuzes tijdens de verdere bouw?
+**Beslissing:** Voorlopig wordt bij elke nieuwe keuze de **aanbevolen** optie (van de Denker of de hoofdsessie) gevolgd, zonder op de mens te
+wachten. Elke zo genomen keuze wordt hier gelogd met de vermelding **"aanbeveling gevolgd — door de mens te herzien"**, zodat de mens ze
+achteraf in één keer kan overlopen en aanpassingen in kaart brengen. Bestaande bindende beslissingen blijven gelden; een aanbeveling die er
+een zou herroepen wordt niet stil gevolgd maar als open punt gemarkeerd.
+**Bron:** mens
