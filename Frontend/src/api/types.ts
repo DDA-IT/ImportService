@@ -1153,6 +1153,7 @@ export type TaskRow = {
 export const PUBLICATION_RUN_STATUSES = [
   'REQUESTED',
   'PREPARING',
+  'PUBLISHING',
   'SIMULATED',
   'FAILED',
   'WAITING_FOR_TARGET_CONTRACT',
@@ -1197,6 +1198,93 @@ export type PublicationRunView = {
   contractStatus: string;
   previewSpecVersion: string;
   snapshotSpecVersion: string | null;
+  /** P2c: samenvatting van de Prodis-parallelrun; `null`/afwezig als de run er geen heeft. */
+  parallelRun?: ParallelRunSummary | null;
+  /** P7 (publicatie naar Prodis): de stand van `legacy_master` bij de start van de run. */
+  legacyMasterAtStart?: LegacyMaster | null;
+  /** P7: tellers per itemstatus; ontbrekende sleutels = 0. */
+  itemCounts?: Partial<Record<PublicationItemStatus, number>> | null;
+  /** P7: alle items van de run zijn terminaal; de continue-lus stopt dan. */
+  done?: boolean;
+};
+
+// Stand van `system_settings.legacy_master`: wie in de legacy-wereld de meester is van de catalogusgegevens.
+export const LEGACY_MASTERS = ['NONE', 'PRODIS', 'PROFAB', 'UNKNOWN'] as const;
+export type LegacyMaster = (typeof LEGACY_MASTERS)[number];
+
+// be.dda.catalogimport.domain.PublicationRunItemStatus (P4a/P5b)
+export const PUBLICATION_ITEM_STATUSES = [
+  'PENDING',
+  'SENT',
+  'APPLIED',
+  'UNCHANGED',
+  'REJECTED',
+  'CONFLICT',
+  'RESULT_UNKNOWN',
+  'NOT_SENT',
+] as const;
+export type PublicationItemStatus = (typeof PUBLICATION_ITEM_STATUSES)[number];
+
+// be.dda.catalogimport.service.PublicationParallelRunService.ParallelRunSummary (P2c). De tellers zijn
+// `null` tenzij de parallelrun voltooid is: "niet geteld" is nooit 0.
+export type ParallelRunSummary = {
+  parallelRunSpecVersion: number;
+  status: string;
+  statusMessage: string | null;
+  writesToProdis: boolean;
+  legacyMaster: string | null;
+  legacyMasterAvailability: string | null;
+  legacyMasterWarningCode: string | null;
+  legacyMasterWarning: string | null;
+  itemCount: number | null;
+  outcomeCounts: Record<string, number> | null;
+  reasonCounts: Record<string, number> | null;
+  noticeCounts: Record<string, number> | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  reportSha256: string | null;
+  reportByteSize: number | null;
+};
+
+// Melding bij een item (P2b/P5b): `{code, field, message}`; de servertekst is Engels en gaat enkel naar
+// "Technische details".
+export type PublicationItemWarning = {
+  code: string;
+  field: string | null;
+  message: string | null;
+};
+
+// Een Prodis-toestand van een artikel (prior/result): bedragen als tekst, zoals de planner ze schrijft.
+export type ProdisArticleState = {
+  priceCode?: string | null;
+  brutPricePolitics?: string | null;
+  basePrice?: string | null;
+  brutPrice?: string | null;
+  brutPricePercentage?: string | null;
+  percentages?: Record<string, string | null> | null;
+  prices?: Record<string, string | null> | null;
+  description?: string | null;
+  salesPriceLastUpdated?: string | null;
+};
+
+// P7-contract (backend P6): één item van een publicatierun naar Prodis.
+export type PublicationItemView = {
+  mutationId: number;
+  identity: {
+    supplierNumber: string | null;
+    groupLegacyCode: string | null;
+    supplierReference: string | null;
+    libraryCode: string | null;
+  };
+  status: PublicationItemStatus;
+  reasonCode: string | null;
+  reasonDetail: string | null;
+  prior: ProdisArticleState | null;
+  result: ProdisArticleState | null;
+  warnings: PublicationItemWarning[];
+  legacyMaster: LegacyMaster | null;
+  sendCount: number;
+  lastErrorCode: string | null;
 };
 
 // be.dda.catalogimport.web.PublicationRunController.RequestRunRequest (request). Geen actorveld: de

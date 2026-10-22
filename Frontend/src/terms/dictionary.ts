@@ -87,6 +87,13 @@ export const TERM_DOMAINS = [
   'legacyDefinitionStatus',
   'transformKind',
   'legacyReportCode',
+  // P7: publicatie naar de Prodis-database.
+  'publicationItemStatus',
+  'publicationNotice',
+  'publicationItemReason',
+  'legacyMaster',
+  'parallelRunOutcome',
+  'parallelRunStatus',
 ] as const;
 export type TermDomain = (typeof TERM_DOMAINS)[number];
 
@@ -279,6 +286,10 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
   publicationRunStatus: {
     REQUESTED: { label: 'Aangevraagd', uitleg: 'De publicatierun is aangevraagd maar nog niet gestart.' },
     PREPARING: { label: 'Wordt voorbereid', uitleg: 'Het bestand voor de publicatie wordt opgebouwd.' },
+    PUBLISHING: {
+      label: 'Wordt gepubliceerd',
+      uitleg: 'De artikelen worden naar Prodis geschreven; dit kan in meerdere stappen verlopen.',
+    },
     SIMULATED: {
       label: 'Proef afgerond',
       uitleg: 'Het bestand is geschreven, maar er is niets echt aangepast.',
@@ -2204,6 +2215,194 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     SUCCESSOR_DRAFT: {
       label: 'Nieuwe conceptversie',
       uitleg: 'De legacy-definitie is gewijzigd; er komt een nieuwe conceptversie die u zelf nakijkt en activeert.',
+    },
+  },
+  publicationItemStatus: {
+    PENDING: {
+      label: 'Wacht',
+      uitleg: 'Dit artikel is nog niet naar Prodis gestuurd.',
+    },
+    SENT: {
+      label: 'Wordt verwerkt',
+      uitleg: 'Dit artikel is onderweg naar Prodis; het resultaat is nog niet bekend.',
+    },
+    APPLIED: {
+      label: 'Doorgevoerd',
+      uitleg: 'De wijziging is in Prodis aangebracht.',
+    },
+    UNCHANGED: {
+      label: 'Ongewijzigd',
+      uitleg: 'Prodis bevatte al de gewenste waarden; er is niets aangepast.',
+    },
+    REJECTED: {
+      label: 'Geweigerd',
+      uitleg: 'Het artikel is niet aangepast omdat het niet kan of mag; de reden staat erbij.',
+    },
+    CONFLICT: {
+      label: 'Conflict',
+      uitleg: 'Een waarde in Prodis is intussen veranderd; er is niets geschreven.',
+    },
+    RESULT_UNKNOWN: {
+      label: 'Uitkomst onbekend',
+      uitleg: 'Het is niet zeker of de wijziging in Prodis is aangekomen; opnieuw proberen is veilig.',
+    },
+    NOT_SENT: {
+      label: 'Niet verstuurd',
+      uitleg: 'Dit artikel is bewust niet naar Prodis gestuurd.',
+    },
+  },
+  publicationNotice: {
+    PRICE_ROUNDING_DIFFERENCE: {
+      label: 'Afrondingsverschil',
+      uitleg: 'Prodis rekent de verkoopprijs met zijn eigen afronding uit; die wijkt af van het bedrag in de levering.',
+    },
+    DERIVED_PRICE_DRIFT: {
+      label: 'Afgeleide prijzen wijken af',
+      uitleg: 'De afgeleide prijzen in Prodis komen niet overeen met wat uit de basisprijs en percentages volgt.',
+    },
+    VALUE_CHANGED_IN_PRODIS: {
+      label: 'Waarde in Prodis veranderd',
+      uitleg: 'Een waarde in Prodis is anders dan toen de wijziging werd voorbereid; er is niets overschreven.',
+    },
+    EMPTY_KEEPS_EXISTING: {
+      label: 'Leeg veld: bestaande waarde blijft',
+      uitleg: 'De levering had hier niets ingevuld; de bestaande waarde in Prodis blijft staan.',
+    },
+    ZERO_KEEPS_EXISTING: {
+      label: 'Nul: bestaande waarde blijft',
+      uitleg: 'De levering had hier 0 ingevuld; zoals in legacy blijft de bestaande waarde in Prodis staan.',
+    },
+    DESCRIPTION_OVERWRITTEN: {
+      label: 'Omschrijving overschreven',
+      uitleg: 'De omschrijving in Prodis wordt door die uit de levering vervangen.',
+    },
+    DESCRIPTION_TOO_LONG: {
+      label: 'Omschrijving te lang',
+      uitleg: 'De omschrijving is langer dan Prodis toelaat.',
+    },
+    PRECISION_LOSS: {
+      label: 'Precisieverlies',
+      uitleg: 'Een bedrag heeft meer decimalen dan Prodis kan bewaren.',
+    },
+    EXCEEDS_LEGACY_PRECISION: {
+      label: 'Meer decimalen dan legacy',
+      uitleg: 'Een bedrag heeft meer decimalen dan legacy toelaat.',
+    },
+    EXPECTED_NOT_AVAILABLE: {
+      label: 'Verwachte waarde ontbreekt',
+      uitleg: 'Er is geen verwachte waarde om de stand in Prodis mee te vergelijken.',
+    },
+    SNAPSHOT_INCOMPLETE: {
+      label: 'Bevroren gegevens onvolledig',
+      uitleg: 'De bevroren gegevens van dit artikel zijn onvolledig.',
+    },
+  },
+  publicationItemReason: {
+    VALUE_CHANGED_IN_PRODIS: {
+      label: 'Waarde in Prodis veranderd',
+      uitleg: 'Een waarde in Prodis is anders dan toen de wijziging werd voorbereid; er is niets overschreven.',
+    },
+    ARTICLE_NOT_FOUND: {
+      label: 'Artikel niet gevonden',
+      uitleg: 'Het artikel bestaat niet in Prodis; nieuwe artikelen aanmaken kan nog niet.',
+    },
+    ARTICLE_AMBIGUOUS: {
+      label: 'Artikel niet eenduidig',
+      uitleg: 'Er zijn meerdere artikelen in Prodis die bij deze herkenning passen.',
+    },
+    ARTICLE_ALREADY_EXISTS: {
+      label: 'Artikel bestaat al',
+      uitleg: 'Het artikel bestaat al in Prodis.',
+    },
+    SUPPLIER_AMBIGUOUS: {
+      label: 'Leverancier niet eenduidig',
+      uitleg: 'Het leveranciersnummer komt niet precies één keer voor in Prodis.',
+    },
+    CREATE_NOT_SUPPORTED_IN_V1: {
+      label: 'Aanmaken nog niet ondersteund',
+      uitleg: 'Het aanmaken van nieuwe artikelen in Prodis kan in deze versie nog niet.',
+    },
+    PRODIS_ROW_SHAPE_UNSUPPORTED: {
+      label: 'Onverwachte vorm in Prodis',
+      uitleg: 'De gegevens van het artikel in Prodis hebben een vorm die niet ondersteund wordt.',
+    },
+    IDENTITY_INCOMPLETE: {
+      label: 'Herkenning onvolledig',
+      uitleg: 'Leverancier, groep of referentie ontbreekt.',
+    },
+    ACTION_UNSUPPORTED: {
+      label: 'Soort wijziging niet ondersteund',
+      uitleg: 'Dit soort wijziging kan niet naar Prodis geschreven worden.',
+    },
+    CURRENCY_NOT_SUPPORTED_BY_PRODIS: {
+      label: 'Valuta niet ondersteund',
+      uitleg: 'Prodis kan deze valuta niet bewaren.',
+    },
+  },
+  legacyMaster: {
+    NONE: {
+      label: 'Geen meester',
+      uitleg: 'Er is geen systeem dat de wijzigingen later terugzet.',
+    },
+    PRODIS: {
+      label: 'Prodis',
+      uitleg: 'Prodis is de meester; de volgende datasync zet de wijzigingen terug naar de legacy-waarden.',
+    },
+    PROFAB: {
+      label: 'ProFab',
+      uitleg: 'ProFab is de meester; de volgende datasync zet de wijzigingen terug naar de legacy-waarden.',
+    },
+    UNKNOWN: {
+      label: 'Onbekend',
+      uitleg: 'Het is niet vast te stellen wie de meester is; ga ervan uit dat een datasync de wijzigingen terugzet.',
+    },
+  },
+  parallelRunOutcome: {
+    WOULD_UPDATE: {
+      label: 'Zou aangepast worden',
+      uitleg: 'Bij echt publiceren zou dit artikel in Prodis gewijzigd worden.',
+    },
+    UNCHANGED: {
+      label: 'Zou ongewijzigd blijven',
+      uitleg: 'Prodis bevat al de gewenste waarden.',
+    },
+    CONFLICT: {
+      label: 'Conflict',
+      uitleg: 'Een waarde in Prodis wijkt af van de verwachting; er zou niets geschreven worden.',
+    },
+    REJECTED: {
+      label: 'Zou geweigerd worden',
+      uitleg: 'Het artikel kan niet naar Prodis geschreven worden; de reden staat bij het artikel.',
+    },
+    NOT_SENT: {
+      label: 'Zou niet verstuurd worden',
+      uitleg: 'Dit artikel zou bewust niet naar Prodis gaan.',
+    },
+  },
+  parallelRunStatus: {
+    PARALLEL_RUN_COMPLETED: {
+      label: 'Vergelijking afgerond',
+      uitleg: 'Alle artikelen zijn met Prodis vergeleken; er is niets geschreven.',
+    },
+    PARALLEL_RUN_NOT_CONFIGURED: {
+      label: 'Leesverbinding niet ingesteld',
+      uitleg: 'De alleen-lezen verbinding met Prodis is niet ingesteld; er is niets vergeleken.',
+    },
+    PARALLEL_RUN_UNAVAILABLE: {
+      label: 'Prodis niet bereikbaar',
+      uitleg: 'Prodis kon niet gelezen worden; er is niets vergeleken.',
+    },
+    PARALLEL_RUN_NO_SNAPSHOT: {
+      label: 'Geen bevroren gegevens',
+      uitleg: 'De bundel heeft geen bevroren gegevens om te vergelijken.',
+    },
+    PARALLEL_RUN_FAILED: {
+      label: 'Vergelijking mislukt',
+      uitleg: 'De vergelijking is technisch mislukt; er is niets vergeleken.',
+    },
+    PARALLEL_RUN_SUMMARY_UNREADABLE: {
+      label: 'Samenvatting onleesbaar',
+      uitleg: 'De samenvatting van de vergelijking kon niet gelezen worden.',
     },
   },
 };

@@ -31,6 +31,14 @@ const STATUS_FAMILY: Record<string, StatusFamily> = {
   FROZEN: 'ready',
   CANCELLED: 'rejected',
   PUBLISHING: 'awaiting',
+  // P7: artikelen van een publicatie naar Prodis (APPLIED en REJECTED staan elders al).
+  PENDING: 'planned',
+  SENT: 'awaiting',
+  UNCHANGED: 'neutral',
+  CONFLICT: 'blocked',
+  RESULT_UNKNOWN: 'blocked',
+  NOT_SENT: 'neutral',
+  RECOVERY_REQUIRED: 'blocked',
   PARTIALLY_PUBLISHED: 'awaiting',
   PUBLICATION_FAILED: 'rejected',
   // ImportBatchStatus

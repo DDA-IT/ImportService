@@ -277,8 +277,9 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   PUBLICATION_MODE_NOT_ENABLED: {
     title: 'Doelmodus staat dicht',
     explanation:
-      'Deze fase ondersteunt enkel de proefpublicatie en schrijft niets naar Prodis. Publiceren naar de ' +
-      'controlebibliotheek of de echte bibliotheek blijft dicht tot de afspraken met het doelsysteem bewezen zijn.',
+      'Publiceren in deze doelmodus staat nog niet open in deze omgeving. De proefpublicatie schrijft niets naar ' +
+      'Prodis; de andere modi blijven dicht tot ze bewust zijn opengezet.',
+    whatNow: 'Vraag de beheerder om de doelmodus open te zetten, of gebruik de proefpublicatie.',
   },
   PUBLICATION_RUN_IN_PROGRESS: {
     title: 'Er loopt al een publicatierun',
@@ -305,6 +306,42 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     title: 'Run kan niet afgebroken worden',
     explanation: 'Afbreken kan alleen zolang een run nog wordt voorbereid; deze run is dat niet (meer).',
     whatNow: 'Laad de lijst opnieuw.',
+  },
+  PRODIS_WRITE_NOT_CONFIGURED: {
+    title: 'Schrijfverbinding met Prodis niet ingesteld',
+    explanation:
+      'De verbinding waarmee naar Prodis geschreven wordt, is in deze omgeving niet ingesteld. Er is niets naar ' +
+      'Prodis geschreven.',
+    whatNow: 'Vraag de beheerder om de schrijfverbinding in te stellen en probeer daarna opnieuw.',
+  },
+  BUNDLE_NOT_SNAPSHOTTED: {
+    title: 'De bundel heeft geen bevroren gegevens',
+    explanation:
+      'Deze bundel draagt geen bevroren gegevens van de artikelen (bijvoorbeeld omdat hij bevroren werd voor ' +
+      'die functie bestond). Er is niets naar Prodis geschreven.',
+    whatNow: 'Stel een nieuwe bundel samen en bevries die opnieuw voor u publiceert.',
+  },
+  BUNDLE_HAS_INCOMPLETE_ROWS: {
+    title: 'De bundel bevat onvolledige regels',
+    explanation:
+      'Een aantal regels van de bundel is onvolledig (er ontbreken gegevens van de wijziging of van de prijs). ' +
+      'Zolang dat zo is, wordt er niets naar Prodis geschreven.',
+    whatNow: 'Bekijk het voorbeeld van het importbestand om de onvolledige regels te vinden en los ze op.',
+    showBackendDetail: true,
+  },
+  PUBLICATION_RUN_BUSY: {
+    title: 'De publicatie is bezig',
+    explanation:
+      'Een andere aanroep verwerkt op dit moment dezelfde publicatie. Er is niets dubbel geschreven; de ' +
+      'schermen proberen het zo meteen opnieuw.',
+  },
+  PUBLICATION_RUN_HAS_SENT_ITEMS: {
+    title: 'Er zijn artikelen onderweg of met onbekende uitkomst',
+    explanation:
+      'Een deel van de artikelen van deze publicatie is al naar Prodis gestuurd zonder dat het resultaat gekend ' +
+      'is. Dit kan daarom niet zomaar opnieuw of afgebroken worden.',
+    whatNow: 'Ga verder met publiceren: de onzekere artikelen worden dan veilig opnieuw gecontroleerd.',
+    showBackendDetail: true,
   },
   LOCAL_SOURCE_NOT_CONFIGURED: {
     title: 'Ontvangstweg niet ingesteld',

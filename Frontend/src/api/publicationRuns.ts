@@ -4,8 +4,14 @@
  * geen JSON, en wordt door de UI als gewone downloadlink (`<a href={apiUrl(...)}>`) benaderd — zie
  * `docs/decisions.md` 2026-09-27 "Ontwerp bindend: Frontend publicatierun (SIMULATION) op scherm (3)".
  */
-import { request } from './http.ts';
-import type { PublicationRunView, RequestRunRequest } from './types.ts';
+import { request, toQueryString } from './http.ts';
+import type {
+  PageResult,
+  PublicationItemStatus,
+  PublicationItemView,
+  PublicationRunView,
+  RequestRunRequest,
+} from './types.ts';
 
 /** POST /bundles/{bundleId}/publication-runs — PublicationRunController.request */
 export function requestRun(
@@ -37,4 +43,22 @@ export function getRun(runId: number, signal?: AbortSignal): Promise<Publication
  */
 export function abortRun(runId: number, signal?: AbortSignal): Promise<PublicationRunView> {
   return request<PublicationRunView>(`/publication-runs/${runId}/abort`, { method: 'POST', signal });
+}
+
+/**
+ * POST /publication-runs/{runId}/continue — verwerkt de volgende brok items van een run naar Prodis (P7/P6).
+ * Geen body en geen actorveld. Een tweede gelijktijdige aanroep krijgt 409 `PUBLICATION_RUN_BUSY`.
+ */
+export function continueRun(runId: number, signal?: AbortSignal): Promise<PublicationRunView> {
+  return request<PublicationRunView>(`/publication-runs/${runId}/continue`, { method: 'POST', signal });
+}
+
+/** GET /publication-runs/{runId}/items?status=&page= — de itemresultaten van een run (READ). */
+export function listRunItems(
+  runId: number,
+  params: { status?: PublicationItemStatus | null; page?: number },
+  signal?: AbortSignal,
+): Promise<PageResult<PublicationItemView>> {
+  const query = toQueryString({ status: params.status, page: params.page });
+  return request<PageResult<PublicationItemView>>(`/publication-runs/${runId}/items${query}`, { signal });
 }

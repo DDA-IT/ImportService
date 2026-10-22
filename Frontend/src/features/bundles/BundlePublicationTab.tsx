@@ -10,24 +10,42 @@
  * `SIMULATED`/`FAILED`): geen polling. De runlijst is de audittrail, alleen-lezen, chronologisch,
  * zonder paginering. Buiten `FROZEN`: uitleg in plaats van de actie, geen crash, geen lege pagina.
  *
+ * P7 (publicatie naar Prodis, `docs/design/publicatie-prodis-db-direct-design.md` par. 5/6): bij een bundel met doel
+ * `PRODUCTION` staat hier ook "Publiceren naar Prodis…" (APPROVE) met een bevestiging die de modus en de vaste
+ * waarschuwing toont, de continue-lus (`useContinueLoop`), de tellers en de itemresultaten (`ProdisRunPanel`).
+ *
  * Herstel van een vastgelopen `PREPARING`-run (`docs/decisions.md` 2026-09-27, optie A): een "Afbreken"-
  * knop per `PREPARING`-run, gated op `APPROVE` (zelfde patroon als "Simulatierun starten"). Geen
  * tijdsvoorwaarde: de knop staat aan zodra de status `PREPARING` is.
  */
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import * as runsApi from '../../api/publicationRuns.ts';
 import { apiUrl, ApiError } from '../../api/http.ts';
 import { PERMISSION_APPROVE, type PublicationRunView } from '../../api/types.ts';
 import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
+import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
 import { term } from '../../terms/index.ts';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { gateTitle } from '../../actor/gate.ts';
 import { abortRunGate, publicationRunGate } from './bundlePolicy.ts';
+import { ParallelRunSummaryView } from './ParallelRunSummaryView.tsx';
+import { ProdisRunPanel } from './ProdisRunPanel.tsx';
+import {
+  DATASYNC_WARNING,
+  isProdisRun,
+  latestSimulatedRun,
+  normalizeLegacyMaster,
+  prodisPublishGate,
+  shouldContinue,
+  showsDatasyncWarning,
+} from './prodisPublication.ts';
+import { useContinueLoop } from './useContinueLoop.ts';
+import prodisStyles from './ProdisPublication.module.css';
 import { useBundleDetailContext } from './BundleDetailPage.tsx';
 import button from '../../components/Button.module.css';
 import styles from './BundlePublicationTab.module.css';
@@ -46,8 +64,12 @@ function Count({ value }: { value: number | null }) {
 }
 
 export function BundlePublicationTab() {
-  const { bundle } = useBundleDetailContext();
+  const { bundle, reloadBundle } = useBundleDetailContext();
   const [starting, setStarting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [prodisStarting, setProdisStarting] = useState(false);
+  const [prodisStartError, setProdisStartError] = useState<ApiError | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [startError, setStartError] = useState<ApiError | null>(null);
   const [copiedRunId, setCopiedRunId] = useState<number | null>(null);
@@ -62,7 +84,22 @@ export function BundlePublicationTab() {
     reload,
   } = useQuery(key, (signal) => runsApi.listRuns(bundle.id, signal));
 
+  const onLoopSettled = useCallback(() => {
+    reload();
+    reloadBundle();
+    setRefreshToken((token) => token + 1);
+  }, [reload, reloadBundle]);
+  const loop = useContinueLoop(onLoopSettled);
+
   const approveGate = usePermissionGate(PERMISSION_APPROVE);
+  const prodisBundle = bundle.targetMode === 'PRODUCTION';
+  const prodisGate = withPermission(
+    approveGate,
+    prodisPublishGate(bundle.status, bundle.targetMode, runs, loop.running),
+  );
+  const simulated = latestSimulatedRun(runs);
+  const masterKnown = simulated?.parallelRun?.legacyMaster != null;
+  const dialogMaster = normalizeLegacyMaster(simulated?.parallelRun?.legacyMaster);
   const startGate = withPermission(approveGate, publicationRunGate(bundle.status, runs));
 
   async function handleStart() {
@@ -85,6 +122,28 @@ export function BundlePublicationTab() {
       }
     } finally {
       setStarting(false);
+    }
+  }
+
+  async function handleProdisStart() {
+    setProdisStarting(true);
+    setProdisStartError(null);
+    try {
+      const run = await runsApi.requestRun(bundle.id, { targetMode: 'PRODUCTION' });
+      setConfirmOpen(false);
+      reload();
+      reloadBundle();
+      if (shouldContinue(run)) {
+        loop.start(run.id, run);
+      }
+    } catch (cause) {
+      if (cause instanceof ApiError) {
+        setProdisStartError(cause);
+      } else {
+        throw cause;
+      }
+    } finally {
+      setProdisStarting(false);
     }
   }
 
@@ -126,13 +185,19 @@ export function BundlePublicationTab() {
         wat er zou gebeuren.
       </p>
       <p>
+        Bij een bundel voor de echte publicatie kunt u hier ook naar Prodis publiceren: de wijzigingen worden dan
+        stap voor stap in Prodis aangebracht, en u ziet per artikel wat er gebeurd is.
+      </p>
+      <p>
         Elke poging is een publicatierun. U kunt een run met status &quot;{term('publicationRunStatus', 'PREPARING').label}
         &quot; die vastzit afbreken.
       </p>
     </WhatIsThis>
   );
 
-  if (bundle.status !== 'FROZEN') {
+  const prodisHistory =
+    prodisBundle && bundle.status !== 'FROZEN' && bundle.status !== 'ASSEMBLING' && bundle.status !== 'CANCELLED';
+  if (bundle.status !== 'FROZEN' && !prodisHistory) {
     return (
       <div className={styles.tab}>
         {whatIsThis}
@@ -148,6 +213,7 @@ export function BundlePublicationTab() {
   return (
     <div className={styles.tab}>
       {whatIsThis}
+      {bundle.status === 'FROZEN' && (
       <div className={styles.banner} role="note">
         <p>
           Dit is een proefpublicatie: er wordt niets naar Prodis geschreven. De velden van het bestand zijn nog niet door
@@ -160,7 +226,35 @@ export function BundlePublicationTab() {
           ]}
         />
       </div>
+      )}
 
+      {prodisBundle && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Publiceren naar Prodis</h2>
+          <p className={styles.notice}>
+            Dit schrijft de goedgekeurde wijzigingen echt naar Prodis. Het resultaat per artikel staat bij de run
+            hieronder.
+          </p>
+          <div className={styles.actionRow}>
+            <button
+              type="button"
+              className={button.primary}
+              disabled={!prodisGate.allowed || prodisStarting}
+              title={gateTitle(prodisGate)}
+              onClick={() => {
+                setProdisStartError(null);
+                setConfirmOpen(true);
+              }}
+            >
+              Publiceren naar Prodis…
+            </button>
+            {!prodisGate.allowed && <p className={styles.actionReason}>{prodisGate.reason}</p>}
+          </div>
+          {loop.error !== null && <ErrorBanner error={loop.error} />}
+        </section>
+      )}
+
+      {bundle.status === 'FROZEN' && (
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Nieuwe proefpublicatie</h2>
         <div className={styles.actionRow}>
@@ -183,6 +277,34 @@ export function BundlePublicationTab() {
         )}
         {startError !== null && <ErrorBanner error={startError} />}
       </section>
+      )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Publiceren naar Prodis"
+        reasonRequirement="none"
+        confirmLabel="Publiceren naar Prodis"
+        variant="danger"
+        pending={prodisStarting}
+        error={prodisStartError !== null ? <ErrorBanner error={prodisStartError} /> : undefined}
+        onConfirm={() => void handleProdisStart()}
+        onCancel={() => setConfirmOpen(false)}
+        body={
+          <div className={prodisStyles.dialogBody}>
+            <p>
+              Bundel {bundle.bundleReference}: de wijzigingen worden echt in Prodis aangebracht (modus:{' '}
+              {term('targetMode', 'PRODUCTION').label}). Dit kan in meerdere stappen verlopen; u kunt tussendoor
+              pauzeren en later verdergaan.
+            </p>
+            <p>
+              Stand van de legacy-meester: <strong>{term('legacyMaster', dialogMaster).label}</strong>
+              {masterKnown ? '.' : ' (nog niet vastgesteld door een proefvergelijking).'}
+            </p>
+            {showsDatasyncWarning(dialogMaster) && <p className={prodisStyles.warning}>{DATASYNC_WARNING}</p>}
+            <ParallelRunSummaryView runId={simulated?.id ?? 0} summary={simulated?.parallelRun ?? null} />
+          </div>
+        }
+      />
 
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Publicatieruns</h2>
@@ -194,7 +316,8 @@ export function BundlePublicationTab() {
         )}
         {runs !== null && runs.length > 0 && (
           <ul className={styles.runList}>
-            {runs.map((run) => {
+            {runs.map((listed) => {
+              const run = loop.live !== null && loop.live.id === listed.id ? { ...listed, ...loop.live } : listed;
               const abortGate = withPermission(approveGate, abortRunGate(run));
               return (
               <li key={run.id} className={styles.run}>
@@ -207,6 +330,10 @@ export function BundlePublicationTab() {
                     {formatDateTime(run.requestedAt)} door {run.requestedBy}
                   </span>
                 </div>
+
+                {isProdisRun(run) && (
+                  <ProdisRunPanel run={run} loop={loop} continueGate={approveGate} refreshToken={refreshToken} />
+                )}
 
                 {run.status === 'PREPARING' && (
                   <div className={styles.actionRow}>
@@ -266,11 +393,16 @@ export function BundlePublicationTab() {
                   </div>
                 )}
 
+                {run.status === 'SIMULATED' && !isProdisRun(run) && run.parallelRun != null && (
+                  <ParallelRunSummaryView runId={run.id} summary={run.parallelRun ?? null} />
+                )}
+
                 {run.status === 'FAILED' && (
                   <div className={styles.failure}>
                     <p>
-                      Deze publicatierun is technisch mislukt of afgebroken. Er is niets naar Prodis geschreven; u kunt
-                      opnieuw een proefpublicatie starten.
+                      {isProdisRun(run)
+                        ? 'Deze publicatie is technisch mislukt of afgebroken. Een deel van de artikelen kan al naar Prodis geschreven zijn; bekijk de resultaten per artikel.'
+                        : 'Deze publicatierun is technisch mislukt of afgebroken. Er is niets naar Prodis geschreven; u kunt opnieuw een proefpublicatie starten.'}
                     </p>
                     <TechnicalDetails
                       items={[

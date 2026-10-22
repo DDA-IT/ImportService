@@ -397,6 +397,7 @@ technische waarde (klein, voor support); *Nederlands* en *Uitleg* zijn wat de ge
 | --- | --- | --- |
 | `REQUESTED` | Aangevraagd | De publicatierun is aangevraagd maar nog niet gestart. |
 | `PREPARING` | Wordt voorbereid | Het bestand voor de publicatie wordt opgebouwd. |
+| `PUBLISHING` | Wordt gepubliceerd | De artikelen worden naar Prodis geschreven; dit kan in meerdere stappen verlopen. |
 | `SIMULATED` | Proef afgerond | Het bestand is geschreven, maar er is niets echt aangepast. |
 | `FAILED` | Technisch mislukt | De publicatierun is technisch mislukt. |
 | `WAITING_FOR_TARGET_CONTRACT` | Wacht op afspraken met het doelsysteem | Er moet eerst afgesproken worden hoe het doelsysteem het bestand verwacht. |
@@ -406,6 +407,86 @@ technische waarde (klein, voor support); *Nederlands* en *Uitleg* zijn wat de ge
 | `APPLIED` | Doorgevoerd | Echt verwerkt in het doelsysteem. |
 | `REJECTED_BY_PRODIS` | Geweigerd door Prodis | Prodis heeft de publicatie geweigerd. |
 | `RECOVERY_REQUIRED` | Herstel nodig | Er is een herstelactie nodig voordat het verder kan. |
+
+### Status van een artikel in een publicatie naar Prodis
+
+<!-- terms:publicationItemStatus -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `PENDING` | Wacht | Dit artikel is nog niet naar Prodis gestuurd. |
+| `SENT` | Wordt verwerkt | Dit artikel is onderweg naar Prodis; het resultaat is nog niet bekend. |
+| `APPLIED` | Doorgevoerd | De wijziging is in Prodis aangebracht. |
+| `UNCHANGED` | Ongewijzigd | Prodis bevatte al de gewenste waarden; er is niets aangepast. |
+| `REJECTED` | Geweigerd | Het artikel is niet aangepast omdat het niet kan of mag; de reden staat erbij. |
+| `CONFLICT` | Conflict | Een waarde in Prodis is intussen veranderd; er is niets geschreven. |
+| `RESULT_UNKNOWN` | Uitkomst onbekend | Het is niet zeker of de wijziging in Prodis is aangekomen; opnieuw proberen is veilig. |
+| `NOT_SENT` | Niet verstuurd | Dit artikel is bewust niet naar Prodis gestuurd. |
+
+### Meldingen bij een artikel van een publicatie naar Prodis
+
+<!-- terms:publicationNotice -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `PRICE_ROUNDING_DIFFERENCE` | Afrondingsverschil | Prodis rekent de verkoopprijs met zijn eigen afronding uit; die wijkt af van het bedrag in de levering. |
+| `DERIVED_PRICE_DRIFT` | Afgeleide prijzen wijken af | De afgeleide prijzen in Prodis komen niet overeen met wat uit de basisprijs en percentages volgt. |
+| `VALUE_CHANGED_IN_PRODIS` | Waarde in Prodis veranderd | Een waarde in Prodis is anders dan toen de wijziging werd voorbereid; er is niets overschreven. |
+| `EMPTY_KEEPS_EXISTING` | Leeg veld: bestaande waarde blijft | De levering had hier niets ingevuld; de bestaande waarde in Prodis blijft staan. |
+| `ZERO_KEEPS_EXISTING` | Nul: bestaande waarde blijft | De levering had hier 0 ingevuld; zoals in legacy blijft de bestaande waarde in Prodis staan. |
+| `DESCRIPTION_OVERWRITTEN` | Omschrijving overschreven | De omschrijving in Prodis wordt door die uit de levering vervangen. |
+| `DESCRIPTION_TOO_LONG` | Omschrijving te lang | De omschrijving is langer dan Prodis toelaat. |
+| `PRECISION_LOSS` | Precisieverlies | Een bedrag heeft meer decimalen dan Prodis kan bewaren. |
+| `EXCEEDS_LEGACY_PRECISION` | Meer decimalen dan legacy | Een bedrag heeft meer decimalen dan legacy toelaat. |
+| `EXPECTED_NOT_AVAILABLE` | Verwachte waarde ontbreekt | Er is geen verwachte waarde om de stand in Prodis mee te vergelijken. |
+| `SNAPSHOT_INCOMPLETE` | Bevroren gegevens onvolledig | De bevroren gegevens van dit artikel zijn onvolledig. |
+
+### Reden bij een artikel van een publicatie naar Prodis
+
+<!-- terms:publicationItemReason -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `VALUE_CHANGED_IN_PRODIS` | Waarde in Prodis veranderd | Een waarde in Prodis is anders dan toen de wijziging werd voorbereid; er is niets overschreven. |
+| `ARTICLE_NOT_FOUND` | Artikel niet gevonden | Het artikel bestaat niet in Prodis; nieuwe artikelen aanmaken kan nog niet. |
+| `ARTICLE_AMBIGUOUS` | Artikel niet eenduidig | Er zijn meerdere artikelen in Prodis die bij deze herkenning passen. |
+| `ARTICLE_ALREADY_EXISTS` | Artikel bestaat al | Het artikel bestaat al in Prodis. |
+| `SUPPLIER_AMBIGUOUS` | Leverancier niet eenduidig | Het leveranciersnummer komt niet precies één keer voor in Prodis. |
+| `CREATE_NOT_SUPPORTED_IN_V1` | Aanmaken nog niet ondersteund | Het aanmaken van nieuwe artikelen in Prodis kan in deze versie nog niet. |
+| `PRODIS_ROW_SHAPE_UNSUPPORTED` | Onverwachte vorm in Prodis | De gegevens van het artikel in Prodis hebben een vorm die niet ondersteund wordt. |
+| `IDENTITY_INCOMPLETE` | Herkenning onvolledig | Leverancier, groep of referentie ontbreekt. |
+| `ACTION_UNSUPPORTED` | Soort wijziging niet ondersteund | Dit soort wijziging kan niet naar Prodis geschreven worden. |
+| `CURRENCY_NOT_SUPPORTED_BY_PRODIS` | Valuta niet ondersteund | Prodis kan deze valuta niet bewaren. |
+
+### Wie is de meester in legacy (datasync)
+
+<!-- terms:legacyMaster -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `NONE` | Geen meester | Er is geen systeem dat de wijzigingen later terugzet. |
+| `PRODIS` | Prodis | Prodis is de meester; de volgende datasync zet de wijzigingen terug naar de legacy-waarden. |
+| `PROFAB` | ProFab | ProFab is de meester; de volgende datasync zet de wijzigingen terug naar de legacy-waarden. |
+| `UNKNOWN` | Onbekend | Het is niet vast te stellen wie de meester is; ga ervan uit dat een datasync de wijzigingen terugzet. |
+
+### Proefvergelijking met Prodis: uitkomst per artikel
+
+<!-- terms:parallelRunOutcome -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `WOULD_UPDATE` | Zou aangepast worden | Bij echt publiceren zou dit artikel in Prodis gewijzigd worden. |
+| `UNCHANGED` | Zou ongewijzigd blijven | Prodis bevat al de gewenste waarden. |
+| `CONFLICT` | Conflict | Een waarde in Prodis wijkt af van de verwachting; er zou niets geschreven worden. |
+| `REJECTED` | Zou geweigerd worden | Het artikel kan niet naar Prodis geschreven worden; de reden staat bij het artikel. |
+| `NOT_SENT` | Zou niet verstuurd worden | Dit artikel zou bewust niet naar Prodis gaan. |
+
+### Proefvergelijking met Prodis: stand
+
+<!-- terms:parallelRunStatus -->
+| Code | Nederlands | Uitleg |
+| --- | --- | --- |
+| `PARALLEL_RUN_COMPLETED` | Vergelijking afgerond | Alle artikelen zijn met Prodis vergeleken; er is niets geschreven. |
+| `PARALLEL_RUN_NOT_CONFIGURED` | Leesverbinding niet ingesteld | De alleen-lezen verbinding met Prodis is niet ingesteld; er is niets vergeleken. |
+| `PARALLEL_RUN_UNAVAILABLE` | Prodis niet bereikbaar | Prodis kon niet gelezen worden; er is niets vergeleken. |
+| `PARALLEL_RUN_NO_SNAPSHOT` | Geen bevroren gegevens | De bundel heeft geen bevroren gegevens om te vergelijken. |
+| `PARALLEL_RUN_FAILED` | Vergelijking mislukt | De vergelijking is technisch mislukt; er is niets vergeleken. |
+| `PARALLEL_RUN_SUMMARY_UNREADABLE` | Samenvatting onleesbaar | De samenvatting van de vergelijking kon niet gelezen worden. |
 
 ### Velden van de beschrijving van het bestand (versie)
 
