@@ -552,6 +552,18 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
     }
 
     @Test
+    void anUndeclaredCharsetIsAppliedAsUtf8() throws Exception {
+        ObjectNode bundle = applicable();
+        detail(bundle, "FILE_ENCODING", "");
+        long id = receive(bundle);
+
+        previewAndApply(id, "libraryCode", "LIB").andExpect(status().isOk());
+
+        Map<String, Object> revision = revisionRows(definitionId(supplier(bundle), "VROOAM2")).get(0);
+        assertThat(revision.get("structure_charset")).isEqualTo("UTF-8");
+    }
+
+    @Test
     void anUnknownReceiptIsNotFoundInTheService() {
         assertThatThrownBy(() -> applyService.apply(Long.MAX_VALUE, new ApplyCommand("x", REASON, null, null,
                 null), ACTOR)).hasMessageContaining("not found");

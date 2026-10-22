@@ -1804,7 +1804,11 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     CHARSET_NOT_DECLARED: {
       label: 'Tekenset niet opgegeven',
-      uitleg: 'De interface noemt geen tekenset en die wordt nooit geraden; kies er zelf een, of let op de gekozen waarde.',
+      uitleg: 'De interface noemt geen tekenset; de tekenset die je zelf koos is gebruikt.',
+    },
+    CHARSET_DEFAULTED_UTF8: {
+      label: 'Tekenset niet opgegeven, UTF-8 gebruikt',
+      uitleg: 'De interface noemt geen tekenset; legacy gebruikt dan altijd UTF-8, dus dat is hier overgenomen.',
     },
     CHARSET_UNSUPPORTED: {
       label: 'Tekenset niet ondersteund',

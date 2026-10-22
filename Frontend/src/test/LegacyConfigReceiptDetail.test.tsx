@@ -207,7 +207,7 @@ describe('LegacyReceiptDetailPage — controle vooraf', () => {
     await screen.findByTestId('legacy-report');
 
     fireEvent.change(screen.getByLabelText('Andere code voor de beschrijving'), { target: { value: 'VROOAM2B' } });
-    fireEvent.change(screen.getByLabelText('Tekenset als de interface er geen opgeeft'), { target: { value: 'UTF-8' } });
+    fireEvent.change(screen.getByLabelText('Tekenset als de interface er geen opgeeft (optioneel)'), { target: { value: 'UTF-8' } });
     // Nog niets verstuurd: de controle rekent pas na de knop opnieuw.
     expect(api.reads('/preview')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Controle opnieuw uitvoeren' }));

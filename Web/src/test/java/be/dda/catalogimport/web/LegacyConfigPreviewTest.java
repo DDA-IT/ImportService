@@ -152,15 +152,22 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
     }
 
     @Test
-    void anUndeclaredCharsetBlocksUnlessThePersonChoosesOne() throws Exception {
+    void anUndeclaredCharsetDefaultsToUtf8WithANoteUnlessThePersonChoosesOne() throws Exception {
         ObjectNode bundle = applicable();
         detail(bundle, "FILE_ENCODING", "");
         long id = receive(bundle);
 
-        assertThat(blockingCodes(previewBody(id, "libraryCode", "LIB"))).containsExactly("CHARSET_NOT_DECLARED");
+        String defaulted = previewBody(id, "libraryCode", "LIB");
+        assertThat(blockingCodes(defaulted)).isEmpty();
+        assertThat((List<String>) JsonPath.read(defaulted, "$.report.items[?(@.code == 'CHARSET_DEFAULTED_UTF8')].status"))
+                .containsExactly("WARNING");
+        assertThat((List<String>) JsonPath.read(defaulted, "$.report.items[?(@.code == 'CHARSET_DEFAULTED_UTF8')].target"))
+                .containsExactly("revision.structureCharset=UTF-8");
 
         String chosen = previewBody(id, "libraryCode", "LIB", "charsetWhenUndeclared", "ISO-8859-1");
         assertThat(blockingCodes(chosen)).isEmpty();
+        assertThat((List<String>) JsonPath.read(chosen, "$.report.items[?(@.code == 'CHARSET_DEFAULTED_UTF8')]"))
+                .isEmpty();
         assertThat((List<String>) JsonPath.read(chosen, "$.report.items[?(@.code == 'CHARSET_NOT_DECLARED')].status"))
                 .containsExactly("WARNING");
         assertThat((List<String>) JsonPath.read(chosen, "$.report.items[?(@.code == 'CHARSET_NOT_DECLARED')].target"))

@@ -74,7 +74,7 @@ import java.util.UUID;
  *       niet-uitdrukbare kortingscodes en {@code Skip_Excludes=Y} worden gemeld, nooit stil weggelaten (zie
  *       {@code excludeGroups}).</li>
  *   <li><b>INDET:</b> {@code Separator} Comma/Semicolon/Tab, afwezig → {@code ;} met waarschuwing ({@code Prg_1232}
- *       r.1194); {@code FILE_ENCODING} leeg → {@value #CHARSET_NOT_DECLARED} tenzij {@code charsetWhenUndeclared};
+ *       r.1194); {@code FILE_ENCODING} leeg → UTF-8 met waarschuwing {@value #CHARSET_DEFAULTED_UTF8}, of {@code charsetWhenUndeclared} (waarschuwing {@value #CHARSET_NOT_DECLARED});
  *       {@code SkipHeaderLines} n ≥ 1 → header op regel n; {@code DecimalComma=Y} → {@code decimalSeparator=,} op de
  *       numerieke mappings.</li>
  * </ul>
@@ -95,6 +95,8 @@ final class LegacyConfigTranslator {
     static final String SEPARATOR_NOT_DECLARED = "SEPARATOR_NOT_DECLARED";
     static final String STRUCTURE_FORMAT_UNSUPPORTED = "STRUCTURE_FORMAT_UNSUPPORTED";
     static final String CHARSET_NOT_DECLARED = "CHARSET_NOT_DECLARED";
+    static final String CHARSET_DEFAULTED_UTF8 = "CHARSET_DEFAULTED_UTF8";
+    static final String LEGACY_DEFAULT_CHARSET = "UTF-8";
     static final String CHARSET_UNSUPPORTED = "CHARSET_UNSUPPORTED";
     static final String SKIP_HEADER_LINES_INVALID = "SKIP_HEADER_LINES_INVALID";
     static final String DECIMAL_COMMA_BASE_PRICE = "DECIMAL_COMMA_BASE_PRICE";
@@ -330,7 +332,7 @@ final class LegacyConfigTranslator {
 
     /**
      * @param bundle                de bundel zoals bewaard in {@code bundle_json} (gevalideerd bij ontvangst)
-     * @param charsetWhenUndeclared de door de mens gekozen tekenset als {@code FILE_ENCODING} leeg is, of null
+     * @param charsetWhenUndeclared optionele override als {@code FILE_ENCODING} leeg is, of null (dan UTF-8)
      */
     static Translation translate(JsonNode bundle, String charsetWhenUndeclared) {
         return translate(bundle, charsetWhenUndeclared, null);
@@ -503,10 +505,10 @@ final class LegacyConfigTranslator {
         String element = "INDET:" + LABEL_ENCODING;
         if (value == null || value.isEmpty()) {
             if (charsetWhenUndeclared == null) {
-                add(element, BLOCKING, CHARSET_NOT_DECLARED, null, "no FILE_ENCODING declared; the encoding is "
-                        + "never guessed: choose one with charsetWhenUndeclared");
-                revisionBlocked = true;
-                return null;
+                // 2026-10-22 (beslissing mens): zonder FILE_ENCODING geldt het vaste legacy-charset UTF-8.
+                add(element, WARNING, CHARSET_DEFAULTED_UTF8, "revision.structureCharset=" + LEGACY_DEFAULT_CHARSET,
+                        "no FILE_ENCODING declared; legacy default UTF-8 used");
+                return LEGACY_DEFAULT_CHARSET;
             }
             if (!supported(charsetWhenUndeclared)) {
                 add(element, BLOCKING, CHARSET_UNSUPPORTED, null,

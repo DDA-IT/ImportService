@@ -65,9 +65,9 @@ export function PreviewChoices({ draft, onDraftChange, libraryCandidates, detach
         </Field>
 
         <Field
-          label="Tekenset als de interface er geen opgeeft"
+          label="Tekenset als de interface er geen opgeeft (optioneel)"
           htmlFor={charsetId}
-          hint="Wordt nooit geraden: kies zelf, bijvoorbeeld UTF-8."
+          hint="Leeg laten voor UTF-8, de vaste tekenset van legacy."
         >
           <input
             id={charsetId}

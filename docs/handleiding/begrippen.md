@@ -1303,7 +1303,8 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 | `SUPPLIER_CODE_TOO_LONG` | Leveranciersnummer is te lang | Het leveranciersnummer van de interface past niet in CatalogImport. |
 | `LIBRARY_NOT_DECLARED` | Bibliotheek ontbreekt in de interface | Zonder bibliotheeknummer kan de bibliotheek van de koppeling niet bepaald worden. |
 | `STRUCTURE_FORMAT_UNSUPPORTED` | Bestandsformaat niet ondersteund | Enkel CSV met komma, puntkomma of tab wordt overgenomen; dit formaat of scheidingsteken niet. |
-| `CHARSET_NOT_DECLARED` | Tekenset niet opgegeven | De interface noemt geen tekenset en die wordt nooit geraden; kies er zelf een, of let op de gekozen waarde. |
+| `CHARSET_NOT_DECLARED` | Tekenset niet opgegeven | De interface noemt geen tekenset; de tekenset die je zelf koos is gebruikt. |
+| `CHARSET_DEFAULTED_UTF8` | Tekenset niet opgegeven, UTF-8 gebruikt | De interface noemt geen tekenset; legacy gebruikt dan altijd UTF-8, dus dat is hier overgenomen. |
 | `CHARSET_UNSUPPORTED` | Tekenset niet ondersteund | De opgegeven tekenset bestaat niet of wordt niet ondersteund. |
 | `SKIP_HEADER_LINES_INVALID` | Aantal over te slaan regels is ongeldig | Het aantal kopregels van de interface is geen bruikbaar getal. |
 | `IDENTITY_PROFILE_UNSUPPORTED` | Herkenning van artikelen niet ondersteund | De sleutelinstellingen van de interface (bijvoorbeeld zonder groep, of met barcode) kunnen niet overgenomen worden. |
