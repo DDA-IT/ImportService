@@ -39,7 +39,15 @@ catalogimport:
   # (of hun volledige codes catalogImport.read/.manage/.approve). De hiërarchie doet de rest:
   # approve impliceert manage en read, manage impliceert read.
   # 'system' mag hier hoogstens read krijgen; met manage of approve start de applicatie niet.
+  # Rechtenbron: CONFIGURED = de grants hieronder (lokaal zonder Prodis). Wil je lokaal de rechten uit Prodis (backend :8080
+  # moet draaien, de gebruiker moet er een rol met catalogImport.* hebben), zet dan in je omgeving:
+  #   CATALOG_PERMISSION_SOURCE=PRODIS
+  #   CATALOG_PRODIS_ACCOUNT_URL=http://localhost:8080/api/account   (default hieronder; ook voor de productwisselaar)
+  # Onder PRODIS worden de grants genegeerd. Productie (application.yml) staat default op PRODIS.
   permissions:
+    source: ${CATALOG_PERMISSION_SOURCE:CONFIGURED}
+    prodis:
+      account-url: ${CATALOG_PRODIS_ACCOUNT_URL:http://localhost:8080/api/account}
     grants:
       - username: Dda
         rights: read, manage, approve

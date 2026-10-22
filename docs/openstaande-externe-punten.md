@@ -26,11 +26,18 @@ opgeheven: dat hier doorhalen of verwijderen, niet stilzwijgend laten verouderen
 geautomatiseerde tests hebben deze client niet nodig (die draaien zonder Keycloak via
 `TestSecurityConfiguration`).
 
-**Expliciet:** wij hebben GEEN scheduler-client/service-account nodig — dat had Prodis fout
-voorgesteld. Wij gebruiken uitsluitend de standard-flow-client die al in
-`docs/design/fase5-auth-design.md` (aanname A1, §2.3, C7) staat.
+**Expliciet:** voor de **gebruikerslogin en de rechten** hebben wij GEEN scheduler-client/service-account nodig — dat had
+Prodis fout voorgesteld; daarvoor gebruiken wij uitsluitend de standard-flow-client die al in
+`docs/design/fase5-auth-design.md` (aanname A1, §2.3, C7) staat. **Nuance:** voor de legacy-config-push bestaat wél een technische
+client `prodis-datasync-catalogimport` (client-credentials, enkel `POST .../legacy-config/receipts`; zie `docs/decisions.md`
+2026-10-20 M2). Die staat los van de login en de rechten.
 
 ## 2. Audience/rechten in Prodis
+
+**Stand 2026-10-22 (5B-7 gebouwd):** de seed van `catalogImport.read/.manage/.approve` is in Prodis gecommit op `dev` (`6e617bd73`);
+de audience is lokaal opgelost (`web_app` draagt `aud: account` via de standaardrol en scope `roles`). **Resterend:** (1) een Prodis-rol met
+`catalogImport.*` aan gebruikers toekennen (beheerdata); (2) in de productierealm een `oidc-audience-mapper` (audience `account`)
+op de CatalogImport-client, plus refresh tokens aan en dezelfde publieke issuer-host als Prodis.
 
 **Bevestigd:** de audience-eis is bevestigd — Prodis' `AudienceValidator` accepteert
 `account`/`api://default`. De resterende detailvraag is of dat identiek geldt voor het
@@ -48,8 +55,9 @@ Het recht, de rol, én de koppeling naar een `prodis_user`-rij bij Prodis bestaa
 
 **Wie levert dit:** Prodis/beheerder van de Prodis-permissiedata.
 
-**Blokkeert:** 5B-7, de Prodis-permissie-adapter (token relay naar `GET /api/account`). Tot dan blijft de
-lokale, YAML-gebaseerde rechtenbron (`ConfiguredPermissionSource`) de enige bron.
+**Blokkeert:** niet meer de bouw (5B-7 is gebouwd), wel het echte gebruik van `source=PRODIS`: zonder een rol met `catalogImport.*`
+krijgt een gebruiker geen rechten, en zonder audience `account` in de productierealm weigert Prodis het token. Lokaal en in demo
+blijft de YAML-bron (`CONFIGURED`) werken.
 
 ## 3. Verwerkingscontract 252 IMPORT / 1179
 

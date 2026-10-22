@@ -47,8 +47,8 @@ verandert nooit iets stilzwijgend.
   bevriezen betekent "klaar voor publicatie", niet "gepubliceerd". De status `PUBLISHED` bestaat in het
   model maar wordt niet gezet. Er is wel een read-only **PSIMPORT-preview** van een bevroren bundel (zie
   4.5); dat is geen echt PSIMPORT-formaat.
-- **Rechten per actie (5-PERM) zijn er wel**, maar de **koppeling met Prodis nog niet** (5B-7): de rechten
-  komen voorlopig uit een lokale YAML-lijst (zie 9.3 en de hoofd-`README.md`). Daarnaast is er een
+- **Rechten per actie (5-PERM) zijn er**, en in productie komen ze uit **Prodis** (5B-7); lokaal en in demo
+  komen ze uit een YAML-lijst (zie 9.3 en de hoofd-`README.md`). Daarnaast is er een
   **Keycloak-login** (via de backend als BFF, met sessiecookie en CSRF-header): wie niet aangemeld is, krijgt
   401 `AUTHENTICATION_REQUIRED`. Aangemeld zijn volstaat niet: elke actie vraagt een recht (zie 7a). De naam
   van "wie doet dit" (de *actor*) komt uit het token (`preferred_username`), niet uit een ingetypte naam.
@@ -350,7 +350,7 @@ gebouwd, gerouteerd (`Frontend/src/routes.tsx`) en werkend.
 | **Sjablonen beheren: invulpunten en gebruiksverklaringen declareren** | Geen scherm; alleen via de API, achter de setup-vlag (zie 7a en 9.3) | `/api/catalog-import/templates/...` (flow 1B) |
 | **Publiceren naar Prodis** (Fase 5, 5-PUB) | Niet gebouwd | — |
 | **Echt PSIMPORT-formaat** | Niet gebouwd; enkel de niet-contractuele preview (4.5) | — |
-| **Rechten per actie** (5-PERM) | Gebouwd met een lokale rechtenbron (YAML); de Prodis-koppeling (5B-7) is **niet gebouwd** | zie sectie 7a |
+| **Rechten per actie** (5-PERM) | Gebouwd; rechtenbron in productie Prodis (`CATALOG_PERMISSION_SOURCE=PRODIS`), lokaal/demo YAML (5B-7) | zie sectie 7a |
 
 Alle API-voorbeelden staan in [`standaardflows.md`](standaardflows.md). Ze zijn afgeleid van
 `scripts/scenario/manual-upload-scenario.sh`.
@@ -553,7 +553,9 @@ toont enkel het resultaat.
   declareren van invulpunten/gebruik in een sjabloon en `GET /setup/overview`; staat de vlag uit, dan geeft
   het eerste een 405 of 404 (zie 8.4), ook mét recht.
 - `system` mag nooit beheren of goedkeuren.
-- Voorlopig komen de rechten uit een lokale YAML-lijst (9.3). De koppeling met Prodis is nog niet gebouwd.
+- In productie komen de rechten uit Prodis (rol met `catalogImport.read/.manage/.approve`; een intrekking geldt na
+  hoogstens 30 s); lokaal en in demo uit een YAML-lijst (9.3). Is uw sessietoken verlopen, dan vraagt de applicatie opnieuw
+  om in te loggen (401).
 
 ## 8. Foutcodes
 
@@ -729,6 +731,12 @@ Keycloak-`preferred_username` in, met `rights: read, manage, approve`. De placeh
 `vul-hier-je-keycloak-username-in` komt met niemand overeen: zonder wijziging krijgt u 403 `PERMISSION_DENIED`
 en toont de UI "U heeft geen rechten voor CatalogImport". Een YAML-lijst wordt tussen profielen vervangen, niet
 samengevoegd. Herstart de backend na een wijziging.
+
+**Rechten uit Prodis in plaats van YAML.** De productieconfiguratie gebruikt `catalogimport.permissions.source=PRODIS`
+(variabele `CATALOG_PERMISSION_SOURCE`, default `PRODIS` buiten de profielen `local`, `ewoutdev` en `demo`) en vereist
+`CATALOG_PRODIS_ACCOUNT_URL` (de backend-URL van Prodis' `GET /api/account`); zonder die URL start de applicatie niet. Onder
+`PRODIS` worden de YAML-toekenningen genegeerd. Wilt u het lokaal proberen: zet `CATALOG_PERMISSION_SOURCE=PRODIS`, laat de
+Prodis-backend en Keycloak draaien en zorg dat uw Prodis-gebruiker een rol met `catalogImport.*` heeft.
 
 **Waarschuwing.** Wie het recht `manage` heeft kan een beschrijving van het bestand en haar drempels bepalen
 en dus de controle uitschakelen. Ken `manage` daarom bewust toe. De setup-vlag (`catalogimport.setup-api.enabled`)

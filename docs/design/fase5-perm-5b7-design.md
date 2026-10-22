@@ -1,7 +1,8 @@
 # 5B-7 — Prodis-adapter als rechtenbron
 
-> **Status: VOORSTEL (2026-10-22), denker-zwaar.** Verfijnt `fase5-perm-design.md` §2 (r.55-57), §4 (r.93-96) en de bouwtabel
-> (r.137). Open bij de mens: **V1–V4** (§7). 5B-7a t/m 5B-7c kunnen gebouwd worden met de huidige bindende keuzes; 5B-7d wacht op V2.
+> **Status: GEBOUWD (5B-7a t/m 5B-7d, 2026-10-22); 5B-7e (neutrale lege-rechtentekst) optioneel en niet gebouwd.** Ontwerp door
+> denker-zwaar; V1-V4 beslist (`docs/decisions.md` 2026-10-22: V1 = B, V2 = A, V3 bevestigd, V4 = B). Verfijnt `fase5-perm-design.md`
+> §2 (r.55-57), §4 (r.93-96) en de bouwtabel (r.137).
 
 ## 1. Huidige toestand
 - **Login** via de Prodis-realm met client `web_app` werkt (`application-local.yml:14-18`); tokens staan in de sessie
@@ -104,3 +105,8 @@ mogen; `system` bij MANAGE → 403 zonder Prodis-call; hoogstens één Prodis-ca
   een Prodis-/Keycloak-logout beëindigt de CatalogImport-rechten bij de volgende refresh.
 - *Technisch:* `PermissionSource.permissionsOf` heeft geen request/response; de adapter haalt ze uit `RequestContextHolder`. De
   standaardclient `catalog-import` en `prodis-datasync-catalogimport` bestaan niet in de Prodis-realm-export.
+- *Technisch (ontdekt in 5B-7b):* Spring Boot zet een **lege** enumwaarde om naar `null` en roept de setter niet aan; een lege
+  `CATALOG_PERMISSION_SOURCE` zou dus stil op de codedefault vallen. Daarom wordt `source` als tekst gebonden en strikt geparsed
+  (leeg of onbekend = opstartfout).
+- *Technisch (ontdekt in 5B-7b):* een `AuthenticationException` uit de rechtenbron (V4 = B) loopt via de bestaande 401-route
+  (`AUTHENTICATION_REQUIRED`). `ApiExceptionHandler` mag daarom **geen catch-all** `Exception`-handler krijgen, anders vangt die de 401 af.

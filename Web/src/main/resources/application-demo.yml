@@ -42,7 +42,10 @@ catalogimport:
   # >>> De placeholder hieronder komt met niemand overeen; zonder wijziging is alles 403 PERMISSION_DENIED.
   #
   # Geen wildcard, geen default: fail-closed, ook in demo. 'system' mag hoogstens read.
+  # Rechtenbron: CONFIGURED (de grants hieronder); demo draait zonder Prodis als rechtenbron. De productiedefault
+  # (application.yml) is PRODIS; overschrijfbaar met CATALOG_PERMISSION_SOURCE.
   permissions:
+    source: ${CATALOG_PERMISSION_SOURCE:CONFIGURED}
     grants:
       - username: Dda
         rights: read, manage, approve

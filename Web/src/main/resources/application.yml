@@ -78,6 +78,24 @@ catalogimport:
   secrets:
     keys: ${CATALOG_SECRETS_KEYS:}
     active-key-id: ${CATALOG_SECRETS_ACTIVE_KEY_ID:}
+  # Rechtenbron (docs/decisions.md 2026-10-22, 5B-7 V2 = A; docs/design/fase5-perm-5b7-design.md par. 3). Productiedefault
+  # PRODIS: de rechten (catalogImport.read/.manage/.approve) komen uit Prodis' GET /api/account met het sessietoken van de
+  # gebruiker; fail-closed (Prodis onbereikbaar = 503 PERMISSION_SOURCE_UNAVAILABLE, verloren token = 401
+  # AUTHENTICATION_REQUIRED; nooit stil geen/alle rechten).
+  #   CATALOG_PERMISSION_SOURCE   PRODIS (default) of CONFIGURED (grants uit YAML, enkel lokaal/demo). Leeg of onbekend =
+  #                               de applicatie start niet.
+  #   CATALOG_PRODIS_ACCOUNT_URL  backend-URL van Prodis' GET /api/account. VERPLICHT bij PRODIS: leeg of geen absolute
+  #                               http(s)-URL = de applicatie start niet (dezelfde variabele als de productwisselaar).
+  # Onder PRODIS worden catalogimport.permissions.grants genegeerd (WARN bij het opstarten): YAML en Prodis worden nooit
+  # samengevoegd. Verder (met default): connect-timeout PT2S, read-timeout PT2S, cache-ttl PT30S (geslaagd antwoord, per
+  # sessie); strikt positief, anders start de applicatie niet. Rechten die Prodis intrekt gelden dus uiterlijk na de TTL.
+  permissions:
+    source: ${CATALOG_PERMISSION_SOURCE:PRODIS}
+    prodis:
+      account-url: ${CATALOG_PRODIS_ACCOUNT_URL:}
+      connect-timeout: PT2S
+      read-timeout: PT2S
+      cache-ttl: PT30S
   # Productwisselaar linksboven (docs/decisions.md 2026-10-20 "Frontend-ombouw volgens de Prodis-mock +
   # productwisselaar"). BEWUST GEEN default buiten de lokale profielen (local, ewoutdev): zet per omgeving
   #   CATALOG_PRODIS_URL          browser-URL van de Prodis-frontend. Leeg = geen Prodis-link (en dus ook geen ProFin).

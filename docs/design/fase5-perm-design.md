@@ -52,7 +52,9 @@ leidt het effectieve recht af (één plek: `CurrentActor`/`PermissionService`). 
   ```
   Matching getrimd en hoofdletterongevoelig. **Geen wildcard, geen default, in geen enkel profiel**: lege configuratie = niemand heeft iets (fail-closed).
   Opstarten faalt als een toekenning `system` met `manage`/`approve` bevat. Het demo- en lokale profiel krijgen een expliciete toekenning.
-- Prodis-adapter (5B-7, specificatie; extern geblokkeerd): relayt het sessie-access-token als `Authorization: Bearer` naar Prodis `GET /api/account`, leest de codes
+- Prodis-adapter (5B-7, **gebouwd** 5B-7a-d): zie `docs/design/fase5-perm-5b7-design.md` (bronkeuze `catalogimport.permissions.source`, productiedefault `PRODIS`;
+  fail-closed, verloren token = 401; geslaagd antwoord PT30S per sessie gecachet, beslissingslog 2026-10-22 V1 = B, wat de "nooit een gecachet antwoord" hieronder voor deze bron herziet).
+  Oorspronkelijke specificatie: relayt het sessie-access-token als `Authorization: Bearer` naar Prodis `GET /api/account`, leest de codes
   `catalogImport.read/.manage/.approve`, negeert de rest; nooit een API-key, nooit `ROLE_DDA_PRODIS_API`/`hasDdaProdisApiBypass()`; per verzoek, korte timeouts; elke
   fout geeft `PermissionSourceUnavailableException` (503 `PERMISSION_SOURCE_UNAVAILABLE`), nooit een lege set en nooit een gecachet antwoord.
 
@@ -134,7 +136,7 @@ Standaardtestlogin (`TestActors.as(username)`) krijgt alle drie de rechten via d
 | 5B-4 | `/me.permissions` vullen (effectieve set, altijd lijst), 503-gedrag | licht | `SecurityHttpTest`, `PermissionHttpTest` |
 | 5B-5 | Frontend: `permissions`/`can()`, knoppen uitgeschakeld-met-reden, leeg-rechtenvlak, codes | gemiddeld | `npm test -- --run`, `npm run build`, `tsc -p tsconfig.app.json` |
 | 5B-6 | README, handleiding, acceptance-doc, scenario | licht | n.v.t. |
-| 5B-7 | Prodis-adapter (eerst een eigen Denker-stap; extern geblokkeerd op audience `account` en de seed van de drie rechten in Prodis) | zwaar | `ProdisPermissionSourceTest` (stub, geen netwerk) |
+| 5B-7 | Prodis-adapter: **gebouwd** (5B-7a t/m 5B-7d, zie `fase5-perm-5b7-design.md`; 5B-7e optioneel) | zwaar | `ProdisPermissionSourceTest` (stub, geen netwerk) |
 
 Volledige ronde na 5B-3 en na 5B-5 via `scripts/test/run-full-tests.ps1`; klassen los draaien met `-Tests`.
 

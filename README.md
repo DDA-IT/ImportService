@@ -48,8 +48,7 @@ via `POST /api/catalog-import/tasks/{id}/fetch-runs` (recht MANAGE; synchroon, �
 Zie `docs/design/leveringsconfiguratie-design.md` §4 en §6.
 
 **Nog niet aanwezig:** een scheduler (geen automatische of periodieke ophaling), frontendschermen voor
-verbindingen en "Nu ophalen" (F-1/F-2), connectors voor API/XLSX/XML, de Prodis-koppeling voor rechten
-(5B-7, zie "Rechten (5-PERM)"), een echt PSIMPORT-formaat, en een scherm om invulpunten in een sjabloon te
+verbindingen en "Nu ophalen" (F-1/F-2), connectors voor API/XLSX/XML, een echt PSIMPORT-formaat, en een scherm om invulpunten in een sjabloon te
 declareren (enkel de API, achter de setup-vlag). Van publicatie naar ProDisWebbase/Pervasive (Fase 5, 5-PUB) is deel **a**
 (bundelsnapshot, PSIMPORT-preview, SIMULATION-publicatierun via `publication_run`) al gebouwd; deel **b/c**
 (écht schrijven naar TRIAL_LIBRARY/PRODUCTION) is nog niet gebouwd — geblokkeerd op het externe
@@ -118,10 +117,27 @@ sjabloon; vlag uit = `POST /templates/{d}/revisions/{r}/bookmarks` geeft 405 (he
 de overige declaratiepaden en `/setup/overview` 404, ongeacht rechten. Nieuwe lees-endpoint:
 `GET /api/catalog-import/import-links/{id}/readiness` (`READ`).
 
-**Nog niet gebouwd (5B-7):** de Prodis-koppeling (het sessietoken doorgeven aan `GET /api/account` en de codes
-`catalogImport.read/.manage/.approve` lezen). Ze is extern geblokkeerd op de audience `account` en de seed van die
-drie rechten in Prodis. Tot dan is de lokale YAML-bron de enige bron. (De token relay van de productwisselaar naar
-datzelfde endpoint leest enkel wisselaargegevens en is dus niet die koppeling.)
+**Rechtenbron (5B-7, gebouwd).** `catalogimport.permissions.source` kiest precies één bron; YAML en Prodis worden nooit
+samengevoegd (`docs/design/fase5-perm-5b7-design.md`, beslissingslog 2026-10-22).
+
+| Variabele | `application.yml` (productie) | `local`, `ewoutdev`, `demo` |
+|---|---|---|
+| `CATALOG_PERMISSION_SOURCE` | `PRODIS` | `CONFIGURED` (grants uit YAML) |
+| `CATALOG_PRODIS_ACCOUNT_URL` | geen default; **verplicht bij `PRODIS`**, anders start de applicatie niet | `local`/`ewoutdev`: `http://localhost:8080/api/account`; `demo`: geen default |
+
+- **`PRODIS`:** de backend stuurt het access token van de sessie (zo nodig eerst vernieuwd) als `Bearer` naar
+  `GET {CATALOG_PRODIS_ACCOUNT_URL}` en leest de exacte codes `catalogImport.read/.manage/.approve` uit `permissions`
+  (hiërarchie approve > manage > read blijft bij ons; de rest wordt genegeerd; een System Admin heeft in Prodis alle codes).
+  Een geslaagd antwoord wordt 30 s per sessie bewaard (`catalogimport.permissions.prodis.cache-ttl`), fouten nooit; een
+  intrekking in Prodis geldt dus uiterlijk na 30 s. Timeouts: `connect-timeout`/`read-timeout` (PT2S). Verloren token (geweigerde
+  refresh, geen geautoriseerde client) geeft 401 `AUTHENTICATION_REQUIRED`; elke andere fout (timeout, 4xx/5xx, redirect,
+  ongeldige JSON) 503 `PERMISSION_SOURCE_UNAVAILABLE`, nooit een lege of volledige rechtenset. `catalogimport.permissions.grants`
+  worden onder `PRODIS` genegeerd (WARN bij het opstarten, zonder usernames).
+- **Opstartgedrag:** een lege of onbekende `source` laat de applicatie niet starten; `PRODIS` met een lege of ongeldige
+  account-URL ook niet. Zonder profiel `local`/`ewoutdev`/`demo` (productie) is `PRODIS` dus de default en is `CATALOG_PRODIS_ACCOUNT_URL` verplicht.
+- **Lokaal Prodis als bron:** `CATALOG_PERMISSION_SOURCE=PRODIS` (en indien nodig `CATALOG_PRODIS_ACCOUNT_URL`); de Prodis-backend
+  (`:8080`) en Keycloak moeten draaien en uw Prodis-gebruiker heeft een rol met `catalogImport.*` nodig.
+- De token relay van de productwisselaar (hieronder) leest enkel wisselaargegevens en blijft een aparte, fail-soft functie.
 
 ### Lokaal aanmelden
 
@@ -153,7 +169,7 @@ Daarvoor stuurt de backend het access token van de eigen sessie (zo nodig eerst 
 `catalogimport.app-switcher.connect-timeout`/`read-timeout`), 401/403/5xx, redirect of onverwachte JSON geven één
 WARN-regel (zonder token of gebruikersgegevens), en de wisselaar toont dan enkel de Prodis-link. `/me` blijft 200. Het
 antwoord wordt per sessie bewaard: 5 min als het lukte (`cache-ttl`), 1 min na een mislukking (`failure-cache-ttl`).
-Dit is **geen rechtenbron**: de rechten van CatalogImport blijven die van "Rechten (5-PERM)" hierboven.
+Dit is **geen rechtenbron** (dat is de aparte adapter hierboven): de rechten van CatalogImport blijven die van "Rechten (5-PERM)" hierboven.
 
 | Variabele | Lokaal (`local`, `ewoutdev`) | Elders (`application.yml`, `demo`) |
 |---|---|---|
