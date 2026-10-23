@@ -42,6 +42,11 @@ export type SetupState = {
    * `null`: de server geeft 500, zodat de editor op de terugval uit het woordenboek valt.
    */
   fieldCatalog?: unknown | null;
+  /**
+   * E5a: het antwoord van `GET /definitions/{d}/revisions/{r}/configuration-check` per revisie-id. Zonder invoer: activeerbaar
+   * (geen problemen), zodat bestaande tests de conceptbalk ongewijzigd zien.
+   */
+  configurationChecks?: Record<number, unknown>;
 };
 
 /** De herkomst van een versie die niet uit legacy komt (zoals de server ze levert). */
@@ -183,6 +188,16 @@ export function defaultFieldCatalog() {
   };
 }
 
+/** E5a: het antwoord van de configuratiecontrole zonder problemen (zoals de server voor een geldig concept). */
+export function activatableCheck(revisionId: number) {
+  return {
+    revisionId,
+    revisionStatus: 'DRAFT',
+    activatable: true,
+    checks: [{ code: 'READY_DRAFT_ACTIVATABLE', status: 'OK', subject: { type: 'REVISION', id: revisionId }, detail: null }],
+  };
+}
+
 export function emptySetupState(): SetupState {
   return { organisations: [], definitions: [], links: [], tasks: [], revisions: {}, details: {}, receipts: [] };
 }
@@ -314,6 +329,11 @@ export function installSetupServer(state: SetupState, extra?: (url: string, init
     if (originMatch !== null) {
       const revisionId = Number(originMatch[2]);
       return Promise.resolve(jsonResponse(state.legacyOrigins?.[revisionId] ?? notFromLegacy(revisionId)));
+    }
+    const configCheck = /\/definitions\/(\d+)\/revisions\/(\d+)\/configuration-check$/.exec(path!);
+    if (configCheck !== null) {
+      const revisionId = Number(configCheck[2]);
+      return Promise.resolve(jsonResponse(state.configurationChecks?.[revisionId] ?? activatableCheck(revisionId)));
     }
     const detail = /\/definitions\/(\d+)\/revisions\/(\d+)$/.exec(path!);
     if (detail !== null) {

@@ -695,6 +695,18 @@ export type LinkReadiness = {
   checks: ReadinessCheck[];
 };
 
+/**
+ * Antwoord van `GET /definitions/{d}/revisions/{r}/configuration-check` (EB4, E5a): wat het activeren van deze versie nu
+ * zou blokkeren, zonder bestand en zonder te activeren. `activatable` = geen enkele regel met status `PROBLEM`; de regels
+ * hebben dezelfde vorm als bij de gereedheid van een koppeling. Een niet-concept geeft enkel `REVISION_NOT_ACTIVATABLE`.
+ */
+export type RevisionConfigurationCheck = {
+  revisionId: number;
+  revisionStatus: string;
+  activatable: boolean;
+  checks: ReadinessCheck[];
+};
+
 /** Eén element van `GET /import-links/readiness?linkIds=` (B4): `ready` + enkel de problemen (status `PROBLEM`). */
 export type LinkReadinessSummary = {
   linkId: number;

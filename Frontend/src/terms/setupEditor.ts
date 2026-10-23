@@ -442,3 +442,22 @@ export const TRIAL_BOX_TEXT = {
   close: 'Sluiten',
   fileName: (name: string) => `Testbestand: ${name}`,
 } as const;
+
+/** E5a — de controle van de instellingen in stap ② van de conceptbalk (zonder testbestand). Geen codes; die staan onder "Technische details". */
+export const CONFIG_CHECK_TEXT = {
+  heading: 'Controle van de instellingen',
+  loading: 'Instellingen worden gecontroleerd…',
+  ok: 'Instellingen: in orde',
+  problems: (n: number) => (n === 1 ? '1 probleem blokkeert het activeren' : `${n} problemen blokkeren het activeren`),
+  jumpRow: 'Naar de rij',
+  jumpSection: 'Naar de sectie',
+  jumpLabel: (what: string) => `Ga naar: ${what}`,
+  skipped:
+    'Niet alle controles konden al uitgevoerd worden: ze wachten op het herstel van een probleem hierboven. Na het herstellen kunnen er nog problemen bijkomen.',
+  failed:
+    'De controle van de instellingen kon niet uitgevoerd worden. Activeren blijft mogelijk; bij het activeren worden de instellingen opnieuw gecontroleerd.',
+  activateBlocked: (n: number) =>
+    n === 1
+      ? 'Activeren kan pas als het probleem in de instellingen opgelost is.'
+      : `Activeren kan pas als de ${n} problemen in de instellingen opgelost zijn.`,
+} as const;

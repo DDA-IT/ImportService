@@ -36,6 +36,7 @@ import {
   type GridSource,
 } from './fieldsGridModel.ts';
 import { FieldKeyTerm } from './revisionDetailParts.tsx';
+import { GRID_FIELD_ID, GRID_ROW_ID } from './check/configurationCheckModel.ts';
 import { termLabel } from '../../terms/index.ts';
 import editor from './FieldsEditor.module.css';
 import styles from './SetupScreens.module.css';
@@ -167,7 +168,12 @@ export function FieldsGrid({
   };
 
   const coreRow = (row: CoreRow) => (
-    <tr key={row.key} className={coreRowMissing(row) ? editor.rowWarn : undefined} data-testid={`grid-row-${row.key}`}>
+    <tr
+      key={row.key}
+      id={GRID_ROW_ID(row.key)}
+      className={coreRowMissing(row) ? editor.rowWarn : undefined}
+      data-testid={`grid-row-${row.key}`}
+    >
       <td data-label={head.field}>
         <strong>{row.label}</strong>
         <DiffChip kind={diff?.scalarKinds[row.key]} testId={`diff-chip-${row.key}`} />
@@ -224,6 +230,7 @@ export function FieldsGrid({
     return (
       <tr
         key={mapping.targetFieldCode}
+        id={GRID_FIELD_ID(mapping.targetFieldCode)}
         className={`${missing ? editor.rowWarn : ''} ${sub ? editor.subRow : ''}`.trim() || undefined}
         data-testid={`read-field-${mapping.id}`}
       >

@@ -554,6 +554,10 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       label: 'Fout in de importdefinitie',
       uitleg: 'De importdefinitie is onvolledig of ongeldig.',
     },
+    REVISION_NOT_ACTIVATABLE: {
+      label: 'Deze versie kan niet geactiveerd worden',
+      uitleg: 'Activeren gaat alleen vanuit een concept; deze versie is al actief of vervangen.',
+    },
     INFO_CONFIG_CHECKS_SKIPPED: {
       label: 'Niet alle controles konden uitgevoerd worden',
       uitleg:

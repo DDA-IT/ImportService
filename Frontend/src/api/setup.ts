@@ -10,6 +10,7 @@ import type {
   DefinitionUsageType,
   FieldCatalogResponse,
   PageResult,
+  RevisionConfigurationCheck,
   RevisionDetail,
   RevisionLegacyOrigin,
   RevisionRow,
@@ -95,4 +96,21 @@ export function getRevisionLegacyOrigin(
  */
 export function getFieldCatalog(signal?: AbortSignal): Promise<FieldCatalogResponse> {
   return request<FieldCatalogResponse>('/field-catalog', { signal });
+}
+
+/**
+ * GET /definitions/{definitionId}/revisions/{revisionId}/configuration-check — de activatiecontrole van een versie als
+ * checklist, zonder bestand en zonder te activeren (EB4, E5a). Recht Lezen, schrijft niets.
+ *
+ * @throws {import('./http.ts').ApiError} 404 `DEFINITION_NOT_FOUND`, `REVISION_NOT_FOUND`
+ */
+export function getConfigurationCheck(
+  definitionId: number,
+  revisionId: number,
+  signal?: AbortSignal,
+): Promise<RevisionConfigurationCheck> {
+  return request<RevisionConfigurationCheck>(
+    `/definitions/${definitionId}/revisions/${revisionId}/configuration-check`,
+    { signal },
+  );
 }

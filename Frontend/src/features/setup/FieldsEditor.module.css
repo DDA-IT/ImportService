@@ -539,3 +539,10 @@
 .advanced {
   margin: var(--spacing-2) 0;
 }
+
+/* E5a: de rij of sectie waar een sprong uit de controle van de instellingen net naartoe ging. */
+[data-check-flash='true'],
+[data-check-flash='true'] td {
+  background: var(--status-awaiting-bg);
+  outline: 2px solid var(--status-awaiting-bg);
+}

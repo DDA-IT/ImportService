@@ -189,6 +189,10 @@ function RevisionFields({
     () => (detail.data === null || base.data === null ? EMPTY_DIFF : computeRevisionDiff(detail.data, base.data)),
     [detail.data, base.data],
   );
+  // E5a: de controle van de instellingen (zonder bestand), enkel voor een concept; opnieuw na elke wijziging (`afterChange`).
+  const configCheck = useQuery(`supplier-revision-config-check:${definition.id}:${revision.id}:${isDraft ? 'draft' : 'other'}`, (signal) =>
+    isDraft ? setupApi.getConfigurationCheck(definition.id, revision.id, signal) : Promise.resolve(null),
+  );
   const originRevisionId = origin.data?.originRevisionId ?? null;
   const originVersionNumber =
     originRevisionId === null ? null : (revisions.find((candidate) => candidate.id === originRevisionId)?.revisionNumber ?? null);
@@ -202,6 +206,9 @@ function RevisionFields({
     setTrialResult(null);
     detail.reload();
     origin.reload();
+    if (isDraft) {
+      configCheck.reload();
+    }
     onChanged();
   }
 
@@ -283,6 +290,7 @@ function RevisionFields({
           diff={diff}
           editing={editingNow}
           links={links.data?.content ?? []}
+          configCheck={configCheck}
           trialResult={trialResult}
           onTrialResult={(result) => {
             setTrialResult(result);

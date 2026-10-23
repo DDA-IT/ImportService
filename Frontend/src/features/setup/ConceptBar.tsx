@@ -6,6 +6,9 @@
  * knoppen [Controleren met testbestand] (de bestaande proefinlezing, `TrialReadResultView`) en [Activeren]
  * (`ActivateRevisionAction`, met de verplichte R-CASE-03-waarschuwing).
  *
+ * E5a: stap ② toont bovenaan de controle van de instellingen zonder bestand (`ConfigurationCheckView`); [Activeren] is
+ * uitgeschakeld met een zichtbare reden zolang die blokkerende problemen vindt (een mislukte controle blokkeert niets).
+ *
  * Stap ② is klaar na een proefinlezing zonder blokkade (`NO_BLOCKER_FOUND`); een blokkade wordt wel getoond, maar vinkt de
  * stap niet af. Activeren blijft altijd mogelijk, met een extra waarschuwing zolang er geen geslaagde controle is.
  */
@@ -25,8 +28,13 @@ import button from '../../components/Button.module.css';
 import { PencilIcon } from '../../components/icons.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
-import { CONCEPT_TEXT as TEXT, TRIAL_BOX_TEXT } from '../../terms/setupEditor.ts';
+import { CONCEPT_TEXT as TEXT, CONFIG_CHECK_TEXT, TRIAL_BOX_TEXT } from '../../terms/setupEditor.ts';
 import { ActivateRevisionAction } from './ActivateRevisionAction.tsx';
+import {
+  blockingProblemCount,
+  ConfigurationCheckView,
+  type ConfigurationCheckState,
+} from './check/ConfigurationCheckView.tsx';
 import { TrialReadResultView } from './check/TrialReadResultView.tsx';
 import { DiffBox } from './DiffParts.tsx';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
@@ -236,6 +244,8 @@ export type ConceptBarProps = {
   /** Bewerken staat aan: enkel dan het potlood bij de reden. */
   editing: boolean;
   links: readonly ImportLinkRow[];
+  /** E5a: de controle van de instellingen (zonder bestand); de aanroeper haalt ze op en herlaadt ze na elke wijziging. */
+  configCheck: ConfigurationCheckState;
   trialResult: TrialReadResult | null;
   onTrialResult: (result: TrialReadResult) => void;
   /** De reden is bewaard: de aanroeper herlaadt het detail. */
@@ -251,6 +261,7 @@ export function ConceptBar({
   diff,
   editing,
   links,
+  configCheck,
   trialResult,
   onTrialResult,
   onReasonSaved,
@@ -262,6 +273,7 @@ export function ConceptBar({
   const checked = trialResult?.verdict.result === 'NO_BLOCKER_FOUND';
   const current = checked ? 2 : 0;
   const hasBase = baseNumber !== null;
+  const blocking = blockingProblemCount(configCheck);
 
   return (
     <>
@@ -301,6 +313,7 @@ export function ConceptBar({
             </li>
           ))}
         </ol>
+        <ConfigurationCheckView state={configCheck} />
         <div className={editor.barButtons}>
           <button
             type="button"
@@ -316,6 +329,7 @@ export function ConceptBar({
           <ActivateRevisionAction
             revision={revision}
             testId="concept-activate"
+            blockedReason={blocking === null ? undefined : CONFIG_CHECK_TEXT.activateBlocked(blocking)}
             wording={{ buttonLabel: TEXT.activateButton }}
             extraWarning={
               checked ? undefined : (
