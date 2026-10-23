@@ -3,7 +3,8 @@
  * Beslissingen: `docs/decisions.md` 2026-09-30 (NT-spoor V3 = a: materialiseren maakt geen taak, V4 = a: een sjabloon
  * bedient enkel zijn eigen bronorganisatie).
  *
- * (De oudere `TemplateWizard.test.tsx` dekt de pagina's Sjablonen van S1-F2; dit bestand het sjabloonpad van NT-7.)
+ * (De pagina's Importdefinities van R2 staan in `ImportDefinitions.test.tsx`; dit bestand dekt het sjabloonpad van NT-7 en,
+ * sinds R2, het voorselecteren van een herbruikbare importdefinitie met `?templateId=`.)
  *
  * Dekt: normaal scenario (sjabloon kiezen, materialiseren, door naar de taakstap, taak maken — geen tweede
  * aanmaak van beschrijving of koppeling), geen sjabloon voor de organisatie (Nederlandse uitleg + "Zelf
@@ -320,6 +321,38 @@ describe('NewSupplierWizardPage — sjabloonpad (NT-7)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Zelf beschrijven' }));
     expect(await screen.findByRole('heading', { name: /Stap 3/ })).toBeInTheDocument();
+  });
+
+  it('R2: met templateId opent stap 2 meteen op het sjabloonpad met die importdefinitie gekozen (geen klik op het startpunt)', async () => {
+    const state = baseState();
+    state.definitionsByOrganisation[1] = [definitionRow(SUPPLIER)];
+    const mock = installServer(state);
+    renderWizard('/setup/new?organisationId=1&templateId=50');
+
+    // Geen keuze "Zelf beschrijven of sjabloon": het sjabloonpad staat er al.
+    expect(await screen.findByTestId('wizard-template-step')).toBeInTheDocument();
+    await screen.findByRole('option', { name: /TPL-A/ });
+    expect((screen.getByLabelText(/^Sjabloon/) as HTMLSelectElement).value).toBe('50');
+    // De actieve versie van de gekozen importdefinitie is voorgeselecteerd en het formulier staat klaar.
+    await screen.findByRole('option', { name: /Versie 1/ });
+    expect((screen.getByLabelText(/^Versie van het sjabloon/) as HTMLSelectElement).value).toBe('500');
+    await screen.findByTestId('materialise-form');
+    expect(screen.queryByTestId('wizard-template-not-for-organisation')).not.toBeInTheDocument();
+    // Niets geschreven door het openen alleen.
+    expect(posts(mock)).toEqual([]);
+  });
+
+  it('R2: een templateId van een andere organisatie wordt gemeld en niet stil gekozen', async () => {
+    const state = baseState();
+    installServer(state);
+    // Sjabloon 51 hoort bij LEV-B, de organisatie in het adres is LEV-A (die zelf wel een sjabloon heeft).
+    renderWizard('/setup/new?organisationId=1&templateId=51');
+
+    expect(await screen.findByTestId('wizard-template-not-for-organisation')).toHaveTextContent(
+      'hoort niet bij LEV-A',
+    );
+    expect((screen.getByLabelText(/^Sjabloon/) as HTMLSelectElement).value).toBe('');
+    expect(screen.queryByTestId('materialise-form')).not.toBeInTheDocument();
   });
 
   it('aankoopvereniging: eerst de leverancier kiezen (enkel leveranciers); die vult "Leverancierscode" voor', async () => {

@@ -26,6 +26,8 @@ export type CardModel = {
   empty: boolean;
   /** Eigen knoptekst als de kaart niet "Tonen"/"Verbergen" zegt (bv. "Toon wat ontbreekt"). */
   showLabel?: string;
+  /** Een kaart zonder detailpaneel: geen knop (bv. een kaart die enkel telt). */
+  noButton?: boolean;
   /** Extra inhoud onderaan de kaart (bv. een link). */
   footer?: ReactNode;
 };
@@ -76,18 +78,20 @@ export function SummaryCard({ baseId, card, expanded, onToggle, texts, testIdPre
       </p>
       {card.topLine !== undefined && <p className={styles.summaryTop}>{card.topLine}</p>}
       {card.subLine !== undefined && <p className={styles.summarySub}>{card.subLine}</p>}
-      <button
-        type="button"
-        id={ids.button}
-        className={styles.summaryButton}
-        aria-expanded={open}
-        aria-controls={ids.panel}
-        aria-labelledby={`${ids.button} ${ids.title}`}
-        disabled={card.empty}
-        onClick={() => onToggle(card.id)}
-      >
-        {open ? texts.hide : (card.showLabel ?? texts.show)}
-      </button>
+      {card.noButton !== true && (
+        <button
+          type="button"
+          id={ids.button}
+          className={styles.summaryButton}
+          aria-expanded={open}
+          aria-controls={ids.panel}
+          aria-labelledby={`${ids.button} ${ids.title}`}
+          disabled={card.empty}
+          onClick={() => onToggle(card.id)}
+        >
+          {open ? texts.hide : (card.showLabel ?? texts.show)}
+        </button>
+      )}
       {card.footer}
     </section>
   );

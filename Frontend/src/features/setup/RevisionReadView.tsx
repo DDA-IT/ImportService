@@ -46,7 +46,7 @@ function SourceValue({ column, fixed }: { column: string | null; fixed?: string 
   return <Unset>{TEXT.notUsed}</Unset>;
 }
 
-function FileSection({ revision }: { revision: RevisionDetail }) {
+export function FileSection({ revision }: { revision: RevisionDetail }) {
   return (
     <section className={styles.vdSection} aria-labelledby="vd-file" data-testid="read-file">
       <h3 id="vd-file">{TEXT.sections.file}</h3>

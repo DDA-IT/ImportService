@@ -24,6 +24,10 @@ import { LegacyReceiptListPage } from './features/legacyconfig/LegacyReceiptList
 import { LegacyReceiptDetailPage } from './features/legacyconfig/LegacyReceiptDetailPage.tsx';
 import { TemplateListPage } from './features/templates/TemplateListPage.tsx';
 import { TemplateDetailPage } from './features/templates/TemplateDetailPage.tsx';
+import { DefinitionOverviewTab } from './features/templates/DefinitionOverviewTab.tsx';
+import { DefinitionFieldsTab } from './features/templates/DefinitionFieldsTab.tsx';
+import { DefinitionVersionsTab } from './features/templates/DefinitionVersionsTab.tsx';
+import { DefinitionUsedByTab } from './features/templates/DefinitionUsedByTab.tsx';
 import { IssueCaseListPage } from './features/issuecases/IssueCaseListPage.tsx';
 import { IssueCaseDetailPage } from './features/issuecases/IssueCaseDetailPage.tsx';
 import { NOT_FOUND_BACK } from './terms/navigation.ts';
@@ -111,6 +115,12 @@ export const routes: RouteObject[] = [
   {
     path: '/templates/:definitionId',
     element: <TemplateDetailPage />,
+    children: [
+      { index: true, element: <DefinitionOverviewTab /> },
+      { path: 'fields', element: <DefinitionFieldsTab /> },
+      { path: 'versions', element: <DefinitionVersionsTab /> },
+      { path: 'used-by', element: <DefinitionUsedByTab /> },
+    ],
   },
   {
     path: '/issue-cases',

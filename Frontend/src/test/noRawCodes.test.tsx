@@ -13,6 +13,7 @@
  * materialiseren, waarden van een koppeling).
  */
 
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, RouterProvider, Routes, createMemoryRouter } from 'react-router-dom';
@@ -23,9 +24,12 @@ import {
   PUBLICATION_BUNDLE_STATUSES,
   PUBLICATION_RUN_STATUSES,
   PUBLICATION_TARGET_MODES,
+  type BookmarkView,
   type BundleDetail,
   type DecisionRow,
   type FreezePreflight,
+  type MaterialisationView,
+  type MaterialisedDefinitionView,
   type MutationRow,
   type PublicationRunView,
   type RevisionDetail,
@@ -45,14 +49,15 @@ import { IssueCaseDetailPage } from '../features/issuecases/IssueCaseDetailPage'
 import { IssueCaseListPage } from '../features/issuecases/IssueCaseListPage';
 import { RevisionEditForm } from '../features/setup/RevisionEditForm';
 import { routes } from '../routes';
-import { TemplateDetailPage } from '../features/templates/TemplateDetailPage';
-import { TemplateListPage } from '../features/templates/TemplateListPage';
+import { LinkBookmarkValuesSection } from '../features/templates/LinkBookmarkValuesSection';
+import { MaterialiseForm } from '../features/templates/MaterialiseForm';
 import { UploadPage } from '../features/upload/UploadPage';
 import { WorkQueuePage } from '../features/workqueue/WorkQueuePage';
 import { IssueCodeTerm } from '../terms/IssueCodeTerm';
 import { DICTIONARY } from '../terms/index';
 import { oldWordingIn, visibleTextOf } from './oldWording';
 import { TEST_IDENTITY } from './testIdentity';
+import { definition, emptySetupState, installSetupServer, link, organisation, renderRoutes, revisionDetail } from './setupServer';
 
 const RAW_WITH_UNDERSCORE = /\b[A-Z]+_[A-Z_]+\b/g;
 
@@ -1445,38 +1450,64 @@ describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes 
     expectNoRawCodes(document.body, 'bewerkformulier met validatiefout');
   });
 
-  it('sjablonenlijst en de melding dat de functie op deze omgeving niet openstaat', async () => {
-    global.fetch = vi.fn(() =>
-      Promise.resolve(
-        json(page([{ id: 1, code: 'TPL-1', name: 'VROOAM-sjabloon', sourceOrganisationId: 5, sourceOrganisationCode: 'ORG-5' }])),
-      ),
-    ) as unknown as typeof fetch;
-    const first = render(
-      <ActorProvider identity={TEST_IDENTITY}>
-        <MemoryRouter>
-          <TemplateListPage />
-        </MemoryRouter>
-      </ActorProvider>,
-    );
-    await screen.findByText('TPL-1');
-    expectNoRawCodes(document.body, 'sjablonenlijst');
+  it('importdefinities-overzicht: kaarten, paneel, filters en de melding dat de functie op deze omgeving niet openstaat', async () => {
+    const s = emptySetupState();
+    s.organisations = [organisation(5, { code: 'ORG-5', name: 'VROOAM' })];
+    s.definitions = [
+      definition(1, 5, { code: 'TPL-1', name: 'VROOAM-importdefinitie', usageType: 'REUSABLE_TEMPLATE', activeRevisionId: 100 }),
+      definition(2, 5, { code: 'TPL-2-SJ', name: 'Concept-importdefinitie', usageType: 'REUSABLE_TEMPLATE', activeRevisionId: null }),
+      definition(3, 5, { code: 'TPL-2', name: 'Eigen importdefinitie', activeRevisionId: 300 }),
+    ];
+    s.links = [link(77, 3)];
+    s.materialisations = {
+      1: [
+        {
+          definitionId: 3,
+          definitionCode: 'TPL-2',
+          definitionName: 'Eigen importdefinitie',
+          definitionRevisionId: 300,
+          definitionRevisionNumber: 1,
+          definitionRevisionStatus: 'ACTIVE',
+          templateRevisionId: 100,
+          templateRevisionNumber: 1,
+          templateRevisionStatus: 'ACTIVE',
+          importLinkCount: 1,
+          shareable: true,
+          blockingBookmarkName: null,
+        },
+      ],
+      2: [],
+    };
+    installSetupServer(s);
+    const first = renderRoutes('/templates');
+    await screen.findByTestId('definition-cards');
+    await screen.findByTestId('definition-card-panel');
+    await waitFor(() => expect(screen.getByTestId('definition-row-1')).toHaveTextContent('1 importdefinitie'));
+    expectNoRawCodes(document.body, 'importdefinities-overzicht');
+    for (const [testId, value] of [
+      ['definition-filter-kind', 'OWN'],
+      ['definition-filter-kind', 'REUSABLE'],
+      ['definition-filter-kind', ''],
+      ['definition-filter-status', 'CONCEPT'],
+      ['definition-filter-status', ''],
+      ['definition-filter-origin', 'LEGACY_DERIVED'],
+      ['definition-filter-origin', 'OWN'],
+    ] as const) {
+      fireEvent.change(screen.getByTestId(testId), { target: { value } });
+      expectNoRawCodes(document.body, `importdefinities-overzicht met filter ${testId}=${value}`);
+    }
     first.unmount();
+    cleanup();
 
-    // 404 zonder code: de melding is gewoon Nederlands; de naam van de serverinstelling staat onder "Technische details".
-    global.fetch = vi.fn(() => Promise.resolve(new Response(null, { status: 404 }))) as unknown as typeof fetch;
-    render(
-      <ActorProvider identity={TEST_IDENTITY}>
-        <MemoryRouter>
-          <TemplateListPage />
-        </MemoryRouter>
-      </ActorProvider>,
-    );
-    await screen.findByText(/niet actief op deze omgeving/);
-    expectNoRawCodes(document.body, 'melding functie niet beschikbaar');
+    // 404 zonder code op het gebruik: de melding is gewoon Nederlands; de naam van de serverinstelling staat onder "Technische details".
+    installSetupServer(s, (url) => (url.includes('/materialisations') ? new Response(null, { status: 404 }) : null));
+    renderRoutes('/templates');
+    await screen.findByText(/niet beschikbaar op deze omgeving/);
+    expectNoRawCodes(document.body, 'importdefinities-overzicht: melding functie niet beschikbaar');
     expect(screen.getByText('catalogimport.setup-api.enabled=false')).toBeInTheDocument();
   });
 
-  it('sjabloondetail: invulpunten en problemen, materialiseren (nieuw en hergebruik), meldingen en waarden van de koppeling', async () => {
+  it('importdefinitiedetail van een herbruikbare importdefinitie: materialiseren (nieuw en hergebruik), meldingen, waarden van de koppeling en elk tabblad', async () => {
     const bookmark = (overrides: Record<string, unknown>) => ({
       id: 1,
       revisionId: 100,
@@ -1621,74 +1652,50 @@ describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes 
       ],
       missingRequiredNames: ['BESTANDS_PREFIX'],
     };
-    global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = input.toString();
+    const POST_OK = (url: string, init?: RequestInit): Response | null => {
       const method = (init?.method ?? 'GET').toUpperCase();
-      if (url.includes('/templates/1/revisions/100/bookmarks')) {
-        return Promise.resolve(json({ definitionId: 1, revisionId: 100, bookmarks, problems }));
+      if (method === 'POST' && url.includes('/templates/1/materialisations')) {
+        return json(result, 201);
       }
-      if (url.includes('/templates/1/materialisations')) {
-        return Promise.resolve(method === 'POST' ? json(result, 201) : json(page(materialisations)));
+      if (url.includes('/links/77/bookmark-values')) {
+        return json(linkValues);
       }
-      if (url.includes('/definitions/1/revisions')) {
-        return Promise.resolve(
-          json(
-            page([
-              { id: 100, definitionId: 1, revisionNumber: 1, status: 'ACTIVE' },
-              { id: 101, definitionId: 1, revisionNumber: 2, status: 'DRAFT' },
-              { id: 99, definitionId: 1, revisionNumber: 3, status: 'SUPERSEDED' },
-            ]),
-          ),
-        );
-      }
-      if (url.includes('/import-links')) {
-        return Promise.resolve(
-          json(
-            page([
-              {
-                id: 77,
-                code: 'LNK-77',
-                name: 'Koppeling 77',
-                supplierCode: 'ORG-9',
-                supplierName: 'Leverancier',
-                libraryCode: 'BIB1',
-                active: true,
-                importDefinitionId: 30,
-              },
-            ]),
-          ),
-        );
-      }
-      if (url.includes('/links/77/bookmark-values')) return Promise.resolve(json(linkValues));
-      if (/\/templates(\?|$)/.test(url)) {
-        return Promise.resolve(
-          json(page([{ id: 1, code: 'TPL-1', name: 'Sjabloon', sourceOrganisationId: 5, sourceOrganisationCode: 'ORG-5' }])),
-        );
-      }
-      return Promise.reject(new Error(`Onverwachte URL in test: ${url}`));
-    }) as unknown as typeof fetch;
+      return null;
+    };
 
-    render(
+    // --- Het formulier "Materialiseren" en de waarden van de nieuwe koppeling (hergebruikt door het stappenplan) ---
+    function Harness() {
+      const [created, setCreated] = useState<MaterialisationView | null>(null);
+      return (
+        <>
+          <MaterialiseForm
+            definitionId={1}
+            templateRevisionId={100}
+            templateRevisionNumber={1}
+            templateRevisionStatus="ACTIVE"
+            bookmarks={bookmarks as unknown as BookmarkView[]}
+            materialisations={materialisations as unknown as MaterialisedDefinitionView[]}
+            onMaterialised={setCreated}
+          />
+          {created !== null && <LinkBookmarkValuesSection linkId={created.importLinkId} linkCode={created.importLinkCode} />}
+        </>
+      );
+    }
+    global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const response = POST_OK(input.toString(), init);
+      return response === null ? Promise.reject(new Error(`Onverwachte URL in test: ${input.toString()}`)) : Promise.resolve(response);
+    }) as unknown as typeof fetch;
+    const harness = render(
       <ActorProvider identity={TEST_IDENTITY}>
-        <MemoryRouter initialEntries={['/templates/1']}>
-          <Routes>
-            <Route path="/templates/:definitionId" element={<TemplateDetailPage />} />
-          </Routes>
+        <MemoryRouter>
+          <Harness />
         </MemoryRouter>
       </ActorProvider>,
     );
 
-    await screen.findByText('DEF-21');
-    expectNoRawCodes(document.body, 'sjabloondetail: versies en historiek');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Versie 1' }));
     await screen.findByTestId('materialise-form');
-    await screen.findByTestId('bookmark-problems');
-    expectNoRawCodes(document.body, 'sjabloondetail: invulpunten en problemen');
-
     fireEvent.change(screen.getByLabelText(/^Nieuw of hergebruik/), { target: { value: 'REUSE_DEFINITION' } });
     expectNoRawCodes(document.body, 'materialiseren: hergebruik');
-
     fireEvent.change(screen.getByLabelText(/^Nieuw of hergebruik/), { target: { value: 'NEW_DEFINITION' } });
     expectNoRawCodes(document.body, 'materialiseren: nieuw');
     fireEvent.change(screen.getByLabelText(/^Code van de beschrijving/), { target: { value: 'DEF-30' } });
@@ -1702,12 +1709,93 @@ describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes 
     await screen.findByTestId('materialise-result');
     await screen.findByTestId('materialise-warnings');
     await screen.findByTestId('link-missing-required');
-    await screen.findByTestId('definition-links');
-    expectNoRawCodes(document.body, 'sjabloondetail na het materialiseren (meldingen, koppeling, waarden)');
+    expectNoRawCodes(document.body, 'na het materialiseren (meldingen, waarden van de koppeling)');
     // De meldingen staan in gewoon Nederlands, een onbekende melding krijgt een neutraal woord.
     expect(screen.getByTestId('materialise-warnings').textContent).toContain(
       'Leverancierscode in de bibliotheek is niet ingevuld',
     );
     expect(screen.getByTestId('materialise-warnings').textContent).toContain('Een melding van de server');
+    harness.unmount();
+    cleanup();
+
+    // --- Het detail van een herbruikbare importdefinitie in elk tabblad ---
+    const s = emptySetupState();
+    s.organisations = [organisation(5, { code: 'ORG-5', name: 'Leverancier' })];
+    s.definitions = [
+      definition(1, 5, { code: 'TPL-1-SJ', name: 'Sjabloon', usageType: 'REUSABLE_TEMPLATE', activeRevisionId: 100 }),
+      definition(2, 5, { code: 'TPL-2-SJ', name: 'Conceptsjabloon', usageType: 'REUSABLE_TEMPLATE', activeRevisionId: null }),
+      definition(20, 5, { code: 'DEF-20', name: 'Leverancier X', activeRevisionId: 200 }),
+      definition(21, 5, { code: 'DEF-21', name: 'Detailleverancier Y', activeRevisionId: 201 }),
+    ];
+    s.links = [link(77, 20, { code: 'LNK-77', name: 'Koppeling 77' }), link(78, 21)];
+    s.revisions[1] = [
+      { id: 100, definitionId: 1, revisionNumber: 1, status: 'ACTIVE' },
+      { id: 101, definitionId: 1, revisionNumber: 2, status: 'DRAFT' },
+      { id: 99, definitionId: 1, revisionNumber: 3, status: 'SUPERSEDED' },
+    ];
+    s.revisions[2] = [{ id: 150, definitionId: 2, revisionNumber: 1, status: 'DRAFT' }];
+    s.revisions[20] = [{ id: 200, definitionId: 20, revisionNumber: 1, status: 'ACTIVE' }];
+    s.details[100] = revisionDetail(100, 1, { revisionNumber: 1, status: 'ACTIVE' });
+    s.details[101] = revisionDetail(101, 1, { revisionNumber: 2, status: 'DRAFT' });
+    s.details[99] = revisionDetail(99, 1, { revisionNumber: 3, status: 'SUPERSEDED' });
+    s.details[150] = revisionDetail(150, 2, { revisionNumber: 1, status: 'DRAFT' });
+    s.details[200] = revisionDetail(200, 20, { revisionNumber: 1, status: 'ACTIVE' });
+    s.materialisations = { 1: materialisations as unknown[], 2: [] };
+    s.bookmarkSets = { '1:100': { definitionId: 1, revisionId: 100, bookmarks, problems } };
+
+    installSetupServer(s, POST_OK);
+    const { router } = renderRoutes('/templates/1');
+    await screen.findByRole('navigation', { name: 'Onderdelen van de importdefinitie' });
+    await screen.findByTestId('read-file');
+    expectNoRawCodes(document.body, 'importdefinitiedetail: overzicht');
+
+    router.navigate('/templates/1/fields');
+    await screen.findByTestId('bookmark-problems');
+    await screen.findByTestId('placeholder-rows');
+    expectNoRawCodes(document.body, 'importdefinitiedetail: Bestand en velden met invulpunten en problemen');
+
+    router.navigate('/templates/1/versions');
+    await screen.findByTestId('version-row-101');
+    expectNoRawCodes(document.body, 'importdefinitiedetail: Versies');
+
+    router.navigate('/templates/1/used-by');
+    await screen.findByTestId('not-shareable-21');
+    await screen.findByTestId('select-link-77');
+    fireEvent.click(screen.getByTestId('select-link-77'));
+    await screen.findByTestId('link-missing-required');
+    expectNoRawCodes(document.body, 'importdefinitiedetail: Gebruikt door met waarden van een koppeling');
+  });
+
+  it('importdefinitiedetail: een eigen importdefinitie en het concept van een herbruikbare', async () => {
+    const s = emptySetupState();
+    s.organisations = [organisation(5, { code: 'ORG-5', name: 'Leverancier' })];
+    s.definitions = [
+      definition(2, 5, { code: 'TPL-2-SJ', name: 'Conceptsjabloon', usageType: 'REUSABLE_TEMPLATE', activeRevisionId: null }),
+      definition(20, 5, { code: 'TPL-2', name: 'Eigen importdefinitie', activeRevisionId: 200 }),
+    ];
+    s.links = [link(77, 20, { code: 'LNK-77', name: 'Koppeling 77' })];
+    s.revisions[2] = [{ id: 150, definitionId: 2, revisionNumber: 1, status: 'DRAFT' }];
+    s.revisions[20] = [{ id: 200, definitionId: 20, revisionNumber: 1, status: 'ACTIVE' }];
+    s.details[150] = revisionDetail(150, 2, { revisionNumber: 1, status: 'DRAFT' });
+    s.details[200] = revisionDetail(200, 20, { revisionNumber: 1, status: 'ACTIVE' });
+    s.materialisations = { 2: [] };
+    s.bookmarkSets = { '2:150': { definitionId: 2, revisionId: 150, bookmarks: [], problems: [] } };
+    installSetupServer(s);
+    const { router } = renderRoutes('/templates/2');
+    await screen.findByTestId('concept-banner');
+    await screen.findByTestId('read-file');
+    expectNoRawCodes(document.body, 'importdefinitiedetail: concept (kop, banner, uitgeschakelde knop)');
+
+    router.navigate('/templates/2/used-by');
+    await screen.findByText('Nog door geen enkele leverancier gebruikt.');
+    expectNoRawCodes(document.body, 'importdefinitiedetail: concept zonder gebruik');
+
+    router.navigate('/templates/20/used-by');
+    await screen.findByTestId('used-by-own');
+    expectNoRawCodes(document.body, 'importdefinitiedetail: eigen importdefinitie, Gebruikt door');
+
+    router.navigate('/templates/20');
+    await screen.findByTestId('definition-overview');
+    expectNoRawCodes(document.body, 'importdefinitiedetail: eigen importdefinitie, Overzicht');
   });
 });

@@ -3252,3 +3252,13 @@ Paneelrijen begrensd met "Toont x van y". De oude query `/setup?definitionId=&re
 `/setup/suppliers/{org}/fields?definitie&versie&bewerken=1`. Mockgegevens zonder API-bron (legacy-herkomst per veld,
 bibliotheek/tekenset/wachtwoord in Gegevens, datum/auteur per versie, decimaalteken) worden niet getoond.
 **Bron:** bouwer-gemiddeld (R1-rapport)
+
+## 2026-10-23 — R2: keuzes bij de bouw van Importdefinities
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** Het materialiseerformulier staat niet meer op het
+detail; "Leverancier toevoegen op basis van deze importdefinitie" gaat via de wizard (`/setup/new?templateId=`), die het
+formulier blijft gebruiken. `AddTaskAfterMaterialise.tsx` is daardoor ongebruikt en wordt in N2 verwijderd. Status in de
+lijst is Actief/Concept (geen "Inactief": niet afleidbaar). Herkomst "uit legacy" afgeleid: herbruikbaar = code eindigt op
+`-SJ`; eigen = er bestaat een `<code>-SJ` in dezelfde organisatie of de code begint met `LEGACY-`. Niet getoond bij gebrek
+aan API-gegevens: versienummer van de actieve versie in de lijst, opmerking, gereedheid per koppeling in "Gebruikt door",
+datum/auteur per versie.
+**Bron:** bouwer-gemiddeld (R2-rapport)

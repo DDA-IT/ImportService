@@ -30,6 +30,8 @@ import styles from './Wizard.module.css';
 
 export type TemplateStepProps = {
   organisation: WizardOrganisation;
+  /** R2: de herbruikbare importdefinitie die al gekozen is (vanaf haar detail); de gebruiker kan nog een andere kiezen. */
+  initialTemplateId?: number | null;
   /** Terug naar de keuze "zelf beschrijven of sjabloon". */
   onBack: () => void;
   /** De gebruiker kiest toch "Zelf beschrijven" (bv. omdat er geen sjabloon is). */
@@ -214,11 +216,17 @@ function TemplateMaterialise({
   );
 }
 
-export function TemplateStep({ organisation, onBack, onOwnDescription, onMaterialised }: TemplateStepProps) {
+export function TemplateStep({
+  organisation,
+  initialTemplateId = null,
+  onBack,
+  onOwnDescription,
+  onMaterialised,
+}: TemplateStepProps) {
   const templates = useQuery(`wizard-templates:${organisation.id}`, (signal) =>
     loadTemplatesOf(organisation.id, signal),
   );
-  const [templateId, setTemplateId] = useState('');
+  const [templateId, setTemplateId] = useState(initialTemplateId === null ? '' : String(initialTemplateId));
 
   const rows = templates.data ?? [];
   const template = rows.find((row) => String(row.id) === templateId) ?? null;
@@ -244,6 +252,17 @@ export function TemplateStep({ organisation, onBack, onOwnDescription, onMateria
           kan hier niet gebruikt worden. Kies &laquo;Zelf beschrijven&raquo; om het bestand zelf te beschrijven.
         </p>
       )}
+
+      {templates.data !== null &&
+        rows.length > 0 &&
+        initialTemplateId !== null &&
+        !rows.some((row) => row.id === initialTemplateId) && (
+          <p className={styles.note} role="status" data-testid="wizard-template-not-for-organisation">
+            De gekozen importdefinitie hoort niet bij {organisation.code} — {organisation.name}. Een herbruikbare
+            importdefinitie kan alleen gebruikt worden voor de organisatie die ze zelf aanlevert; kies hieronder een
+            andere of ga terug.
+          </p>
+        )}
 
       {rows.length > 0 && (
         <Field label="Sjabloon" htmlFor="wizard-template-select" required>

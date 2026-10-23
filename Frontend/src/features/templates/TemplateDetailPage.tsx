@@ -1,456 +1,285 @@
 /**
- * `/templates/:definitionId` — scherm 1b, sjabloon-/materialisatiewizard (S1-F2 alleen-lezen deel,
- * S1-F3 schrijfdeel; `docs/decisions.md` 2026-09-27 "scherm 1a/1b").
+ * `/templates/:definitionId` — het importdefinitiedetail (R2, beslissingslog 2026-10-23 "Naamgeving en redesign
+ * inrichting: goedgekeurd", mock `#template/<CODE>`): kop met naam, soort, status en herkomst, vier tabs als nested routes
+ * (patroon `SupplierDetailPage`) en onderaan "Technische details (voor support)". Het detail neemt elk definitie-id aan,
+ * eigen (`OWN_DEFINITION`) en herbruikbaar (`REUSABLE_TEMPLATE`); de route blijft `/templates/:definitionId`.
  *
- * Laadt eerst de revisies van dit sjabloon via het BESTAANDE, vlagloze `GET /definitions/{id}/revisions`
- * (`api/setup.ts`, S1-B1) zodat de gebruiker een sjabloonrevisie kan kiezen — geen duplicaat-endpoint.
- * Een `DRAFT`-revisie wordt getoond maar uitgeschakeld met een reden (dezelfde "uitgeschakeld-met-reden"
- * conventie als elders, bv. `TASK_NOT_MANUAL` op `UploadPage.tsx`): een DRAFT-sjabloonrevisie heeft haar
- * eigen screening/validatie nog niet doorlopen en is dus niet materialiseerbaar.
+ * Laadt de importdefinitie met haar versies en koppelingen één keer (alle vlagloze lijstendpoints) en geeft die via
+ * `<Outlet context>` door aan de tabs. Voor een herbruikbare importdefinitie komt daar de vlaggedekte aanvulling bij
+ * (wie ze gebruikt, haar invulpunten); een fout daarvan toont enkel een melding in de tab die het nodig heeft.
  *
- * Bij het kiezen van een revisie: `GET /templates/{definitionId}/revisions/{revisionId}/bookmarks` —
- * dat pad, de materialisatiehistoriek eronder, het materialiseren zelf en de bookmarkwaarden van een
- * koppeling blijven wél achter `catalogimport.setup-api.enabled` en tonen bij een 404-zonder-code de
- * eigen melding uit `setupApiFlag.ts`.
- *
- * S1-F3 voegt drie dingen toe, zonder het leesdeel te herschrijven:
- * - de materialisatiehistoriek wordt één niveau hoger geladen, omdat `MaterialiseForm` diezelfde rijen
- *   als keuzelijst voor hergebruik nodig heeft (één verzoek, geen tweede kopie van dezelfde lijst);
- * - `MaterialiseForm` onder de bookmarkset van de gekozen, niet-DRAFT revisie;
- * - een koppeling-detailweergave: per gematerialiseerde definitie haar koppelingen (via het vlagloze
- *   `GET /import-links?importDefinitionId=`), en per koppeling haar LINK-bookmarkwaarden met de
- *   wijzigactie. Na een geslaagde materialisatie springt het scherm meteen naar de nieuwe koppeling.
+ * Acties in de kop: "Leverancier toevoegen op basis van deze importdefinitie" (alleen herbruikbaar; opent het
+ * stappenplan met `templateId`; uitgeschakeld bij een concept of zonder recht Beheren) en "Opvolger maken" (de
+ * bestaande `CreateSuccessorAction`, op de actieve versie, anders de nieuwste). Het materialiseerformulier zelf staat
+ * niet meer op deze pagina: het stappenplan gebruikt hetzelfde `MaterialiseForm`.
  */
-import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import * as importLinksApi from '../../api/importLinks.ts';
-import * as setupApi from '../../api/setup.ts';
-import * as templatesApi from '../../api/templates.ts';
-import type { MaterialisedDefinitionView, PageResult, RevisionRow } from '../../api/types.ts';
-import type { UseQueryResult } from '../../hooks/useQuery.ts';
-import { useQuery } from '../../hooks/useQuery.ts';
-import { Pager } from '../../components/Pager.tsx';
-import { BackIcon } from '../../components/icons.tsx';
-import { StatusBadge } from '../../components/StatusBadge.tsx';
-import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
-import { describeIssue } from '../../terms/IssueCodeTerm.tsx';
-import { Term } from '../../terms/Term.tsx';
-import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
-import { INVULPUNT, INVULPUNTEN, INVULPUNTEN_CAP } from '../../terms/wording.ts';
-import { FlagOffNotice } from '../setup/FlagOffNotice.tsx';
-import { AddTaskAfterMaterialise } from './AddTaskAfterMaterialise.tsx';
-import { LinkBookmarkValuesSection } from './LinkBookmarkValuesSection.tsx';
-import { MaterialiseForm } from './MaterialiseForm.tsx';
-import { isSetupApiDisabledError, SETUP_API_DISABLED_MESSAGE } from './setupApiFlag.ts';
+
+import { Link, NavLink, Outlet, useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import { gateTitle } from '../../actor/gate.ts';
+import { usePermissionGate } from '../../actor/permissions.ts';
+import { PERMISSION_MANAGE, PERMISSION_READ, type DefinitionRow, type RevisionRow } from '../../api/types.ts';
 import button from '../../components/Button.module.css';
 import pageCss from '../../components/Page.module.css';
-import styles from './TemplateDetailPage.module.css';
-import { SCREEN } from '../../terms/navigation.ts';
+import { ToneBadge } from '../../components/StatusBadge.tsx';
+import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
+import { useQuery, type UseQueryResult } from '../../hooks/useQuery.ts';
+import {
+  DEFINITIONS_TEXT,
+  ORIGIN_HINT,
+  ORIGIN_LABEL,
+  STATUS_HINT,
+  STATUS_LABEL,
+  STATUS_TONE,
+} from '../../terms/importDefinitions.ts';
+import { GROUP, PRODUCT, SCREEN } from '../../terms/navigation.ts';
+import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
+import { CreateSuccessorAction } from '../setup/CreateSuccessorAction.tsx';
+import { defaultRevisionOf, isOwnDefinition } from '../setup/setupDashboardModel.ts';
+import { wizardHref } from '../setup/wizard/wizardTypes.ts';
+import { definitionHref } from './definitionRoutes.ts';
+import {
+  loadDefinitionBundle,
+  loadReusableExtras,
+  type DefinitionBundle,
+  type ReusableExtras,
+} from './definitionsData.ts';
+import { definitionOriginOf, definitionStatusOf, type DefinitionOrigin, type DefinitionStatus } from './definitionsModel.ts';
+import styles from '../setup/SetupScreens.module.css';
 
-/** Waarom een conceptversie van een sjabloon niet te kiezen is (V7: gewoon Nederlands, geen statuscode). */
-const DRAFT_REASON = 'een concept van een sjabloon is nog niet bruikbaar om uit te materialiseren';
+const TEXT = DEFINITIONS_TEXT;
 
-/** De koppeling waarvan de bookmarkwaarden open staan. */
-type SelectedLink = { linkId: number; linkCode: string };
+export type DefinitionDetailContext = {
+  bundle: DefinitionBundle;
+  reusable: boolean;
+  status: DefinitionStatus;
+  origin: DefinitionOrigin;
+  /** De vlaggedekte aanvulling; `data` is `null` zolang ze laadt (en voor een eigen importdefinitie altijd leeg). */
+  extras: UseQueryResult<ReusableExtras>;
+  /** Herlaadt de importdefinitie met haar versies en koppelingen (na activeren, een opvolger, een wijziging). */
+  reload: () => void;
+};
 
-/**
- * Bookmarks + niet-blokkerende `problems`-lijst van één gekozen revisie, en — zodra die invulset er is —
- * het materialisatieformulier (S1-F3). Het formulier staat hier omdat het exact dezelfde invulset nodig
- * heeft: zonder de bookmarks van díe revisie kan het niet weten welke velden er gevraagd worden.
- */
-function BookmarkSetSection({
-  definitionId,
-  revision,
-  materialisations,
-  onMaterialised,
-}: {
-  definitionId: number;
-  revision: RevisionRow;
-  materialisations: MaterialisedDefinitionView[];
-  onMaterialised: (definitionIdOfLink: number, link: SelectedLink) => void;
-}) {
-  const key = `template-bookmarks:${definitionId}:${revision.id}`;
-  const bookmarkSet = useQuery(key, (signal) => templatesApi.getBookmarkSet(definitionId, revision.id, signal));
-
-  return (
-    <section className={`${pageCss.card} ${pageCss.cardPad} ${styles.section}`}>
-      <h2 className={`${pageCss.subtitle} ${styles.sectionTitle}`}>
-        {INVULPUNTEN_CAP} — versie {revision.revisionNumber}
-      </h2>
-      <WhatIsThis>
-        Een {INVULPUNT} is een waarde die u invult wanneer u uit dit sjabloon materialiseert, bijvoorbeeld de code van
-        de leverancier. Sommige gelden voor de hele beschrijving van het bestand, andere worden per koppeling
-        ingevuld. Verplichte {INVULPUNTEN} moeten een waarde hebben voor een levering kan starten.
-      </WhatIsThis>
-
-      {bookmarkSet.error !== null &&
-        (isSetupApiDisabledError(bookmarkSet.error) ? (
-          <FlagOffNotice message={SETUP_API_DISABLED_MESSAGE} className={styles.flagOff} />
-        ) : (
-          <ErrorBanner error={bookmarkSet.error} />
-        ))}
-      {bookmarkSet.loading && bookmarkSet.data === null && <p className={styles.loading}>Bezig met laden…</p>}
-      {bookmarkSet.data !== null && (
-        <>
-          {bookmarkSet.data.problems.length > 0 && (
-            <ul className={styles.problems} role="alert" data-testid="bookmark-problems">
-              {bookmarkSet.data.problems.map((problem, index) => {
-                const described = describeIssue(problem.code);
-                const bookmarkLabel =
-                  bookmarkSet.data?.bookmarks.find((bookmark) => bookmark.name === problem.bookmarkName)?.label ?? null;
-                return (
-                  <li
-                    key={`${problem.code}-${problem.bookmarkName}-${index}`}
-                    title={`technische code: ${problem.code} · ${problem.bookmarkName} · ${problem.message}`}
-                  >
-                    {described.label}: {described.uitleg}
-                    {bookmarkLabel !== null && (
-                      <span className={styles.problemDetail}>({INVULPUNT} &laquo;{bookmarkLabel}&raquo;)</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {bookmarkSet.data.bookmarks.length === 0 ? (
-            <p className={styles.empty}>Geen {INVULPUNTEN} gedeclareerd op deze versie.</p>
-          ) : (
-            <ul className={styles.list}>
-              {bookmarkSet.data.bookmarks.map((bookmark) => (
-                <li key={bookmark.id} className={styles.listItem}>
-                  {/* De technische naam staat in de tooltip (V7), niet als zichtbare tekst. */}
-                  <span className={styles.code} title={`Technische naam: ${bookmark.name}`}>
-                    {bookmark.label}
-                  </span>
-                  <span>
-                    <Term domain="bookmarkDataType" code={bookmark.dataType} unknownLabel="Ander soort waarde" /> ·{' '}
-                    <Term domain="bookmarkScope" code={bookmark.valueScope} unknownLabel="Andere geldigheid" />
-                  </span>
-                  <span>{bookmark.required ? 'verplicht' : 'optioneel'}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <MaterialiseForm
-            definitionId={definitionId}
-            templateRevisionId={revision.id}
-            templateRevisionNumber={revision.revisionNumber}
-            templateRevisionStatus={revision.status}
-            bookmarks={bookmarkSet.data.bookmarks}
-            materialisations={materialisations}
-            onMaterialised={(result) =>
-              onMaterialised(result.definitionId, {
-                linkId: result.importLinkId,
-                linkCode: result.importLinkCode,
-              })
-            }
-          />
-        </>
-      )}
-    </section>
-  );
+/** Hulphook voor de tabs: haalt het door `TemplateDetailPage` doorgegeven pakket op. */
+export function useDefinitionDetailContext(): DefinitionDetailContext {
+  return useOutletContext<DefinitionDetailContext>();
 }
 
-/**
- * Materialisatiehistoriek: welke definities al uit dit sjabloon gematerialiseerd zijn. De query zelf
- * leeft in `TemplateDetailPage` (S1-F3) omdat `MaterialiseForm` dezelfde rijen nodig heeft.
- */
-function MaterialisationHistorySection({
-  query,
-  onPageChange,
-  onSizeChange,
-  onShowLinks,
-}: {
-  query: UseQueryResult<PageResult<MaterialisedDefinitionView>>;
-  onPageChange: (next: number) => void;
-  onSizeChange: (next: number) => void;
-  onShowLinks: (definitionId: number) => void;
-}) {
-  return (
-    <section className={`${pageCss.card} ${pageCss.cardPad} ${styles.section}`}>
-      <h2 className={`${pageCss.subtitle} ${styles.sectionTitle}`}>Materialisatiehistoriek</h2>
-
-      <WhatIsThis>
-        Hier staan de beschrijvingen van bestanden die al uit dit sjabloon gemaakt zijn (gematerialiseerd). Een
-        beschrijving is &laquo;deelbaar&raquo; als er een tweede leverancier een koppeling aan mag krijgen; dat kan
-        niet als een {INVULPUNT} dat per koppeling ingevuld wordt, iets in de gedeelde versie zou veranderen.
-      </WhatIsThis>
-      {query.error !== null &&
-        (isSetupApiDisabledError(query.error) ? (
-          <FlagOffNotice message={SETUP_API_DISABLED_MESSAGE} className={styles.flagOff} />
-        ) : (
-          <ErrorBanner error={query.error} />
-        ))}
-      {query.loading && query.data === null && <p className={styles.loading}>Bezig met laden…</p>}
-      {query.data !== null && (
-        <>
-          {query.data.content.length === 0 ? (
-            <p className={styles.empty}>Dit sjabloon is nog niet gematerialiseerd.</p>
-          ) : (
-            <ul className={styles.list} data-testid="materialisations">
-              {query.data.content.map((row) => (
-                <li key={row.definitionId} className={styles.listItem}>
-                  <span className={styles.code}>{row.definitionCode}</span>
-                  <span>{row.definitionName}</span>
-                  <span>
-                    {row.definitionRevisionNumber !== null
-                      ? `versie ${row.definitionRevisionNumber}`
-                      : 'geen herkomstversie'}
-                  </span>
-                  <span>{row.importLinkCount} koppeling(en)</span>
-                  <span
-                    title={
-                      row.blockingBookmarkName !== null
-                        ? `Technische naam van het ${INVULPUNT}: ${row.blockingBookmarkName}`
-                        : undefined
-                    }
-                  >
-                    {row.shareable
-                      ? 'deelbaar'
-                      : `niet deelbaar${row.blockingBookmarkName !== null ? ` (door een ${INVULPUNT} dat per koppeling ingevuld wordt)` : ''}`}
-                  </span>
-                  <button
-                    type="button"
-                    className={`${button.secondary} ${button.small}`}
-                    data-testid={`show-links-${row.definitionId}`}
-                    onClick={() => onShowLinks(row.definitionId)}
-                  >
-                    Koppelingen
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <Pager
-            page={query.data.page}
-            size={query.data.size}
-            totalElements={query.data.totalElements}
-            onPageChange={onPageChange}
-            onSizeChange={onSizeChange}
-          />
-        </>
-      )}
-    </section>
-  );
+/** De versie waar "Opvolger maken" van uitgaat: de actieve, anders de nieuwste. */
+function successorBase(revisions: readonly RevisionRow[]): RevisionRow | null {
+  const active = revisions.find((revision) => revision.status === 'ACTIVE');
+  if (active !== undefined) {
+    return active;
+  }
+  return [...revisions].sort((a, b) => b.revisionNumber - a.revisionNumber)[0] ?? null;
 }
 
-/**
- * De koppelingen van één gematerialiseerde definitie, via het vlagloze `GET /import-links`
- * (`api/importLinks.ts`, S1-B1-uitbreiding met `importDefinitionId`). Het kiezen van een koppeling opent
- * haar LINK-bookmarkwaarden.
- */
-function DefinitionLinksSection({
-  definitionId,
-  selectedLinkId,
-  onSelect,
-}: {
-  definitionId: number;
-  selectedLinkId: number | null;
-  onSelect: (link: SelectedLink) => void;
-}) {
-  const key = `definition-links:${definitionId}`;
-  const links = useQuery(key, (signal) =>
-    importLinksApi.listImportLinks({ importDefinitionId: definitionId, size: 200 }, signal),
-  );
-
+function AddSupplierAction({ definition, status }: { definition: DefinitionRow; status: DefinitionStatus }) {
+  const manageGate = usePermissionGate(PERMISSION_MANAGE);
+  const concept = status === 'CONCEPT';
+  if (concept || !manageGate.allowed) {
+    const reason = concept ? TEXT.addSupplierConcept : gateTitle(manageGate);
+    return (
+      <button type="button" className={button.primary} disabled title={reason} data-testid="add-supplier-button">
+        {TEXT.addSupplier}
+      </button>
+    );
+  }
   return (
-    <section className={`${pageCss.card} ${pageCss.cardPad} ${styles.section}`}>
-      <h2 className={`${pageCss.subtitle} ${styles.sectionTitle}`}>Koppelingen van beschrijving #{definitionId}</h2>
-      {links.error !== null && <ErrorBanner error={links.error} />}
-      {links.loading && links.data === null && <p className={styles.loading}>Bezig met laden…</p>}
-      {links.data !== null &&
-        (links.data.content.length === 0 ? (
-          <p className={styles.empty}>Deze beschrijving heeft nog geen koppelingen.</p>
-        ) : (
-          <ul className={styles.list} data-testid="definition-links">
-            {links.data.content.map((row) => (
-              <li key={row.id} className={styles.listItem}>
-                <button
-                  type="button"
-                  className={
-                    selectedLinkId === row.id
-                      ? `${button.secondary} ${button.small} ${button.selected}`
-                      : `${button.secondary} ${button.small}`
-                  }
-                  data-testid={`select-link-${row.id}`}
-                  onClick={() => onSelect({ linkId: row.id, linkCode: row.code })}
-                >
-                  {row.code}
-                </button>
-                <span>{row.name}</span>
-                <span>
-                  {row.supplierCode} / {row.libraryCode}
-                </span>
-                <span>{row.active ? 'actief' : 'niet actief'}</span>
-              </li>
-            ))}
-          </ul>
-        ))}
-    </section>
+    <Link
+      className={button.primary}
+      to={wizardHref({ organisationId: definition.sourceOrganisationId, templateId: definition.id })}
+      data-testid="add-supplier-button"
+    >
+      {TEXT.addSupplier}
+    </Link>
   );
 }
 
 export function TemplateDetailPage() {
+  const readGate = usePermissionGate(PERMISSION_READ);
   const params = useParams<{ definitionId: string }>();
   const definitionId = Number(params.definitionId);
+  const valid = Number.isSafeInteger(definitionId) && definitionId > 0;
 
-  const [page, setPage] = useState(0);
-  const [size, setSize] = useState(50);
-  const [selectedRevision, setSelectedRevision] = useState<RevisionRow | null>(null);
-
-  const [historyPage, setHistoryPage] = useState(0);
-  const [historySize, setHistorySize] = useState(50);
-  const [linksDefinitionId, setLinksDefinitionId] = useState<number | null>(null);
-  const [selectedLink, setSelectedLink] = useState<SelectedLink | null>(null);
-  /** NT-7: de laatst gematerialiseerde koppeling, voor "Taak toevoegen". */
-  const [justMaterialised, setJustMaterialised] = useState<{
-    definitionId: number;
-    linkId: number;
-    linkCode: string;
-  } | null>(null);
-
-  const revisionsKey = `template-revisions:${definitionId}:${page}:${size}`;
-  const revisions = useQuery(revisionsKey, (signal) =>
-    setupApi.listDefinitionRevisions(definitionId, { page, size }, signal),
+  // Een pakket van `null` = de importdefinitie bestaat niet; `data === null` = nog aan het laden.
+  const query = useQuery<{ bundle: DefinitionBundle | null }>(`definition-detail:${definitionId}`, async (signal) => ({
+    bundle: valid ? await loadDefinitionBundle(definitionId, signal) : null,
+  }));
+  const bundle = query.data?.bundle ?? null;
+  const reusable = bundle !== null && !isOwnDefinition(bundle.definition);
+  const bookmarkRevisionId = reusable ? (defaultRevisionOf(bundle.revisions, null)?.id ?? null) : null;
+  const extrasKey = reusable ? `definition-extras:${definitionId}:${bookmarkRevisionId ?? 'none'}` : 'definition-extras:none';
+  const extras = useQuery<ReusableExtras>(extrasKey, async (signal) =>
+    reusable
+      ? loadReusableExtras(definitionId, bookmarkRevisionId, signal)
+      : { materialisations: { ok: true, data: [] }, bookmarks: null },
   );
 
-  const historyKey = `template-materialisations:${definitionId}:${historyPage}:${historySize}`;
-  const materialisations = useQuery(historyKey, (signal) =>
-    templatesApi.listMaterialisations(definitionId, { page: historyPage, size: historySize }, signal),
-  );
+  if (!readGate.allowed) {
+    return (
+      <div className={styles.page}>
+        <p className={styles.alert} role="alert">
+          {readGate.reason}
+        </p>
+      </div>
+    );
+  }
+
+  const missing = query.data !== null && bundle === null;
 
   return (
     <div className={styles.page}>
-      <header className={`${pageCss.pageHead} ${styles.crumbHead}`}>
+      {query.error !== null && <ErrorBanner error={query.error} />}
+      {query.loading && query.data === null && <p className={styles.loading}>{TEXT.loading}</p>}
+      {missing && (
+        <p className={styles.alert} role="alert">
+          {TEXT.notFound} <Link to="/templates">{SCREEN.importdefinities}</Link>
+        </p>
+      )}
+      {bundle !== null && (
+        <Detail
+          bundle={bundle}
+          extras={extras}
+          reload={() => {
+            query.reload();
+            extras.reload();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function Detail({
+  bundle,
+  extras,
+  reload,
+}: {
+  bundle: DefinitionBundle;
+  extras: UseQueryResult<ReusableExtras>;
+  reload: () => void;
+}) {
+  const navigate = useNavigate();
+  const { definition, revisions } = bundle;
+  const id = definition.id;
+  const reusable = !isOwnDefinition(definition);
+  const status = definitionStatusOf(definition);
+  const origin = definitionOriginOf(definition, bundle.allDefinitions);
+  const base = successorBase(revisions);
+  const newestDraft = [...revisions]
+    .filter((revision) => revision.status === 'DRAFT')
+    .sort((a, b) => b.revisionNumber - a.revisionNumber)[0];
+
+  const tabs: { to: string; end: boolean; label: string }[] = [
+    { to: definitionHref(id), end: true, label: TEXT.tabs.overview },
+    { to: `/templates/${id}/fields`, end: false, label: TEXT.tabs.fields },
+    { to: `/templates/${id}/versions`, end: false, label: TEXT.tabs.versions },
+    { to: `/templates/${id}/used-by`, end: false, label: TEXT.tabs.usedBy },
+  ];
+
+  const revisionIds = revisions.map((revision) => revision.id).join(', ');
+  const materialised = extras.data?.materialisations.ok === true ? extras.data.materialisations.data : [];
+  const materialisedIds = materialised.map((row) => row.definitionId).join(', ');
+
+  return (
+    <>
+      <header className={pageCss.pageHead}>
         <div className={pageCss.pageHeadText}>
+          <h1 className={pageCss.title}>
+            {definition.name}
+            <span className={styles.titleBadges}>
+              <ToneBadge label={reusable ? TEXT.kindReusable : TEXT.kindOwn} tone={reusable ? 'planned' : 'neutral'} />
+              <span title={STATUS_HINT[status]}>
+                <ToneBadge label={STATUS_LABEL[status]} tone={STATUS_TONE[status]} />
+              </span>
+              <span title={ORIGIN_HINT[origin]}>
+                <ToneBadge label={TEXT.originPrefix(ORIGIN_LABEL[origin])} tone="neutral" />
+              </span>
+            </span>
+          </h1>
           <ol className={pageCss.crumbs}>
             <li>
-              <span>CatalogImport</span>
+              <span>{PRODUCT}</span>
             </li>
             <li>
-              <span>Inrichting</span>
+              <span>{GROUP.inrichting}</span>
             </li>
             <li>
               <Link to="/templates">{SCREEN.importdefinities}</Link>
             </li>
             <li>
-              <span aria-current="page">Sjabloon #{definitionId}</span>
+              <span aria-current="page">{definition.name}</span>
             </li>
           </ol>
         </div>
-      </header>
-      <div className={styles.detailHead}>
-        <Link to="/templates" className={styles.backButton} aria-label="Terug naar de sjablonen">
-          <BackIcon />
-        </Link>
-        <div className={styles.detailId}>
-          <h1 className={pageCss.title}>Sjabloon #{definitionId}</h1>
-        </div>
-      </div>
-
-      <section className={`${pageCss.card} ${pageCss.cardPad} ${styles.section}`}>
-        <h2 className={`${pageCss.subtitle} ${styles.sectionTitle}`}>Versie kiezen</h2>
-        {revisions.error !== null && <ErrorBanner error={revisions.error} />}
-        {revisions.loading && revisions.data === null && <p className={styles.loading}>Bezig met laden…</p>}
-        {revisions.data !== null && (
-          <>
-            {revisions.data.content.length === 0 ? (
-              <p className={styles.empty}>Geen versies voor dit sjabloon.</p>
-            ) : (
-              <ul className={styles.list} data-testid="template-revisions">
-                {revisions.data.content.map((revision: RevisionRow) => {
-                  const isDraft = revision.status === 'DRAFT';
-                  return (
-                    <li key={revision.id} className={styles.listItem}>
-                      <button
-                        type="button"
-                        className={
-                          selectedRevision?.id === revision.id
-                            ? `${button.secondary} ${button.small} ${button.selected}`
-                            : `${button.secondary} ${button.small}`
-                        }
-                        disabled={isDraft}
-                        title={isDraft ? DRAFT_REASON : undefined}
-                        onClick={() => setSelectedRevision(revision)}
-                      >
-                        Versie {revision.revisionNumber}
-                      </button>
-                      <StatusBadge status={revision.status} domain="revisionStatus" />
-                      {isDraft && <p className={styles.draftReason}>{DRAFT_REASON}</p>}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            <Pager
-              page={revisions.data.page}
-              size={revisions.data.size}
-              totalElements={revisions.data.totalElements}
-              onPageChange={setPage}
-              onSizeChange={(next) => {
-                setSize(next);
-                setPage(0);
+        <div className={styles.btnRow}>
+          {base === null ? (
+            <button type="button" className={button.secondary} disabled title={TEXT.createSuccessorNone} data-testid="header-successor-none">
+              Opvolger maken
+            </button>
+          ) : (
+            <CreateSuccessorAction
+              revision={base}
+              onCreated={(created) => {
+                // De nieuwe versie wordt meteen geopend (bewerkblok open); het pakket herlaadt mee.
+                reload();
+                navigate(definitionHref(id, 'fields', { revisionId: created.id, edit: true }));
               }}
             />
-          </>
-        )}
-      </section>
+          )}
+          {reusable && <AddSupplierAction definition={definition} status={status} />}
+        </div>
+      </header>
 
-      {selectedRevision !== null && (
-        <BookmarkSetSection
-          definitionId={definitionId}
-          revision={selectedRevision}
-          materialisations={materialisations.data?.content ?? []}
-          onMaterialised={(materialisedDefinitionId, link) => {
-            // Expliciete invalidatie (§5): de historiek verandert door deze actie, dus herladen we ze
-            // zelf in plaats van op een cache te vertrouwen.
-            materialisations.reload();
-            setLinksDefinitionId(materialisedDefinitionId);
-            setSelectedLink(link);
-            setJustMaterialised({
-              definitionId: materialisedDefinitionId,
-              linkId: link.linkId,
-              linkCode: link.linkCode,
-            });
-          }}
-        />
+      {status === 'CONCEPT' && (
+        <div className={styles.banner} role="status" data-testid="concept-banner">
+          <p>
+            <strong>{TEXT.nextStepLabel}</strong>{' '}
+            {newestDraft === undefined ? TEXT.nextStepNoVersion : TEXT.nextStepDraft(newestDraft.revisionNumber)}
+          </p>
+          {newestDraft !== undefined && (
+            <Link
+              className={`${button.secondary} ${button.small}`}
+              to={definitionHref(id, 'fields', { revisionId: newestDraft.id })}
+              data-testid="concept-banner-action"
+            >
+              {TEXT.viewVersion(newestDraft.revisionNumber)}
+            </Link>
+          )}
+        </div>
       )}
 
-      {justMaterialised !== null && (
-        <AddTaskAfterMaterialise
-          key={justMaterialised.linkId}
-          templateId={definitionId}
-          definitionId={justMaterialised.definitionId}
-          linkId={justMaterialised.linkId}
-          linkCode={justMaterialised.linkCode}
-        />
-      )}
+      <nav className={pageCss.tabs} aria-label={TEXT.tabsLabel}>
+        {tabs.map((tab) => (
+          <NavLink key={tab.to} to={tab.to} end={tab.end} className={pageCss.tab}>
+            {tab.label}
+          </NavLink>
+        ))}
+      </nav>
 
-      <MaterialisationHistorySection
-        query={materialisations}
-        onPageChange={setHistoryPage}
-        onSizeChange={(next) => {
-          setHistorySize(next);
-          setHistoryPage(0);
-        }}
-        onShowLinks={(id) => {
-          setLinksDefinitionId(id);
-          setSelectedLink(null);
-        }}
+      <Outlet
+        context={
+          {
+            bundle,
+            reusable,
+            status,
+            origin,
+            extras,
+            reload,
+          } satisfies DefinitionDetailContext
+        }
       />
 
-      {linksDefinitionId !== null && (
-        <DefinitionLinksSection
-          definitionId={linksDefinitionId}
-          selectedLinkId={selectedLink?.linkId ?? null}
-          onSelect={setSelectedLink}
+      <div className={styles.techBox}>
+        <TechnicalDetails
+          items={[
+            { name: TEXT.technicalIds.definition, value: String(id) },
+            { name: TEXT.technicalIds.usageType, value: definition.usageType },
+            { name: TEXT.technicalIds.versions, value: revisionIds === '' ? '—' : revisionIds },
+            ...(reusable ? [{ name: TEXT.technicalIds.materialised, value: materialisedIds === '' ? '—' : materialisedIds }] : []),
+          ]}
         />
-      )}
-
-      {selectedLink !== null && (
-        <LinkBookmarkValuesSection linkId={selectedLink.linkId} linkCode={selectedLink.linkCode} />
-      )}
-    </div>
+      </div>
+    </>
   );
 }

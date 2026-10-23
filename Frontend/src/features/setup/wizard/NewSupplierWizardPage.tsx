@@ -248,10 +248,12 @@ export function NewSupplierWizardPage() {
   const organisationId = parseId(params.get('organisationId'));
   const definitionId = parseId(params.get('definitionId'));
   const linkId = parseId(params.get('linkId'));
+  // R2: een herbruikbare importdefinitie die vanaf haar detail is meegegeven; opent stap 2 meteen op het sjabloonpad.
+  const templateIdParam = parseId(params.get('templateId'));
 
   const [data, setData] = useState<WizardData>(EMPTY_WIZARD);
   const [notice, setNotice] = useState<string | null>(null);
-  const [templateStart, setTemplateStart] = useState(false);
+  const [templateStart, setTemplateStart] = useState(templateIdParam !== null);
   const [materialised, setMaterialised] = useState<MaterialisationView | null>(null);
   const navigate = useNavigate();
   const [resume, setResume] = useState<ResumeState>({ status: organisationId === null ? 'idle' : 'loading' });
@@ -380,6 +382,7 @@ export function NewSupplierWizardPage() {
           {step === 2 && templateStart && data.organisation !== null && (
             <TemplateStep
               organisation={data.organisation}
+              initialTemplateId={templateIdParam}
               onBack={() => setTemplateStart(false)}
               onOwnDescription={() => {
                 setTemplateStart(false);

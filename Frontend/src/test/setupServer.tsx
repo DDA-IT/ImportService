@@ -18,6 +18,10 @@ export type SetupState = {
   revisions: Record<number, unknown[]>;
   details: Record<number, unknown>;
   receipts: unknown[];
+  /** R2: gematerialiseerde importdefinities per herbruikbare definitie (`/templates/{id}/materialisations`). */
+  materialisations?: Record<number, unknown[]>;
+  /** R2: invulpunten per `<definitie>:<versie>` (`/templates/{id}/revisions/{rev}/bookmarks`). */
+  bookmarkSets?: Record<string, unknown>;
 };
 
 export function jsonResponse(body: unknown, status = 200): Response {
@@ -54,6 +58,17 @@ export function installSetupServer(state: SetupState, extra?: (url: string, init
     }
     const [path, query = ''] = url.split('?');
     const params = new URLSearchParams(query);
+    const materialisations = /\/templates\/(\d+)\/materialisations$/.exec(path!);
+    if (materialisations !== null) {
+      return Promise.resolve(jsonResponse(pageOf(state.materialisations?.[Number(materialisations[1])] ?? [], params)));
+    }
+    const bookmarks = /\/templates\/(\d+)\/revisions\/(\d+)\/bookmarks$/.exec(path!);
+    if (bookmarks !== null) {
+      const set = state.bookmarkSets?.[`${bookmarks[1]}:${bookmarks[2]}`];
+      return Promise.resolve(
+        set === undefined ? jsonResponse({ error: 'nope', code: 'TEMPLATE_REVISION_NOT_FOUND' }, 404) : jsonResponse(set),
+      );
+    }
     const detail = /\/definitions\/(\d+)\/revisions\/(\d+)$/.exec(path!);
     if (detail !== null) {
       const body = state.details[Number(detail[2])];

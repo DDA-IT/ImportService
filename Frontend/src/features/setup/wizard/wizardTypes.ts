@@ -63,15 +63,28 @@ export function currentStep(data: WizardData): WizardStep {
 
 /**
  * Het adres van het stappenplan, hervat vanaf wat er al bestaat (NT-6 "Verder inrichten", NT-7 "Taak
- * toevoegen"): met `linkId` (en `definitionId`) opent het stappenplan bij de taakstap.
+ * toevoegen"): met `linkId` (en `definitionId`) opent het stappenplan bij de taakstap. R2: met `templateId`
+ * (een herbruikbare importdefinitie) opent het stappenplan bij het sjabloonpad met die importdefinitie
+ * voorgeselecteerd; `organisationId` is dan optioneel (zonder organisatie begint het stappenplan bij stap 1).
  */
-export function wizardHref(ids: { organisationId: number; definitionId?: number; linkId?: number }): string {
-  const params = new URLSearchParams({ organisationId: String(ids.organisationId) });
+export function wizardHref(ids: {
+  organisationId?: number;
+  definitionId?: number;
+  linkId?: number;
+  templateId?: number;
+}): string {
+  const params = new URLSearchParams();
+  if (ids.organisationId !== undefined) {
+    params.set('organisationId', String(ids.organisationId));
+  }
   if (ids.definitionId !== undefined) {
     params.set('definitionId', String(ids.definitionId));
   }
   if (ids.linkId !== undefined) {
     params.set('linkId', String(ids.linkId));
+  }
+  if (ids.templateId !== undefined) {
+    params.set('templateId', String(ids.templateId));
   }
   return `/setup/new?${params.toString()}`;
 }

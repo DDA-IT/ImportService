@@ -21,7 +21,7 @@ import styles from './SetupScreens.module.css';
 
 const TEXT = SUPPLIER_TEXT;
 
-function StepBar({ current }: { current: number }) {
+export function StepBar({ current }: { current: number }) {
   return (
     <nav aria-label={TEXT.stepsLabel}>
       <ol className={styles.chain}>
@@ -35,7 +35,7 @@ function StepBar({ current }: { current: number }) {
   );
 }
 
-function KeyValue({ label, children }: { label: string; children: ReactNode }) {
+export function KeyValue({ label, children }: { label: string; children: ReactNode }) {
   const empty = children === null || children === undefined || children === '';
   return (
     <>

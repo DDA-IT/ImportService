@@ -11,14 +11,13 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
 import { TEST_IDENTITY, testIdentityWith } from './testIdentity';
 import { PERMISSION_READ } from '../api/types';
 import type { BookmarkView, MaterialisedDefinitionView } from '../api/types';
 import { MaterialiseForm } from '../features/templates/MaterialiseForm';
 import { LinkBookmarkValuesSection } from '../features/templates/LinkBookmarkValuesSection';
-import { TemplateDetailPage } from '../features/templates/TemplateDetailPage';
 import { AddTaskAfterMaterialise } from '../features/templates/AddTaskAfterMaterialise';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -503,81 +502,15 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
     );
   });
 
-  it('S1-F3.13: het formulier hangt op TemplateDetailPage onder de gekozen, niet-DRAFT revisie', async () => {
-    mockFetch((url) => {
-      if (url.includes('/templates/1/revisions/100/bookmarks')) {
-        return jsonResponse({
-          definitionId: 1,
-          revisionId: 100,
-          bookmarks: [DEFINITION_BOOKMARK, LINK_BOOKMARK],
-          problems: [],
-        });
-      }
-      if (url.includes('/templates/1/materialisations')) {
-        return jsonResponse({
-          content: [SHAREABLE, NOT_SHAREABLE],
-          page: 0,
-          size: 50,
-          totalElements: 2,
-          totalPages: 1,
-        });
-      }
-      if (url.includes('/definitions/1/revisions')) {
-        return jsonResponse({
-          content: [{ id: 100, definitionId: 1, revisionNumber: 1, status: 'ACTIVE' }],
-          page: 0,
-          size: 50,
-          totalElements: 1,
-          totalPages: 1,
-        });
-      }
-      throw new Error(`Onverwachte URL in test: ${url}`);
-    });
+  // R2: het materialiseerformulier staat niet meer op de detailpagina van een importdefinitie; het stappenplan
+  // (`/setup/new?templateId=…`) gebruikt hetzelfde `MaterialiseForm` (zie TemplateWizardPath.test.tsx) en de waarden van
+  // een koppeling openen op het tabblad Gebruikt door (zie ImportDefinitions.test.tsx).
 
-    render(
-      <ActorProvider identity={TEST_IDENTITY}>
-        <MemoryRouter initialEntries={['/templates/1']}>
-          <Routes>
-            <Route path="/templates/:definitionId" element={<TemplateDetailPage />} />
-          </Routes>
-        </MemoryRouter>
-      </ActorProvider>,
-    );
+  // --- NT-7: "Taak toevoegen" na een geslaagde materialisatie ----------------------------------------------
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Versie 1' }));
-
-    expect(await screen.findByTestId('materialise-form')).toBeInTheDocument();
-    // De keuzelijst voor hergebruik komt uit de al geladen materialisatiehistoriek (één verzoek);
-    // wachten tot die historiek er staat, anders is de lijst nog leeg.
-    await screen.findByText('DEF-21');
-    chooseMode('REUSE_DEFINITION');
-    expect(screen.getByRole('option', { name: /DEF-21/ })).toBeDisabled();
-  });
-
-  // --- NT-7: "Taak toevoegen" na een geslaagde materialisatie op de pagina Sjablonen ----------------------
-
-  function mockTemplateDetailServer() {
-    return mockFetch((url, init) => {
-      const method = (init?.method ?? 'GET').toUpperCase();
-      if (url.includes('/templates/1/revisions/100/bookmarks')) {
-        return jsonResponse({ definitionId: 1, revisionId: 100, bookmarks: [DEFINITION_BOOKMARK, LINK_BOOKMARK], problems: [] });
-      }
-      if (url.includes('/templates/1/materialisations')) {
-        if (method === 'POST') {
-          return jsonResponse(MATERIALISATION_RESULT, 201);
-        }
-        return jsonResponse({ content: [], page: 0, size: 50, totalElements: 0, totalPages: 0 });
-      }
-      if (url.includes('/definitions/1/revisions')) {
-        return jsonResponse({
-          content: [{ id: 100, definitionId: 1, revisionNumber: 1, status: 'ACTIVE' }],
-          page: 0,
-          size: 50,
-          totalElements: 1,
-          totalPages: 1,
-        });
-      }
-      if (/\/templates\?/.test(url) || url.endsWith('/templates')) {
+  function mockTemplateListServer() {
+    return mockFetch((url) => {
+      if (/\/templates(\?|$)/.test(url)) {
         return jsonResponse({
           content: [{ id: 1, code: 'TPL-1', name: 'Sjabloon', sourceOrganisationId: 5, sourceOrganisationCode: 'ORG-5' }],
           page: 0,
@@ -586,56 +519,32 @@ describe('MaterialiseForm / LinkBookmarkValuesSection (S1-F3)', () => {
           totalPages: 1,
         });
       }
-      if (url.includes('/import-links')) {
-        return jsonResponse({ content: [], page: 0, size: 200, totalElements: 0, totalPages: 0 });
-      }
-      if (url.includes('/links/77/bookmark-values')) {
-        return jsonResponse(LINK_BOOKMARK_VALUES);
-      }
       throw new Error(`Onverwachte URL in test: ${url}`);
     });
   }
 
-  async function materialiseOnTemplatePage(identity = TEST_IDENTITY) {
+  it('NT-7.5: de knop "Taak toevoegen" opent het stappenplan bij de taakstap van de nieuwe koppeling', async () => {
+    mockTemplateListServer();
     render(
-      <ActorProvider identity={identity}>
-        <MemoryRouter initialEntries={['/templates/1']}>
-          <Routes>
-            <Route path="/templates/:definitionId" element={<TemplateDetailPage />} />
-          </Routes>
+      <ActorProvider identity={TEST_IDENTITY}>
+        <MemoryRouter>
+          <AddTaskAfterMaterialise templateId={1} definitionId={30} linkId={77} linkCode="LNK-77" />
         </MemoryRouter>
       </ActorProvider>,
     );
-    fireEvent.click(await screen.findByRole('button', { name: 'Versie 1' }));
-    await screen.findByTestId('materialise-form');
-    chooseMode('NEW_DEFINITION');
-    fireEvent.change(screen.getByLabelText(/^Code van de beschrijving/), { target: { value: 'DEF-30' } });
-    fireEvent.change(screen.getByLabelText(/^Naam van de beschrijving/), { target: { value: 'Leverancier Z' } });
-    fillLinkFields();
-    submitMaterialise();
-  }
 
-  it('NT-7.5: na het materialiseren is er geen taak en biedt de pagina "Taak toevoegen" naar de taakstap', async () => {
-    mockTemplateDetailServer();
-    await materialiseOnTemplatePage();
-
-    await screen.findByTestId('add-task-button');
-    expect(screen.getByTestId('add-task-after-materialise')).toHaveTextContent('heeft nog geen taak');
-    // De organisatie komt uit de sjabloonlijst (sjabloon 1 hoort bij organisatie 5); de definitie en koppeling
-    // uit het antwoord van de materialisatie.
+    expect(await screen.findByTestId('add-task-after-materialise')).toHaveTextContent('heeft nog geen taak');
+    // De organisatie komt uit de sjabloonlijst (sjabloon 1 hoort bij organisatie 5).
     await waitFor(() => {
       expect(screen.getByTestId('add-task-button')).toHaveAttribute(
         'href',
         '/setup/new?organisationId=5&definitionId=30&linkId=77',
       );
     });
-    // Geen stale verwijzing vasthouden: zolang de sjabloonlijst laadt is het een uitgeschakelde knop, daarna
-    // een link (ander element); de waitFor hierboven haalt het element telkens opnieuw op.
-    expect(screen.getByRole('link', { name: 'Taak toevoegen' })).toBeInTheDocument();
   });
 
   it('NT-7.6: zonder Beheren is "Taak toevoegen" uitgeschakeld mét reden', async () => {
-    mockTemplateDetailServer();
+    mockTemplateListServer();
     // Zonder Beheren kan er niet gematerialiseerd worden; het blok wordt daarom rechtstreeks gerenderd.
     render(
       <ActorProvider identity={testIdentityWith(PERMISSION_READ)}>
