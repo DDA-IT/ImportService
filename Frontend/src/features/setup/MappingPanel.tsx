@@ -22,7 +22,7 @@ import { termLabel } from '../../terms/index.ts';
 import { EDITOR_TEXT, MAPPING_TEXT as TEXT } from '../../terms/setupEditor.ts';
 import { catalogueFields, type CatalogueGroup } from './fieldsGridModel.ts';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
-import { TableEditor } from './MappingReplaceDialog.tsx';
+import { TableEditor } from './TableEditor.tsx';
 import {
   OPS,
   activeOps,

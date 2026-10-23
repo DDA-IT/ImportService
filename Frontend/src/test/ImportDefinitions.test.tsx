@@ -557,17 +557,14 @@ describe('importdefinitiedetail: Bestand en velden', () => {
     await waitFor(() => expect(within(screen.getByTestId('placeholder-rows')).getAllByRole('row')).toHaveLength(1));
   });
 
-  it('?versie= kiest die versie; Meer opties opent het bewerkblok en ?bewerken=1 zet Bewerken aan', async () => {
+  it('?versie= kiest die versie (Bekijken); ?bewerken=1 zet Bewerken aan', async () => {
     await openDetail('/templates/10/fields?versie=202');
     expect(await screen.findByRole('heading', { name: /versie 4 \(concept\)/ })).toBeInTheDocument();
-    expect(screen.queryByTestId('revision-detail')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('open-edit'));
-    expect(screen.getByTestId('open-edit')).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('mode-edit')).toHaveAttribute('aria-pressed', 'false');
     cleanup();
     await openDetail('/templates/10/fields?versie=202&bewerken=1');
     await screen.findByRole('heading', { name: /versie 4 \(concept\)/ });
     expect(screen.getByTestId('mode-edit')).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByTestId('open-edit')).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('een eigen importdefinitie toont geen invulpunten en geen uitleg over herbruikbaar', async () => {

@@ -3,7 +3,7 @@
  * leveranciersdetail (R1, mock `vdSection`). E3 (beslissingslog 2026-10-23 "Nieuwe bewerkervaring"): ankerchips bovenaan, dan
  * het Velden-grid (`FieldsGrid`, E1/E2: dezelfde lay-out om te lezen en te bewerken), Filters als zinnen, Vertalingen,
  * Bestandsopbouw, Drempels en Invulpunten (`EditorSections`). Toont enkel wat `RevisionDetail` levert; de woorden komen uit
- * hetzelfde woordenboek en dezelfde bouwstenen als `RevisionDetailSection`.
+ * hetzelfde woordenboek en dezelfde bouwstenen (`revisionDetailParts`) als de rest van het scherm. E6: sinds het oude "Meer opties" weg is, staat ook Geavanceerd (kritiek per veld, herkomst, technische details) hier.
  */
 
 import { useState, type ReactNode } from 'react';
@@ -13,7 +13,7 @@ import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { INLINE_EDIT_TEXT } from '../../terms/setupEditor.ts';
 import { Term } from '../../terms/Term.tsx';
 import { LegacyOriginNotice, LegacyTechnicalDetails, usableLegacyOrigin } from './LegacyOriginParts.tsx';
-import { AnchorChips, BookmarksSection, FiltersSection, SECTION_IDS, ThresholdsSection, TranslationsSection } from './EditorSections.tsx';
+import { AdvancedSection, AnchorChips, BookmarksSection, FiltersSection, SECTION_IDS, ThresholdsSection, TranslationsSection } from './EditorSections.tsx';
 import { DiffChip } from './DiffParts.tsx';
 import { FileEditForm } from './InlineSectionEditors.tsx';
 import type { RevisionDiff } from './revisionDiffModel.ts';
@@ -189,6 +189,7 @@ export function RevisionReadView({
       <FileSection revision={revision} editing={editing} diff={diff} onSaved={onSectionSaved} />
       <ThresholdsSection revision={revision} editing={editing} diff={diff} onSaved={onSectionSaved} />
       <BookmarksSection revision={revision} />
+      <AdvancedSection revision={revision} />
       {legacy !== null && <LegacyTechnicalDetails origin={legacy} />}
     </div>
   );

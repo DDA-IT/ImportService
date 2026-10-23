@@ -3422,3 +3422,31 @@ uitgeschakeld met reden (bestaande conventie, zoals "Taak toevoegen"). De bewerk
 paneel onder het blok. De vlagrij staat ook bij een herbruikbare importdefinitie. Extra woordenlijstcode
 `PRODIS_REFERENCE_AMBIGUOUS`. Wie de vlag wijzigde is niet zichtbaar in de lijst (DefinitionRow draagt de audit niet).
 **Bron:** bouwer-gemiddeld (CD-F-rapport)
+
+## 2026-10-23 — Editor-API-gaten: ontwerp EB1–EB5 (veldcatalogus, kritiek, filter vervangen, controle zonder bestand, kolomvoorbeeld)
+**Vraag:** Uitwerking van de API-gaten G1–G5 van de nieuwe bewerkervaring (denker-zwaar).
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):**
+- EB1 (G1): `GET /field-catalog` (READ, geen vlag) met per veld defaultCriticality + criticalityChangeable en de 7
+  revisievelden; één gedeelde standaardregel (fase3-rules-design §15.1: referentie altijd CRITICAL, prijscomponent
+  CRITICAL instelbaar, overige NON_CRITICAL). Stelt de E2-keuze "nieuw veld Niet kritiek" bij naar §15.1. Herstel: een
+  referentieveld met NON_CRITICAL geeft vooraf 400 `CRITICALITY_INVALID` in plaats van een 500 (DB-check).
+- EB2 (G5): `PUT|DELETE /setup/revisions/{rid}/field-criticality/{fieldKey}` (MANAGE); geen historiek van vorige waarden
+  op een concept (precedent replaceMapping; activatie is het aanspreekpunt).
+- EB3 (G2): `PUT /setup/revisions/{rid}/filters/{fid}` (atomair, zelfde volgnummer, nieuw id). Nieuwe 409
+  `REVISION_EDIT_CONFLICT` bij gelijktijdige PUT (ook voor G5); mapping-PUT later gelijktrekken.
+- EB4 (G4): `GET /definitions/{d}/revisions/{r}/configuration-check` (READ), pariteit met activeren (valuta null);
+  controles per koppeling blijven in de gereedheidscontrole.
+- EB5 (G3): additief `TrialReadResult.columnPreview` (byte-tap op de eerste ≤ 1 MiB, ook bij configuratiefout of
+  headerblokkade; ≤ 10 rijen, ≤ 500 kolommen, cellen ≤ 200 tekens; niets bewaard). Koppeling kolom → veld/filter doet de
+  frontend tegen de actuele versie.
+- Volgorde EB1 → EB2 → EB3 → EB4 (gedeelde bestanden), EB5 parallel; frontend EF1 (catalogus), EF2 (kritiek kernrijen),
+  EF3 (filter PUT), E5a (controle zonder bestand), E5b (per kolom) na hun backendslice.
+**Bron:** denker-zwaar (editor-API-gaten)
+
+## 2026-10-23 — E6: oude bewerkcomponenten verwijderd
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** Het blok "Meer opties" (RevisionDetailSection,
+RevisionEditForm, MappingReplaceDialog, ProdisFixedValueField) is verwijderd; alles wat het bood zit in de nieuwe editor.
+Alleen-lezen overgenomen: invulpuntdeclaraties met type/bereik/verplicht en ingevulde DEFINITION-waarden, plus een
+ingeklapte sectie "Geavanceerd" (kritiek per veld, herkomst en goedkeuring, technische details). Kritiek toevoegen voor
+kernrijen kwam niet uit het oude blok; dat volgt via EB2/EF2. Verwijderen van een concept bestond niet en komt er niet bij.
+**Bron:** bouwer-gemiddeld (E6-rapport)

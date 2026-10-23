@@ -3,7 +3,7 @@
  * 2026-10-23 "Nieuwe bewerkervaring"): de ankerchips bovenaan, Filters als zinnen (met in Bewerken Wijzigen, Verwijderen,
  * Filter toevoegen en Uitsluitingsgroep toevoegen), Vertalingen (overzicht per veld; wijzigen gebeurt bij het veld) en de
  * alleen-lezen secties Drempels en Invulpunten. Bestandsopbouw blijft `FileSection` van `RevisionReadView`; het bewerken
- * van Bestandsopbouw, Drempels en Invulpunten volgt in E4.
+ * van Bestandsopbouw en Drempels staat sinds E4 in `InlineSectionEditors`; E6 voegt de alleen-lezen sectie Geavanceerd toe.
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -13,9 +13,11 @@ import button from '../../components/Button.module.css';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
+import { formatDateTime } from '../../format.ts';
 import { termLabel } from '../../terms/index.ts';
 import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
-import { FILTER_TEXT, INLINE_EDIT_TEXT, SECTION_TEXT } from '../../terms/setupEditor.ts';
+import { ADVANCED_TEXT, FILTER_TEXT, INLINE_EDIT_TEXT, SECTION_TEXT } from '../../terms/setupEditor.ts';
+import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
 import { Term } from '../../terms/Term.tsx';
 import { DiffChip, RemovedStrip } from './DiffParts.tsx';
 import { ThresholdsEditForm } from './InlineSectionEditors.tsx';
@@ -24,7 +26,7 @@ import { AddFilterGroupAction } from './FilterGroupDialog.tsx';
 import { groupFilters, type FilterListEntry } from './filterGroupModel.ts';
 import { entrySentence, fieldCount, sentenceText, translationCount } from './filterSentenceModel.ts';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
-import { FieldKeyTerm, bool, keepsSourceOnMiss, show } from './revisionDetailParts.tsx';
+import { FieldKeyTerm, Row, bool, keepsSourceOnMiss, show } from './revisionDetailParts.tsx';
 import { isSetupApiDisabledError, SETUP_WRITE_API_DISABLED_MESSAGE } from './setupWriteFlag.ts';
 import editor from './FieldsEditor.module.css';
 import styles from './SetupScreens.module.css';
@@ -39,6 +41,7 @@ export const SECTION_IDS = {
   file: 'ed-bestand',
   thresholds: 'ed-drempels',
   bookmarks: 'ed-invulpunten',
+  advanced: 'ed-geavanceerd',
 } as const;
 
 type SectionKey = keyof typeof SECTION_IDS;
@@ -458,6 +461,7 @@ export function ThresholdsSection({ revision, editing = false, diff = null, onSa
 }
 
 export function BookmarksSection({ revision }: { revision: RevisionDetail }) {
+  const labels = new Map(revision.bookmarks.map((bookmark) => [bookmark.name, bookmark.label] as const));
   return (
     <section
       id={SECTION_IDS.bookmarks}
@@ -472,16 +476,108 @@ export function BookmarksSection({ revision }: { revision: RevisionDetail }) {
         <p className={styles.rowMeta}>{SECTION_TEXT.bookmarksNone}</p>
       ) : (
         <>
-          <ul className={styles.rowList}>
+          <ul className={styles.rowList} data-testid="revision-bookmarks">
             {revision.bookmarks.map((bookmark) => (
               <li key={bookmark.id}>
-                <div className={styles.rowMain}>{bookmark.label}</div>
+                {/* De technische naam staat in de tooltip (V7), niet als zichtbare tekst. */}
+                <div className={styles.rowMain} title={`Technische naam: ${bookmark.name}`}>
+                  {bookmark.label}
+                </div>
+                <div className={styles.rowMeta}>
+                  <Term domain="bookmarkDataType" code={bookmark.dataType} unknownLabel="Ander soort waarde" /> ·{' '}
+                  <Term domain="bookmarkScope" code={bookmark.valueScope} unknownLabel="Andere geldigheid" /> ·{' '}
+                  {bookmark.required ? SECTION_TEXT.bookmarkRequired : SECTION_TEXT.bookmarkOptional}
+                </div>
               </li>
             ))}
           </ul>
-          <p className={styles.rowMeta}>{SECTION_TEXT.bookmarksNote}</p>
+          <p className={styles.rowMeta} data-testid="bookmark-boundary-note">
+            {SECTION_TEXT.bookmarksNote}
+          </p>
         </>
       )}
+      {revision.bookmarkValues.length > 0 && (
+        <>
+          <h4>{SECTION_TEXT.bookmarkValuesHeading}</h4>
+          <ul className={styles.rowList} data-testid="revision-bookmark-values">
+            {revision.bookmarkValues.map((value) => (
+              <li key={value.bookmarkName}>
+                <div className={styles.rowMain} title={`Technische naam: ${value.bookmarkName}`}>
+                  {labels.get(value.bookmarkName) ?? SECTION_TEXT.bookmarkValueNoDeclaration}: {show(value.valueText)}
+                </div>
+                <div className={styles.rowMeta}>
+                  <Term domain="bookmarkDataType" code={value.dataType} unknownLabel="Ander soort waarde" /> ·{' '}
+                  {SECTION_TEXT.bookmarkFilled(show(value.filledBy), formatDateTime(value.filledAt))}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
+// --- Geavanceerd (E6, alleen-lezen) ---
+
+/**
+ * Wat het oude "Meer opties" nog toonde en het grid niet: de kritiek-overrules per veld, de herkomst en goedkeuring en de
+ * technische herkomstgegevens (versienummers en vingerafdrukken). Ingeklapt; enkel lezen (er is geen verwijderendpoint voor
+ * een kritiek-overrule en bookmarkdeclaraties blijven bewust alleen-lezen).
+ */
+export function AdvancedSection({ revision }: { revision: RevisionDetail }) {
+  return (
+    <section
+      id={SECTION_IDS.advanced}
+      className={styles.vdSection}
+      aria-labelledby="vd-advanced"
+      data-testid="read-advanced"
+    >
+      <h3 id="vd-advanced" tabIndex={-1}>
+        {ADVANCED_TEXT.heading}
+      </h3>
+      <details className={editor.thresholds} data-testid="advanced-details">
+        <summary>{ADVANCED_TEXT.summary}</summary>
+        <h4>{ADVANCED_TEXT.criticalityHeading(revision.fieldCriticalities.length)}</h4>
+        {revision.fieldCriticalities.length === 0 ? (
+          <p className={styles.rowMeta}>{ADVANCED_TEXT.criticalityNone}</p>
+        ) : (
+          <ul className={styles.rowList} data-testid="revision-field-criticalities">
+            {revision.fieldCriticalities.map((row) => (
+              <li key={row.fieldKey}>
+                <div className={styles.rowMain}>
+                  <FieldKeyTerm code={row.fieldKey} />:{' '}
+                  <Term domain="criticality" code={row.criticality} unknownLabel="Andere kritiek" />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className={styles.rowMeta}>{ADVANCED_TEXT.criticalityNote}</p>
+
+        <h4>{ADVANCED_TEXT.originHeading}</h4>
+        <dl data-testid="revision-origin">
+          <Row label={ADVANCED_TEXT.createdAt} value={formatDateTime(revision.createdAt)} />
+          <Row label={ADVANCED_TEXT.createdBy} value={show(revision.createdBy)} />
+          <Row label={ADVANCED_TEXT.updatedAt} value={formatDateTime(revision.updatedAt)} />
+          <Row label={ADVANCED_TEXT.approvedAt} value={formatDateTime(revision.approvedAt)} />
+          <Row label={ADVANCED_TEXT.approvedBy} value={show(revision.approvedBy)} />
+        </dl>
+        <p className={styles.rowMeta}>{ADVANCED_TEXT.hashNote}</p>
+        <TechnicalDetails
+          items={[
+            { name: 'accessVersion', value: String(revision.accessVersion) },
+            { name: 'accessConfigHash', value: show(revision.accessConfigHash) },
+            { name: 'structureVersion', value: String(revision.structureVersion) },
+            { name: 'structureConfigHash', value: show(revision.structureConfigHash) },
+            { name: 'recordRulesVersion', value: String(revision.recordRulesVersion) },
+            { name: 'recordRulesConfigHash', value: show(revision.recordRulesConfigHash) },
+            { name: 'compositeConfigHash', value: show(revision.compositeConfigHash) },
+            { name: 'maxCriticalRecords (niet meer in gebruik)', value: String(revision.maxCriticalRecords) },
+            { name: 'maxRejectedRecords (niet meer in gebruik)', value: show(revision.maxRejectedRecords) },
+          ]}
+        />
+      </details>
     </section>
   );
 }

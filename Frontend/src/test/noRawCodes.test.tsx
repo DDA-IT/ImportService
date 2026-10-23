@@ -47,7 +47,7 @@ import { BundleOverviewTab } from '../features/bundles/BundleOverviewTab';
 import { BundlePublicationTab } from '../features/bundles/BundlePublicationTab';
 import { IssueCaseDetailPage } from '../features/issuecases/IssueCaseDetailPage';
 import { IssueCaseListPage } from '../features/issuecases/IssueCaseListPage';
-import { RevisionEditForm } from '../features/setup/RevisionEditForm';
+import { FieldPanel } from '../features/setup/FieldPanel';
 import { routes } from '../routes';
 import { LinkBookmarkValuesSection } from '../features/templates/LinkBookmarkValuesSection';
 import { MaterialiseForm } from '../features/templates/MaterialiseForm';
@@ -1442,34 +1442,32 @@ describe('NT-11c — afwijkingen, inrichting en importdefinities: geen ruwe code
     await screen.findByTestId('revision-read-view');
     expectNoRawCodes(document.body, 'leveranciersdetail: bestand en velden van een actieve versie');
 
-    // Het concept: bewerkformulier, verwijderdialoog en de activeerdialoog met de verplichte waarschuwing.
+    // Het concept in Bewerken: het paneel van een extra veld en de activeerdialoog met de verplichte waarschuwing.
     await act(async () => {
       await router.navigate('/setup/suppliers/1/fields?definitie=10&versie=100&bewerken=1');
     });
-    fireEvent.click(await screen.findByTestId('open-edit'));
-    await screen.findByTestId('revision-edit-form');
-    await screen.findByTestId('revision-bookmarks');
+    await screen.findByTestId('concept-bar');
+    await screen.findByTestId('read-bookmarks');
+    await screen.findByTestId('read-advanced');
     await screen.findByTestId('revision-read-view');
-    expectNoRawCodes(document.body, 'conceptdetail met bewerkformulier');
+    expectNoRawCodes(document.body, 'concept in Bewerken');
 
-    fireEvent.click(screen.getByTestId('delete-mapping-5001'));
+    fireEvent.click(await screen.findByTestId('edit-mapping-VKP_GROSS_PCT'));
     await screen.findByRole('dialog');
-    expectNoRawCodes(document.body, 'verwijderdialoog');
-    fireEvent.click(screen.getByRole('button', { name: 'Sluiten zonder verwijderen' }));
+    expectNoRawCodes(document.body, 'paneel van een extra veld');
+    fireEvent.click(screen.getByRole('button', { name: 'Annuleren' }));
 
-    fireEvent.click(screen.getByTestId('activate-revision'));
+    fireEvent.click(screen.getByTestId('concept-activate'));
     await screen.findByRole('dialog');
     expect(screen.getByTestId('reopen-rejected-cases-warning').textContent).toContain('afgewezen afwijkingen');
     expectNoRawCodes(document.body, 'activeerdialoog');
     fireEvent.click(screen.getByRole('button', { name: 'Sluiten zonder activeren' }));
 
-    // Een actieve versie: geen bewerkformulier maar de reden, en de dialoog van "Opvolger maken" bij Versies.
+    // Een actieve versie is alleen-lezen: de reden staat in beeld, en de dialoog van "Opvolger maken" bij Versies.
     await act(async () => {
       await router.navigate('/setup/suppliers/1/fields?definitie=10&versie=99&bewerken=1');
     });
     await screen.findByTestId('frozen-note');
-    fireEvent.click(screen.getByTestId('open-edit'));
-    await screen.findByTestId('revision-not-editable-reason');
     expectNoRawCodes(document.body, 'detail van een actieve versie');
 
     await act(async () => {
@@ -1481,34 +1479,37 @@ describe('NT-11c — afwijkingen, inrichting en importdefinities: geen ruwe code
     fireEvent.click(screen.getByRole('button', { name: 'Sluiten zonder aanmaken' }));
   });
 
-  it('bewerkformulier: identiteitswijziging, waarschuwing bij de herkenningsversie, blokkade en validatiefout', async () => {
+  it('paneel van een herkenningsrij: identiteitswijziging, blokkade van de herkenningsversie en validatiefout', async () => {
     global.fetch = vi.fn(() =>
       Promise.resolve(json({ error: 'Not allowed', code: 'REVISION_CANONICALISATION_CHANGE_BLOCKED' }, 409)),
     ) as unknown as typeof fetch;
     render(
       <ActorProvider identity={TEST_IDENTITY}>
-        <RevisionEditForm revision={setupRevisionDetail(100)} onUpdated={() => {}} />
+        <FieldPanel
+          revision={setupRevisionDetail(100)}
+          target={{ kind: 'row', key: 'reference' }}
+          opener={null}
+          onClose={() => {}}
+          onSaved={() => {}}
+        />
       </ActorProvider>,
     );
-    expectNoRawCodes(document.body, 'bewerkformulier');
+    expectNoRawCodes(document.body, 'paneel van een herkenningsrij');
 
-    fireEvent.change(screen.getByLabelText(/^Kolom referentie/), { target: { value: 'Andere referentie' } });
-    await screen.findByTestId('identity-change-acknowledge');
-    expectNoRawCodes(document.body, 'bewerkformulier met identiteitswijziging');
+    fireEvent.change(document.getElementById('panel-supplierReferenceField')!, { target: { value: 'Andere referentie' } });
+    const acknowledge = await screen.findByTestId('identity-change-acknowledge');
+    expectNoRawCodes(document.body, 'paneel met identiteitswijziging');
 
-    fireEvent.change(screen.getByLabelText(/^Herkenningsversie/), { target: { value: '3' } });
-    await screen.findByTestId('canonicalisation-change-warning');
-    expectNoRawCodes(document.body, 'bewerkformulier met waarschuwing bij de herkenningsversie');
+    fireEvent.click(within(acknowledge).getByRole('checkbox'));
+    fireEvent.click(screen.getByTestId('panel-apply'));
+    // De server weigert onvoorwaardelijk: geen bevestigingsoptie meer, wel een Nederlandse melding.
+    await waitFor(() => expect(screen.queryByTestId('identity-change-acknowledge')).not.toBeInTheDocument());
+    expectNoRawCodes(document.body, 'paneel met geweigerde herkenningsversie');
 
-    fireEvent.click(screen.getByLabelText(/^Ja, ik weet dat elk bestaand artikel/));
-    fireEvent.submit(screen.getByTestId('revision-edit-form'));
-    await screen.findByTestId('canonicalisation-blocked');
-    expectNoRawCodes(document.body, 'bewerkformulier met geweigerde herkenningsversie');
-
-    fireEvent.change(screen.getByLabelText(/^Drempel nieuwe artikelen/), { target: { value: 'dertig' } });
-    fireEvent.submit(screen.getByTestId('revision-edit-form'));
-    await screen.findByTestId('revision-edit-validation');
-    expectNoRawCodes(document.body, 'bewerkformulier met validatiefout');
+    fireEvent.change(document.getElementById('panel-supplierReferenceField')!, { target: { value: '   ' } });
+    fireEvent.click(screen.getByTestId('panel-apply'));
+    await screen.findByTestId('panel-problem');
+    expectNoRawCodes(document.body, 'paneel met validatiefout');
   });
 
   it('importdefinities-overzicht: kaarten, paneel, filters en de melding dat de functie op deze omgeving niet openstaat', async () => {

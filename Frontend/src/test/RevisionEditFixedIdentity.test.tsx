@@ -1,49 +1,13 @@
 /**
- * G2c-2 — vaste leverancier/groep, hoofdletters en Prodis-keuzelijst in `RevisionEditForm`
- * (`docs/design/g2-design.md` §G2c). Dekt: wisselen kolom ↔ vaste waarde (juiste PATCH-body, de andere bron
- * `""`), hoofdletters, het bevestigingsvinkje (R-REV-X3) bij een wijziging van vaste waarde of hoofdletters,
- * de keuzelijst, de terugval naar vrije tekst bij 409/503, en de getoonde waarschuwingen.
+ * G2c-2 — vaste leverancier/groep en hoofdletters in de pure kant van het bewerken (`revisionEditRequest`,
+ * `docs/design/g2-design.md` §G2c). Dekt: "null = ongewijzigd", de identiteitsvergelijking (R-REV-X3) en de blokkade van een
+ * lege vaste waarde. E6: de schermtests van het oude `RevisionEditForm` zijn weg; het paneel (kolom of vaste waarde, de
+ * Prodis-keuzelijst, bevestiging, terugval naar vrije tekst) staat in `FieldsEditor.test.tsx`.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
-import { ActorProvider } from '../actor/ActorContext';
-import { TEST_IDENTITY } from './testIdentity';
+import { describe, expect, it } from 'vitest';
 import type { RevisionDetail } from '../api/types';
-import { RevisionEditForm } from '../features/setup/RevisionEditForm';
 import { buildRequest, identityChanged, initialForm } from '../features/setup/revisionEditRequest';
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-}
-
-type FetchMock = ReturnType<typeof vi.fn>;
-
-function mockFetch(handler: (url: string, init: RequestInit | undefined) => Response): FetchMock {
-  const mock = vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
-    Promise.resolve(handler(typeof input === 'string' ? input : input.toString(), init)),
-  );
-  global.fetch = mock as unknown as typeof fetch;
-  return mock;
-}
-
-function isPatch(args: unknown[]): boolean {
-  return ((args[1] as RequestInit | undefined)?.method ?? 'GET').toUpperCase() === 'PATCH';
-}
-
-function patchBody(mock: FetchMock): Record<string, unknown> {
-  const call = mock.mock.calls.find(isPatch);
-  expect(call, 'verwacht een PATCH').toBeDefined();
-  return JSON.parse(String((call![1] as RequestInit).body)) as Record<string, unknown>;
-}
-
-function patchCount(mock: FetchMock): number {
-  return mock.mock.calls.filter(isPatch).length;
-}
-
-function calledUrl(mock: FetchMock, part: string): boolean {
-  return mock.mock.calls.some((args) => String(args[0]).includes(part));
-}
 
 const COLUMN_REVISION = {
   id: 100,
@@ -117,47 +81,6 @@ const FIXED_REVISION: RevisionDetail = {
   identitySupplierGroupFixedValue: 'GROEP A',
 };
 
-const VIEW = {
-  id: 100,
-  definitionId: 10,
-  revisionNumber: 2,
-  status: 'DRAFT',
-  supplierField: null,
-  supplierGroupField: 'LEVGRP',
-  supplierFixedValue: '1234',
-  identityUppercase: false,
-};
-
-function renderForm(revision: RevisionDetail, sourceOrganisationCode?: string) {
-  const onUpdated = vi.fn();
-  render(
-    <ActorProvider identity={TEST_IDENTITY}>
-      <RevisionEditForm revision={revision} sourceOrganisationCode={sourceOrganisationCode} onUpdated={onUpdated} />
-    </ActorProvider>,
-  );
-  return { onUpdated };
-}
-
-function submit() {
-  fireEvent.submit(screen.getByTestId('revision-edit-form'));
-}
-
-function radios(testId: string): NodeListOf<HTMLInputElement> {
-  return screen.getByTestId(testId).querySelectorAll<HTMLInputElement>('input[type=radio]');
-}
-
-/** Prodis geeft op elke referentie-aanroep dezelfde fout; de PATCH slaagt. */
-function prodisUnavailable(code: string, status: number) {
-  return mockFetch((url) =>
-    url.includes('/prodis-reference/') ? jsonResponse({ error: 'unavailable', code }, status) : jsonResponse(VIEW),
-  );
-}
-
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
-});
-
 describe('revisionEditRequest — vaste waarden en hoofdletters (pure kant)', () => {
   it('onaangeroerd: alles null, ook de nieuwe velden', () => {
     const built = buildRequest(initialForm(FIXED_REVISION), FIXED_REVISION, false, 'An');
@@ -188,196 +111,54 @@ describe('revisionEditRequest — vaste waarden en hoofdletters (pure kant)', ()
   });
 });
 
-describe('RevisionEditForm — herkenning: kolom of vaste waarde', () => {
-  it('overstappen van kolom naar vaste waarde: waarde + "" op de kolom, met bevestiging', async () => {
-    const mock = prodisUnavailable('PRODIS_DB_NOT_CONFIGURED', 409);
-    renderForm(COLUMN_REVISION);
+describe('revisionEditRequest — "null = ongewijzigd" en de weigeringen (was S1-F4.7-F4.13 op het oude formulier)', () => {
+  function bodyOf(form: ReturnType<typeof initialForm>, acknowledge = false) {
+    const built = buildRequest(form, COLUMN_REVISION, acknowledge, 'An Beslisser');
+    if (!('body' in built)) {
+      throw new Error(`verzoek verwacht, probleem: ${built.problem}`);
+    }
+    return built.body;
+  }
 
-    fireEvent.click(radios('revision-supplier-source')[1]!);
-    fireEvent.change(screen.getByLabelText(/^Vaste leverancier/), { target: { value: '1234' } });
+  it('een gewone drempelwijziging verstuurt alleen dat ene veld; al de rest is null', () => {
+    const body = bodyOf({ ...initialForm(COLUMN_REVISION), maxCriticalSharePercent: '7.5' });
+    expect(body.maxCriticalSharePercent).toBe(7.5);
+    expect(body.identityProfileKind).toBeNull();
+    expect(body.supplierField).toBeNull();
+    expect(body.canonicalisationVersion).toBeNull();
+    expect(body.delimiter).toBeNull();
+    expect(body.basePriceField).toBeNull();
+    expect(body.acknowledgeIdentityChange).toBeNull();
+    expect(body.createdBy).toBe('An Beslisser');
+  });
 
-    // R-REV-X3: zonder vinkje wordt er niets verstuurd.
-    submit();
-    expect(await screen.findByTestId('revision-edit-validation')).toHaveTextContent('Bevestig');
-    expect(patchCount(mock)).toBe(0);
+  it('een onleesbaar getal is een fout, nooit stil 0 of leeg', () => {
+    const built = buildRequest({ ...initialForm(COLUMN_REVISION), creationThresholdSharePercent: 'dertig' }, COLUMN_REVISION, false, 'An');
+    expect('problem' in built && built.problem).toContain('geen leesbaar getal');
+  });
 
-    fireEvent.click(screen.getByLabelText(/^Ja, ik weet dat elk bestaand artikel/));
-    submit();
-    await screen.findByTestId('revision-edit-saved');
-    const body = patchBody(mock);
-    expect(body.supplierFixedValue).toBe('1234');
-    expect(body.supplierField).toBe('');
-    expect(body.supplierGroupField).toBeNull();
-    expect(body.supplierGroupFixedValue).toBeNull();
-    expect(body.identityUppercase).toBeNull();
+  it('een leeggemaakt verplicht veld wordt nooit als lege waarde verstuurd', () => {
+    const built = buildRequest({ ...initialForm(COLUMN_REVISION), basePriceField: '   ' }, COLUMN_REVISION, false, 'An');
+    expect('problem' in built && built.problem).toContain('verplicht');
+  });
+
+  it('een optioneel veld leegmaken verstuurt een uitdrukkelijk lege waarde; een veld dat al null was blijft ongewijzigd', () => {
+    const revision = { ...COLUMN_REVISION, recordDescriptionField: 'OMSCHRIJVING' } as RevisionDetail;
+    const built = buildRequest({ ...initialForm(revision), descriptionField: '' }, revision, false, 'An');
+    if (!('body' in built)) {
+      throw new Error('verzoek verwacht');
+    }
+    expect(built.body.descriptionField).toBe('');
+    expect(built.body.currencyField).toBeNull();
+  });
+
+  it('R-REV-X3: een identiteitswijziging vraagt de bevestiging; mét bevestiging gaat acknowledgeIdentityChange: true mee', () => {
+    const form = { ...initialForm(COLUMN_REVISION), supplierReferenceField: 'ANDERE_REF' };
+    expect(identityChanged(form, COLUMN_REVISION)).toBe(true);
+    const refused = buildRequest(form, COLUMN_REVISION, false, 'An');
+    expect('problem' in refused && refused.problem).toContain('Bevestig');
+    const body = bodyOf(form, true);
+    expect(body.supplierReferenceField).toBe('ANDERE_REF');
     expect(body.acknowledgeIdentityChange).toBe(true);
-  });
-
-  it('overstappen van vaste waarde naar kolom: kolom + "" op de vaste waarde', async () => {
-    const mock = mockFetch((url) => (url.includes('/prodis-reference/') ? jsonResponse([]) : jsonResponse(VIEW)));
-    renderForm(FIXED_REVISION);
-
-    fireEvent.click(radios('revision-group-source')[0]!);
-    fireEvent.change(screen.getByLabelText(/^Kolom groep/), { target: { value: 'GRP' } });
-    fireEvent.click(screen.getByLabelText(/^Ja, ik weet dat elk bestaand artikel/));
-    submit();
-
-    await screen.findByTestId('revision-edit-saved');
-    const body = patchBody(mock);
-    expect(body.supplierGroupField).toBe('GRP');
-    expect(body.supplierGroupFixedValue).toBe('');
-    expect(body.supplierField).toBeNull();
-    expect(body.supplierFixedValue).toBeNull();
-  });
-
-  it('een andere vaste waarde laat het bevestigingsvinkje verschijnen en stuurt enkel dat veld', async () => {
-    const mock = mockFetch((url) => (url.includes('/prodis-reference/') ? jsonResponse([]) : jsonResponse(VIEW)));
-    renderForm(FIXED_REVISION);
-    expect(screen.queryByTestId('identity-change-acknowledge')).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText(/^Vaste groep/), { target: { value: 'GROEP B' } });
-    expect(screen.getByTestId('identity-change-acknowledge')).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText(/^Ja, ik weet dat elk bestaand artikel/));
-    submit();
-
-    await screen.findByTestId('revision-edit-saved');
-    const body = patchBody(mock);
-    expect(body.supplierGroupFixedValue).toBe('GROEP B');
-    expect(body.supplierGroupField).toBeNull();
-    expect(body.supplierFixedValue).toBeNull();
-  });
-
-  it('hoofdletters: een identiteitswijziging met bevestiging, verstuurd als identityUppercase', async () => {
-    const mock = mockFetch(() => jsonResponse(VIEW));
-    renderForm(COLUMN_REVISION);
-
-    fireEvent.click(screen.getByLabelText(/^Herkenning in hoofdletters/));
-    expect(screen.getByTestId('identity-change-acknowledge')).toBeInTheDocument();
-    submit();
-    expect(await screen.findByTestId('revision-edit-validation')).toHaveTextContent('Bevestig');
-    expect(patchCount(mock)).toBe(0);
-
-    fireEvent.click(screen.getByLabelText(/^Ja, ik weet dat elk bestaand artikel/));
-    submit();
-    await screen.findByTestId('revision-edit-saved');
-    const body = patchBody(mock);
-    expect(body.identityUppercase).toBe(true);
-    expect(body.supplierField).toBeNull();
-    expect(body.supplierFixedValue).toBeNull();
-  });
-
-  it('toont de waarschuwing PRODIS_REFERENCE_NOT_VERIFIED na bewaren', async () => {
-    mockFetch((url) =>
-      url.includes('/prodis-reference/')
-        ? jsonResponse([])
-        : jsonResponse({
-            ...VIEW,
-            warnings: [
-              {
-                code: 'PRODIS_REFERENCE_NOT_VERIFIED',
-                field: 'supplierFixedValue',
-                message: 'supplier 1234 is not verified',
-              },
-            ],
-          }),
-    );
-    renderForm(FIXED_REVISION);
-    fireEvent.change(screen.getByLabelText(/^Vaste leverancier/), { target: { value: '1235' } });
-    fireEvent.click(screen.getByLabelText(/^Ja, ik weet dat elk bestaand artikel/));
-    submit();
-
-    const warnings = await screen.findByTestId('revision-edit-warnings');
-    expect(warnings).toHaveTextContent('Niet gecontroleerd in Prodis');
-    expect(warnings).toHaveTextContent('Vaste leverancier');
-    expect(warnings.textContent).not.toMatch(/PRODIS_REFERENCE/);
-  });
-
-  it('een serverfout SUPPLIER_FIXED_VALUE_NOT_IN_PRODIS krijgt een Nederlandse tekst', async () => {
-    mockFetch((_url, init) =>
-      init?.method === 'PATCH'
-        ? jsonResponse(
-            { error: 'supplierFixedValue 1235 does not exist', code: 'SUPPLIER_FIXED_VALUE_NOT_IN_PRODIS' },
-            400,
-          )
-        : jsonResponse([]),
-    );
-    renderForm(FIXED_REVISION);
-    fireEvent.change(screen.getByLabelText(/^Vaste leverancier/), { target: { value: '1235' } });
-    fireEvent.click(screen.getByLabelText(/^Ja, ik weet dat elk bestaand artikel/));
-    submit();
-    expect(await screen.findByText('Deze leverancier bestaat niet in Prodis')).toBeInTheDocument();
-  });
-});
-
-describe('RevisionEditForm — Prodis-keuzelijst', () => {
-  it('toont de leveranciers uit Prodis als suggesties en zoekt op de getypte tekst', async () => {
-    const mock = mockFetch((url) =>
-      url.includes('/prodis-reference/suppliers?')
-        ? jsonResponse([
-            { number: '1234', name: 'Acme' },
-            { number: '1299', name: 'Beta' },
-          ])
-        : jsonResponse([]),
-    );
-    renderForm(FIXED_REVISION);
-
-    await waitFor(() =>
-      expect(screen.getByTestId('prodis-options-supplier').querySelectorAll('option')).toHaveLength(2),
-    );
-    const first = screen.getByTestId('prodis-options-supplier').querySelectorAll('option')[0]!;
-    expect(first.getAttribute('value')).toBe('1234');
-    expect(first.textContent).toBe('1234 — Acme');
-
-    fireEvent.change(screen.getByLabelText(/^Vaste leverancier/), { target: { value: '12' } });
-    await waitFor(() => expect(calledUrl(mock, '/prodis-reference/suppliers?q=12')).toBe(true));
-  });
-
-  it('groepen: van de vaste leverancier', async () => {
-    const mock = mockFetch((url) =>
-      url.includes('/groups')
-        ? jsonResponse([{ legacyCode: 'a|b|', groupName: 'GROEP A', discountCode: null }])
-        : jsonResponse([]),
-    );
-    renderForm(FIXED_REVISION, 'ORG-1');
-    await waitFor(() =>
-      expect(screen.getByTestId('prodis-options-group').querySelectorAll('option')).toHaveLength(1),
-    );
-    expect(calledUrl(mock, '/prodis-reference/suppliers/1234/groups')).toBe(true);
-    expect(calledUrl(mock, '/suppliers/ORG-1/groups')).toBe(false);
-  });
-
-  it('groepen: zonder vaste leverancier van de bronorganisatie van de definitie', async () => {
-    const mock = mockFetch((url) =>
-      url.includes('/groups')
-        ? jsonResponse([{ legacyCode: 'a|b|', groupName: 'GROEP A', discountCode: null }])
-        : jsonResponse([]),
-    );
-    renderForm({ ...FIXED_REVISION, identitySupplierField: 'LEV', identitySupplierFixedValue: null }, 'ORG-1');
-    await waitFor(() => expect(calledUrl(mock, '/prodis-reference/suppliers/ORG-1/groups')).toBe(true));
-  });
-
-  it('zonder leverancier voor de groepen: vrije tekst met uitleg, geen aanroep', () => {
-    const mock = mockFetch(() => jsonResponse([]));
-    renderForm({ ...FIXED_REVISION, identitySupplierField: 'LEV', identitySupplierFixedValue: null });
-    expect(screen.getByTestId('prodis-group-no-supplier')).toBeInTheDocument();
-    expect(calledUrl(mock, '/groups')).toBe(false);
-  });
-
-  it.each([
-    ['PRODIS_DB_NOT_CONFIGURED', 409],
-    ['PRODIS_DB_UNAVAILABLE', 503],
-  ])('bij %s valt het veld terug op vrije tekst met een melding', async (code, status) => {
-    const mock = prodisUnavailable(code, status);
-    renderForm(FIXED_REVISION);
-
-    expect(await screen.findByTestId('prodis-unavailable-supplier')).toHaveTextContent('Typ de waarde zelf');
-    expect(screen.queryByTestId('prodis-options-supplier')).not.toBeInTheDocument();
-
-    // Vrije tekst werkt gewoon door tot in de PATCH.
-    fireEvent.change(screen.getByLabelText(/^Vaste leverancier/), { target: { value: '7777' } });
-    fireEvent.click(screen.getByLabelText(/^Ja, ik weet dat elk bestaand artikel/));
-    submit();
-    await screen.findByTestId('revision-edit-saved');
-    expect(patchBody(mock).supplierFixedValue).toBe('7777');
   });
 });

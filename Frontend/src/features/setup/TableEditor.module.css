@@ -1,15 +1,4 @@
-/* G2c-3 — vervangdialoog voor één extra veld (keten, vertaaltabel, plakken). */
-
-.body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
-  font-size: 0.875rem;
-}
-
-.body p {
-  margin: 0;
-}
+/* De vertaaltabel met plakvak van het extra-veldpaneel (E6: uit de verwijderde vervangdialoog). */
 
 .muted {
   color: var(--text-secondary);
@@ -20,25 +9,6 @@
   margin: var(--spacing-2) 0 0 0;
   font-size: 0.9rem;
   color: var(--text-secondary);
-}
-
-.stage {
-  padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--divider);
-  border-radius: var(--radius);
-}
-
-.stageTitle {
-  margin: 0 0 var(--spacing-2) 0;
-  font-size: 0.8125rem;
-  font-weight: 600;
-}
-
-.check {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  margin-bottom: var(--spacing-2);
 }
 
 .cell {
@@ -93,21 +63,4 @@
 
 .previewError {
   color: var(--soft-error-text);
-}
-
-.problems {
-  margin: 0;
-  padding: var(--spacing-2) var(--spacing-3) var(--spacing-2) var(--spacing-5, 1.5rem);
-  border-radius: var(--radius);
-  background: var(--status-rejected-bg);
-  color: var(--soft-error-text);
-  font-size: 0.8125rem;
-}
-
-.flagOff {
-  margin: 0;
-  padding: var(--spacing-2) var(--spacing-3);
-  border-radius: var(--radius);
-  background: var(--bg-neutral);
-  font-size: 0.875rem;
 }

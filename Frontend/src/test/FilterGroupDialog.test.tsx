@@ -2,15 +2,15 @@
  * G2c-4 — de dialoog "Uitsluitingsgroep toevoegen" en de gegroepeerde filterlijst (`docs/design/g2-design.md` §G2c).
  * Dekt: de POST-bodies (zelfde groep, EXCLUDE/COMPARE_AS_EMPTY/EQUALS, lege vergelijkwaarde), het voorgestelde
  * groepsnummer, de vormvalidatie, een serverfout, een gedeeltelijke fout met de al aangemaakte rijen (en die rijen
- * verwijderen), de gegroepeerde weergave en dat de knop enkel op een concept en met MANAGE bruikbaar is.
+ * verwijderen), de gegroepeerde modelfunctie en dat de knop enkel op een concept en met MANAGE bruikbaar is. E6: de weergave in het
+ * scherm (groep als zin, knop enkel in Bewerken op een concept) staat in `FieldsEditorFilters.test.tsx`.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ActorProvider } from '../actor/ActorContext';
 import type { FilterView, RevisionDetail } from '../api/types';
 import { AddFilterGroupAction } from '../features/setup/FilterGroupDialog';
-import { RevisionDetailSection } from '../features/setup/RevisionDetailSection';
 import { groupFilters, groupProblems, suggestGroupNumber } from '../features/setup/filterGroupModel';
 import { errorResponse, jsonResponse, mockApi } from './legacyConfigFixtures';
 import { TEST_IDENTITY, testIdentityWith } from './testIdentity';
@@ -286,27 +286,6 @@ describe('gegroepeerde weergave', () => {
     expect(entries[1]).toMatchObject({ kind: 'group', group: 3 });
     expect((entries[1] as { filters: FilterView[] }).filters.map((row) => row.id)).toEqual([2, 4]);
   });
-
-  it('het revisiedetail toont de groep met label en "leeg veld", en de losse filters ernaast', async () => {
-    const detail = revisionWith([
-      filter(1, { sourceReference: 'LOS' }),
-      filter(2, { matchGroup: 3, sourceReference: 'A', compareValue: 'EOL' }),
-      filter(3, { matchGroup: 3, sourceReference: 'B', compareValue: '' }),
-    ]);
-    mockApi(() => jsonResponse(detail));
-    render(
-      <ActorProvider identity={TEST_IDENTITY}>
-        <RevisionDetailSection definitionId={10} revisionId={100} onRevisionChanged={() => undefined} />
-      </ActorProvider>,
-    );
-    const group = await screen.findByTestId('filter-group-3');
-    expect(group).toHaveTextContent('Uitsluitingsgroep 3 — alle voorwaarden samen');
-    expect(within(group).getAllByRole('listitem')).toHaveLength(2);
-    expect(within(group).getByText('leeg veld')).toBeInTheDocument();
-    const list = screen.getByTestId('revision-filters');
-    expect(within(list).getByText('LOS')).toBeInTheDocument();
-    expect(within(group).queryByText('LOS')).not.toBeInTheDocument();
-  });
 });
 
 describe('wie en wanneer', () => {
@@ -318,22 +297,5 @@ describe('wie en wanneer', () => {
   it('op een actieve versie is de knop uitgeschakeld', () => {
     renderAction(created, { revision: revisionWith([], 'ACTIVE') });
     expect(screen.getByTestId('add-filter-group')).toBeDisabled();
-  });
-
-  it('het revisiedetail toont de knop alleen op een concept', async () => {
-    for (const [status, expected] of [
-      ['DRAFT', true],
-      ['ACTIVE', false],
-    ] as const) {
-      mockApi(() => jsonResponse(revisionWith([filter(1)], status)));
-      const { unmount } = render(
-        <ActorProvider identity={TEST_IDENTITY}>
-          <RevisionDetailSection definitionId={10} revisionId={100} onRevisionChanged={() => undefined} />
-        </ActorProvider>,
-      );
-      await screen.findByTestId('revision-filters');
-      expect(screen.queryByTestId('add-filter-group') !== null).toBe(expected);
-      unmount();
-    }
   });
 });

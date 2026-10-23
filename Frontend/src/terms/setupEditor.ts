@@ -47,9 +47,6 @@ export const EDITOR_TEXT = {
         ? 'Deze versie is vervangen en kan niet gewijzigd worden.'
         : 'Deze versie kan niet gewijzigd worden.',
   openDraft: (n: number | null) => (n === null ? 'Open het concept' : `Open het concept (versie ${n})`),
-  moreOptions: 'Meer opties: uitgebreide weergave',
-  moreOptionsHint:
-    'Activeren, de reden, Bestandsopbouw en Drempels staan hierboven. De overige instellingen wijzigt u nog in de uitgebreide weergave.',
   editRowLabel: (field: string) => `Wijzigen: ${field}`,
   saved: 'Bewaard in het concept',
 
@@ -302,6 +299,32 @@ export const SECTION_TEXT = {
   bookmarksHeading: 'Invulpunten',
   bookmarksNone: 'Deze versie heeft geen invulpunten.',
   bookmarksNote: 'Invulpunten bekijkt u hier alleen; de waarden stelt u per koppeling in.',
+  bookmarkRequired: 'verplicht',
+  bookmarkOptional: 'optioneel',
+  bookmarkValuesHeading: 'Ingevulde vaste waarden',
+  bookmarkValueNoDeclaration: 'Invulpunt zonder declaratie',
+  bookmarkFilled: (by: string, at: string) => `ingevuld door ${by} op ${at}`,
+} as const;
+
+/** E6 — de sectie Geavanceerd (alleen-lezen): kritiek per veld, herkomst en goedkeuring, technische details. */
+export const ADVANCED_TEXT = {
+  heading: 'Geavanceerd',
+  summary: 'Kritiek per veld, herkomst en technische details bekijken',
+  criticalityHeading: (n: number) => `Kritiek per veld aangepast (${n})`,
+  criticalityNone: 'Voor deze versie is de kritiek van geen enkel veld apart aangepast.',
+  criticalityNote:
+    'Hier bekijkt u alleen welke velden een eigen kritiek hebben; de kritiek van een extra veld wijzigt u in het paneel van dat veld.',
+  originHeading: 'Herkomst en goedkeuring',
+  createdAt: 'Aangemaakt op',
+  createdBy: 'Aangemaakt door',
+  updatedAt: 'Laatst gewijzigd op',
+  approvedAt: 'Goedgekeurd op',
+  approvedBy: 'Goedgekeurd door',
+  hashNote:
+    'De technische herkomstgegevens (versienummers en vingerafdrukken) staan hieronder onder «Technische details». ' +
+    'Ze dekken alleen de basisinstellingen — niet de extra velden, filters, kritiek per veld, drempels of het prijsbeleid. ' +
+    'Twee versies die enkel daarin verschillen, dragen dus dezelfde samengestelde vingerafdruk; gebruik hem nooit als ' +
+    'antwoord op «zijn deze versies gelijk?».',
 } as const;
 
 /** E4 — de conceptbalk, het verschil met de basisversie ("Toon wijzigingen") en de impactbanner voor een gedeelde definitie. */

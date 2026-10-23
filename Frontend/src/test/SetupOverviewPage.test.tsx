@@ -312,7 +312,7 @@ describe('dashboard: tweede fase met de controle van de koppelingen (F4)', () =>
 });
 
 describe('oude adresvorm ?definitionId=&revisionId=', () => {
-  it('verwijst door naar Bestand en velden van de juiste leverancier, met het bewerkblok open', async () => {
+  it('verwijst door naar Bestand en velden van de juiste leverancier, met Bewerken aan', async () => {
     const state = dashboardState();
     state.revisions[10] = [
       { id: 99, definitionId: 10, revisionNumber: 1, status: 'ACTIVE' },
@@ -323,9 +323,7 @@ describe('oude adresvorm ?definitionId=&revisionId=', () => {
     installSetupServer(state);
     const { router } = renderRoutes('/setup?definitionId=10&revisionId=98');
     expect(await screen.findByTestId('mode-edit')).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(screen.getByTestId('open-edit'));
-    const opened = await screen.findByTestId('revision-detail');
-    expect(await within(opened).findByTestId('activate-revision')).toHaveTextContent('Versie activeren');
+    expect(await screen.findByTestId('concept-activate')).toBeInTheDocument();
     await waitFor(() => expect(router.state.location.pathname).toBe('/setup/suppliers/1/fields'));
     expect(router.state.location.search).toContain('versie=98');
     expect(router.state.location.search).toContain('definitie=10');

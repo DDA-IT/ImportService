@@ -336,8 +336,7 @@ describe('tab Bestand en velden', () => {
     await open('/setup/suppliers/1/fields');
     const view = await screen.findByTestId('revision-read-view');
     expect(screen.getByRole('heading', { level: 2, name: /Vrooam artikelbestand, versie 3 \(actief\)/ })).toBeInTheDocument();
-    // Geen klik nodig: het bewerkblok blijft dicht.
-    expect(screen.queryByTestId('revision-detail')).not.toBeInTheDocument();
+    // Geen klik nodig: het leesbeeld staat er meteen (geen Bewerken).
     expect(screen.queryByTestId('draft-banner')).not.toBeInTheDocument();
 
     const file = within(view).getByTestId('read-file');
@@ -437,27 +436,13 @@ describe('tab Bestand en velden', () => {
     expect(screen.getByText('Deze leverancier heeft nog geen importdefinitie.')).toBeInTheDocument();
   });
 
-  it('"Bewerken" opent het bestaande revisiedetail met bewerken en activeren (concept)', async () => {
-    await open('/setup/suppliers/1/fields?definitie=10&versie=100');
-    await screen.findByTestId('revision-read-view');
-    const toggle = screen.getByTestId('open-edit');
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    const section = await screen.findByTestId('revision-detail');
-    expect(await within(section).findByTestId('revision-edit-form')).toBeInTheDocument();
-    expect(await within(section).findByTestId('activate-revision')).toHaveTextContent('Versie activeren');
-  });
-
   it('?bewerken=1 zet Bewerken aan op een concept; op een actieve versie blijft het alleen-lezen', async () => {
     await open('/setup/suppliers/1/fields?definitie=10&versie=100&bewerken=1');
     expect(await screen.findByTestId('mode-edit')).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByTestId('open-edit')).toHaveAttribute('aria-expanded', 'false');
     cleanup();
     await open('/setup/suppliers/1/fields?definitie=10&versie=99&bewerken=1');
     expect(await screen.findByTestId('frozen-note')).toHaveTextContent('Deze versie is actief en kan niet gewijzigd worden');
     expect(screen.queryByTestId('mode-edit')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('revision-detail')).not.toBeInTheDocument();
   });
 });
 

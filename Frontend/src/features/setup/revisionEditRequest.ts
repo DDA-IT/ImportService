@@ -1,5 +1,5 @@
 /**
- * S9-c — de pure kant van `RevisionEditForm`: formulierstaat, "null = ongewijzigd"-diffs, de
+ * S9-c — de pure kant van het bewerken van de scalaire velden (E6: het oude `RevisionEditForm` is verwijderd; `FieldPanel` en `InlineSectionEditors` gebruiken dit): formulierstaat, "null = ongewijzigd"-diffs, de
  * identiteitsvergelijking (R-REV-X3) en het opbouwen van het `UpdateRevisionRequest`. Geen React, geen
  * state: alles wat het component vroeger via closure las, komt hier als expliciete parameter binnen.
  */

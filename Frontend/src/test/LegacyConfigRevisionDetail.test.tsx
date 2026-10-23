@@ -1,5 +1,5 @@
 /**
- * S9 — het revisiedetail toont (alleen-lezen) de velden die de legacy-config-migratie toevoegde: een vaste leverancier
+ * S9 (E6: nu via `RevisionReadView`) — het leesbeeld toont (alleen-lezen) de velden die de legacy-config-migratie toevoegde: een vaste leverancier
  * of groep (S6), hoofdletters in de herkenning, het aantal omzettingen en de bewerkingen van een keten (S8a/S8c),
  * "onbekende waarden blijven ongewijzigd" (S8g) en de groep van een filter (S8f). Bewerken valt buiten S9.
  *
@@ -8,12 +8,11 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen, waitFor, within, configure } from '@testing-library/react';
+import { cleanup, render, screen, configure } from '@testing-library/react';
 import { ActorProvider } from '../actor/ActorContext';
 import type { RevisionDetail } from '../api/types';
-import { RevisionDetailSection } from '../features/setup/RevisionDetailSection';
+import { RevisionReadView } from '../features/setup/RevisionReadView';
 import { buildRequest, initialForm } from '../features/setup/revisionEditRequest';
-import { jsonResponse, mockApi } from './legacyConfigFixtures';
 import { TEST_IDENTITY } from './testIdentity';
 
 const BASE: RevisionDetail = {
@@ -110,11 +109,10 @@ const MIGRATED: RevisionDetail = {
   ],
 };
 
-function renderSection(detail: RevisionDetail) {
-  mockApi(() => jsonResponse(detail));
+function renderView(detail: RevisionDetail) {
   return render(
     <ActorProvider identity={TEST_IDENTITY}>
-      <RevisionDetailSection definitionId={10} revisionId={100} onRevisionChanged={() => undefined} />
+      <RevisionReadView revision={detail} />
     </ActorProvider>,
   );
 }
@@ -124,41 +122,35 @@ configure({ asyncUtilTimeout: 10000 });
 
 afterEach(() => cleanup());
 
-describe('revisiedetail — velden van de legacy-config-migratie', () => {
-  it('toont vaste leverancier en groep, hoofdletters, omzettingen, bewerkingen en de groep van een filter', async () => {
-    renderSection(MIGRATED);
-    const summary = await screen.findByTestId('revision-summary');
+describe('leesbeeld — velden van de legacy-config-migratie', () => {
+  it('toont vaste leverancier en groep, hoofdletters, omzettingen, bewerkingen en de groep van een filter', () => {
+    renderView(MIGRATED);
 
-    const row = (label: string) => within(summary).getByText(label).closest('div')!;
-    expect(row('Vaste leverancier')).toHaveTextContent('1042');
-    expect(row('Vaste groep')).toHaveTextContent('GRP-A');
-    expect(row('Herkenning in hoofdletters')).toHaveTextContent('ja');
-    // De kolom van een vaste leverancier is "—", niet leeg.
-    expect(row('Kolom leverancier')).toHaveTextContent('—');
-    expect(row('Kolom groep')).toHaveTextContent('—');
+    expect(screen.getByTestId('grid-row-supplier')).toHaveTextContent('1042');
+    expect(screen.getByTestId('grid-row-group')).toHaveTextContent('GRP-A');
+    expect(screen.getByTestId('uppercase-chip')).toHaveTextContent('Hoofdletters negeren: ja');
 
-    const mapping = within(screen.getByTestId('revision-mappings')).getByText(/Omzettingen: 2/).closest('li')!;
-    expect(mapping).toHaveTextContent('Bewerkingen: Deel van de tekst → Voor- en achtervoegsel → Waarde omzetten');
-    expect(mapping).toHaveTextContent('Onbekende waarden blijven ongewijzigd');
+    const mapping = screen.getByTestId('read-field-1');
+    expect(mapping).toHaveTextContent('Deel van de tekst');
+    expect(mapping).toHaveTextContent('Voor- en achtervoegsel');
+    expect(mapping).toHaveTextContent('Waarde omzetten');
 
-    // G2c-4: een groep staat samen onder één kop; een losse rij staat erbuiten.
-    const group = screen.getByTestId('filter-group-2');
-    expect(group).toHaveTextContent('Uitsluitingsgroep 2 — alle voorwaarden samen');
-    expect(within(group).getAllByRole('listitem')).toHaveLength(1);
-    const loose = within(screen.getByTestId('revision-filters')).getByText('4').closest('li')!;
-    expect(loose).not.toHaveTextContent('Uitsluitingsgroep');
+    // De vertalingen en "onbekende waarden blijven ongewijzigd" staan in de sectie Vertalingen.
+    const translation = screen.getByTestId('translation-EAN');
+    expect(translation).toHaveTextContent('2 waarden');
+    expect(translation).toHaveTextContent('onveranderd laten');
+
+    // Een groep is één zin; een losse rij staat erbuiten.
+    expect(screen.getByTestId('group-2')).toHaveTextContent('(alle voorwaarden samen)');
+    expect(screen.getByTestId('filter-10')).not.toHaveTextContent('alle voorwaarden samen');
   });
 
-  it('toont de nieuwe velden niet voor een revisie zonder die velden (oudere vorm)', async () => {
-    renderSection({ ...BASE, mappings: [{ id: 1, revisionId: 100, sequenceNumber: 1, targetFieldCode: 'EAN', sourceReference: '5', valueKind: 'SOURCE_FIELD', criticality: 'CRITICAL' }] });
-    const summary = await screen.findByTestId('revision-summary');
+  it('toont de nieuwe velden niet voor een revisie zonder die velden (oudere vorm)', () => {
+    renderView({ ...BASE, mappings: [{ id: 1, revisionId: 100, sequenceNumber: 1, targetFieldCode: 'EAN', sourceReference: '5', valueKind: 'SOURCE_FIELD', criticality: 'CRITICAL' }] });
 
-    expect(within(summary).queryByText('Vaste leverancier')).not.toBeInTheDocument();
-    expect(within(summary).queryByText('Vaste groep')).not.toBeInTheDocument();
-    expect(within(summary).queryByText('Herkenning in hoofdletters')).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId('revision-mappings')).toBeInTheDocument());
-    expect(screen.getByTestId('revision-mappings')).not.toHaveTextContent('Omzettingen');
-    expect(screen.getByTestId('revision-mappings')).not.toHaveTextContent('Bewerkingen');
+    expect(screen.queryByTestId('uppercase-chip')).not.toBeInTheDocument();
+    expect(screen.getByTestId('read-field-1')).not.toHaveTextContent('Vertaling');
+    expect(screen.queryByTestId('translation-EAN')).not.toBeInTheDocument();
   });
 });
 

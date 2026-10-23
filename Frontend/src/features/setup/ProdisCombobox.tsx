@@ -1,7 +1,7 @@
 /**
  * E1 — de vaste leverancier of vaste groep als zoekende keuzelijst (`Combobox`) op de Prodis-referentie
  * (`/prodis-reference/suppliers?q=` en `/suppliers/{n}/groups`), beslissingslog 2026-10-23 "Bewerkervaring: mock goedgekeurd".
- * Zelfde gedrag en meldingen als `ProdisFixedValueField` (G2c-2): de lijst is een hulp, geen beperking. Vrije tekst blijft
+ * Gedrag en meldingen sinds G2c-2 (E6: de oude `ProdisFixedValueField` is verwijderd): de lijst is een hulp, geen beperking. Vrije tekst blijft
  * mogelijk ("Niet gevonden in Prodis — wordt bij het bewaren gecontroleerd"); is Prodis niet ingesteld (409
  * `PRODIS_DB_NOT_CONFIGURED`) of onbereikbaar (503 `PRODIS_DB_UNAVAILABLE`), dan blijft er een gewoon tekstveld met de
  * bestaande melding. De server valideert de waarde bij het bewaren opnieuw.
@@ -19,7 +19,7 @@ import {
 import { Combobox, type ComboboxOption } from '../../components/Combobox.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { COMBOBOX_TEXT as TEXT } from '../../terms/setupEditor.ts';
-import styles from './RevisionEditForm.module.css';
+import styles from './ProdisCombobox.module.css';
 
 export type ProdisComboboxProps = {
   kind: 'supplier' | 'group';

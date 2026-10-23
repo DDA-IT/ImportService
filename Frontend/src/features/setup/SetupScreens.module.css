@@ -357,10 +357,6 @@
   align-items: flex-start;
 }
 
-.editBlock {
-  margin-top: 24px;
-}
-
 /* Versies */
 .versionRow {
   display: flex;

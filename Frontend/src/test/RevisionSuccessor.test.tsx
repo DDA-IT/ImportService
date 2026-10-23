@@ -1,5 +1,5 @@
 /**
- * S1-F4 — het schrijfdeel van scherm 1a: opvolgrevisie maken (E2), een DRAFT bewerken (E3), een geërfde
+ * S1-F4 (E6: het oude bewerkformulier en de verwijderknoppen zijn weg) — het schrijfdeel van scherm 1a: opvolgrevisie maken (E2), een DRAFT bewerken (E3, nu in het paneel), een geërfde
  * mapping/filter verwijderen (E4) en activeren (E5) — `docs/design/revision-successor-design.md` §4, §5,
  * §6, bouwstaprij S1-F4 in §8.
  *
@@ -28,17 +28,12 @@ import { TEST_IDENTITY, testIdentityWith } from './testIdentity';
 import { PERMISSION_READ } from '../api/types';
 import type { RevisionDetail, RevisionRow } from '../api/types';
 import { routes } from '../routes';
-import { RevisionDetailSection } from '../features/setup/RevisionDetailSection';
-import { RevisionEditForm } from '../features/setup/RevisionEditForm';
+import { AdvancedSection, BookmarksSection } from '../features/setup/EditorSections';
 import { CreateSuccessorAction } from '../features/setup/CreateSuccessorAction';
 import { ActivateRevisionAction } from '../features/setup/ActivateRevisionAction';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-}
-
-function noContentResponse(): Response {
-  return new Response(null, { status: 204 });
 }
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -59,12 +54,6 @@ function writeCalls(mock: FetchMock): Array<[string, RequestInit]> {
       return method !== 'GET' && method !== 'HEAD';
     })
     .map((args) => [String(args[0]), args[1] as RequestInit]);
-}
-
-function bodyOfWrite(mock: FetchMock, pathPart: string): Record<string, unknown> {
-  const call = writeCalls(mock).find(([url]) => url.includes(pathPart));
-  expect(call, `verwacht een schrijfverzoek naar ${pathPart}`).toBeDefined();
-  return JSON.parse(String(call![1].body)) as Record<string, unknown>;
 }
 
 // --- Vaste testgegevens -----------------------------------------------------------------------------
@@ -244,26 +233,6 @@ const IMPORT_LINKS_RESPONSE = { content: [], page: 0, size: 50, totalElements: 0
 
 // --- Renderhulpen -----------------------------------------------------------------------------------
 
-function renderEditForm(revision: RevisionDetail = DRAFT_DETAIL, identity = TEST_IDENTITY) {
-  const onUpdated = vi.fn();
-  render(
-    <ActorProvider identity={identity}>
-      <RevisionEditForm revision={revision} onUpdated={onUpdated} />
-    </ActorProvider>,
-  );
-  return { onUpdated };
-}
-
-function renderDetailSection(identity = TEST_IDENTITY) {
-  const onRevisionChanged = vi.fn();
-  render(
-    <ActorProvider identity={identity}>
-      <RevisionDetailSection definitionId={10} revisionId={100} onRevisionChanged={onRevisionChanged} />
-    </ActorProvider>,
-  );
-  return { onRevisionChanged };
-}
-
 function renderSuccessorAction(revision: RevisionRow, identity = TEST_IDENTITY) {
   const onCreated = vi.fn();
   render(
@@ -286,10 +255,6 @@ function renderActivateAction(revision: RevisionDetail = DRAFT_DETAIL, identity 
 
 function fillReason(text: string) {
   fireEvent.change(screen.getByLabelText(/^Reden/), { target: { value: text } });
-}
-
-function submitEditForm() {
-  fireEvent.submit(screen.getByTestId('revision-edit-form'));
 }
 
 describe('S1-F4 — schrijfdeel van scherm 1a (opvolgrevisie / DRAFT bewerken / activeren)', () => {
@@ -381,7 +346,7 @@ describe('S1-F4 — schrijfdeel van scherm 1a (opvolgrevisie / DRAFT bewerken / 
     expect(button).toHaveAttribute('title', "U heeft het recht 'Beheren' (catalogImport.manage) niet.");
   });
 
-  it('S1-F4.6: na een geslaagde kloon opent het leveranciersdetail de nieuwe DRAFT (Bestand en velden, bewerkblok open)', async () => {
+  it('S1-F4.6: na een geslaagde kloon opent het leveranciersdetail de nieuwe DRAFT (Bestand en velden, Bewerken aan)', async () => {
     // De revisielijst levert de nieuwe DRAFT pas ná de kloon; de UI opent haar rechtstreeks uit het
     // antwoord van E2 en wacht dus niet op die herlaadde lijst.
     let cloned = false;
@@ -389,6 +354,9 @@ describe('S1-F4 — schrijfdeel van scherm 1a (opvolgrevisie / DRAFT bewerken / 
       if (url.includes('/setup/revisions/99/successor')) {
         cloned = true;
         return jsonResponse(revisionView(), 201);
+      }
+      if (url.includes('/definitions/10/revisions/99')) {
+        return jsonResponse(ACTIVE_DETAIL);
       }
       if (url.includes('/definitions/10/revisions/100')) {
         return jsonResponse(DRAFT_DETAIL);
@@ -420,320 +388,43 @@ describe('S1-F4 — schrijfdeel van scherm 1a (opvolgrevisie / DRAFT bewerken / 
     fillReason('Prijslijst 2027');
     fireEvent.click(screen.getByRole('button', { name: 'Opvolger aanmaken' }));
 
-    // De nieuwe DRAFT wordt rechtstreeks geopend (Bewerken staat aan); "Meer opties" toont het revisiedetail van #100.
+    // De nieuwe DRAFT wordt rechtstreeks geopend (Bewerken staat aan); de conceptbalk hoort bij versie #100.
     expect(await screen.findByTestId('mode-edit')).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(screen.getByTestId('open-edit'));
-    expect(await screen.findByTestId('revision-detail')).toBeInTheDocument();
-    expect(await screen.findByTestId('revision-edit-form')).toBeInTheDocument();
+    expect(await screen.findByTestId('concept-bar')).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/setup/suppliers/1/fields');
     expect(router.state.location.search).toContain('versie=100');
     // Eén schrijfverzoek, geen automatische herhaling.
     expect(writeCalls(fetchMock)).toHaveLength(1);
   });
 
-  // --- E3: DRAFT bewerken -----------------------------------------------------------------------
+  // --- Wat het oude bewerkformulier en de verwijderknoppen deden, staat nu in het nieuwe paneel (E6) --------
+  // Wijzigen van velden, bevestiging van een identiteitswijziging (R-REV-X3), de canonicalisatieblokkade (R-REV-X2) en het
+  // verwijderen van een extra veld of filter: zie `FieldsEditor*.test.tsx`; de pure "null = ongewijzigd"-regels staan in
+  // `RevisionEditFixedIdentity.test.tsx`.
 
-  it('S1-F4.7: een gewone drempelwijziging verstuurt alleen dat ene veld; al de rest is null', async () => {
-    const fetchMock = mockFetch(() => jsonResponse(revisionView({ maxCriticalSharePercent: 7.5 })));
-    const { onUpdated } = renderEditForm();
+  it('S1-F4.23: bookmarkdeclaraties zijn alleen-lezen — geen enkele wijzigactie (harde grens §2)', () => {
+    render(<BookmarksSection revision={DRAFT_DETAIL} />);
 
-    fireEvent.change(screen.getByLabelText(/^Maximum ter beoordeling/), { target: { value: '7.5' } });
-    submitEditForm();
-
-    await waitFor(() => {
-      expect(onUpdated).toHaveBeenCalledTimes(1);
-    });
-    const body = bodyOfWrite(fetchMock, '/setup/revisions/100');
-    expect(writeCalls(fetchMock)[0]![1].method).toBe('PATCH');
-    expect(body.maxCriticalSharePercent).toBe(7.5);
-    // "null = ongewijzigd": geen enkel identiteits-, structuur- of prijsveld gaat mee.
-    expect(body.identityProfileKind).toBeNull();
-    expect(body.supplierField).toBeNull();
-    expect(body.canonicalisationVersion).toBeNull();
-    expect(body.delimiter).toBeNull();
-    expect(body.basePriceField).toBeNull();
-    expect(body.acknowledgeIdentityChange).toBeNull();
-    expect(body.createdBy).toBe('An Beslisser');
-    expect(screen.getByTestId('revision-edit-saved')).toHaveTextContent('is bijgewerkt');
-  });
-
-  it('S1-F4.8: zonder wijziging wordt er niets verstuurd', async () => {
-    const fetchMock = mockFetch(() => jsonResponse(revisionView()));
-    renderEditForm();
-
-    submitEditForm();
-
-    expect(await screen.findByTestId('revision-edit-validation')).toHaveTextContent('Er is niets gewijzigd');
-    expect(writeCalls(fetchMock)).toHaveLength(0);
-  });
-
-  it('S1-F4.9: een onleesbaar getal is een fout, nooit stil 0 of leeg', async () => {
-    const fetchMock = mockFetch(() => jsonResponse(revisionView()));
-    renderEditForm();
-
-    fireEvent.change(screen.getByLabelText(/^Drempel nieuwe artikelen/), { target: { value: 'dertig' } });
-    submitEditForm();
-
-    const message = await screen.findByTestId('revision-edit-validation');
-    expect(message).toHaveTextContent('"Drempel nieuwe artikelen (%)" is geen leesbaar getal');
-    expect(message).toHaveTextContent('niets op 0 gezet');
-    expect(writeCalls(fetchMock)).toHaveLength(0);
-  });
-
-  it('S1-F4.10: een leeggemaakt verplicht veld wordt nooit als lege waarde verstuurd', async () => {
-    const fetchMock = mockFetch(() => jsonResponse(revisionView()));
-    renderEditForm();
-
-    fireEvent.change(screen.getByLabelText(/^Kolom basisprijs/), { target: { value: '   ' } });
-    submitEditForm();
-
-    expect(await screen.findByTestId('revision-edit-validation')).toHaveTextContent(
-      '"Kolom basisprijs" is verplicht en mag niet leeg zijn',
-    );
-    expect(writeCalls(fetchMock)).toHaveLength(0);
-  });
-
-  it('S1-F4.11: een optioneel veld leegmaken verstuurt een uitdrukkelijk lege waarde', async () => {
-    const fetchMock = mockFetch(() => jsonResponse(revisionView({ descriptionField: null })));
-    renderEditForm();
-
-    fireEvent.change(screen.getByLabelText(/^Kolom omschrijving/), { target: { value: '' } });
-    submitEditForm();
-
-    await waitFor(() => {
-      expect(writeCalls(fetchMock)).toHaveLength(1);
-    });
-    const body = bodyOfWrite(fetchMock, '/setup/revisions/100');
-    expect(body.descriptionField).toBe('');
-    // Een veld dat al `null` was en leeg blijft, geldt als ongewijzigd — geen lege waarde.
-    expect(body.currencyField).toBeNull();
-  });
-
-  it('S1-F4.12: R-REV-X3 — een identiteitswijziging zonder bevestiging verstuurt niets', async () => {
-    const fetchMock = mockFetch(() => jsonResponse(revisionView()));
-    renderEditForm();
-
-    // Vóór de wijziging is er geen bevestigingsvinkje: het heeft bewust geen standaardwaarde.
-    expect(screen.queryByTestId('identity-change-acknowledge')).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText(/^Kolom referentie/), { target: { value: 'ANDERE_REF' } });
-
-    expect(screen.getByTestId('identity-change-acknowledge')).toBeInTheDocument();
-    expect(
-      (screen.getByLabelText(/^Ja, ik weet dat elk bestaand artikel/) as HTMLInputElement).checked,
-    ).toBe(false);
-
-    submitEditForm();
-
-    expect(await screen.findByTestId('revision-edit-validation')).toHaveTextContent(
-      'Bevestig hieronder uitdrukkelijk',
-    );
-    expect(writeCalls(fetchMock)).toHaveLength(0);
-  });
-
-  it('S1-F4.13: R-REV-X3 — mét bevestiging gaat acknowledgeIdentityChange: true mee', async () => {
-    const fetchMock = mockFetch(() => jsonResponse(revisionView({ supplierReferenceField: 'ANDERE_REF' })));
-    renderEditForm();
-
-    fireEvent.change(screen.getByLabelText(/^Kolom referentie/), { target: { value: 'ANDERE_REF' } });
-    fireEvent.click(screen.getByLabelText(/^Ja, ik weet dat elk bestaand artikel/));
-    submitEditForm();
-
-    await waitFor(() => {
-      expect(writeCalls(fetchMock)).toHaveLength(1);
-    });
-    const body = bodyOfWrite(fetchMock, '/setup/revisions/100');
-    expect(body.supplierReferenceField).toBe('ANDERE_REF');
-    expect(body.acknowledgeIdentityChange).toBe(true);
-  });
-
-  it('S1-F4.14: 409 IDENTITY_CHANGE_NOT_ACKNOWLEDGED van de server wordt getoond bij het formulier', async () => {
-    mockFetch(() =>
-      jsonResponse(
-        { error: 'Revision 100 changes the offer identity', code: 'IDENTITY_CHANGE_NOT_ACKNOWLEDGED' },
-        409,
-      ),
-    );
-    renderEditForm();
-
-    fireEvent.change(screen.getByLabelText(/^Herkenning van een artikel/), {
-      target: { value: 'FOUR_PART_WITH_DISCOUNT_CODE' },
-    });
-    fireEvent.click(screen.getByLabelText(/^Ja, ik weet dat elk bestaand artikel/));
-    submitEditForm();
-
-    expect(await screen.findByText('Identiteitswijziging niet bevestigd')).toBeInTheDocument();
-  });
-
-  it('S1-F4.15: R-REV-X2 — de canonicalisatieblokkade is onvoorwaardelijk en biedt geen bevestiging', async () => {
-    mockFetch(() =>
-      jsonResponse(
-        {
-          error:
-            'Revision 100 cannot change recordCanonicalisationVersion from 1 to 2: import definition 10 ' +
-            'already has accepted source state',
-          code: 'REVISION_CANONICALISATION_CHANGE_BLOCKED',
-        },
-        409,
-      ),
-    );
-    renderEditForm();
-
-    fireEvent.change(screen.getByLabelText(/^Herkenningsversie/), { target: { value: '2' } });
-    // Vooraf al een waarschuwing, nog vóór het versturen.
-    expect(screen.getByTestId('canonicalisation-change-warning')).toHaveTextContent('van 1 naar 2');
-
-    // Ook een identiteitsveld wijzigen: de bevestiging daarvoor mag na de blokkade niet blijven staan.
-    fireEvent.change(screen.getByLabelText(/^Kolom groep/), { target: { value: 'ANDERE_GRP' } });
-    fireEvent.click(screen.getByLabelText(/^Ja, ik weet dat elk bestaand artikel/));
-    submitEditForm();
-
-    const blocked = await screen.findByTestId('canonicalisation-blocked');
-    expect(blocked).toHaveTextContent('niet te omzeilen');
-    expect(screen.getByText('Herkenningsversie kan niet gewijzigd worden')).toBeInTheDocument();
-    // Geen bevestigingsoptie naast een blokkade die de server toch niet aanvaardt.
-    expect(screen.queryByTestId('identity-change-acknowledge')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/^Ja, ik weet dat elk bestaand artikel/)).not.toBeInTheDocument();
-
-    // Zodra de gebruiker iets aanpast, verdwijnt de blokkade-melding: nooit een doodlopende toestand.
-    fireEvent.change(screen.getByLabelText(/^Herkenningsversie/), { target: { value: '1' } });
-    expect(screen.queryByTestId('canonicalisation-blocked')).not.toBeInTheDocument();
-    expect(screen.getByTestId('identity-change-acknowledge')).toBeInTheDocument();
-  });
-
-  it('S1-F4.16: een 400 op een negatief percentage toont de letterlijke servertekst', async () => {
-    mockFetch(() =>
-      jsonResponse({ error: 'maxCriticalSharePercent must not be negative' }, 400),
-    );
-    renderEditForm();
-
-    fireEvent.change(screen.getByLabelText(/^Maximum ter beoordeling/), { target: { value: '-5' } });
-    submitEditForm();
-
-    expect(await screen.findByText('Ongeldige invoer')).toBeInTheDocument();
-    expect(screen.getByText('maxCriticalSharePercent must not be negative')).toBeInTheDocument();
-  });
-
-  it('S1-F4.17: op een niet-DRAFT revisie is het bewerkformulier uitgeschakeld mét reden', async () => {
-    mockFetch(() => jsonResponse(ACTIVE_DETAIL));
-    renderEditForm(ACTIVE_DETAIL);
-
-    const button = screen.getByRole('button', { name: 'Wijzigingen opslaan' });
-    expect(button).toBeDisabled();
-    expect(button.getAttribute('title')).toContain('REVISION_NOT_EDITABLE');
-  });
-
-  it('S1-F4.18: zonder MANAGE is opslaan uitgeschakeld mét reden en gebeurt er niets bij submit', () => {
-    const fetchMock = mockFetch(() => jsonResponse(revisionView()));
-    renderEditForm(DRAFT_DETAIL, testIdentityWith(PERMISSION_READ));
-
-    const button = screen.getByRole('button', { name: 'Wijzigingen opslaan' });
-    expect(button).toBeDisabled();
-    expect(button).toHaveAttribute('title', "U heeft het recht 'Beheren' (catalogImport.manage) niet.");
-
-    fireEvent.change(screen.getByLabelText(/^Maximum ter beoordeling/), { target: { value: '7.5' } });
-    submitEditForm();
-    expect(writeCalls(fetchMock)).toHaveLength(0);
-  });
-
-  // --- E4: mapping/filter verwijderen -----------------------------------------------------------
-
-  it('S1-F4.19: een mapping verwijderen slaagt en herlaadt het detail', async () => {
-    const fetchMock = mockFetch((_url, init) => {
-      if ((init?.method ?? 'GET') === 'DELETE') {
-        return noContentResponse();
-      }
-      return jsonResponse(DRAFT_DETAIL);
-    });
-    const { onRevisionChanged } = renderDetailSection();
-
-    fireEvent.click(await screen.findByTestId('delete-mapping-5001'));
-    fireEvent.click(screen.getByRole('button', { name: 'Definitief verwijderen' }));
-
-    await waitFor(() => {
-      expect(onRevisionChanged).toHaveBeenCalledTimes(1);
-    });
-    const [url, init] = writeCalls(fetchMock)[0]!;
-    expect(url).toContain('/setup/revisions/100/mappings/5001');
-    expect(init.method).toBe('DELETE');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
-  it('S1-F4.20: een filter verwijderen gebruikt het filterpad', async () => {
-    const fetchMock = mockFetch((_url, init) => {
-      if ((init?.method ?? 'GET') === 'DELETE') {
-        return noContentResponse();
-      }
-      return jsonResponse(DRAFT_DETAIL);
-    });
-    renderDetailSection();
-
-    fireEvent.click(await screen.findByTestId('delete-filter-6001'));
-    fireEvent.click(screen.getByRole('button', { name: 'Definitief verwijderen' }));
-
-    await waitFor(() => {
-      expect(writeCalls(fetchMock)).toHaveLength(1);
-    });
-    expect(writeCalls(fetchMock)[0]![0]).toContain('/setup/revisions/100/filters/6001');
-  });
-
-  it('S1-F4.21: 409 van een bookmarkdeclaratie blijft in de dialoog staan; er is niets verwijderd', async () => {
-    mockFetch((_url, init) => {
-      if ((init?.method ?? 'GET') === 'DELETE') {
-        return jsonResponse(
-          {
-            error:
-              "bookmark 'BESTANDS_PREFIX' points at target field ARTICLE_CODE which this revision does " +
-              'not map; nothing was deleted from revision 100',
-            code: 'CONFIG_BOOKMARK_PLACE_UNRESOLVED',
-          },
-          409,
-        );
-      }
-      return jsonResponse(DRAFT_DETAIL);
-    });
-    const { onRevisionChanged } = renderDetailSection();
-
-    fireEvent.click(await screen.findByTestId('delete-mapping-5001'));
-    fireEvent.click(screen.getByRole('button', { name: 'Definitief verwijderen' }));
-
-    expect(await screen.findByText('Een invulpunt steunt nog op deze rij')).toBeInTheDocument();
-    expect(screen.getByText(/nothing was deleted from revision 100/)).toBeInTheDocument();
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(onRevisionChanged).not.toHaveBeenCalled();
-  });
-
-  it('S1-F4.22: op een niet-DRAFT revisie staat er geen verwijderknop en geen bewerkformulier', async () => {
-    mockFetch(() => jsonResponse(ACTIVE_DETAIL));
-    render(
-      <ActorProvider identity={TEST_IDENTITY}>
-        <RevisionDetailSection definitionId={10} revisionId={99} onRevisionChanged={vi.fn()} />
-      </ActorProvider>,
-    );
-
-    await screen.findByTestId('revision-mappings');
-    expect(screen.queryByTestId('delete-mapping-5001')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('revision-edit-form')).not.toBeInTheDocument();
-    const notEditable = screen.getByTestId('revision-not-editable-reason');
-    expect(notEditable).toHaveTextContent('alleen een concept is aan te passen');
-    expect(notEditable.textContent).not.toContain('REVISION_NOT_EDITABLE');
-    expect(notEditable.getAttribute('title')).toContain('(technische code: REVISION_NOT_EDITABLE)');
-    expect(screen.queryByTestId('activate-revision')).not.toBeInTheDocument();
-  });
-
-  it('S1-F4.23: bookmarkdeclaraties zijn alleen-lezen — geen enkele wijzigactie (harde grens §2)', async () => {
-    mockFetch(() => jsonResponse(DRAFT_DETAIL));
-    renderDetailSection();
-
-    const bookmarks = await screen.findByTestId('revision-bookmarks');
+    const bookmarks = screen.getByTestId('revision-bookmarks');
     // NT-11c: het label staat in beeld, de technische naam in de tooltip.
     expect(bookmarks).toHaveTextContent('Bestandsprefix');
     expect(bookmarks.textContent).not.toContain('BESTANDS_PREFIX');
     expect(within(bookmarks).queryAllByRole('button')).toHaveLength(0);
-    expect(screen.getByTestId('bookmark-boundary-note')).toHaveTextContent('bewust alleen-lezen');
+    expect(screen.getByTestId('bookmark-boundary-note')).toHaveTextContent('alleen');
     // Ook de ingevulde DEFINITION-waarde is enkel leesmateriaal.
     const values = screen.getByTestId('revision-bookmark-values');
     expect(within(values).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('E6: Geavanceerd toont kritiek per veld, herkomst en technische details alleen-lezen', () => {
+    render(<AdvancedSection revision={DRAFT_DETAIL} />);
+
+    const section = screen.getByTestId('read-advanced');
+    expect(section).toHaveTextContent('Geavanceerd');
+    expect(section).toHaveTextContent('Kritiek per veld aangepast');
+    expect(section).toHaveTextContent('Aangemaakt door');
+    expect(section).toHaveTextContent('Technische details (voor support)');
+    expect(within(section).queryAllByRole('button')).toHaveLength(0);
   });
 
   // --- E5: activeren ----------------------------------------------------------------------------

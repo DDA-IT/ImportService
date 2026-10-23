@@ -1,0 +1,18 @@
+/* De label/waarde-regels van de leesbouwstenen (`revisionDetailParts.tsx`). */
+
+.figure {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  border-bottom: 1px dashed var(--divider);
+}
+
+.figure dt {
+  color: var(--text-secondary);
+}
+
+.figure dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

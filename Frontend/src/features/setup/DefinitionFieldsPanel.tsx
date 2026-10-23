@@ -9,9 +9,8 @@
  * Bewerken heeft elke rij van Herkenning en Basis een potlood dat een zijpaneel opent (`FieldPanel`, direct bewaren met
  * een PATCH). Een actieve of vervangen versie is alleen-lezen, met "Opvolger maken" (of "Open het concept" als er al een
  * concept is). E2: extra velden bewerken in het grid. E3: Filters als zinnen met Wijzigen, Verwijderen en Filter toevoegen (zijpaneel
- * `FilterPanel`). E4: conceptbalk (diff, reden, Controleren, Activeren), Bestandsopbouw en Drempels bewerkbaar; de
- * overige instellingen blijven tot E6 bereikbaar via "Meer opties" (de bestaande `RevisionDetailSection`, die nog zijn
- * eigen activeerknop heeft).
+ * `FilterPanel`). E4: conceptbalk (diff, reden, Controleren, Activeren), Bestandsopbouw en Drempels bewerkbaar.
+ * E6: het oude blok "Meer opties" (`RevisionDetailSection`) is weg; wat het nog toonde staat in de sectie Geavanceerd van het leesbeeld.
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -32,7 +31,6 @@ import { FieldPanel, type PanelTarget } from './FieldPanel.tsx';
 import { FilterPanel, type FilterPanelMode } from './FilterPanel.tsx';
 import { MappingPanel, type MappingPanelMode } from './MappingPanel.tsx';
 import { computeRevisionDiff, EMPTY_DIFF } from './revisionDiffModel.ts';
-import { RevisionDetailSection } from './RevisionDetailSection.tsx';
 import { RevisionReadView } from './RevisionReadView.tsx';
 import { defaultRevisionOf } from './setupDashboardModel.ts';
 import fieldsEditor from './FieldsEditor.module.css';
@@ -140,7 +138,7 @@ type RevisionFieldsProps = {
   extra?: (revision: RevisionRow) => ReactNode;
 };
 
-/** De kopstrook, het grid (lezen en bewerken), het zijpaneel en de "Meer opties" van één gekozen versie. */
+/** De kopstrook, het grid (lezen en bewerken) en de zijpanelen van één gekozen versie. */
 function RevisionFields({
   definition,
   revisions,
@@ -154,7 +152,6 @@ function RevisionFields({
   const manageGate = usePermissionGate(PERMISSION_MANAGE);
   const isDraft = revision.status === 'DRAFT';
   const editingNow = editing && isDraft && manageGate.allowed;
-  const [moreOpen, setMoreOpen] = useState(false);
   const [panel, setPanel] = useState<{ target: PanelTarget; opener: HTMLElement } | null>(null);
   // E2: het paneel voor een extra veld (wijzigen, toevoegen, koppelen); sleutel = het doelveld, nooit het id.
   const [mappingPanel, setMappingPanel] = useState<{ mode: MappingPanelMode; opener: HTMLElement } | null>(null);
@@ -395,32 +392,6 @@ function RevisionFields({
           onChanged={afterChange}
         />
       )}
-
-      <div className={styles.editBlock}>
-        <div className={styles.btnRow}>
-          <button
-            type="button"
-            className={`${button.secondary} ${button.small}`}
-            aria-expanded={moreOpen}
-            aria-controls="supplier-edit-block"
-            data-testid="open-edit"
-            onClick={() => setMoreOpen((open) => !open)}
-          >
-            {EDITOR_TEXT.moreOptions}
-          </button>
-          <span className={styles.rowMeta}>{EDITOR_TEXT.moreOptionsHint}</span>
-        </div>
-        {moreOpen && (
-          <div id="supplier-edit-block">
-            <RevisionDetailSection
-              definitionId={definition.id}
-              sourceOrganisationCode={definition.sourceOrganisationCode}
-              revisionId={revision.id}
-              onRevisionChanged={afterChange}
-            />
-          </div>
-        )}
-      </div>
     </>
   );
 }
