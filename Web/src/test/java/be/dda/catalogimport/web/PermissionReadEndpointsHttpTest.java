@@ -81,6 +81,8 @@ class PermissionReadEndpointsHttpTest {
                 API + "/links/" + UNKNOWN + "/bookmark-values",
                 // NT-8: gereedheidscontrole van een koppeling (READ).
                 API + "/import-links/" + UNKNOWN + "/readiness",
+                // Bulk-gereedheid (beslissingslog 2026-10-23, punt 4): READ.
+                API + "/import-links/readiness?linkIds=" + UNKNOWN,
                 API + "/definitions/" + UNKNOWN + "/revisions",
                 API + "/definitions/" + UNKNOWN + "/revisions/" + UNKNOWN,
                 // Legacy-herkomst van een revisie (beslissingslog 2026-10-23, punt 1): READ.
@@ -100,6 +102,10 @@ class PermissionReadEndpointsHttpTest {
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("TASK_RUN_NOT_FOUND"));
         // NT-8: de gereedheidscontrole van een onbekende koppeling.
         mockMvc.perform(get(API + "/import-links/" + UNKNOWN + "/readiness").with(as(USER, Permission.READ)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("LINK_NOT_FOUND"));
+        // Bulk-gereedheid (beslissingslog 2026-10-23, punt 4): zelfde 404 voor een onbekende koppeling.
+        mockMvc.perform(get(API + "/import-links/readiness").param("linkIds", Long.toString(UNKNOWN))
+                        .with(as(USER, Permission.READ)))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("LINK_NOT_FOUND"));
     }
 

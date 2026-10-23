@@ -13,8 +13,14 @@ import be.dda.catalogimport.service.ChainConfigurationChecks.Problem;
 import be.dda.catalogimport.service.ChainConfigurationChecks.ReportedProblem;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +46,13 @@ import org.springframework.transaction.annotation.Transactional;
  * <h2>Technisch</h2>
  * Leestransactie; er wordt niets geschreven, ook niet bij het valideren van een concept (de screeningfabrieken lezen
  * enkel). Geen N+1 over taken: één query voor de taken van de koppeling.
+ *
+ * <h2>Bulk (beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen", punt 4)</h2>
+ * {@link #readinessSummaries} geeft per koppeling enkel het oordeel en de {@link CheckStatus#PROBLEM}-regels, met
+ * exact dezelfde beoordeling als {@link #readiness(long)} (één gedeelde implementatie, pariteit). De koppelingen en
+ * hun taken komen elk uit één query; binnen één aanroep worden de concepten per definitie en de activatiecontrole
+ * per (concept, valuta) maar één keer bepaald. Per koppeling blijven de intakeconfiguratie en de LINK-bookmarks: die
+ * hangen van de koppeling zelf af.
  */
 @Service
 @Transactional(readOnly = true)
@@ -111,6 +124,18 @@ public class ImportLinkReadinessService {
     public record LinkReadiness(long linkId, boolean ready, List<ReadinessCheck> checks) {
     }
 
+    /** 400: de lijst van de bulkcontrole is leeg, te lang of bevat een leeg id. */
+    public static final String CODE_LINK_IDS_INVALID = "READINESS_LINK_IDS_INVALID";
+    /** Bovengrens van het aantal opgegeven ids (dubbels meegeteld) in één bulkcontrole (beslissingslog 2026-10-23). */
+    public static final int MAX_BULK_LINK_IDS = 100;
+
+    /**
+     * Eén regel van de bulkcontrole: hetzelfde oordeel als {@link LinkReadiness#ready()} en enkel de
+     * {@link CheckStatus#PROBLEM}-regels, in dezelfde volgorde en met hetzelfde {@link ReadinessCheck}-record.
+     */
+    public record LinkReadinessSummary(long linkId, boolean ready, List<ReadinessCheck> problems) {
+    }
+
     private final ImportLinkRepository links;
     private final ImportDefinitionRevisionRepository revisions;
     private final CatalogImportTaskRepository tasks;
@@ -129,17 +154,60 @@ public class ImportLinkReadinessService {
      * @throws NotFoundException {@code LINK_NOT_FOUND}
      */
     public LinkReadiness readiness(long linkId) {
-        ImportLink link = links.findById(linkId)
-                .orElseThrow(() -> new NotFoundException("LINK_NOT_FOUND",
-                        "Import link " + linkId + " does not exist"));
+        ImportLink link = links.findById(linkId).orElseThrow(() -> linkNotFound(linkId));
+        return evaluate(link, tasks.findByImportLinkIdOrderByIdAsc(link.getId()), new Memo());
+    }
+
+    /**
+     * Gereedheid van meerdere koppelingen tegelijk, enkel de problemen. Volgorde = de volgorde van de aanvraag; een
+     * dubbel id wordt één keer beantwoord (op zijn eerste plaats).
+     *
+     * @param linkIds 1 tot en met {@value #MAX_BULK_LINK_IDS} ids (dubbels meegeteld), geen {@code null}
+     * @throws BadRequestException {@code READINESS_LINK_IDS_INVALID} bij een lege of te lange lijst of een leeg id
+     * @throws NotFoundException   {@code LINK_NOT_FOUND} voor het eerste onbekende id (in de volgorde van de aanvraag)
+     */
+    public List<LinkReadinessSummary> readinessSummaries(List<Long> linkIds) {
+        if (linkIds == null || linkIds.isEmpty() || linkIds.size() > MAX_BULK_LINK_IDS) {
+            throw new BadRequestException(CODE_LINK_IDS_INVALID, "linkIds must contain between 1 and "
+                    + MAX_BULK_LINK_IDS + " import link ids, got " + (linkIds == null ? 0 : linkIds.size()));
+        }
+        if (linkIds.stream().anyMatch(Objects::isNull)) {
+            throw new BadRequestException(CODE_LINK_IDS_INVALID, "linkIds must not contain an empty id");
+        }
+        List<Long> ids = List.copyOf(new LinkedHashSet<>(linkIds));
+        Map<Long, ImportLink> found = links.findAllById(ids).stream()
+                .collect(Collectors.toMap(ImportLink::getId, Function.identity()));
+        for (Long id : ids) {
+            if (!found.containsKey(id)) {
+                throw linkNotFound(id);
+            }
+        }
+        Map<Long, List<CatalogImportTask>> tasksByLink = new HashMap<>();
+        for (CatalogImportTask task : tasks.findByImportLinkIdInOrderByImportLinkIdAscIdAsc(ids)) {
+            tasksByLink.computeIfAbsent(task.getImportLink().getId(), key -> new ArrayList<>()).add(task);
+        }
+        Memo memo = new Memo();
+        List<LinkReadinessSummary> summaries = new ArrayList<>(ids.size());
+        for (Long id : ids) {
+            LinkReadiness readiness = evaluate(found.get(id), tasksByLink.getOrDefault(id, List.of()), memo);
+            List<ReadinessCheck> problems = readiness.checks().stream()
+                    .filter(check -> check.status() == CheckStatus.PROBLEM)
+                    .toList();
+            summaries.add(new LinkReadinessSummary(readiness.linkId(), readiness.ready(), problems));
+        }
+        return List.copyOf(summaries);
+    }
+
+    /** De volledige beoordeling van één koppeling; gedeeld door de enkelvoudige en de bulkcontrole (pariteit). */
+    private LinkReadiness evaluate(ImportLink link, List<CatalogImportTask> linkTasks, Memo memo) {
         CheckSubject linkSubject = new CheckSubject(SubjectType.LINK, link.getId());
         List<ReadinessCheck> checks = new ArrayList<>();
 
         checks.add(link.isActive() ? ok(READY_LINK_ACTIVE, linkSubject)
                 : info(INFO_LINK_INACTIVE, linkSubject, "Import link " + link.getId() + " is not active; "
                 + "an upload does not check this flag"));
-        revisionChecks(link, linkSubject, checks);
-        taskChecks(link, linkSubject, checks);
+        revisionChecks(link, linkSubject, checks, memo);
+        taskChecks(link, linkTasks, linkSubject, checks);
         checks.add(info(INFO_LIBRARY_NOT_VERIFIED, linkSubject, "Library code '" + link.getLibraryCode()
                 + "' is not checked against Prodis"));
 
@@ -147,7 +215,7 @@ public class ImportLinkReadinessService {
         return new LinkReadiness(link.getId(), ready, List.copyOf(checks));
     }
 
-    private void revisionChecks(ImportLink link, CheckSubject linkSubject, List<ReadinessCheck> checks) {
+    private void revisionChecks(ImportLink link, CheckSubject linkSubject, List<ReadinessCheck> checks, Memo memo) {
         long definitionId = link.getImportDefinition().getId();
         IntakeConfiguration intake = configurationChecks.intakeConfiguration(link, "Import link " + link.getId());
         ImportDefinitionRevision active = intake.activeRevision();
@@ -180,11 +248,7 @@ public class ImportLinkReadinessService {
         for (Problem problem : intake.problems()) {
             checks.add(problem(problem, definitionSubject));
         }
-        List<ImportDefinitionRevision> drafts = revisions.findByImportDefinitionIdOrderByRevisionNumberDesc(definitionId)
-                .stream()
-                .filter(revision -> revision.getStatus() == RevisionStatus.DRAFT)
-                .sorted(Comparator.comparingInt(ImportDefinitionRevision::getRevisionNumber))
-                .toList();
+        List<ImportDefinitionRevision> drafts = memo.drafts.computeIfAbsent(definitionId, this::draftsOf);
         if (drafts.isEmpty()) {
             checks.add(info(INFO_NO_DRAFT_REVISION, definitionSubject, "Import definition " + definitionId
                     + " has no active and no draft revision"));
@@ -194,7 +258,10 @@ public class ImportLinkReadinessService {
             CheckSubject draftSubject = new CheckSubject(SubjectType.REVISION, draft.getId());
             // NT-14a par. 3: alle onafhankelijke configuratiefouten (stand ALL), met de vaste valuta van de koppeling
             // zoals de screening. De eerste rij is gelijk aan de eerste worp van de activatie.
-            ActivationReport activation = configurationChecks.activationProblemsAll(draft, link.getDefaultCurrency());
+            // Bulk: per (concept, valuta) één keer binnen deze aanroep - het resultaat hangt niet van de koppeling af.
+            ActivationReport activation = memo.activation.computeIfAbsent(
+                    new DraftCheck(draft.getId(), link.getDefaultCurrency()),
+                    key -> configurationChecks.activationProblemsAll(draft, key.currency()));
             if (activation.problems().isEmpty()) {
                 checks.add(ok(READY_DRAFT_ACTIVATABLE, draftSubject));
             }
@@ -216,8 +283,8 @@ public class ImportLinkReadinessService {
         }
     }
 
-    private void taskChecks(ImportLink link, CheckSubject linkSubject, List<ReadinessCheck> checks) {
-        List<CatalogImportTask> linkTasks = tasks.findByImportLinkIdOrderByIdAsc(link.getId());
+    private void taskChecks(ImportLink link, List<CatalogImportTask> linkTasks, CheckSubject linkSubject,
+                            List<ReadinessCheck> checks) {
         if (linkTasks.isEmpty()) {
             checks.add(new ReadinessCheck(LINK_HAS_NO_TASK, CheckStatus.PROBLEM, linkSubject,
                     "Import link " + link.getId() + " has no task to receive a delivery on"));
@@ -233,6 +300,31 @@ public class ImportLinkReadinessService {
                 checks.add(problem(problem, taskSubject));
             }
         }
+    }
+
+    /** De concepten (DRAFT) van een definitie, oplopend op revisienummer. */
+    private List<ImportDefinitionRevision> draftsOf(long definitionId) {
+        return revisions.findByImportDefinitionIdOrderByRevisionNumberDesc(definitionId).stream()
+                .filter(revision -> revision.getStatus() == RevisionStatus.DRAFT)
+                .sorted(Comparator.comparingInt(ImportDefinitionRevision::getRevisionNumber))
+                .toList();
+    }
+
+    private static NotFoundException linkNotFound(long linkId) {
+        return new NotFoundException("LINK_NOT_FOUND", "Import link " + linkId + " does not exist");
+    }
+
+    /** Sleutel van de activatiecontrole: hetzelfde concept met dezelfde vaste valuta (mag {@code null} zijn). */
+    private record DraftCheck(long draftId, String currency) {
+    }
+
+    /**
+     * Wat binnen één aanroep (één leestransactie) niet van de koppeling afhangt en dus gedeeld mag worden: de concepten
+     * per definitie en de activatiecontrole per (concept, valuta). Nooit over aanroepen heen.
+     */
+    private static final class Memo {
+        private final Map<Long, List<ImportDefinitionRevision>> drafts = new HashMap<>();
+        private final Map<DraftCheck, ActivationReport> activation = new HashMap<>();
     }
 
     private static ReadinessCheck ok(String code, CheckSubject subject) {

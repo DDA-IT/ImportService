@@ -4,7 +4,9 @@ import be.dda.catalogimport.service.ImportLinkQueryService;
 import be.dda.catalogimport.service.ImportLinkQueryService.ImportLinkRow;
 import be.dda.catalogimport.service.ImportLinkReadinessService;
 import be.dda.catalogimport.service.ImportLinkReadinessService.LinkReadiness;
+import be.dda.catalogimport.service.ImportLinkReadinessService.LinkReadinessSummary;
 import be.dda.catalogimport.service.PageResult;
+import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -47,6 +49,23 @@ public class CatalogImportImportLinkController {
     @GetMapping("/{linkId}/readiness")
     LinkReadiness readiness(@PathVariable("linkId") long linkId) {
         return readinessService.readiness(linkId);
+    }
+
+    /**
+     * Gereedheid van meerdere koppelingen tegelijk (beslissingslog 2026-10-23 "API-uitbreiding voor de
+     * inrichtingsschermen", punt 4): per koppeling {@code ready} en enkel de {@code PROBLEM}-regels, met hetzelfde
+     * oordeel als {@code GET /import-links/{linkId}/readiness}. {@code linkIds} komma-gescheiden of herhaald; volgorde =
+     * de aanvraag, dubbels één keer. Schrijft niets.
+     * <p>
+     * {@code READ}, niet achter {@code catalogimport.setup-api.enabled}. 200; 400 {@code READINESS_LINK_IDS_INVALID}
+     * bij geen of meer dan 100 ids; 404 {@code LINK_NOT_FOUND} voor het eerste onbekende id. Botst niet met
+     * {@code /{linkId}/readiness} (ander aantal padsegmenten).
+     */
+    @RequiresPermission(Permission.READ)
+    @GetMapping("/readiness")
+    List<LinkReadinessSummary> readinessSummaries(
+            @RequestParam(value = "linkIds", required = false) List<Long> linkIds) {
+        return readinessService.readinessSummaries(linkIds);
     }
 
     /**

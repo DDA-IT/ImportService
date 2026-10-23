@@ -2,6 +2,7 @@ package be.dda.catalogimport.dao;
 
 import be.dda.catalogimport.domain.CatalogImportTask;
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -22,6 +23,14 @@ public interface CatalogImportTaskRepository extends JpaRepository<CatalogImport
      * lezen, nooit een serialisatiepunt — daarvoor bestaat {@link #findByImportLinkIdForUpdate}.
      */
     List<CatalogImportTask> findByImportLinkIdOrderByIdAsc(Long importLinkId);
+
+    /**
+     * De taken van meerdere koppelingen in één query, <b>zonder</b> rijslot, oplopend op koppeling en daarbinnen op
+     * {@code id} (dezelfde volgorde per koppeling als {@link #findByImportLinkIdOrderByIdAsc}). Voor de bulk-
+     * gereedheidscontrole (beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen", punt 4): enkel
+     * lezen, geen N+1 over koppelingen.
+     */
+    List<CatalogImportTask> findByImportLinkIdInOrderByImportLinkIdAscIdAsc(Collection<Long> importLinkIds);
 
     /**
      * Takenlijst (Scherm 2): optioneel gefilterd op koppeling en {@code active}, vast oplopend op

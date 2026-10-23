@@ -130,6 +130,9 @@ class PermissionCoverageTest {
         // Gereedheidscontrole zonder bestand (NT-8, beslissingslog 2026-09-30 NT-spoor V1 = C): lezen, niet achter de
         // setup-vlag.
         m.put("GET /api/catalog-import/import-links/{}/readiness", "READ");
+        // Bulk-gereedheid (beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen", punt 4): zelfde recht
+        // als de enkelvoudige controle; enkel de problemen.
+        m.put("GET /api/catalog-import/import-links/readiness", "READ");
         m.put("GET /api/catalog-import/tasks", "READ");
         // Proefinlezing (NT-9, docs/design/proefinlezing-design.md par. 1 en 5): MANAGE, niet achter de setup-vlag;
         // er wordt niets bewaard, maar het is de controle vóór een levering en hoort bij wie inricht.

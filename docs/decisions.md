@@ -3348,3 +3348,36 @@ identiteitsbevestiging (de server behandelt het als identiteitswijziging). Korti
 identiteitsprofiel (FOUR_PART_WITH_DISCOUNT_CODE / THREE_PART). Herkenningslabels Leverancier/Groep/Referentie/
 Kortingscode; Groep is verplicht (zoals buildRequest). Melding "Bewaard in het concept" als eenvoudige statusmelding.
 **Bron:** bouwer-gemiddeld (E1-rapport)
+
+## 2026-10-23 — Aanmaakstandaard per koppeling: uitwerking (CD)
+**Vraag:** Uitwerking van "btw-code en eenheid als aanmaakstandaard per koppeling" (denker-zwaar). Lokale Prodis: btw `3` =
+BTW21% (uniek, actief), eenheden `ST` (Stuk) en `DS` (Doos) bestaan.
+**Beslissing:**
+- (aanbeveling gevolgd — door de mens te herzien) Opslag als additieve kolommen op `import_link` (Liquibase 030,
+  precedent `default_currency`): `default_vat_code`, `default_unit_code` (één eenheid, bij aanmaak naar factuur-, verkoop-
+  en aankoopeenheid zoals legacy), `creation_defaults_origin` (LEGACY|MANUAL) en audit (laatste wijziging). "Geen nieuwe
+  gegevensdrager" betekent "geen veld per regel" (V4). Nieuwe Prodis-lijsten `/prodis-reference/vat-codes` en
+  `/units-of-measure` (MANAGE, enkel actieve rijen, dubbele code zichtbaar); PUT `/setup/links/{id}/creation-defaults`
+  met S6-validatie. Code onbekend in Prodis bij migratie: WARNING en niet zetten (V2). Rekeningen (50/59) en
+  artikelgroep (1): later, nu enkel een melding (V3).
+- (mens, V1) Bij de overname wordt de standaard van een bestaande koppeling enkel ingevuld als die leeg is, TENZIJ de
+  importdefinitie de vlag "overschrijven" aan heeft; dan wordt de legacy-waarde overgenomen. Dat is een nieuw veld op de
+  importdefinitie; uitwerking (plaats, legacy-bron — mogelijk PSIMDHFD "Update bestand" —, standaard uit, audit) door een
+  denker vóór CD-B3. Een verschil zonder vlag geeft een waarschuwing met beide waarden.
+- Bewuste afwijking van legacy Prg_1179 (dat btw/eenheid/rekeningen bij elke wegschrijving overschreef): CatalogImport
+  past de standaard enkel toe bij aanmaak (P8); P8 moet de standaard bevriezen in de publicatiesnapshot.
+**Bron:** mens (V1) / denker-zwaar (aanmaakstandaard) / telling lokale Prodis
+
+## 2026-10-23 — Vlag "standaarden overschrijven" op de importdefinitie
+**Vraag:** Uitwerking van de vlag "overschrijven" (V1 aanmaakstandaard).
+**Beslissing:** (aanbeveling gevolgd — door de mens te herzien) Nieuwe kolom `import_definition.overwrite_creation_defaults`
+boolean not null default false + audit (`…_changed_at/_by/_by_subject`), niet op de revisie (geen invloed op
+inhoudshash/identiteit). Legacy kent geen bruikbaar equivalent (PSIMDHFD "Update bestand" sinds 2015 niet meer gelezen,
+Prg_1177); de migratie zet de vlag nooit (`updateFile` blijft NOT_MIGRATED). API additief: `overwriteCreationDefaults` op
+DefinitionRow/RevisionDetail, `PUT /setup/definitions/{id}/overwrite-creation-defaults {enabled}` (MANAGE). Gedeelde
+definitie: de vlag geldt voor alle koppelingen eronder (UI/rapport zeggen dat); G2a-kopie erft de vlag.
+APPLY-matrix bekende koppeling, per veld: leeg → invullen (LEGACY); gelijk → niets; anders + vlag uit → WARNING
+`CREATION_DEFAULT_DIFFERS_NOT_CHANGED` (beide waarden); anders + vlag aan → overschrijven (LEGACY) met
+`CREATION_DEFAULT_OVERWRITTEN`. (mens) Ook een MANUELE waarde wordt bij vlag aan overschreven, met eigen, duidelijke
+melding `CREATION_DEFAULT_MANUAL_OVERWRITTEN` (oude en nieuwe waarde, oud was manueel).
+**Bron:** mens / denker-gemiddeld (vlag overschrijven)
