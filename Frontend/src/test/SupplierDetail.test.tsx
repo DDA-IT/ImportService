@@ -291,7 +291,7 @@ describe('tab Bestand en velden', () => {
     expect(identity).toHaveTextContent('Niet gebruikt');
 
     const fields = within(view).getByTestId('read-fields');
-    expect(within(fields).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Veld', 'Bron', 'Bewerking', 'Verplicht']);
+    expect(within(fields).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Veld', 'Bron', 'Bewerking', 'Kritiek', 'Verplicht', 'Status']);
     const ean = within(fields).getByTestId('read-field-5001');
     expect(ean).toHaveTextContent('EAN-barcode');
     expect(ean).toHaveTextContent('BARCODE');
@@ -389,10 +389,15 @@ describe('tab Bestand en velden', () => {
     expect(await within(section).findByTestId('activate-revision')).toHaveTextContent('Versie activeren');
   });
 
-  it('?bewerken=1 opent het bewerkblok meteen', async () => {
+  it('?bewerken=1 zet Bewerken aan op een concept; op een actieve versie blijft het alleen-lezen', async () => {
+    await open('/setup/suppliers/1/fields?definitie=10&versie=100&bewerken=1');
+    expect(await screen.findByTestId('mode-edit')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('open-edit')).toHaveAttribute('aria-expanded', 'false');
+    cleanup();
     await open('/setup/suppliers/1/fields?definitie=10&versie=99&bewerken=1');
-    expect(await screen.findByTestId('revision-detail')).toBeInTheDocument();
-    expect(await screen.findByTestId('revision-not-editable-reason')).toBeInTheDocument();
+    expect(await screen.findByTestId('frozen-note')).toHaveTextContent('Deze versie is actief en kan niet gewijzigd worden');
+    expect(screen.queryByTestId('mode-edit')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('revision-detail')).not.toBeInTheDocument();
   });
 });
 
@@ -548,7 +553,9 @@ describe('tab Bestand en velden: kolom "Uit legacy"', () => {
       'Veld',
       'Bron',
       'Bewerking',
+      'Kritiek',
       'Verplicht',
+      'Status',
       'Uit legacy',
     ]);
     expect(within(fields).getByTestId('read-field-5001')).toHaveTextContent('regel 100 · kolom 12 · voorvoegsel 0');
@@ -566,7 +573,7 @@ describe('tab Bestand en velden: kolom "Uit legacy"', () => {
     await screen.findByTestId('revision-read-view');
     await waitFor(() => expect(calls.urls.some((url) => url.endsWith('/revisions/99/legacy-origin'))).toBe(true));
     const fields = screen.getByTestId('read-fields');
-    expect(within(fields).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Veld', 'Bron', 'Bewerking', 'Verplicht']);
+    expect(within(fields).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Veld', 'Bron', 'Bewerking', 'Kritiek', 'Verplicht', 'Status']);
     expect(screen.queryByTestId('legacy-origin-failed')).not.toBeInTheDocument();
     expect(screen.queryByTestId('legacy-uncovered')).not.toBeInTheDocument();
   });
@@ -603,7 +610,7 @@ describe('tab Bestand en velden: kolom "Uit legacy"', () => {
     renderRoutes('/setup/suppliers/1/fields?definitie=10&versie=99');
     expect(await screen.findByTestId('legacy-origin-failed')).toHaveTextContent('De herkomst uit legacy kon niet geladen worden');
     const fields = screen.getByTestId('read-fields');
-    expect(within(fields).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Veld', 'Bron', 'Bewerking', 'Verplicht']);
+    expect(within(fields).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Veld', 'Bron', 'Bewerking', 'Kritiek', 'Verplicht', 'Status']);
     expect(within(fields).getByTestId('read-field-5001')).toHaveTextContent('BARCODE');
   });
 });

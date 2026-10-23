@@ -256,6 +256,8 @@ describe('oude adresvorm ?definitionId=&revisionId=', () => {
     state.details[99] = revisionDetail(99, 10, { revisionNumber: 1, status: 'ACTIVE' });
     installSetupServer(state);
     const { router } = renderRoutes('/setup?definitionId=10&revisionId=98');
+    expect(await screen.findByTestId('mode-edit')).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByTestId('open-edit'));
     const opened = await screen.findByTestId('revision-detail');
     expect(await within(opened).findByTestId('activate-revision')).toHaveTextContent('Versie activeren');
     await waitFor(() => expect(router.state.location.pathname).toBe('/setup/suppliers/1/fields'));

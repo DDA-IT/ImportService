@@ -1445,6 +1445,7 @@ describe('NT-11c — afwijkingen, inrichting en importdefinities: geen ruwe code
     await act(async () => {
       await router.navigate('/setup/suppliers/1/fields?definitie=10&versie=100&bewerken=1');
     });
+    fireEvent.click(await screen.findByTestId('open-edit'));
     await screen.findByTestId('revision-edit-form');
     await screen.findByTestId('revision-bookmarks');
     await screen.findByTestId('revision-read-view');
@@ -1465,6 +1466,8 @@ describe('NT-11c — afwijkingen, inrichting en importdefinities: geen ruwe code
     await act(async () => {
       await router.navigate('/setup/suppliers/1/fields?definitie=10&versie=99&bewerken=1');
     });
+    await screen.findByTestId('frozen-note');
+    fireEvent.click(screen.getByTestId('open-edit'));
     await screen.findByTestId('revision-not-editable-reason');
     expectNoRawCodes(document.body, 'detail van een actieve versie');
 

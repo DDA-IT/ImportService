@@ -420,7 +420,9 @@ describe('S1-F4 — schrijfdeel van scherm 1a (opvolgrevisie / DRAFT bewerken / 
     fillReason('Prijslijst 2027');
     fireEvent.click(screen.getByRole('button', { name: 'Opvolger aanmaken' }));
 
-    // De nieuwe DRAFT wordt rechtstreeks geopend: het revisiedetail van #100 verschijnt.
+    // De nieuwe DRAFT wordt rechtstreeks geopend (Bewerken staat aan); "Meer opties" toont het revisiedetail van #100.
+    expect(await screen.findByTestId('mode-edit')).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByTestId('open-edit'));
     expect(await screen.findByTestId('revision-detail')).toBeInTheDocument();
     expect(await screen.findByTestId('revision-edit-form')).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/setup/suppliers/1/fields');

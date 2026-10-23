@@ -3333,3 +3333,18 @@ eigen woord (1 +, 2 −, 3 ×, 4 ÷, A % van kolom, 7 vertaling, 14 vertaling (b
 "berekening in legacy" (ruwe code enkel in technische details). Lijst "Niet overgenomen uit legacy" met redenen "geen
 doelveld" en "niet aanwezig in deze versie".
 **Bron:** bouwer-gemiddeld (F2-rapport)
+
+## 2026-10-23 — Parallel bouwen toegelaten (mens)
+**Vraag:** "Kan je meer agents opstarten?"
+**Beslissing (mens):** Ja. Zwaardere bouwers mogen parallel lopen op voorwaarde dat ze geen bestanden delen; elke
+backendbouwer gebruikt een eigen testschema (`run-full-tests.ps1 -Schema ci_<slice>`) en een kleine pool, zodat tests
+elkaar niet storen. De hoofdsessie commit per slice na eigen hertest.
+**Bron:** mens
+
+## 2026-10-23 — E1: keuzes editor (veldengrid, zijpaneel herkenning/basis)
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** Tot E2–E4 blijft het oude bewerkblok bereikbaar als
+"Meer opties: extra velden, filters en activeren". De schakelaar "Hoofdletters negeren" opent een klein paneel met de
+identiteitsbevestiging (de server behandelt het als identiteitswijziging). Kortingscodekolom kiezen/leegmaken zet ook het
+identiteitsprofiel (FOUR_PART_WITH_DISCOUNT_CODE / THREE_PART). Herkenningslabels Leverancier/Groep/Referentie/
+Kortingscode; Groep is verplicht (zoals buildRequest). Melding "Bewaard in het concept" als eenvoudige statusmelding.
+**Bron:** bouwer-gemiddeld (E1-rapport)
