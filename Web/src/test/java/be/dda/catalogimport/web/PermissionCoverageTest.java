@@ -154,6 +154,8 @@ class PermissionCoverageTest {
         m.put("GET /api/catalog-import/definitions/{}/revisions/{}/legacy-origin", "READ");
         // Veldcatalogus voor de bewerker (EB1, beslissingslog 2026-10-23 "Editor-API-gaten"): READ, buiten de setup-vlag.
         m.put("GET /api/catalog-import/field-catalog", "READ");
+        // Activatiecontrole van een revisie zonder bestand (EB4): READ, buiten de setup-vlag.
+        m.put("GET /api/catalog-import/definitions/{}/revisions/{}/configuration-check", "READ");
         // "/revisions/{}/successor" is endpoint E2 van docs/design/revision-successor-design.md §6
         // (bouwstap S1-X-2): de opvolgrevisie is een schrijfpad en volgt dezelfde regel als de rest van
         // de setup-API — MANAGE (sinds NT-3 niet meer achter catalogimport.setup-api.enabled).

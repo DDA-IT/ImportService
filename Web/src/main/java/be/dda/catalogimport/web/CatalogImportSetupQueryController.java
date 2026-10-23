@@ -7,6 +7,7 @@ import be.dda.catalogimport.service.RevisionLegacyOriginService.RevisionLegacyOr
 import be.dda.catalogimport.service.SetupQueryService;
 import be.dda.catalogimport.service.SetupQueryService.DefinitionRow;
 import be.dda.catalogimport.service.SetupQueryService.FieldCatalogView;
+import be.dda.catalogimport.service.SetupQueryService.RevisionConfigurationCheck;
 import be.dda.catalogimport.service.SetupQueryService.RevisionDetail;
 import be.dda.catalogimport.service.SetupQueryService.RevisionRow;
 import be.dda.catalogimport.service.SetupQueryService.SourceOrganisationRow;
@@ -100,6 +101,22 @@ public class CatalogImportSetupQueryController {
     RevisionDetail revision(@PathVariable("definitionId") long definitionId,
                             @PathVariable("revisionId") long revisionId) {
         return queries.getRevisionDetail(definitionId, revisionId);
+    }
+
+    /**
+     * De activatiecontrole van één revisie zonder bestand (EB4, beslissingslog 2026-10-23 "Editor-API-gaten"):
+     * dezelfde volgorde en codes als het activeren (valuta {@code null}); de eerste PROBLEM-code is de code die
+     * {@code activate} zou geven en {@code activatable} geldt precies wanneer activeren slaagt. Alleen-lezen,
+     * controles per koppeling blijven in {@code GET /import-links/{id}/readiness}.
+     *
+     * @throws be.dda.catalogimport.service.NotFoundException 404 {@code DEFINITION_NOT_FOUND} of
+     *                                                        {@code REVISION_NOT_FOUND}
+     */
+    @RequiresPermission(Permission.READ)
+    @GetMapping("/definitions/{definitionId}/revisions/{revisionId}/configuration-check")
+    RevisionConfigurationCheck configurationCheck(@PathVariable("definitionId") long definitionId,
+                                                  @PathVariable("revisionId") long revisionId) {
+        return queries.configurationCheck(definitionId, revisionId);
     }
 
     /**

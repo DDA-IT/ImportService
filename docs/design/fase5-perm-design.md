@@ -32,6 +32,7 @@ leidt het effectieve recht af (één plek: `CurrentActor`/`PermissionService`). 
 | `GET /import-links/readiness?linkIds=` (beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen" punt 4, B4: bulk-gereedheid van max. 100 koppelingen, enkel de problemen, zelfde oordeel als het enkelvoudige endpoint; schrijft niets, niet achter de setup-vlag) | READ |
 | `GET /source-organisations`, `GET /definitions`, `GET /definitions/{id}/revisions`, `GET /definitions/{id}/revisions/{rid}` (S1-B1 en E1 van `revision-successor-design.md` §6; inrichting lezen, niet achter de setup-vlag) | READ |
 | `GET /definitions/{id}/revisions/{rid}/legacy-origin` (beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen" punt 1, B1: enkel de PSIMPDEF-regels uit `bundle_json.definition.lines`, nooit bestemming/login/secret; de ontvangst zelf blijft MANAGE) | READ |
+| `GET /definitions/{d}/revisions/{r}/configuration-check` (EB4: activatiecontrole van een revisie zonder bestand, pariteit met activeren; schrijft niets, niet achter de setup-vlag) | READ |
 | `GET /field-catalog` (beslissingslog 2026-10-23 "Editor-API-gaten" EB1: veldcatalogus met standaardkritiek per veld en de zeven revisievelden voor de bewerker; schrijft niets, niet achter de setup-vlag) | READ |
 | `GET /setup/overview` (enige setup-pad dat nog achter de setup-vlag staat, §5) | READ |
 | `GET /templates`, `/…/bookmarks`, `/…/materialisations`, `GET /links/{id}/bookmark-values` (sinds NT-3 niet meer achter de setup-vlag, §5) | READ |

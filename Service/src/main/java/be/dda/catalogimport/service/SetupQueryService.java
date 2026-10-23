@@ -26,6 +26,10 @@ import be.dda.catalogimport.domain.LegacyConfigDefinitionOrigin;
 import be.dda.catalogimport.domain.RevisionCriticalityField;
 import be.dda.catalogimport.domain.RevisionStatus;
 import be.dda.catalogimport.domain.SourceOrganisation;
+import be.dda.catalogimport.service.ImportLinkReadinessService.CheckStatus;
+import be.dda.catalogimport.service.ImportLinkReadinessService.CheckSubject;
+import be.dda.catalogimport.service.ImportLinkReadinessService.ReadinessCheck;
+import be.dda.catalogimport.service.ImportLinkReadinessService.SubjectType;
 import be.dda.catalogimport.service.SetupService.FieldCriticalityView;
 import be.dda.catalogimport.service.SetupService.FilterView;
 import be.dda.catalogimport.service.SetupService.MappingView;
@@ -221,6 +225,7 @@ public class SetupQueryService {
     private final LegacyConfigDefinitionOriginRepository definitionOrigins;
     private final LegacyConfigRevisionOriginRepository revisionOrigins;
     private final ImportFieldCatalogRepository fieldCatalog;
+    private final ChainConfigurationChecks configurationChecks;
 
     public SetupQueryService(SourceOrganisationRepository organisations, ImportDefinitionRepository definitions,
                              ImportDefinitionRevisionRepository revisions,
@@ -233,8 +238,10 @@ public class SetupQueryService {
                              ImportFieldTransformStepRepository transformSteps,
                              LegacyConfigDefinitionOriginRepository definitionOrigins,
                              LegacyConfigRevisionOriginRepository revisionOrigins,
-                             ImportFieldCatalogRepository fieldCatalog) {
+                             ImportFieldCatalogRepository fieldCatalog,
+                             ChainConfigurationChecks configurationChecks) {
         this.fieldCatalog = fieldCatalog;
+        this.configurationChecks = configurationChecks;
         this.definitionOrigins = definitionOrigins;
         this.revisionOrigins = revisionOrigins;
         this.valueMaps = valueMaps;
@@ -248,6 +255,72 @@ public class SetupQueryService {
         this.bookmarks = bookmarks;
         this.bookmarkUsages = bookmarkUsages;
         this.bookmarkValues = bookmarkValues;
+    }
+
+    /**
+     * EB4: het antwoord van {@code GET /definitions/{d}/revisions/{r}/configuration-check}: wat het activeren van deze
+     * revisie nu zou blokkeren, zonder te activeren en zonder bestand.
+     *
+     * @param activatable {@code true} precies wanneer er geen enkele {@link CheckStatus#PROBLEM} is, dus wanneer
+     *                    {@code activate} zou slagen (pariteit)
+     */
+    public record RevisionConfigurationCheck(long revisionId, String revisionStatus, boolean activatable,
+                                             List<ReadinessCheck> checks) {
+    }
+
+    /**
+     * EB4 (beslissingslog 2026-10-23 "Editor-API-gaten"): de activatiecontrole van een revisie als checklist, met
+     * dezelfde volgorde en codes als {@code SetupService#activateRevision}: (1) niet-DRAFT geeft enkel
+     * {@code REVISION_NOT_ACTIVATABLE}; (2) alle configuratiebevindingen van
+     * {@link ChainConfigurationChecks#activationProblemsAll} met valuta {@code null} (zoals de activatie, NT-14-2),
+     * gevolgd door {@code INFO_CONFIG_CHECKS_SKIPPED} als er controles overgeslagen werden; (3) anders
+     * {@code READY_DRAFT_ACTIVATABLE}. De eerste PROBLEM-code is de code die {@code activate} zou geven. Controles per
+     * koppeling (LINK-bookmarks, valuta, taken) horen niet hier maar in de gereedheidscontrole van de koppeling.
+     *
+     * @throws NotFoundException {@code DEFINITION_NOT_FOUND}, {@code REVISION_NOT_FOUND} (ook een revisie van een
+     *                           andere definitie)
+     */
+    public RevisionConfigurationCheck configurationCheck(long definitionId, long revisionId) {
+        if (!definitions.existsById(definitionId)) {
+            throw new NotFoundException("DEFINITION_NOT_FOUND",
+                    "Import definition " + definitionId + " does not exist");
+        }
+        ImportDefinitionRevision revision = revisions.findById(revisionId)
+                .orElseThrow(() -> new NotFoundException("REVISION_NOT_FOUND",
+                        "Definition revision " + revisionId + " does not exist"));
+        if (!revision.getImportDefinition().getId().equals(definitionId)) {
+            throw new NotFoundException("REVISION_NOT_FOUND", "Definition revision " + revisionId
+                    + " does not belong to import definition " + definitionId);
+        }
+        CheckSubject subject = new CheckSubject(SubjectType.REVISION, revisionId);
+        List<ReadinessCheck> checks = new ArrayList<>();
+        if (revision.getStatus() != RevisionStatus.DRAFT) {
+            String detail = revision.getStatus() == RevisionStatus.ACTIVE
+                    ? "Revision " + revisionId + " is already active"
+                    : "Revision " + revisionId + " is " + revision.getStatus()
+                            + "; only a DRAFT revision is activated by this setup API";
+            checks.add(new ReadinessCheck("REVISION_NOT_ACTIVATABLE", CheckStatus.PROBLEM, subject, detail));
+            return new RevisionConfigurationCheck(revisionId, revision.getStatus().name(), false, List.copyOf(checks));
+        }
+        ChainConfigurationChecks.ActivationReport activation = configurationChecks.activationProblemsAll(revision, null);
+        for (ChainConfigurationChecks.ReportedProblem reported : activation.problems()) {
+            ChainConfigurationChecks.Problem problem = reported.problem();
+            String code = problem.code() == null || problem.code().isBlank()
+                    ? ImportLinkReadinessService.CONFIG_INVALID : problem.code();
+            checks.add(new ReadinessCheck(code, CheckStatus.PROBLEM, subject, problem.message(),
+                    reported.fieldName(), reported.revisionField()));
+        }
+        if (activation.problems().isEmpty()) {
+            checks.add(new ReadinessCheck(ImportLinkReadinessService.READY_DRAFT_ACTIVATABLE, CheckStatus.OK, subject,
+                    null));
+        }
+        if (!activation.skippedBecause().isEmpty()) {
+            checks.add(new ReadinessCheck(ImportLinkReadinessService.INFO_CONFIG_CHECKS_SKIPPED, CheckStatus.INFO,
+                    subject, "Checks depending on " + activation.skippedBecause() + " were not evaluated", null, null,
+                    activation.skippedBecause()));
+        }
+        return new RevisionConfigurationCheck(revisionId, revision.getStatus().name(),
+                activation.problems().isEmpty(), List.copyOf(checks));
     }
 
     /**
