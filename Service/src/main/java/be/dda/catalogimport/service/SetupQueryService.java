@@ -10,6 +10,8 @@ import be.dda.catalogimport.dao.ImportFieldTransformStepRepository;
 import be.dda.catalogimport.dao.ImportFieldValueMapRepository;
 import be.dda.catalogimport.dao.ImportRecordFilterRepository;
 import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
+import be.dda.catalogimport.dao.LegacyConfigDefinitionOriginRepository;
+import be.dda.catalogimport.dao.LegacyConfigRevisionOriginRepository;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import be.dda.catalogimport.domain.DefinitionUsageType;
 import be.dda.catalogimport.domain.ImportDefinition;
@@ -17,6 +19,7 @@ import be.dda.catalogimport.domain.ImportDefinitionBookmark;
 import be.dda.catalogimport.domain.ImportDefinitionBookmarkUsage;
 import be.dda.catalogimport.domain.ImportDefinitionBookmarkValue;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
+import be.dda.catalogimport.domain.LegacyConfigDefinitionOrigin;
 import be.dda.catalogimport.domain.RevisionStatus;
 import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.service.SetupService.FieldCriticalityView;
@@ -29,9 +32,13 @@ import be.dda.catalogimport.service.TemplateBookmarkService.UsageView;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -62,16 +69,58 @@ public class SetupQueryService {
         }
     }
 
-    /** {@code activeRevisionId} is {@code null} als er geen {@link RevisionStatus#ACTIVE}-revisie is. */
+    /** {@code legacyOriginKind}: de gedeelde {@code OWN_DEFINITION} van een legacy-groep (S7, of een S2-rij). */
+    public static final String LEGACY_ORIGIN_MIGRATED_SHARED = "MIGRATED_SHARED";
+    /** {@code legacyOriginKind}: het {@code REUSABLE_TEMPLATE} van een legacy-groep ({@code template_definition_id}). */
+    public static final String LEGACY_ORIGIN_MIGRATED_TEMPLATE = "MIGRATED_TEMPLATE";
+    /** {@code legacyOriginKind}: de eigen kopie van een losgekoppelde interface (G2a). */
+    public static final String LEGACY_ORIGIN_MIGRATED_DETACHED = "MIGRATED_DETACHED";
+
+    /**
+     * Eén importdefinitie in de lijst {@code GET /definitions}.
+     * <ul>
+     *   <li>{@code activeRevisionId}/{@code activeRevisionNumber}: de {@link RevisionStatus#ACTIVE}-revisie, of
+     *       {@code null} als die er niet is;</li>
+     *   <li>{@code draftRevisionId}/{@code draftRevisionNumber}: de {@link RevisionStatus#DRAFT}-revisie (hoogstens één,
+     *       NT-13), of {@code null};</li>
+     *   <li>{@code sourceOrganisationActive}: of de bronorganisatie actief is (een inactieve toont het scherm als
+     *       "Inactief");</li>
+     *   <li>{@code basedOnDefinitionId}: {@code import_definition.based_on_definition_id} — het sjabloon waaruit de
+     *       definitie gematerialiseerd is (ook de gedeelde definitie van een legacy-groep), of de gedeelde definitie
+     *       waarvan een losgekoppelde kopie stamt (G2a); {@code null} voor een definitie die nergens op gebaseerd
+     *       is;</li>
+     *   <li>{@code legacyOriginKind}: {@value #LEGACY_ORIGIN_MIGRATED_SHARED}, {@value #LEGACY_ORIGIN_MIGRATED_TEMPLATE}
+     *       of {@value #LEGACY_ORIGIN_MIGRATED_DETACHED} volgens {@code legacy_config_definition_origin}, {@code null}
+     *       voor een handmatige definitie;</li>
+     *   <li>{@code legacyDefinitionCodes}: de legacy-definitiecodes van die herkomstrijen, gesorteerd en zonder dubbels;
+     *       leeg voor een handmatige definitie.</li>
+     * </ul>
+     * Beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen", punt 5 (additief).
+     */
     public record DefinitionRow(long id, String code, String name, String usageType, long sourceOrganisationId,
-                                String sourceOrganisationCode, Long activeRevisionId) {
+                                String sourceOrganisationCode, Long activeRevisionId, Integer activeRevisionNumber,
+                                Long draftRevisionId, Integer draftRevisionNumber, boolean sourceOrganisationActive,
+                                Long basedOnDefinitionId, String legacyOriginKind,
+                                List<String> legacyDefinitionCodes) {
     }
 
-    public record RevisionRow(long id, long definitionId, int revisionNumber, String status) {
+    /**
+     * Eén revisie in de lijst {@code GET /definitions/{id}/revisions}. {@code approvedAt}/{@code approvedBy},
+     * {@code changeReason} en {@code basedOnRevisionId} zijn {@code null} als ze niet ingevuld zijn (bv. een DRAFT is
+     * nooit goedgekeurd). {@code fromLegacy}: de revisie heeft een eigen {@code legacy_config_revision_origin}-rij, dus
+     * haar inhoud werd door een legacy-overname geschreven (een handmatige opvolger heeft die niet). Beslissingslog
+     * 2026-10-23 "API-uitbreiding voor de inrichtingsschermen", punt 2 (additief).
+     */
+    public record RevisionRow(long id, long definitionId, int revisionNumber, String status, Instant createdAt,
+                              String createdBy, Instant approvedAt, String approvedBy, String changeReason,
+                              Long basedOnRevisionId, boolean fromLegacy) {
 
-        private static RevisionRow of(ImportDefinitionRevision revision) {
+        private static RevisionRow of(ImportDefinitionRevision revision, boolean fromLegacy) {
+            ImportDefinitionRevision basedOn = revision.getBasedOnRevision();
             return new RevisionRow(revision.getId(), revision.getImportDefinition().getId(),
-                    revision.getRevisionNumber(), revision.getStatus().name());
+                    revision.getRevisionNumber(), revision.getStatus().name(), revision.getCreatedAt(),
+                    revision.getCreatedBy(), revision.getApprovedAt(), revision.getApprovedBy(),
+                    revision.getChangeReason(), basedOn == null ? null : basedOn.getId(), fromLegacy);
         }
     }
 
@@ -142,6 +191,8 @@ public class SetupQueryService {
     private final ImportDefinitionBookmarkValueRepository bookmarkValues;
     private final ImportFieldValueMapRepository valueMaps;
     private final ImportFieldTransformStepRepository transformSteps;
+    private final LegacyConfigDefinitionOriginRepository definitionOrigins;
+    private final LegacyConfigRevisionOriginRepository revisionOrigins;
 
     public SetupQueryService(SourceOrganisationRepository organisations, ImportDefinitionRepository definitions,
                              ImportDefinitionRevisionRepository revisions,
@@ -151,7 +202,11 @@ public class SetupQueryService {
                              ImportDefinitionBookmarkUsageRepository bookmarkUsages,
                              ImportDefinitionBookmarkValueRepository bookmarkValues,
                              ImportFieldValueMapRepository valueMaps,
-                             ImportFieldTransformStepRepository transformSteps) {
+                             ImportFieldTransformStepRepository transformSteps,
+                             LegacyConfigDefinitionOriginRepository definitionOrigins,
+                             LegacyConfigRevisionOriginRepository revisionOrigins) {
+        this.definitionOrigins = definitionOrigins;
+        this.revisionOrigins = revisionOrigins;
         this.valueMaps = valueMaps;
         this.transformSteps = transformSteps;
         this.organisations = organisations;
@@ -186,7 +241,9 @@ public class SetupQueryService {
                                                       Integer page, Integer size) {
         PageRequest pageRequest = pageRequest(page, size);
         Page<ImportDefinition> result = definitions.findDefinitionRows(sourceOrganisationId, usageType, pageRequest);
-        return PageResult.of(result, this::definitionRow);
+        DefinitionPageLookups lookups = definitionPageLookups(
+                result.getContent().stream().map(ImportDefinition::getId).toList());
+        return PageResult.of(result, definition -> definitionRow(definition, lookups));
     }
 
     /**
@@ -202,7 +259,13 @@ public class SetupQueryService {
         }
         PageRequest pageRequest = pageRequest(page, size);
         Page<ImportDefinitionRevision> result = revisions.findByDefinitionId(definitionId, pageRequest);
-        return PageResult.of(result, RevisionRow::of);
+        // Eén extra query per pagina: welke revisies een eigen legacy-herkomstrij (020-4) hebben.
+        List<Long> pageIds = result.getContent().stream().map(ImportDefinitionRevision::getId).toList();
+        Set<Long> fromLegacy = new HashSet<>();
+        if (!pageIds.isEmpty()) {
+            revisionOrigins.findByRevisionIdIn(pageIds).forEach(origin -> fromLegacy.add(origin.getRevisionId()));
+        }
+        return PageResult.of(result, revision -> RevisionRow.of(revision, fromLegacy.contains(revision.getId())));
     }
 
     /**
@@ -322,14 +385,88 @@ public class SetupQueryService {
                 mappings, filters, fieldCriticalities, bookmarks, bookmarkValues);
     }
 
-    private DefinitionRow definitionRow(ImportDefinition definition) {
-        Long activeRevisionId = revisions
-                .findByImportDefinitionIdAndStatus(definition.getId(), RevisionStatus.ACTIVE)
-                .map(ImportDefinitionRevision::getId)
-                .orElse(null);
-        return new DefinitionRow(definition.getId(), definition.getCode(), definition.getDescription(),
-                definition.getUsageType().name(), definition.getSourceOrganisation().getId(),
-                definition.getSourceOrganisation().getCode(), activeRevisionId);
+    /**
+     * Wat {@link DefinitionRow} per definitie van één pagina nodig heeft, met een vast aantal bulkqueries per pagina in
+     * plaats van één (of meer) per rij.
+     */
+    private record DefinitionPageLookups(Map<Long, ImportDefinitionRevision> activeByDefinition,
+                                         Map<Long, ImportDefinitionRevision> draftByDefinition,
+                                         Map<Long, List<LegacyConfigDefinitionOrigin>> originsByDefinition,
+                                         Map<Long, List<LegacyConfigDefinitionOrigin>> originsByTemplate) {
+    }
+
+    private DefinitionPageLookups definitionPageLookups(List<Long> definitionIds) {
+        Map<Long, ImportDefinitionRevision> active = new HashMap<>();
+        Map<Long, ImportDefinitionRevision> draft = new HashMap<>();
+        Map<Long, List<LegacyConfigDefinitionOrigin>> byDefinition = new HashMap<>();
+        Map<Long, List<LegacyConfigDefinitionOrigin>> byTemplate = new HashMap<>();
+        if (definitionIds.isEmpty()) {
+            return new DefinitionPageLookups(active, draft, byDefinition, byTemplate);
+        }
+        // Hoogstens één ACTIVE en één DRAFT per definitie (beide ook in de database afgedwongen).
+        for (ImportDefinitionRevision revision : revisions.findByImportDefinitionIdInAndStatusIn(definitionIds,
+                List.of(RevisionStatus.ACTIVE, RevisionStatus.DRAFT))) {
+            Long definitionId = revision.getImportDefinition().getId();
+            if (revision.getStatus() == RevisionStatus.ACTIVE) {
+                active.put(definitionId, revision);
+            } else {
+                draft.put(definitionId, revision);
+            }
+        }
+        definitionOrigins.findByImportDefinitionIdIn(definitionIds).forEach(origin -> byDefinition
+                .computeIfAbsent(origin.getImportDefinitionId(), id -> new ArrayList<>()).add(origin));
+        definitionOrigins.findByTemplateDefinitionIdIn(definitionIds).forEach(origin -> byTemplate
+                .computeIfAbsent(origin.getTemplateDefinitionId(), id -> new ArrayList<>()).add(origin));
+        return new DefinitionPageLookups(active, draft, byDefinition, byTemplate);
+    }
+
+    private static DefinitionRow definitionRow(ImportDefinition definition, DefinitionPageLookups lookups) {
+        Long id = definition.getId();
+        ImportDefinitionRevision active = lookups.activeByDefinition().get(id);
+        ImportDefinitionRevision draft = lookups.draftByDefinition().get(id);
+        List<LegacyConfigDefinitionOrigin> own = lookups.originsByDefinition().getOrDefault(id, List.of());
+        List<LegacyConfigDefinitionOrigin> asTemplate = lookups.originsByTemplate().getOrDefault(id, List.of());
+        ImportDefinition basedOn = definition.getBasedOnDefinition();
+        SourceOrganisation organisation = definition.getSourceOrganisation();
+        return new DefinitionRow(id, definition.getCode(), definition.getDescription(),
+                definition.getUsageType().name(), organisation.getId(), organisation.getCode(),
+                active == null ? null : active.getId(), active == null ? null : active.getRevisionNumber(),
+                draft == null ? null : draft.getId(), draft == null ? null : draft.getRevisionNumber(),
+                organisation.isActive(), basedOn == null ? null : basedOn.getId(),
+                legacyOriginKind(own, asTemplate), legacyDefinitionCodes(own, asTemplate));
+    }
+
+    /**
+     * De soort legacy-herkomst volgens {@code legacy_config_definition_origin} (zoals {@code LegacyConfigApplyService}
+     * ze vastlegt): een eigen losgekoppelde-kopierij (G2a) → {@value #LEGACY_ORIGIN_MIGRATED_DETACHED}; een eigen
+     * groepsrij ({@code import_definition_id}, S2/S7) → {@value #LEGACY_ORIGIN_MIGRATED_SHARED}; sjabloon van een groep
+     * ({@code template_definition_id}, S7) → {@value #LEGACY_ORIGIN_MIGRATED_TEMPLATE}; geen rij → {@code null}.
+     */
+    private static String legacyOriginKind(List<LegacyConfigDefinitionOrigin> own,
+                                           List<LegacyConfigDefinitionOrigin> asTemplate) {
+        if (own.stream().anyMatch(LegacyConfigDefinitionOrigin::isDetached)) {
+            return LEGACY_ORIGIN_MIGRATED_DETACHED;
+        }
+        if (!own.isEmpty()) {
+            return LEGACY_ORIGIN_MIGRATED_SHARED;
+        }
+        return asTemplate.isEmpty() ? null : LEGACY_ORIGIN_MIGRATED_TEMPLATE;
+    }
+
+    /** De komma-gescheiden {@code legacy_definition_codes} van alle betrokken herkomstrijen, gesorteerd, uniek. */
+    private static List<String> legacyDefinitionCodes(List<LegacyConfigDefinitionOrigin> own,
+                                                      List<LegacyConfigDefinitionOrigin> asTemplate) {
+        Set<String> codes = new TreeSet<>();
+        for (List<LegacyConfigDefinitionOrigin> rows : List.of(own, asTemplate)) {
+            for (LegacyConfigDefinitionOrigin row : rows) {
+                for (String code : row.getLegacyDefinitionCodes().split(",")) {
+                    if (!code.isBlank()) {
+                        codes.add(code.strip());
+                    }
+                }
+            }
+        }
+        return List.copyOf(codes);
     }
 
     /** Sortering staat al vast in de {@code @Query} van de gebruikte repositorymethode. */

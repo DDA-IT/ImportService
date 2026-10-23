@@ -1,6 +1,7 @@
 package be.dda.catalogimport.dao;
 
 import be.dda.catalogimport.domain.LegacyConfigDefinitionOrigin;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -32,6 +33,18 @@ public interface LegacyConfigDefinitionOriginRepository extends JpaRepository<Le
     List<LegacyConfigDefinitionOrigin> findByImportDefinitionIdOrderByIdAsc(Long importDefinitionId);
 
     boolean existsByImportDefinitionId(Long importDefinitionId);
+
+    /**
+     * De herkomstrijen (groepen én losgekoppelde kopieën) van meerdere definities in één query — voor
+     * {@code GET /definitions} (beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen", punt 5).
+     */
+    List<LegacyConfigDefinitionOrigin> findByImportDefinitionIdIn(Collection<Long> importDefinitionIds);
+
+    /**
+     * De groepen waarvan een van deze definities het sjabloon is ({@code template_definition_id}, S7) — idem, om een
+     * gemigreerd sjabloon te herkennen. Een losgekoppelde kopie heeft nooit een sjabloon.
+     */
+    List<LegacyConfigDefinitionOrigin> findByTemplateDefinitionIdIn(Collection<Long> templateDefinitionIds);
 
     /**
      * S7: de <b>groepen</b> van een leverancier in een omgeving/dossier, om een gedeelde definitie ook op de legacy-code

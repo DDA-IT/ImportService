@@ -23,6 +23,15 @@ public interface ImportDefinitionRevisionRepository extends JpaRepository<Import
     List<ImportDefinitionRevision> findByImportDefinitionIdOrderByRevisionNumberDesc(Long importDefinitionId);
 
     /**
+     * De revisies met een van deze statussen van meerdere definities in één query — voor
+     * {@code GET /definitions} (beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen", punt 5):
+     * de ACTIVE en de DRAFT revisie per definitie van één pagina, zonder een query per rij. Per definitie is er
+     * hoogstens één ACTIVE en hoogstens één DRAFT revisie (beide ook op databaseniveau afgedwongen, NT-13).
+     */
+    List<ImportDefinitionRevision> findByImportDefinitionIdInAndStatusIn(Collection<Long> importDefinitionIds,
+                                                                         Collection<RevisionStatus> statuses);
+
+    /**
      * De revisies van meerdere definities in één keer, met hun herkomstrevisie meegeladen — voor de
      * keuzelijst {@code GET /templates/{id}/materialisations} (bouwstap 5d). Zonder de
      * {@code left join fetch} zou elke rij van die lijst een extra query kosten om de sjabloonversie te

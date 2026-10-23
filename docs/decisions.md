@@ -3279,3 +3279,20 @@ tekenset uit de revisie. (4) Nieuw READ-endpoint `GET /import-links/readiness?li
 gememoïseerd per concept; pariteit met het enkelvoudige endpoint); dashboard krijgt reden `LINK_CHECK_FAILED`.
 (6) "Opmerking" vervalt (geen veld, geen businessreden). Volgorde: B1 → F1 → B2 → F2 → B3 → F3 → B4 → F4.
 **Bron:** mens / denker-zwaar (API-uitbreiding)
+
+## 2026-10-23 — Nieuwe bewerkervaring "Bestand en velden" (ontwerp, mock eerst)
+**Vraag:** De mens vond het bewerken van een versie (lang formulier "Concept aanpassen" + losse lijsten) niet intuïtief:
+"geen overzicht van de velden".
+**Beslissing (aanbeveling gevolgd — door de mens te herzien; bouw pas na akkoord op de mock):** Het tabblad "Bestand en
+velden" wordt ook de editor: zelfde lay-out in lezen en bewerken, schakelaar Bekijken|Bewerken enkel op een concept
+(O3). Kern = één Velden-grid (Herkenning, Basis, Extra velden, Nog niet gekoppeld) met kolommen Veld | Bron | Bewerking |
+Kritiek | Verplicht | Status; bewerken per rij in een zijpaneel (O5), "Veld toevoegen" uit de catalogus. Eén doorlopende
+pagina met ankerchips (O2): Velden, Filters (als zinnen), Vertalingen, Bestandsopbouw, Drempels (ingeklapt), Invulpunten
+(alleen-lezen); herkomst/technische details ingeklapt. Conceptbalk met diff t.o.v. de basisversie (client-side), reden
+optioneel inline (O4), stappen Aanpassen → Controleren → Activeren. Direct opslaan per paneel/sectie (O1; staged/atomair
+batchen niet). Gedeelde definitie bewerkbaar met impactbanner "geldt voor n koppelingen" (O6). Kolomvoorbeeld via
+uitbreiding van de proefinlezing met ruwe cellen (O7, gap G3). Verkoopprijs 1–5 enkel weergave-groep (O8). Kritiek op
+kernrijen alleen-lezen tot G5 (O9). Oude componenten (RevisionDetailSection/RevisionEditForm) verdwijnen in een eigen
+slice (O10). API-gaps G1 veldcatalogus lezen, G2 filter vervangen (PUT), G3 voorbeeldcellen proefinlezing, G4 droge
+configuratiecontrole, G5 kritiek wijzigen/verwijderen: later via denker-zwaar.
+**Bron:** denker-gemiddeld (ontwerp bewerkervaring) / mens (feedback)
