@@ -55,6 +55,36 @@ public interface ExternalCredentialRepository extends JpaRepository<ExternalCred
     List<KeyIdCount> countRowsPerEncryptionKeyId();
 
     /**
+     * Eén (koppeling, credentialstatus)-paar voor {@code credentialState} op {@code GET /import-links} (beslissingslog
+     * 2026-10-23 "API-uitbreiding voor de inrichtingsschermen", punt 3). Bewust enkel het koppeling-id en de status:
+     * nooit {@code credentialRef}, label, gebonden host of ciphertext (L7b; de lijst is READ).
+     */
+    interface LinkCredentialStatus {
+        Long getImportLinkId();
+
+        ExternalCredentialStatus getStatus();
+    }
+
+    /**
+     * De statussen van de credentials die een legacy-overname ({@code legacy_config_origin.credential_id}, S4) aan
+     * deze koppelingen hing. Een koppeling zonder zo'n credential komt niet voor; dubbele paren zijn weggefilterd.
+     */
+    @Query("select distinct o.importLinkId as importLinkId, c.status as status from LegacyConfigOrigin o "
+            + "join ExternalCredential c on c.id = o.credentialId where o.importLinkId in :linkIds")
+    List<LinkCredentialStatus> findLegacyOriginCredentialStatuses(@Param("linkIds") Collection<Long> linkIds);
+
+    /**
+     * De statussen van de credentials die via een taak van deze koppelingen bereikt worden: taak →
+     * gekoppelde leveringsconfiguratieversie → verbindingsprofielversie → credential (LC-2/K-4a). Een taak zonder
+     * leveringsconfiguratie telt niet mee; een koppeling zonder zo'n taak komt niet voor; dubbele paren zijn
+     * weggefilterd. Alle taken tellen mee, ook uitgeschakelde.
+     */
+    @Query("select distinct t.importLink.id as importLinkId, c.status as status from CatalogImportTask t "
+            + "join t.deliveryConfigurationVersion dcv join dcv.connectionProfileVersion cpv "
+            + "join ExternalCredential c on c.id = cpv.credentialId where t.importLink.id in :linkIds")
+    List<LinkCredentialStatus> findTaskChainCredentialStatuses(@Param("linkIds") Collection<Long> linkIds);
+
+    /**
      * Kandidaten voor herversleutelen (K-2b): {@code status}-rijen (ACTIVE) onder een ander sleutel-ID dan de actieve,
      * waarvan het sleutel-ID in de ring staat. Rijen onder een onbekend sleutel-ID (V5/A6) en ingetrokken rijen
      * (geen ciphertext) komen er nooit in voor.
