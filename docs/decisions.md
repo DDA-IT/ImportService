@@ -3130,3 +3130,21 @@ test-only configuratie (`Web/src/test/resources/config/application.yml`, voorran
 schema (`ci_fulltest`) doorgeven. Productiecode en profielen blijven ongewijzigd. Lokale data in `public` op 2026-10-22
 op verzoek van de mens gewist (behalve `databasechangelog*` en de seed `import_field_catalog`).
 **Bron:** mens (vraag) / hoofdsessie (technische invulling; klein, zonder architectuurimpact)
+
+## 2026-10-23 — Legacy-config: ArtImp_Key_LevGrp=N en dode sleutelvlaggen; leverancierskaart (CALC 7) op regel 9
+**Vraag:** Twee blokkerende PREVIEW-meldingen (`IDENTITY_PROFILE_UNSUPPORTED` bij `ArtImp_Key_LevGrp=N`,
+`IDENTITY_TRANSFORM_UNSUPPORTED` bij CALC 7 op PSIMPDEF#9) deels automatiseren. Analyse denker-zwaar (vault Prg_1170,
+Prg_1171, Prg_1179, Prg_1223, Prg_1232, Prg_1472) + telling lokale PRODISWEB (read-only): 142 importinterfaces, alle
+`ArtImp_Art/Bib=B`; 9 met LevGrp=N; Key_Lev/RefLev altijd Y, Key_Barcode altijd N; CALC 7 op regel 9 in 8 gebruikte
+importsoorten (VROOAM, VROOAM2/3, VROOAMIC/IC2, VR_WILMINK, …), tot 24 verschillende leveranciers per importsoort,
+map-VALUE max. 5 tekens.
+**Beslissing:** (1) LevGrp=N (enkel bij `ArtImp_Art/Bib=B` en regel 10 met kolom of vaste waarde) wordt overgenomen als
+THREE_PART (FOUR_PART bij Key_Korting=Y) met WARNING `IDENTITY_GROUP_INHERITANCE_NOT_MIGRATED`: regels zonder groep
+worden zichtbaar verworpen, waar legacy de groep van het bestaande bibliotheekartikel overnam. Identiteitsdefinitie
+(2026-09-18) ongewijzigd; geen erven via Prodis. `Art/Bib=A` of afwezig blokkeert. (2) `ArtImp_Key_Lev`, `Key_RefLev` en
+`Key_Barcode` hebben in legacy geen effect en blokkeren niet meer (NOT_MIGRATED, reden "geen effect in legacy").
+(3) CALC 15 (Upper) op regel 9/10/11 geldt als geen bewerking (legacy doet Upper toch). (4) CALC 7 op regel 9
+(leverancierskaart, meerdere leveranciers per koppeling): eerst een ontwerp door denker-zwaar (miss = regel verwerpen,
+nooit stil de bronwaarde; mapwijziging = identiteitswijziging; controle tegen Prodis); de mens beslist daarna. Tot dan
+blijft het blokkeren.
+**Bron:** mens / denker-zwaar (analyse identiteitsblokkades)
