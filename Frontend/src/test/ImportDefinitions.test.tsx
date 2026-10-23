@@ -894,3 +894,103 @@ describe('importdefinitiedetail: kolom "Uit legacy"', () => {
     expect(screen.getByTestId('read-fields')).toBeInTheDocument();
   });
 });
+
+describe('importdefinitiedetail: vlag "standaarden overschrijven" (CD-F)', () => {
+  const LABEL = 'Standaarden van koppelingen overschrijven bij legacy-overname';
+  const WARNING =
+    'Bij een overname uit legacy worden btw-code en eenheid van alle koppelingen overschreven, ook manueel ingestelde waarden.';
+
+  function withFlag(definitionId: number, enabled: boolean): SetupState {
+    const s = state();
+    const row = s.definitions.find((candidate) => (candidate as { id: number }).id === definitionId) as Record<string, unknown>;
+    row.overwriteCreationDefaults = enabled;
+    return s;
+  }
+
+  it('toont de rij in de gegevens met "Uit" als de vlag uit staat of ontbreekt, zonder waarschuwing', async () => {
+    await openDetail('/templates/11');
+    expect(screen.getByTestId('definition-data')).toHaveTextContent(LABEL);
+    expect(screen.getByTestId('definition-overwrite-value')).toHaveTextContent(/^Uit$/);
+    expect(screen.queryByTestId('definition-overwrite-warning')).not.toBeInTheDocument();
+  });
+
+  it('"Aan" toont de waarschuwing; bij een gedeelde importdefinitie staat het aantal koppelingen erbij', async () => {
+    await openDetail('/templates/11', withFlag(11, true));
+    expect(screen.getByTestId('definition-overwrite-value')).toHaveTextContent(/^Aan$/);
+    expect(screen.getByTestId('definition-overwrite-warning')).toHaveTextContent(WARNING);
+    expect(screen.getByTestId('definition-overwrite-warning')).toHaveTextContent('geldt voor alle 2 koppelingen');
+  });
+
+  it('met één koppeling staat er geen aantal in de waarschuwing', async () => {
+    await openDetail('/templates/13', withFlag(13, true));
+    expect(screen.getByTestId('definition-overwrite-warning')).toHaveTextContent(WARNING);
+    expect(screen.getByTestId('definition-overwrite-warning')).not.toHaveTextContent('alle 1 koppelingen');
+    expect(screen.getByTestId('definition-overwrite-warning')).not.toHaveTextContent('geldt voor alle');
+  });
+
+  it('aanzetten vraagt eerst een bevestiging en stuurt dan { enabled: true }', async () => {
+    const { calls } = await openDetail('/templates/11');
+    fireEvent.click(screen.getByTestId('definition-overwrite-edit'));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('heading', { name: 'Standaarden overschrijven aanzetten?' })).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('geldt voor alle 2 koppelingen');
+    // Nog niets verstuurd zolang er niet bevestigd is.
+    expect(calls.requests).toHaveLength(0);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Aanzetten' }));
+    await waitFor(() => expect(screen.getByTestId('definition-overwrite-value')).toHaveTextContent(/^Aan$/));
+    expect(calls.requests).toHaveLength(1);
+    expect(calls.requests[0]!.url).toContain('/setup/definitions/11/overwrite-creation-defaults');
+    expect(calls.requests[0]!.body).toEqual({ enabled: true });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('definition-overwrite-warning')).toBeInTheDocument();
+  });
+
+  it('uitzetten stuurt { enabled: false } na bevestigen', async () => {
+    const { calls } = await openDetail('/templates/11', withFlag(11, true));
+    fireEvent.click(screen.getByTestId('definition-overwrite-edit'));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('heading', { name: 'Standaarden overschrijven uitzetten?' })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Uitzetten' }));
+    await waitFor(() => expect(screen.getByTestId('definition-overwrite-value')).toHaveTextContent(/^Uit$/));
+    expect(calls.requests[0]!.body).toEqual({ enabled: false });
+    expect(screen.queryByTestId('definition-overwrite-warning')).not.toBeInTheDocument();
+  });
+
+  it('Annuleren in de bevestiging verstuurt niets en laat de vlag staan', async () => {
+    const { calls } = await openDetail('/templates/11');
+    fireEvent.click(screen.getByTestId('definition-overwrite-edit'));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Annuleren' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(calls.requests).toHaveLength(0);
+    expect(screen.getByTestId('definition-overwrite-value')).toHaveTextContent(/^Uit$/);
+  });
+
+  it('zonder recht Beheren is Wijzigen uitgeschakeld mét reden; de waarde blijft leesbaar', async () => {
+    await openDetail('/templates/11', withFlag(11, true), undefined, testIdentityWith(PERMISSION_READ));
+    const edit = screen.getByTestId('definition-overwrite-edit');
+    expect(edit).toBeDisabled();
+    expect(edit).toHaveAttribute('title', "U heeft het recht 'Beheren' (catalogImport.manage) niet.");
+    expect(screen.getByTestId('definition-overwrite-value')).toHaveTextContent(/^Aan$/);
+  });
+
+  it('een serverfout staat in de bevestiging; de vlag blijft ongewijzigd', async () => {
+    const { calls } = await openDetail('/templates/11', state(), (url, init) =>
+      init?.method === 'PUT' && url.includes('/overwrite-creation-defaults')
+        ? jsonResponse({ error: 'nope', code: 'DEFINITION_NOT_FOUND' }, 404)
+        : null,
+    );
+    fireEvent.click(screen.getByTestId('definition-overwrite-edit'));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Aanzetten' }));
+    expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByTestId('definition-overwrite-value')).toHaveTextContent(/^Uit$/);
+    expect(calls.requests).toHaveLength(0);
+  });
+
+  it('een herbruikbare importdefinitie toont dezelfde rij', async () => {
+    await openDetail('/templates/10');
+    expect(screen.getByTestId('definition-data')).toHaveTextContent(LABEL);
+    expect(screen.getByTestId('definition-overwrite-value')).toHaveTextContent(/^Uit$/);
+  });
+});

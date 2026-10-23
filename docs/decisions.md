@@ -3415,3 +3415,10 @@ over versies: ongematcht filter op dezelfde kolom als een weggevallen filter = "
 en prijstoleranties bewerkbaar (in het PATCH-contract); getalvelden kunnen hier niet leeggemaakt worden (melding).
 "Decimaalteken" uit de mock bestaat niet in het datamodel. Oude activeerknop blijft tot E6.
 **Bron:** bouwer-gemiddeld (E4-rapport)
+
+## 2026-10-23 — CD-F: keuzes schermen aanmaakstandaard en vlag
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** Wijzigen is voor gebruikers zonder Beheren zichtbaar maar
+uitgeschakeld met reden (bestaande conventie, zoals "Taak toevoegen"). De bewerking van de aanmaakstandaard is een inline
+paneel onder het blok. De vlagrij staat ook bij een herbruikbare importdefinitie. Extra woordenlijstcode
+`PRODIS_REFERENCE_AMBIGUOUS`. Wie de vlag wijzigde is niet zichtbaar in de lijst (DefinitionRow draagt de audit niet).
+**Bron:** bouwer-gemiddeld (CD-F-rapport)

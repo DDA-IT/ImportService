@@ -1353,6 +1353,16 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 | `LIBRARY_CODE_NOT_RESOLVED` | Bibliotheek niet eenduidig bepaald | De bibliotheek van de legacy-interface is niet eenduidig te vinden; kies er zelf een uit de lijst. |
 | `LIBRARY_CODE_NOT_IN_PRODIS` | Gekozen bibliotheek hoort niet bij de leverancier | De bibliotheekcode die u koos bestaat niet bij deze leverancier in Prodis. |
 | `PRODIS_REFERENCE_NOT_VERIFIED` | Niet gecontroleerd in Prodis | Prodis is niet ingesteld of niet bereikbaar; leverancier, groep of bibliotheek zijn niet nagekeken en een nieuwe leverancier krijgt een tijdelijke naam. |
+| `PRODIS_REFERENCE_AMBIGUOUS` | Code komt meerdere keren voor in Prodis | De code is in Prodis niet uniek. Ze is wel bewaard; welke rij Prodis gebruikt bij het aanmaken van een artikel, beslist Prodis zelf. |
+| `CREATION_DEFAULT_VAT` | Btw-code als standaard bij aanmaak | De btw-code van de interface is overgenomen als standaard voor artikels die CatalogImport voor deze koppeling aanmaakt. |
+| `CREATION_DEFAULT_UNIT` | Eenheid als standaard bij aanmaak | De eenheid van de interface is overgenomen als standaard voor artikels die CatalogImport voor deze koppeling aanmaakt. |
+| `CREATION_DEFAULT_FROM_COLUMN_NOT_MIGRATED` | Standaard uit een kolom niet overgenomen | Legacy haalt de btw-code of eenheid uit een kolom van het bestand; dat wordt niet overgenomen. U kunt de standaard zelf instellen bij de koppeling. |
+| `CREATION_DEFAULT_NOT_YET_SUPPORTED` | Standaard bij aanmaak nog niet ondersteund | Deze instelling van de interface kan in deze versie nog niet overgenomen worden. U kunt de standaard zelf instellen bij de koppeling. |
+| `CREATION_DEFAULT_DIFFERS_NOT_CHANGED` | Standaard verschilt van legacy, niet gewijzigd | De koppeling heeft al een andere waarde dan de interface; die blijft staan. Zet bij de importdefinitie "standaarden overschrijven" aan om ze toch te vervangen. |
+| `CREATION_DEFAULT_OVERWRITTEN` | Standaard overschreven | De waarde van de koppeling is vervangen door die van de interface, omdat de importdefinitie de standaarden laat overschrijven. |
+| `CREATION_DEFAULT_MANUAL_OVERWRITTEN` | Handmatig ingestelde standaard overschreven | De waarde van de koppeling was handmatig ingesteld en is toch vervangen door die van de interface, omdat de importdefinitie de standaarden laat overschrijven. |
+| `PRODIS_VAT_CODE_NOT_FOUND` | Btw-code niet gevonden in Prodis | Deze btw-code bestaat niet bij de actieve btw-codes in Prodis. |
+| `PRODIS_UNIT_NOT_FOUND` | Eenheid niet gevonden in Prodis | Deze eenheid bestaat niet bij de actieve eenheden in Prodis. |
 | `SEPARATOR_NOT_DECLARED` | Scheidingsteken niet opgegeven | De interface noemt geen scheidingsteken; zoals legacy wordt de puntkomma gebruikt. |
 | `DECIMAL_COMMA_BASE_PRICE` | Decimale komma bij de basisprijs | De interface leest getallen met een decimale komma; de basisprijs leest komma en punt beide als decimaalteken en weigert een duizendtalscheiding. |
 | `INCLUDE_EXCLUDE_CODE_NOT_MIGRATED` | Onbekende code voor insluiten of uitsluiten | Deze code kent legacy niet; regels die ze zou filteren worden hier niet gefilterd. |

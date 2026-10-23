@@ -28,6 +28,7 @@ import { FileSection } from '../setup/RevisionReadView.tsx';
 import { activeRevisionOf, defaultRevisionOf, STEP_DEFINITION } from '../setup/setupDashboardModel.ts';
 import { KeyValue, StepBar } from '../setup/SupplierOverviewTab.tsx';
 import { definitionHref } from './definitionRoutes.ts';
+import { OverwriteFlagRow } from './OverwriteFlagRow.tsx';
 import { isInactiveOrganisation, openDraftNumberOf } from './definitionsModel.ts';
 import { useDefinitionDetailContext } from './TemplateDetailPage.tsx';
 import styles from '../setup/SetupScreens.module.css';
@@ -48,7 +49,7 @@ function FileCard({ definitionId, revisionId }: { definitionId: number; revision
 }
 
 export function DefinitionOverviewTab() {
-  const { bundle, reusable, status, origin, extras } = useDefinitionDetailContext();
+  const { bundle, reusable, status, origin, extras, reload } = useDefinitionDetailContext();
   const { definition, revisions, organisation, links } = bundle;
   const id = definition.id;
   const idPrefix = `definition-${id}`;
@@ -134,6 +135,12 @@ export function DefinitionOverviewTab() {
           <KeyValue label={TEXT.keyValue.origin}>
             <span title={ORIGIN_HINT[origin]}>{ORIGIN_LABEL[origin]}</span>
           </KeyValue>
+          <OverwriteFlagRow
+            definitionId={id}
+            enabled={definition.overwriteCreationDefaults === true}
+            linkCount={typeof linkCount === 'number' ? linkCount : null}
+            onChanged={reload}
+          />
         </dl>
       </section>
 

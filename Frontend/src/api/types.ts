@@ -605,6 +605,47 @@ export type ImportLinkRow = {
   importDefinitionId: number;
   /** B3 (additief): of er een wachtwoord bij de koppeling bewaard is; nooit het wachtwoord zelf. */
   credentialState: LinkCredentialState;
+  // CD-B2 (additief, optioneel zodat een oudere server of fixture blijft werken): de aanmaakstandaard van de koppeling.
+  /** Btw-code (Prodis `vat_code.code`) die een nieuw artikel krijgt; `null`/afwezig = niet ingesteld. */
+  defaultVatCode?: string | null;
+  /** Eenheidscode (Prodis `unit_of_measure.code`) die een nieuw artikel krijgt; `null`/afwezig = niet ingesteld. */
+  defaultUnitCode?: string | null;
+  /** `null`/afwezig = nooit gezet. */
+  creationDefaultsOrigin?: CreationDefaultsOrigin | null;
+  creationDefaultsUpdatedAt?: string | null;
+  creationDefaultsUpdatedBy?: string | null;
+};
+
+// CD-B2: `ImportLinkRow.creationDefaultsOrigin`.
+export const CREATION_DEFAULTS_ORIGINS = ['LEGACY', 'MANUAL'] as const;
+export type CreationDefaultsOrigin = (typeof CREATION_DEFAULTS_ORIGINS)[number];
+
+/** be.dda.catalogimport.dao.ProdisReferenceDao.VatCodeRow (CD-B1); `occurrences` > 1 = de code is in Prodis niet uniek. */
+export type ProdisVatCode = { code: string; description: string | null; percentage: number | null; occurrences: number };
+
+/** be.dda.catalogimport.dao.ProdisReferenceDao.UnitOfMeasureRow (CD-B1). */
+export type ProdisUnitOfMeasure = { code: string; singular: string | null; abbreviation: string | null; occurrences: number };
+
+/** Body van `PUT /setup/links/{linkId}/creation-defaults` (CD-B2); `null` wist de waarde. */
+export type SetCreationDefaultsRequest = { vatCode: string | null; unitCode: string | null };
+
+/** be.dda.catalogimport.service.SetupService.LinkCreationDefaultsView (CD-B2); `warnings` zijn niet bewaard. */
+export type LinkCreationDefaultsView = {
+  linkId: number;
+  defaultVatCode: string | null;
+  defaultUnitCode: string | null;
+  creationDefaultsOrigin: CreationDefaultsOrigin | null;
+  creationDefaultsUpdatedAt: string | null;
+  creationDefaultsUpdatedBy: string | null;
+  warnings: SetupWarning[];
+};
+
+/** be.dda.catalogimport.service.SetupService.DefinitionOverwriteFlagView (CD-B2). */
+export type DefinitionOverwriteFlagView = {
+  definitionId: number;
+  overwriteCreationDefaults: boolean;
+  overwriteCreationDefaultsChangedAt: string | null;
+  overwriteCreationDefaultsChangedBy: string | null;
 };
 
 // B3: `ImportLinkRow.credentialState`.
@@ -714,6 +755,8 @@ export type DefinitionRow = {
   /** `null` = niet uit de overname van legacy. */
   legacyOriginKind?: LegacyOriginKind | null;
   legacyDefinitionCodes?: string[];
+  /** CD-B2 (additief): de vlag "standaarden overschrijven bij legacy-overname" van de importdefinitie; afwezig = uit. */
+  overwriteCreationDefaults?: boolean;
 };
 
 /** be.dda.catalogimport.service.SetupQueryService.DefinitionRow.legacyOriginKind. */
@@ -971,6 +1014,8 @@ export type RevisionDetail = {
   fieldCriticalities: FieldCriticalityView[];
   bookmarks: BookmarkView[];
   bookmarkValues: BookmarkValueRow[];
+  /** CD-B2 (additief): de vlag van de importdefinitie (niet van de versie); afwezig = uit. */
+  overwriteCreationDefaults?: boolean;
 };
 
 /**

@@ -1085,6 +1085,32 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     title: 'Ongeldige vraag aan Prodis',
     explanation: 'De gevraagde gegevens van Prodis konden niet opgezocht worden met deze invoer.',
   },
+  // CD-B2: de aanmaakstandaard van een koppeling en de vlag "standaarden overschrijven".
+  PRODIS_VAT_CODE_NOT_FOUND: {
+    title: 'Btw-code niet gevonden in Prodis',
+    explanation: 'Deze btw-code bestaat niet bij de actieve btw-codes in Prodis. Er is niets bewaard.',
+    whatNow: 'Kies een btw-code uit de lijst, of laat het veld leeg.',
+  },
+  PRODIS_UNIT_NOT_FOUND: {
+    title: 'Eenheid niet gevonden in Prodis',
+    explanation: 'Deze eenheid bestaat niet bij de actieve eenheden in Prodis. Er is niets bewaard.',
+    whatNow: 'Kies een eenheid uit de lijst, of laat het veld leeg.',
+  },
+  VAT_CODE_TOO_LONG: {
+    title: 'Btw-code is te lang',
+    explanation: 'De btw-code past niet in het veld. Er is niets bewaard.',
+    whatNow: 'Kies een btw-code uit de lijst van Prodis.',
+  },
+  UNIT_CODE_TOO_LONG: {
+    title: 'Eenheid is te lang',
+    explanation: 'De eenheidscode past niet in het veld. Er is niets bewaard.',
+    whatNow: 'Kies een eenheid uit de lijst van Prodis.',
+  },
+  ENABLED_REQUIRED: {
+    title: 'Aan of uit ontbreekt',
+    explanation: 'De instelling kon niet bewaard worden omdat niet duidelijk was of ze aan of uit moet.',
+    whatNow: 'Probeer het opnieuw.',
+  },
 };
 
 type FamilyFallback = { match: (code: string) => boolean; title: string; explanation: string };

@@ -29,6 +29,14 @@ export type SetupState = {
    * koppeling die niet in `links` staat geeft 404 `LINK_NOT_FOUND`, zoals de server.
    */
   readiness?: Record<number, { ready: boolean; problems: unknown[] }>;
+  /**
+   * CD-F: de Prodis-keuzelijsten (`GET /prodis-reference/vat-codes` en `/units-of-measure`). Zonder invoer antwoordt de
+   * server 409 `PRODIS_DB_NOT_CONFIGURED`, zodat bestaande tests de lijst als "niet beschikbaar" zien.
+   */
+  prodisVatCodes?: unknown[];
+  prodisUnits?: unknown[];
+  /** CD-F: de waarschuwingen die `PUT /setup/links/{id}/creation-defaults` teruggeeft (standaard geen). */
+  creationDefaultsWarnings?: unknown[];
 };
 
 /** De herkomst van een versie die niet uit legacy komt (zoals de server ze levert). */
@@ -111,11 +119,12 @@ export function emptySetupState(): SetupState {
   return { organisations: [], definitions: [], links: [], tasks: [], revisions: {}, details: {}, receipts: [] };
 }
 
-export type ServerCalls = { urls: string[] };
+/** `requests` bevat enkel de schrijfverzoeken (methode, url, body als object) zodat een test de verstuurde body kan nakijken. */
+export type ServerCalls = { urls: string[]; requests: { method: string; url: string; body: unknown }[] };
 
 /** Installeert de mock op `global.fetch`; geeft de lijst van aangeroepen urls terug. */
 export function installSetupServer(state: SetupState, extra?: (url: string, init?: RequestInit) => Response | null): ServerCalls {
-  const calls: ServerCalls = { urls: [] };
+  const calls: ServerCalls = { urls: [], requests: [] };
   global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     calls.urls.push(url);
@@ -125,6 +134,70 @@ export function installSetupServer(state: SetupState, extra?: (url: string, init
     }
     const [path, query = ''] = url.split('?');
     const params = new URLSearchParams(query);
+    if (init?.method === 'PUT') {
+      const body = typeof init.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+      calls.requests.push({ method: 'PUT', url, body });
+      const linkDefaults = /\/setup\/links\/(\d+)\/creation-defaults$/.exec(path!);
+      if (linkDefaults !== null) {
+        // Zoals de server: de herkomst wordt handmatig en de audit schuift mee.
+        const row = state.links.find((candidate) => (candidate as { id: number }).id === Number(linkDefaults[1])) as
+          | Record<string, unknown>
+          | undefined;
+        if (row === undefined) {
+          return Promise.resolve(jsonResponse({ error: 'nope', code: 'LINK_NOT_FOUND' }, 404));
+        }
+        Object.assign(row, {
+          defaultVatCode: body.vatCode ?? null,
+          defaultUnitCode: body.unitCode ?? null,
+          creationDefaultsOrigin: 'MANUAL',
+          creationDefaultsUpdatedAt: '2026-10-23T12:00:00Z',
+          creationDefaultsUpdatedBy: 'An Beslisser',
+        });
+        return Promise.resolve(
+          jsonResponse({
+            linkId: Number(linkDefaults[1]),
+            defaultVatCode: row.defaultVatCode,
+            defaultUnitCode: row.defaultUnitCode,
+            creationDefaultsOrigin: row.creationDefaultsOrigin,
+            creationDefaultsUpdatedAt: row.creationDefaultsUpdatedAt,
+            creationDefaultsUpdatedBy: row.creationDefaultsUpdatedBy,
+            warnings: state.creationDefaultsWarnings ?? [],
+          }),
+        );
+      }
+      const overwrite = /\/setup\/definitions\/(\d+)\/overwrite-creation-defaults$/.exec(path!);
+      if (overwrite !== null) {
+        const row = state.definitions.find((candidate) => (candidate as { id: number }).id === Number(overwrite[1])) as
+          | Record<string, unknown>
+          | undefined;
+        if (row === undefined) {
+          return Promise.resolve(jsonResponse({ error: 'nope', code: 'DEFINITION_NOT_FOUND' }, 404));
+        }
+        row.overwriteCreationDefaults = body.enabled === true;
+        return Promise.resolve(
+          jsonResponse({
+            definitionId: Number(overwrite[1]),
+            overwriteCreationDefaults: row.overwriteCreationDefaults,
+            overwriteCreationDefaultsChangedAt: '2026-10-23T12:00:00Z',
+            overwriteCreationDefaultsChangedBy: 'An Beslisser',
+          }),
+        );
+      }
+    }
+    if (path!.endsWith('/prodis-reference/vat-codes')) {
+      return Promise.resolve(
+        state.prodisVatCodes === undefined
+          ? jsonResponse({ error: 'nope', code: 'PRODIS_DB_NOT_CONFIGURED' }, 409)
+          : jsonResponse(state.prodisVatCodes),
+      );
+    }
+    if (path!.endsWith('/prodis-reference/units-of-measure')) {
+      return Promise.resolve(
+        state.prodisUnits === undefined
+          ? jsonResponse({ error: 'nope', code: 'PRODIS_DB_NOT_CONFIGURED' }, 409)
+          : jsonResponse(state.prodisUnits),
+      );
+    }
     const materialisations = /\/templates\/(\d+)\/materialisations$/.exec(path!);
     if (materialisations !== null) {
       return Promise.resolve(jsonResponse(pageOf(state.materialisations?.[Number(materialisations[1])] ?? [], params)));

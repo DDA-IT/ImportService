@@ -8,6 +8,7 @@
  * ({@link isProdisUnavailable}).
  */
 import { request, toQueryString, type ApiError } from './http.ts';
+import type { ProdisUnitOfMeasure, ProdisVatCode } from './types.ts';
 
 /** be.dda.catalogimport.dao.ProdisReferenceDao.SupplierRow. */
 export type ProdisSupplier = { number: string; name: string | null };
@@ -31,4 +32,17 @@ export function supplierGroups(supplierNumber: string, signal?: AbortSignal): Pr
 /** Prodis is niet ingesteld (409) of niet bereikbaar (503): de keuzelijst ontbreekt, vrije tekst blijft kunnen. */
 export function isProdisUnavailable(error: ApiError | null): boolean {
   return error !== null && (error.code === 'PRODIS_DB_NOT_CONFIGURED' || error.code === 'PRODIS_DB_UNAVAILABLE');
+}
+
+/**
+ * GET /prodis-reference/vat-codes (CD-B1, recht `MANAGE`): de actieve btw-codes van Prodis, één rij per code
+ * (`occurrences` > 1 = de code komt in Prodis meerdere keren voor). Zelfde "niet beschikbaar"-antwoorden als hierboven.
+ */
+export function listVatCodes(signal?: AbortSignal): Promise<ProdisVatCode[]> {
+  return request<ProdisVatCode[]>('/prodis-reference/vat-codes', { signal });
+}
+
+/** GET /prodis-reference/units-of-measure (CD-B1, recht `MANAGE`): de actieve eenheden van Prodis, één rij per code. */
+export function listUnitsOfMeasure(signal?: AbortSignal): Promise<ProdisUnitOfMeasure[]> {
+  return request<ProdisUnitOfMeasure[]>('/prodis-reference/units-of-measure', { signal });
 }

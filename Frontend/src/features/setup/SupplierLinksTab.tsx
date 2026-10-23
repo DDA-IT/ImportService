@@ -8,7 +8,8 @@
  */
 
 import { Link } from 'react-router-dom';
-import type { LinkReadinessSummary, TaskRow } from '../../api/types.ts';
+import { usePermissionGate } from '../../actor/permissions.ts';
+import { PERMISSION_MANAGE, type LinkReadinessSummary, type TaskRow } from '../../api/types.ts';
 import button from '../../components/Button.module.css';
 import pageCss from '../../components/Page.module.css';
 import { ToneBadge } from '../../components/StatusBadge.tsx';
@@ -17,6 +18,8 @@ import { CREDENTIAL_LABEL, CREDENTIAL_STATE_LABEL } from '../../terms/linkReadin
 import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { Term } from '../../terms/Term.tsx';
 import { linkCheckHref } from './check/linkCheck.ts';
+import { CreationDefaultsBlock } from './CreationDefaults.tsx';
+import { useProdisCreationLists, type ProdisLists } from './creationDefaultsData.ts';
 import { LinkReadinessBadge, useLinkReadiness } from './linkReadiness.tsx';
 import { AddTaskAction, ContinueSetupAction } from './SetupActions.tsx';
 import { isOwnDefinition, type DefinitionModel, type LinkModel } from './setupDashboardModel.ts';
@@ -55,12 +58,17 @@ function LinkCard({
   definition,
   organisationId,
   readiness,
+  lists,
+  onCreationDefaultsSaved,
 }: {
   entry: LinkModel;
   definition: DefinitionModel['definition'];
   organisationId: number;
   /** De uitkomst van de servercontrole; `null` zolang ze laadt of mislukte (dan de schatting uit versies en taken). */
   readiness: LinkReadinessSummary | null;
+  /** De Prodis-keuzelijsten voor "Standaarden bij aanmaak" (CD-F). */
+  lists: ProdisLists;
+  onCreationDefaultsSaved: () => void;
 }) {
   const { link, tasks } = entry;
   const own = isOwnDefinition(definition);
@@ -106,6 +114,12 @@ function LinkCard({
           </ul>
         )}
       </div>
+      <CreationDefaultsBlock
+        link={link}
+        overwriteEnabled={definition.overwriteCreationDefaults === true}
+        lists={lists}
+        onSaved={onCreationDefaultsSaved}
+      />
       <div className={styles.linkActions}>
         <Link
           className={`${button.secondary} ${button.small}`}
@@ -122,8 +136,11 @@ function LinkCard({
 }
 
 export function SupplierLinksTab() {
-  const { bundle } = useSupplierDetailContext();
+  const { bundle, reload } = useSupplierDetailContext();
   const { supplier } = bundle;
+  // De Prodis-lijsten vragen `MANAGE`; zonder dat recht worden ze niet opgevraagd en toont het blok enkel de codes.
+  const manageGate = usePermissionGate(PERMISSION_MANAGE);
+  const lists = useProdisCreationLists(manageGate.allowed);
   const organisationId = supplier.organisation.id;
   const readiness = useLinkReadiness(
     supplier.definitions.flatMap(({ links }) => links.map((entry) => entry.link.id)),
@@ -170,6 +187,8 @@ export function SupplierLinksTab() {
                   definition={definition}
                   organisationId={organisationId}
                   readiness={readiness?.get(entry.link.id) ?? null}
+                  lists={lists}
+                  onCreationDefaultsSaved={reload}
                 />
               ))}
             </div>

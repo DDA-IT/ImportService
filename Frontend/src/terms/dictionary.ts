@@ -1982,6 +1982,46 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       label: 'Niet gecontroleerd in Prodis',
       uitleg: 'Prodis is niet ingesteld of niet bereikbaar; leverancier, groep of bibliotheek zijn niet nagekeken en een nieuwe leverancier krijgt een tijdelijke naam.',
     },
+    PRODIS_REFERENCE_AMBIGUOUS: {
+      label: 'Code komt meerdere keren voor in Prodis',
+      uitleg: 'De code is in Prodis niet uniek. Ze is wel bewaard; welke rij Prodis gebruikt bij het aanmaken van een artikel, beslist Prodis zelf.',
+    },
+    CREATION_DEFAULT_VAT: {
+      label: 'Btw-code als standaard bij aanmaak',
+      uitleg: 'De btw-code van de interface is overgenomen als standaard voor artikels die CatalogImport voor deze koppeling aanmaakt.',
+    },
+    CREATION_DEFAULT_UNIT: {
+      label: 'Eenheid als standaard bij aanmaak',
+      uitleg: 'De eenheid van de interface is overgenomen als standaard voor artikels die CatalogImport voor deze koppeling aanmaakt.',
+    },
+    CREATION_DEFAULT_FROM_COLUMN_NOT_MIGRATED: {
+      label: 'Standaard uit een kolom niet overgenomen',
+      uitleg: 'Legacy haalt de btw-code of eenheid uit een kolom van het bestand; dat wordt niet overgenomen. U kunt de standaard zelf instellen bij de koppeling.',
+    },
+    CREATION_DEFAULT_NOT_YET_SUPPORTED: {
+      label: 'Standaard bij aanmaak nog niet ondersteund',
+      uitleg: 'Deze instelling van de interface kan in deze versie nog niet overgenomen worden. U kunt de standaard zelf instellen bij de koppeling.',
+    },
+    CREATION_DEFAULT_DIFFERS_NOT_CHANGED: {
+      label: 'Standaard verschilt van legacy, niet gewijzigd',
+      uitleg: 'De koppeling heeft al een andere waarde dan de interface; die blijft staan. Zet bij de importdefinitie "standaarden overschrijven" aan om ze toch te vervangen.',
+    },
+    CREATION_DEFAULT_OVERWRITTEN: {
+      label: 'Standaard overschreven',
+      uitleg: 'De waarde van de koppeling is vervangen door die van de interface, omdat de importdefinitie de standaarden laat overschrijven.',
+    },
+    CREATION_DEFAULT_MANUAL_OVERWRITTEN: {
+      label: 'Handmatig ingestelde standaard overschreven',
+      uitleg: 'De waarde van de koppeling was handmatig ingesteld en is toch vervangen door die van de interface, omdat de importdefinitie de standaarden laat overschrijven.',
+    },
+    PRODIS_VAT_CODE_NOT_FOUND: {
+      label: 'Btw-code niet gevonden in Prodis',
+      uitleg: 'Deze btw-code bestaat niet bij de actieve btw-codes in Prodis.',
+    },
+    PRODIS_UNIT_NOT_FOUND: {
+      label: 'Eenheid niet gevonden in Prodis',
+      uitleg: 'Deze eenheid bestaat niet bij de actieve eenheden in Prodis.',
+    },
     SEPARATOR_NOT_DECLARED: {
       label: 'Scheidingsteken niet opgegeven',
       uitleg: 'De interface noemt geen scheidingsteken; zoals legacy wordt de puntkomma gebruikt.',

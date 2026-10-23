@@ -700,3 +700,242 @@ describe('tab Bestand en velden: kolom "Uit legacy"', () => {
     expect(within(fields).getByTestId('read-field-5001')).toHaveTextContent('BARCODE');
   });
 });
+
+describe('tab Koppelingen en taken: standaarden bij aanmaak (CD-F)', () => {
+  const VAT = [
+    { code: '3', description: 'BTW21%', percentage: 21, occurrences: 1 },
+    { code: '1', description: 'BTW6%', percentage: 6, occurrences: 2 },
+  ];
+  const UNITS = [
+    { code: 'ST', singular: 'Stuk', abbreviation: 'st', occurrences: 1 },
+    { code: 'M', singular: 'Meter', abbreviation: 'm', occurrences: 1 },
+  ];
+  const NOTE = 'Wordt gebruikt zodra CatalogImport artikels aanmaakt. Bestaande artikels worden nooit aangepast.';
+
+  /** Koppeling 501 met een standaard uit legacy, koppeling 502 zonder; beide Prodis-lijsten beschikbaar. */
+  function defaultsState(): SetupState {
+    const state = supplierState();
+    state.links = [
+      link(501, 10, {
+        code: 'VROOAM',
+        name: 'Vrooam koppeling',
+        defaultVatCode: '3',
+        defaultUnitCode: 'ST',
+        creationDefaultsOrigin: 'LEGACY',
+        creationDefaultsUpdatedAt: '2026-10-20T10:00:00Z',
+        creationDefaultsUpdatedBy: 'overname',
+      }),
+      link(502, 10, { code: 'VROOAM2', name: 'Tweede koppeling' }),
+    ];
+    state.readiness = {};
+    state.prodisVatCodes = VAT;
+    state.prodisUnits = UNITS;
+    return state;
+  }
+
+  async function openLinks(
+    state: SetupState,
+    identity?: Parameters<typeof renderRoutes>[1],
+    extra?: (url: string, init?: RequestInit) => Response | null,
+  ) {
+    const calls = installSetupServer(state, extra);
+    renderRoutes('/setup/suppliers/1/links', identity);
+    await screen.findByTestId('link-card-501');
+    return calls;
+  }
+
+  async function openEditor(linkId: number) {
+    fireEvent.click(screen.getByTestId(`creation-defaults-edit-${linkId}`));
+    return screen.findByTestId(`creation-defaults-editor-${linkId}`);
+  }
+
+  it('toont btw-code en eenheid met omschrijving, de badge "Uit legacy", wie het wijzigde en de vaste zin', async () => {
+    await openLinks(defaultsState());
+    const block = screen.getByTestId('creation-defaults-501');
+    expect(within(block).getByRole('heading', { name: 'Standaarden bij aanmaak' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('creation-vat-value-501')).toHaveTextContent('3 — BTW21% (21 %)'));
+    expect(screen.getByTestId('creation-unit-value-501')).toHaveTextContent('ST — Stuk');
+    expect(within(block).getByText('Uit legacy')).toBeInTheDocument();
+    expect(screen.getByTestId('creation-defaults-changed-501')).toHaveTextContent(
+      `gewijzigd door overname op ${formatDateTime('2026-10-20T10:00:00Z')}`,
+    );
+    expect(block).toHaveTextContent(NOTE);
+    expect(screen.queryByTestId('creation-defaults-overwrite-note-501')).not.toBeInTheDocument();
+  });
+
+  it('een koppeling zonder standaard toont "Niet ingesteld", zonder badge en zonder wijzigingsregel', async () => {
+    await openLinks(defaultsState());
+    const block = screen.getByTestId('creation-defaults-502');
+    expect(screen.getByTestId('creation-vat-value-502')).toHaveTextContent('Niet ingesteld');
+    expect(screen.getByTestId('creation-unit-value-502')).toHaveTextContent('Niet ingesteld');
+    expect(within(block).queryByText('Uit legacy')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('creation-defaults-changed-502')).not.toBeInTheDocument();
+    expect(block).toHaveTextContent(NOTE);
+  });
+
+  it('een handmatig gezette standaard heeft geen badge "Uit legacy" maar toont wel wie ze wijzigde', async () => {
+    const state = defaultsState();
+    state.links = [
+      link(501, 10, {
+        defaultVatCode: '1',
+        defaultUnitCode: null,
+        creationDefaultsOrigin: 'MANUAL',
+        creationDefaultsUpdatedAt: '2026-10-22T09:00:00Z',
+        creationDefaultsUpdatedBy: 'an.peeters',
+      }),
+    ];
+    await openLinks(state);
+    const block = screen.getByTestId('creation-defaults-501');
+    expect(within(block).queryByText('Uit legacy')).not.toBeInTheDocument();
+    expect(screen.getByTestId('creation-defaults-changed-501')).toHaveTextContent('gewijzigd door an.peeters');
+    expect(screen.getByTestId('creation-unit-value-501')).toHaveTextContent('Niet ingesteld');
+  });
+
+  it('zonder recht Beheren: enkel de codes, Wijzigen uitgeschakeld mét reden en de Prodis-lijsten worden niet gevraagd', async () => {
+    const calls = await openLinks(defaultsState(), testIdentityWith('catalogImport.read'));
+    expect(screen.getByTestId('creation-vat-value-501')).toHaveTextContent(/^3$/);
+    expect(screen.getByTestId('creation-unit-value-501')).toHaveTextContent(/^ST$/);
+    const edit = screen.getByTestId('creation-defaults-edit-501');
+    expect(edit).toBeDisabled();
+    expect(edit).toHaveAttribute('title', "U heeft het recht 'Beheren' (catalogImport.manage) niet.");
+    expect(calls.urls.some((url) => url.includes('/prodis-reference/'))).toBe(false);
+  });
+
+  it('Wijzigen: keuze uit de gefilterde lijst, "komt n keer voor in Prodis", Opslaan stuurt beide waarden', async () => {
+    const calls = await openLinks(defaultsState());
+    const editor = await openEditor(501);
+    await waitFor(() => expect(within(editor).getAllByRole('combobox')).toHaveLength(2));
+    const vat = within(editor).getByLabelText('Btw-code');
+    const unit = within(editor).getByLabelText('Eenheid');
+    expect(vat).toHaveValue('3');
+    expect(unit).toHaveValue('ST');
+
+    fireEvent.change(vat, { target: { value: 'BTW6' } });
+    const option = await within(editor).findByRole('option', { name: '1 · BTW6% (6 %) — komt 2 keer voor in Prodis' });
+    expect(within(editor).queryByRole('option', { name: /BTW21%/ })).not.toBeInTheDocument();
+    fireEvent.click(option);
+    expect(vat).toHaveValue('1');
+
+    fireEvent.change(unit, { target: { value: 'meter' } });
+    fireEvent.click(await within(editor).findByRole('option', { name: 'M · Meter' }));
+    expect(unit).toHaveValue('M');
+
+    fireEvent.click(within(editor).getByTestId('creation-defaults-save-501'));
+    await screen.findByTestId('creation-defaults-saved-501');
+    expect(calls.requests).toHaveLength(1);
+    expect(calls.requests[0]).toMatchObject({
+      method: 'PUT',
+      body: { vatCode: '1', unitCode: 'M' },
+    });
+    expect(calls.requests[0]!.url).toContain('/setup/links/501/creation-defaults');
+    expect(screen.queryByTestId('creation-defaults-editor-501')).not.toBeInTheDocument();
+    // Handmatig gewijzigd: de badge "Uit legacy" verdwijnt en de wijziger staat erbij.
+    expect(within(screen.getByTestId('creation-defaults-501')).queryByText('Uit legacy')).not.toBeInTheDocument();
+    expect(screen.getByTestId('creation-defaults-changed-501')).toHaveTextContent('gewijzigd door An Beslisser');
+    expect(screen.getByTestId('creation-vat-value-501')).toHaveTextContent('1 — BTW6% (6 %)');
+    expect(screen.getByTestId('creation-unit-value-501')).toHaveTextContent('M — Meter');
+  });
+
+  it('vrije tekst is toegestaan en wordt zo verstuurd (de server controleert)', async () => {
+    const calls = await openLinks(defaultsState());
+    const editor = await openEditor(502);
+    await waitFor(() => expect(within(editor).getAllByRole('combobox')).toHaveLength(2));
+    fireEvent.change(within(editor).getByLabelText('Btw-code'), { target: { value: ' 99 ' } });
+    fireEvent.click(within(editor).getByTestId('creation-defaults-save-502'));
+    await screen.findByTestId('creation-defaults-saved-502');
+    expect(calls.requests[0]!.body).toEqual({ vatCode: '99', unitCode: null });
+  });
+
+  it('beide velden leegmaken wist de standaard (null) en toont "Niet ingesteld"', async () => {
+    const calls = await openLinks(defaultsState());
+    const editor = await openEditor(501);
+    await waitFor(() => expect(within(editor).getAllByRole('combobox')).toHaveLength(2));
+    fireEvent.change(within(editor).getByLabelText('Btw-code'), { target: { value: '' } });
+    fireEvent.change(within(editor).getByLabelText('Eenheid'), { target: { value: '  ' } });
+    fireEvent.click(within(editor).getByTestId('creation-defaults-save-501'));
+    await screen.findByTestId('creation-defaults-saved-501');
+    expect(calls.requests[0]!.body).toEqual({ vatCode: null, unitCode: null });
+    expect(screen.getByTestId('creation-vat-value-501')).toHaveTextContent('Niet ingesteld');
+    expect(screen.getByTestId('creation-unit-value-501')).toHaveTextContent('Niet ingesteld');
+  });
+
+  it('Annuleren sluit de editor zonder te bewaren', async () => {
+    const calls = await openLinks(defaultsState());
+    const editor = await openEditor(501);
+    fireEvent.click(within(editor).getByRole('button', { name: 'Annuleren' }));
+    expect(screen.queryByTestId('creation-defaults-editor-501')).not.toBeInTheDocument();
+    expect(calls.requests).toHaveLength(0);
+  });
+
+  it('toont de waarschuwingen van de server na het bewaren, in gewoon Nederlands', async () => {
+    const state = defaultsState();
+    state.creationDefaultsWarnings = [
+      { code: 'PRODIS_REFERENCE_AMBIGUOUS', field: 'vatCode', message: 'VAT code 1 occurs more than once' },
+      { code: 'PRODIS_REFERENCE_NOT_VERIFIED', field: 'unitCode', message: 'unit ST not verified' },
+    ];
+    await openLinks(state);
+    const editor = await openEditor(501);
+    fireEvent.click(within(editor).getByTestId('creation-defaults-save-501'));
+    const warnings = await screen.findByTestId('creation-defaults-warnings-501');
+    expect(warnings).toHaveTextContent('Btw-code: Code komt meerdere keren voor in Prodis');
+    expect(warnings).toHaveTextContent('Eenheid: Niet gecontroleerd in Prodis');
+    expect(warnings).not.toHaveTextContent('PRODIS_REFERENCE');
+    expect(screen.getByTestId('creation-defaults-saved-501')).toHaveTextContent('Standaarden bij aanmaak opgeslagen.');
+  });
+
+  it('Prodis-lijst niet beschikbaar (409): gewone tekstvelden met de melding, vrije tekst blijft te bewaren', async () => {
+    const state = defaultsState();
+    state.prodisVatCodes = undefined;
+    state.prodisUnits = undefined;
+    const calls = await openLinks(state);
+    const editor = await openEditor(502);
+    expect(within(editor).queryByRole('combobox')).not.toBeInTheDocument();
+    expect(within(editor).getByTestId('creation-vat-502-unavailable')).toHaveTextContent('Prodis-lijst niet beschikbaar');
+    expect(within(editor).getByTestId('creation-unit-502-unavailable')).toHaveTextContent('Prodis-lijst niet beschikbaar');
+    fireEvent.change(within(editor).getByLabelText('Btw-code'), { target: { value: '3' } });
+    fireEvent.change(within(editor).getByLabelText('Eenheid'), { target: { value: 'ST' } });
+    fireEvent.click(within(editor).getByTestId('creation-defaults-save-502'));
+    await screen.findByTestId('creation-defaults-saved-502');
+    expect(calls.requests[0]!.body).toEqual({ vatCode: '3', unitCode: 'ST' });
+    // Zonder lijst blijft de weergave bij de code.
+    expect(screen.getByTestId('creation-vat-value-502')).toHaveTextContent(/^3$/);
+  });
+
+  it('Prodis-lijst onbereikbaar (503) geeft dezelfde terugval en geen schermfout', async () => {
+    await openLinks(defaultsState(), undefined, (url) =>
+      url.includes('/prodis-reference/') ? jsonResponse({ error: 'down', code: 'PRODIS_DB_UNAVAILABLE' }, 503) : null,
+    );
+    const editor = await openEditor(501);
+    await within(editor).findByTestId('creation-vat-501-unavailable');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('een afgekeurde code (400) staat als nette fout bij de editor; de editor blijft open en niets is bewaard', async () => {
+    const calls = await openLinks(defaultsState(), undefined, (url, init) =>
+      init?.method === 'PUT' && url.includes('/creation-defaults')
+        ? jsonResponse({ error: 'not found', code: 'PRODIS_VAT_CODE_NOT_FOUND' }, 400)
+        : null,
+    );
+    const editor = await openEditor(501);
+    await waitFor(() => expect(within(editor).getAllByRole('combobox')).toHaveLength(2));
+    fireEvent.change(within(editor).getByLabelText('Btw-code'), { target: { value: '77' } });
+    fireEvent.click(within(editor).getByTestId('creation-defaults-save-501'));
+    const alert = await within(editor).findByRole('alert');
+    expect(alert).toHaveTextContent('Btw-code niet gevonden in Prodis');
+    expect(screen.getByTestId('creation-defaults-editor-501')).toBeInTheDocument();
+    expect(screen.queryByTestId('creation-defaults-saved-501')).not.toBeInTheDocument();
+    expect(calls.requests).toHaveLength(0);
+    expect(screen.getByTestId('creation-vat-value-501')).toHaveTextContent('3 — BTW21% (21 %)');
+  });
+
+  it('staat de vlag "standaarden overschrijven" aan, dan zegt een gedempte regel dat een nieuwe overname ze overschrijft', async () => {
+    const state = defaultsState();
+    state.definitions = [definition(10, 1, { name: 'Vrooam artikelbestand', activeRevisionId: 99, overwriteCreationDefaults: true })];
+    await openLinks(state);
+    for (const id of [501, 502]) {
+      expect(screen.getByTestId(`creation-defaults-overwrite-note-${id}`)).toHaveTextContent(
+        'Bij een nieuwe overname uit legacy worden deze waarden overschreven (instelling van de importdefinitie).',
+      );
+    }
+  });
+});

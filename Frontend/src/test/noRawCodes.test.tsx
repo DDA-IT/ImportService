@@ -15,7 +15,7 @@
 
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, RouterProvider, Routes, createMemoryRouter } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
 import { ApiError } from '../api/http';
@@ -61,6 +61,7 @@ import {
   definition,
   emptySetupState,
   installSetupServer,
+  jsonResponse,
   legacyLine,
   legacyOrigin,
   link,
@@ -1867,5 +1868,64 @@ describe('NT-11c — afwijkingen, inrichting en importdefinities: geen ruwe code
     router.navigate('/templates/20');
     await screen.findByTestId('definition-overview');
     expectNoRawCodes(document.body, 'importdefinitiedetail: eigen importdefinitie, Overzicht');
+  });
+
+  it('CD-F: standaarden bij aanmaak (blok, editor, waarschuwingen, foutmelding) en de vlag op de importdefinitie', async () => {
+    const s = emptySetupState();
+    s.organisations = [organisation(5, { code: 'ORG-5', name: 'Leverancier' })];
+    s.definitions = [definition(20, 5, { code: 'TPL-2', name: 'Eigen importdefinitie', activeRevisionId: 200, overwriteCreationDefaults: true })];
+    s.links = [
+      link(77, 20, {
+        code: 'LNK-77',
+        name: 'Koppeling 77',
+        defaultVatCode: '3',
+        defaultUnitCode: 'ST',
+        creationDefaultsOrigin: 'LEGACY',
+        creationDefaultsUpdatedAt: '2026-10-20T10:00:00Z',
+        creationDefaultsUpdatedBy: 'overname',
+      }),
+    ];
+    s.revisions[20] = [{ id: 200, definitionId: 20, revisionNumber: 1, status: 'ACTIVE' }];
+    s.details[200] = revisionDetail(200, 20, { revisionNumber: 1, status: 'ACTIVE' });
+    s.prodisVatCodes = [
+      { code: '3', description: 'BTW21%', percentage: 21, occurrences: 1 },
+      { code: '1', description: 'BTW6%', percentage: 6, occurrences: 2 },
+    ];
+    s.prodisUnits = [{ code: 'ST', singular: 'Stuk', abbreviation: 'st', occurrences: 1 }];
+    s.creationDefaultsWarnings = [
+      { code: 'PRODIS_REFERENCE_AMBIGUOUS', field: 'vatCode', message: 'VAT code 3 occurs more than once' },
+      { code: 'PRODIS_REFERENCE_NOT_VERIFIED', field: 'unitCode', message: 'unit ST not verified' },
+      { code: 'EEN_TOEKOMSTIGE_CODE', field: null, message: 'future' },
+    ];
+    let failSave = true;
+    installSetupServer(s, (url, init) =>
+      failSave && init?.method === 'PUT' && url.includes('/creation-defaults')
+        ? jsonResponse({ error: 'not found', code: 'PRODIS_VAT_CODE_NOT_FOUND' }, 400)
+        : null,
+    );
+    const { router } = renderRoutes('/setup/suppliers/5/links');
+    await screen.findByTestId('creation-defaults-77');
+    await waitFor(() => expect(screen.getByTestId('creation-vat-value-77')).toHaveTextContent('3 — BTW21% (21 %)'));
+    expectNoRawCodes(document.body, 'standaarden bij aanmaak: blok met de vlag aan');
+
+    fireEvent.click(screen.getByTestId('creation-defaults-edit-77'));
+    const editor = await screen.findByTestId('creation-defaults-editor-77');
+    expectNoRawCodes(document.body, 'standaarden bij aanmaak: editor');
+
+    fireEvent.click(within(editor).getByTestId('creation-defaults-save-77'));
+    await within(editor).findByRole('alert');
+    expectNoRawCodes(document.body, 'standaarden bij aanmaak: afgekeurde code');
+
+    failSave = false;
+    fireEvent.click(within(editor).getByTestId('creation-defaults-save-77'));
+    await screen.findByTestId('creation-defaults-warnings-77');
+    expectNoRawCodes(document.body, 'standaarden bij aanmaak: waarschuwingen na het bewaren');
+
+    router.navigate('/templates/20');
+    await screen.findByTestId('definition-overview');
+    expectNoRawCodes(document.body, 'importdefinitiedetail: vlag standaarden overschrijven aan');
+    fireEvent.click(screen.getByTestId('definition-overwrite-edit'));
+    await screen.findByRole('dialog');
+    expectNoRawCodes(document.body, 'importdefinitiedetail: bevestiging van de vlag');
   });
 });
