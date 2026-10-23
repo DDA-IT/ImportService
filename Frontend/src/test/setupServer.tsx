@@ -22,7 +22,69 @@ export type SetupState = {
   materialisations?: Record<number, unknown[]>;
   /** R2: invulpunten per `<definitie>:<versie>` (`/templates/{id}/revisions/{rev}/bookmarks`). */
   bookmarkSets?: Record<string, unknown>;
+  /** F2: legacy-herkomst per revisie-id (`.../revisions/{rev}/legacy-origin`); zonder invoer: niet uit legacy. */
+  legacyOrigins?: Record<number, unknown>;
 };
+
+/** De herkomst van een versie die niet uit legacy komt (zoals de server ze levert). */
+export function notFromLegacy(revisionId: number) {
+  return {
+    revisionId,
+    fromLegacy: false,
+    originKind: null,
+    originRevisionId: null,
+    changedSinceMigration: null,
+    receiptId: null,
+    interfaceCode: null,
+    legacyDefinitionCode: null,
+    exportedAt: null,
+    appliedAt: null,
+    linesAvailable: false,
+    lines: [],
+  };
+}
+
+/** Een legacy-herkomst (F2) met optionele afwijkingen. */
+export function legacyOrigin(revisionId: number, over: Record<string, unknown> = {}) {
+  return {
+    ...notFromLegacy(revisionId),
+    fromLegacy: true,
+    originKind: 'MIGRATED',
+    originRevisionId: revisionId,
+    changedSinceMigration: false,
+    receiptId: 77,
+    interfaceCode: 'INT-A',
+    legacyDefinitionCode: 'PRIJSLIJST',
+    exportedAt: '2026-09-01T06:00:00Z',
+    appliedAt: '2026-09-01T07:00:00Z',
+    linesAvailable: true,
+    ...over,
+  };
+}
+
+/** Een legacy-regel (F2) met optionele afwijkingen. */
+export function legacyLine(number: number, over: Record<string, unknown> = {}) {
+  return {
+    number,
+    legacyFieldName: `VELD${number}`,
+    targetKind: 'NONE',
+    targetFieldCode: null,
+    revisionField: null,
+    column: 0,
+    position: 0,
+    length: 0,
+    prefix: '',
+    suffix: '',
+    fixedValue: '',
+    calculation: '',
+    calculationValue: '',
+    fill: '',
+    xmlElementPath: '',
+    includeExclude: '',
+    includeExcludeData: '',
+    ...over,
+  };
+}
 
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -68,6 +130,11 @@ export function installSetupServer(state: SetupState, extra?: (url: string, init
       return Promise.resolve(
         set === undefined ? jsonResponse({ error: 'nope', code: 'TEMPLATE_REVISION_NOT_FOUND' }, 404) : jsonResponse(set),
       );
+    }
+    const originMatch = /\/definitions\/(\d+)\/revisions\/(\d+)\/legacy-origin$/.exec(path!);
+    if (originMatch !== null) {
+      const revisionId = Number(originMatch[2]);
+      return Promise.resolve(jsonResponse(state.legacyOrigins?.[revisionId] ?? notFromLegacy(revisionId)));
     }
     const detail = /\/definitions\/(\d+)\/revisions\/(\d+)$/.exec(path!);
     if (detail !== null) {

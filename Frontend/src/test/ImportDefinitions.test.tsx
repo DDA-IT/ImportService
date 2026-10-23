@@ -27,6 +27,8 @@ import {
   emptySetupState,
   installSetupServer,
   jsonResponse,
+  legacyLine,
+  legacyOrigin,
   link,
   organisation,
   renderRoutes,
@@ -810,5 +812,41 @@ describe('leveranciersdetail: Gebaseerd op herbruikbare importdefinitie', () => 
     await screen.findByTestId('supplier-versions');
     await waitFor(() => expect(screen.queryByTestId('based-on-11')).not.toBeInTheDocument());
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+describe('importdefinitiedetail: kolom "Uit legacy"', () => {
+  it('toont de kolom als de versie uit legacy komt en een sinds de overname gewijzigde versie met banner', async () => {
+    const s = state();
+    s.details[201] = revisionDetail(201, 10, {
+      revisionNumber: 3,
+      status: 'ACTIVE',
+      mappings: [{ id: 9001, targetFieldCode: 'EAN', sourceReference: 'BARCODE', valueKind: 'SOURCE_FIELD', steps: [], valueMap: [] }],
+    });
+    s.legacyOrigins = {
+      201: legacyOrigin(201, {
+        changedSinceMigration: true,
+        originKind: 'TEMPLATE_SOURCE',
+        lines: [legacyLine(100, { targetKind: 'MAPPING', targetFieldCode: 'EAN', column: 12 })],
+      }),
+    };
+    await openDetail('/templates/10/fields', s);
+    expect(await screen.findByTestId('legacy-column-head')).toHaveTextContent('Uit legacy (bij overname)');
+    expect(screen.getByTestId('read-field-9001')).toHaveTextContent('regel 100 · kolom 12');
+    expect(screen.getByTestId('legacy-changed-banner')).toBeInTheDocument();
+    expect(screen.getByTestId('legacy-origin-kind')).toHaveTextContent('uit de herbruikbare importdefinitie');
+  });
+
+  it('zonder herkomst uit legacy staat er geen kolom; een fout van het endpoint blokkeert niets', async () => {
+    await openDetail('/templates/10/fields');
+    expect(await screen.findByTestId('read-file')).toBeInTheDocument();
+    expect(screen.queryByTestId('legacy-column-head')).not.toBeInTheDocument();
+    cleanup();
+
+    await openDetail('/templates/10/fields', state(), (url) =>
+      url.endsWith('/legacy-origin') ? jsonResponse({ error: 'kapot', code: 'INTERNAL' }, 500) : null,
+    );
+    expect(await screen.findByTestId('legacy-origin-failed')).toBeInTheDocument();
+    expect(screen.getByTestId('read-fields')).toBeInTheDocument();
   });
 });

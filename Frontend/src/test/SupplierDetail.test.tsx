@@ -13,6 +13,9 @@ import {
   definition,
   emptySetupState,
   installSetupServer,
+  jsonResponse,
+  legacyLine,
+  legacyOrigin,
   link,
   organisation,
   renderRoutes,
@@ -510,5 +513,97 @@ describe('tab Koppelingen en taken', () => {
       'href',
       '/setup/new?organisationId=1&definitionId=10',
     );
+  });
+});
+
+describe('tab Bestand en velden: kolom "Uit legacy"', () => {
+  function withLegacy(over: Record<string, unknown> = {}): SetupState {
+    const state = supplierState();
+    state.legacyOrigins = {
+      99: legacyOrigin(99, {
+        lines: [
+          legacyLine(1, { targetKind: 'REVISION_FIELD', revisionField: 'identitySupplierField', column: 3 }),
+          legacyLine(5, { targetKind: 'REVISION_FIELD', revisionField: 'recordBasePriceField', xmlElementPath: 'Article/Price' }),
+          legacyLine(100, { targetKind: 'MAPPING', targetFieldCode: 'EAN', column: 12, prefix: '0' }),
+          legacyLine(101, { targetKind: 'MAPPING', targetFieldCode: 'BRAND', position: 21, length: 10, calculation: '7' }),
+          legacyLine(26, { column: 7, legacyFieldName: 'RESTVELD' }),
+        ],
+        ...over,
+      }),
+    };
+    return state;
+  }
+
+  async function openFields(state: SetupState, identity?: Parameters<typeof renderRoutes>[1]) {
+    installSetupServer(state);
+    renderRoutes('/setup/suppliers/1/fields?definitie=10&versie=99', identity);
+    await screen.findByTestId('revision-read-view');
+  }
+
+  it('toont de kolom met de beschrijving per rij, de niet overgenomen regels en geen banner', async () => {
+    await openFields(withLegacy());
+    const fields = screen.getByTestId('read-fields');
+    await screen.findByTestId('legacy-column-head');
+    expect(within(fields).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
+      'Veld',
+      'Bron',
+      'Bewerking',
+      'Verplicht',
+      'Uit legacy',
+    ]);
+    expect(within(fields).getByTestId('read-field-5001')).toHaveTextContent('regel 100 · kolom 12 · voorvoegsel 0');
+    expect(within(fields).getByTestId('read-field-5002')).toHaveTextContent('regel 101 · positie 21–30 · vertaling');
+    expect(within(fields).getByTestId('read-field-5003')).toHaveTextContent('—');
+    expect(fields).toHaveTextContent('regel 5 · XML Article/Price');
+    expect(screen.getByTestId('read-identity')).toHaveTextContent('regel 1 · kolom 3');
+    expect(screen.getByTestId('legacy-uncovered')).toHaveTextContent('regel 26 · RESTVELD · geen doelveld');
+    expect(screen.queryByTestId('legacy-changed-banner')).not.toBeInTheDocument();
+  });
+
+  it('een versie die niet uit legacy komt heeft geen kolom en geen melding', async () => {
+    const calls = installSetupServer(supplierState());
+    renderRoutes('/setup/suppliers/1/fields?definitie=10&versie=99');
+    await screen.findByTestId('revision-read-view');
+    await waitFor(() => expect(calls.urls.some((url) => url.endsWith('/revisions/99/legacy-origin'))).toBe(true));
+    const fields = screen.getByTestId('read-fields');
+    expect(within(fields).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Veld', 'Bron', 'Bewerking', 'Verplicht']);
+    expect(screen.queryByTestId('legacy-origin-failed')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('legacy-uncovered')).not.toBeInTheDocument();
+  });
+
+  it('sinds de overname gewijzigd: banner en de kolom "Uit legacy (bij overname)"', async () => {
+    await openFields(withLegacy({ changedSinceMigration: true }));
+    expect(await screen.findByTestId('legacy-changed-banner')).toHaveTextContent(
+      'Herkomst van de overgenomen versie; deze versie is sindsdien gewijzigd.',
+    );
+    expect(await screen.findByTestId('legacy-column-head')).toHaveTextContent('Uit legacy (bij overname)');
+  });
+
+  it('een geërfde herkomst toont "geërfd van versie n"', async () => {
+    await openFields(withLegacy({ originKind: 'INHERITED', originRevisionId: 98 }));
+    expect(await screen.findByTestId('legacy-origin-kind')).toHaveTextContent('geërfd van versie 2');
+  });
+
+  it('de ontvangst is enkel een link met het recht Beheren; zonder staat er gewoon #id', async () => {
+    await openFields(withLegacy());
+    await screen.findByTestId('legacy-column-head');
+    expect(screen.getByTestId('legacy-receipt-link')).toHaveAttribute('href', '/setup/legacy-config/77');
+    cleanup();
+
+    await openFields(withLegacy(), testIdentityWith('catalogImport.read'));
+    await screen.findByTestId('legacy-column-head');
+    expect(screen.queryByTestId('legacy-receipt-link')).not.toBeInTheDocument();
+    expect(screen.getByTestId('legacy-receipt-plain')).toHaveTextContent('#77');
+  });
+
+  it('een mislukte herkomst blokkeert het leesbeeld niet: geen kolom, wel een kleine melding', async () => {
+    installSetupServer(supplierState(), (url) =>
+      url.endsWith('/legacy-origin') ? jsonResponse({ error: 'kapot', code: 'INTERNAL' }, 500) : null,
+    );
+    renderRoutes('/setup/suppliers/1/fields?definitie=10&versie=99');
+    expect(await screen.findByTestId('legacy-origin-failed')).toHaveTextContent('De herkomst uit legacy kon niet geladen worden');
+    const fields = screen.getByTestId('read-fields');
+    expect(within(fields).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Veld', 'Bron', 'Bewerking', 'Verplicht']);
+    expect(within(fields).getByTestId('read-field-5001')).toHaveTextContent('BARCODE');
   });
 });

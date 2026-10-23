@@ -10,6 +10,7 @@ import type {
   DefinitionUsageType,
   PageResult,
   RevisionDetail,
+  RevisionLegacyOrigin,
   RevisionRow,
   SourceOrganisationRow,
 } from './types.ts';
@@ -70,4 +71,18 @@ export function getRevisionDetail(
   signal?: AbortSignal,
 ): Promise<RevisionDetail> {
   return request<RevisionDetail>(`/definitions/${definitionId}/revisions/${revisionId}`, { signal });
+}
+
+/**
+ * GET /definitions/{definitionId}/revisions/{revisionId}/legacy-origin — RevisionLegacyOriginService (B2). Alleen lezen:
+ * de legacy-regels van de ontvangst waaruit de versie komt, met het vaste doel per regel.
+ *
+ * @throws {import('./http.ts').ApiError} 404 `DEFINITION_NOT_FOUND`, `REVISION_NOT_FOUND`
+ */
+export function getRevisionLegacyOrigin(
+  definitionId: number,
+  revisionId: number,
+  signal?: AbortSignal,
+): Promise<RevisionLegacyOrigin> {
+  return request<RevisionLegacyOrigin>(`/definitions/${definitionId}/revisions/${revisionId}/legacy-origin`, { signal });
 }

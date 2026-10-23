@@ -57,9 +57,39 @@ import { IssueCodeTerm } from '../terms/IssueCodeTerm';
 import { DICTIONARY } from '../terms/index';
 import { oldWordingIn, visibleTextOf } from './oldWording';
 import { TEST_IDENTITY } from './testIdentity';
-import { definition, emptySetupState, installSetupServer, link, organisation, renderRoutes, revisionDetail } from './setupServer';
+import {
+  definition,
+  emptySetupState,
+  installSetupServer,
+  legacyLine,
+  legacyOrigin,
+  link,
+  organisation,
+  renderRoutes,
+  revisionDetail,
+} from './setupServer';
 
-const RAW_WITH_UNDERSCORE = /\b[A-Z]+_[A-Z_]+\b/g;
+/** Een geërfde, sindsdien gewijzigde herkomst met elk soort regel: de zichtbare tekst blijft vrij van ruwe codes. */
+function legacyOriginForScan(revisionId: number) {
+  return legacyOrigin(revisionId, {
+    changedSinceMigration: true,
+    originKind: 'INHERITED',
+    originRevisionId: 98,
+    lines: [
+      legacyLine(1, { targetKind: 'REVISION_FIELD', revisionField: 'identitySupplierField', column: 3 }),
+      legacyLine(5, {
+        targetKind: 'REVISION_FIELD',
+        revisionField: 'recordBasePriceField',
+        xmlElementPath: 'Article/Price',
+        calculation: '3',
+        calculationValue: '1.5',
+      }),
+      legacyLine(26, { calculation: '99', column: 7 }),
+    ],
+  });
+}
+
+const RAW_WITH_UNDERSCORE =/\b[A-Z]+_[A-Z_]+\b/g;
 
 /** De enumwaarden uit het woordenboek die uit één hoofdletterwoord bestaan (SCREENED, DRAFT, ERROR, ...). */
 const ENUM_WORDS: string[] = [
@@ -1361,6 +1391,8 @@ describe('NT-11c — afwijkingen, inrichting en importdefinities: geen ruwe code
     ];
     global.fetch = vi.fn((input: RequestInfo | URL) => {
       const url = input.toString();
+      const origin = /\/definitions\/10\/revisions\/(\d+)\/legacy-origin/.exec(url);
+      if (origin !== null) return Promise.resolve(json(legacyOriginForScan(Number(origin[1]))));
       const detail = /\/definitions\/10\/revisions\/(\d+)/.exec(url);
       if (detail !== null) return Promise.resolve(json(setupRevisionDetail(Number(detail[1]))));
       if (url.includes('/definitions/10/revisions')) return Promise.resolve(json(page(SETUP_REVISIONS)));

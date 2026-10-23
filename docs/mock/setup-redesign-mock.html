@@ -316,6 +316,10 @@ button.chip:hover { background: var(--action-hover); }
 .pf .field { width: 100%; }
 .sidePanel .table th, .sidePanel .table td { padding: 6px 8px; height: auto; }
 .sidePanel .table th:first-child, .sidePanel .table td:first-child { padding-left: 8px; }
+.comboWrap { position: relative; }
+.comboList { list-style: none; margin: 4px 0 0; padding: 4px 0; max-height: 220px; overflow: auto; background: var(--bg-paper); border: 1px solid var(--divider); border-radius: 4px; }
+.comboList li { padding: 6px 10px; cursor: pointer; }
+.comboList li.active, .comboList li[aria-selected="true"] { background: var(--bg-default); font-weight: 600; }
 .ackRow { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0 16px; font-weight: 600; }
 .addGrp { margin: 16px 0 4px; }
 .dlgWrap { position: fixed; inset: 0; z-index: 1600; display: grid; place-items: center; background: var(--backdrop); padding: 16px; }
@@ -812,7 +816,64 @@ button.chip:hover { background: var(--action-hover); }
     var head = f.out === 'Overslaan' ? 'Sla regels over waar' : f.out === 'Verwerpen' ? 'Verwerp regels waar' : 'Neem enkel regels mee waar';
     return head + ' kolom ' + (f.col === '' || f.col == null ? '…' : f.col) + ' ' + OPS[f.op] + (f.op === 'empty' ? '' : ' ' + f.val);
   }
-  function identSrc(o) { return o.mode === 'vast' ? (o.val !== '' ? 'vaste waarde ' + o.val : null) : o.mode === 'kolom' && o.col ? 'kolom ' + o.col : null; }
+  /* Zoekende keuzelijsten (combobox) met voorbeeld-data uit Prodis. Enkel de weergave en de sample-lijsten; het bewaren gebeurt in applyPanel. */
+  var SUPPLIERS = [['06310', 'Vrooam BV'], ['02005', 'Vrooam Gent'], ['02079', 'Vrooam Brugge'], ['02894', 'Vrooam Antwerpen'], ['04181', 'Vrooam Hasselt'], ['05000', 'Vrooam Kortrijk'], ['0130339', 'Kramp Groep'], ['04599', 'Partner 04599'], ['06848', 'Wilmink'], ['03930', 'Delicolor']];
+  var GROUPS_06310 = [['TOOLS', 'Gereedschap'], ['ELEC', 'Elektro'], ['AUTO', 'Autotoebehoren'], ['VERF', 'Verf en toebehoren'], ['TUIN', 'Tuin']];
+  var GROUPS_OVR = [['ALG', 'Algemeen'], ['OVR', 'Overige artikelen'], ['ACC', 'Accessoires']];
+  var REFLIST = { eenheid: [['ST', 'Stuk'], ['M', 'Meter'], ['KG', 'Kilogram'], ['L', 'Liter']], valuta: [['EUR', 'Euro'], ['USD', 'Dollar'], ['GBP', 'Pond']] };
+  var COMBO = {}, cb = { active: -1 };
+  function groupsFor(sup) { return sup === '06310' ? GROUPS_06310 : GROUPS_OVR; }
+  function pairLabel(list, code) { var f = list.filter(function (p) { return p[0] === code; })[0]; return f ? code + ' · ' + f[1] : code; }
+  function supLabel(code) { return pairLabel(SUPPLIERS, code); }
+  function grpLabel(sup, code) { return pairLabel(groupsFor(sup), code); }
+  function comboHtml(c) {
+    COMBO[c.id] = c.items;
+    var v = c.val == null ? '' : String(c.val), miss = v !== '' && !c.items.some(function (p) { return p[0] === v; });
+    return '<div class="pf"><label class="fieldLabel" for="' + c.id + '">' + esc(c.label) + '</label>' +
+      '<div class="comboWrap"><input class="field" type="text" id="' + c.id + '" role="combobox" autocomplete="off" aria-autocomplete="list" aria-expanded="false" aria-controls="' + c.id + '-lb" aria-describedby="' + c.id + '-hint ' + c.id + '-warn" data-combo="1" data-d="' + c.path + '" value="' + esc(v !== '' ? pairLabel(c.items, v) : '') + '">' +
+      '<ul class="comboList" id="' + c.id + '-lb" role="listbox" aria-label="' + esc(c.label) + '" hidden></ul></div>' +
+      '<p class="rowMeta" id="' + c.id + '-hint"' + (c.hint ? '' : ' hidden') + '>' + esc(c.hint || '') + '</p>' +
+      '<p class="rowMeta" id="' + c.id + '-warn" role="status" style="color:var(--soft-error-text)"' + (miss ? '' : ' hidden') + '>Niet gevonden in Prodis — wordt bij het bewaren gecontroleerd.</p></div>';
+  }
+  function comboOpen(el, on) {
+    var list = document.getElementById(el.id + '-lb'); if (!list) { return; }
+    list.hidden = !on; el.setAttribute('aria-expanded', on ? 'true' : 'false');
+    if (!on) { el.removeAttribute('aria-activedescendant'); }
+  }
+  function comboList(el, q) {
+    var list = document.getElementById(el.id + '-lb'), items = COMBO[el.id] || [], s = String(q).trim().toLowerCase();
+    var vis = items.filter(function (p) { return !s || (p[0] + ' · ' + p[1]).toLowerCase().indexOf(s) > -1; });
+    cb.active = -1;
+    list.innerHTML = vis.map(function (p, i) { return '<li role="option" id="' + el.id + '-o' + i + '" data-code="' + esc(p[0]) + '" data-cb="' + el.id + '" aria-selected="false">' + esc(p[0] + ' · ' + p[1]) + '</li>'; }).join('');
+    comboOpen(el, vis.length > 0);
+  }
+  function comboSetActive(el, i) {
+    var opts = document.getElementById(el.id + '-lb').children, k;
+    for (k = 0; k < opts.length; k++) { opts[k].setAttribute('aria-selected', k === i ? 'true' : 'false'); opts[k].className = k === i ? 'active' : ''; }
+    cb.active = i;
+    if (i >= 0) { el.setAttribute('aria-activedescendant', el.id + '-o' + i); } else { el.removeAttribute('aria-activedescendant'); }
+  }
+  function comboWarn(el) {
+    var w = document.getElementById(el.id + '-warn'), v = String(ed.panel.draft[el.getAttribute('data-d')]), items = COMBO[el.id] || [];
+    if (w) { w.hidden = !(v !== '' && !items.some(function (p) { return p[0] === v; })); }
+  }
+  function comboTyped(el) {
+    var raw = el.value;
+    setPath(ed.panel.draft, el.getAttribute('data-d'), raw.split(' · ')[0].trim());
+    comboList(el, raw); comboWarn(el); refreshPanelState();
+  }
+  function comboPick(el, code) {
+    setPath(ed.panel.draft, el.getAttribute('data-d'), code);
+    el.value = pairLabel(COMBO[el.id] || [], code);
+    comboOpen(el, false); cb.active = -1; comboWarn(el); refreshPanelState();
+  }
+  function identSrc(o, which, M) {
+    if (o.mode === 'vast') {
+      if (o.val === '') { return null; }
+      return 'vaste waarde ' + (which === 'supplier' ? supLabel(o.val) : which === 'group' ? grpLabel(M && M.ident.supplier.mode === 'vast' ? M.ident.supplier.val : '', o.val) : o.val);
+    }
+    return o.mode === 'kolom' && o.col ? 'kolom ' + o.col : null;
+  }
   function exSrc(x) { return x.src === 'kolom' ? (x.col ? 'kolom ' + x.col : null) : x.src === 'vast' ? (x.vast !== '' ? 'vaste waarde ' + x.vast : null) : null; }
   function bewList(x) {
     var b = x.bew, r = [];
@@ -833,8 +894,8 @@ button.chip:hover { background: var(--action-hover); }
   function flat(M) {
     var o = [], I = M.ident, ba = M.basis;
     function a(key, label, txt, sig) { o.push({ key: key, label: label, txt: txt, sig: sig || txt }); }
-    a('id:supplier', 'Leverancier', identSrc(I.supplier) || 'niet gebruikt');
-    a('id:group', 'Groep', identSrc(I.group) || 'niet gebruikt');
+    a('id:supplier', 'Leverancier', identSrc(I.supplier, 'supplier', M) || 'niet gebruikt');
+    a('id:group', 'Groep', identSrc(I.group, 'group', M) || 'niet gebruikt');
     a('id:ref', 'Referentie', identSrc(I.ref) || 'niet gebruikt');
     a('id:disc', 'Kortingscode', identSrc(I.disc) || 'niet gebruikt');
     a('id:ic', 'Hoofdletters negeren', I.ic ? 'Ja' : 'Nee');
@@ -890,7 +951,7 @@ button.chip:hover { background: var(--action-hover); }
       if (x.bew.vert) { maps.push({ name: 'Vertaling ' + x.veld, count: x.bew.vert.rows.length, rows: x.bew.vert.rows }); }
     });
     return { status: [st[1], st[2]], file: { type: 'csv', sep: M.file.sep, charset: M.file.charset, header: M.file.header, dec: M.file.dec },
-      ident: { supplier: I.supplier.mode === 'vast' ? 'vast: ' + I.supplier.val : 'kolom ' + I.supplier.col, check: I.ic ? 'Hoofdletters negeren: Ja' : '', group: 'kolom ' + I.group.col, ref: 'kolom ' + I.ref.col, disc: I.disc.col ? 'kolom ' + I.disc.col : '' },
+      ident: { supplier: I.supplier.mode === 'vast' ? 'vast: ' + I.supplier.val : 'kolom ' + I.supplier.col, check: I.ic ? 'Hoofdletters negeren: Ja' : '', group: I.group.mode === 'vast' ? 'vast: ' + I.group.val : 'kolom ' + I.group.col, ref: 'kolom ' + I.ref.col, disc: I.disc.col ? 'kolom ' + I.disc.col : '' },
       fields: fields, filters: M.filters.map(function (f) { return [sentence(f), f.out]; }), maps: maps, rev: n === '4' ? '204' : '203' };
   }
 
@@ -939,7 +1000,7 @@ button.chip:hover { background: var(--action-hover); }
       if (ex) { r.note = ex.note || ''; r.vp = !!ex.vp; }
       return r;
     }
-    var g1 = [R('id:supplier', 'Leverancier', identSrc(I.supplier), null, '—', 'Ja', !identSrc(I.supplier)), R('id:group', 'Groep', identSrc(I.group), null, '—', 'Nee', false),
+    var g1 = [R('id:supplier', 'Leverancier', identSrc(I.supplier, 'supplier', M), null, '—', 'Ja', !identSrc(I.supplier, 'supplier', M)), R('id:group', 'Groep', identSrc(I.group, 'group', M), null, '—', 'Nee', false),
       R('id:ref', 'Referentie', identSrc(I.ref), null, '—', 'Ja', !identSrc(I.ref)), R('id:disc', 'Kortingscode', identSrc(I.disc), null, '—', 'Nee', false)];
     var g2 = [R('b:basisprijs', 'Basisprijs', ba.basisprijs.col ? 'kolom ' + ba.basisprijs.col : null, null, '—', 'Ja', !ba.basisprijs.col),
       R('b:omschrijving', 'Omschrijving', ba.omschrijving.col ? 'kolom ' + ba.omschrijving.col : null, null, '—', 'Nee', false),
@@ -1156,7 +1217,7 @@ button.chip:hover { background: var(--action-hover); }
     if (ed.prefCol && d.isNew) { h += '<p class="rowMeta pf">Kolom ' + esc(ed.prefCol) + ' is vooraf ingevuld.</p>'; }
     h += lab('Bron', '<select class="field" id="p-src" data-d="src" data-re="1">' + opts([['kolom', 'Kolom uit het bestand'], ['vast', 'Vaste waarde'], ['geen', 'Niet gebruiken']], d.src) + '</select>');
     if (d.src === 'kolom') { h += colField(d); }
-    if (d.src === 'vast') { h += lab('Vaste waarde', inp('p-vast', 'vast', d.vast)); }
+    if (d.src === 'vast') { h += REFLIST[d.key] ? comboHtml({ id: 'p-vast', label: 'Vaste waarde', path: 'vast', val: d.vast, items: REFLIST[d.key] }) : lab('Vaste waarde', inp('p-vast', 'vast', d.vast)); }
     if (d.basisOnly) { return h; }
     if (d.src !== 'geen') {
       h += '<div class="pf" role="group" aria-label="Bewerking"><span class="fieldLabel">Bewerking</span><div class="btnRow">' + tgBtn('upper', 'Hoofdletters', t.upper) + tgBtn('div', 'Delen door…', t.div) + tgBtn('pct', 'Percentage', t.pct) + tgBtn('vert', 'Vertaling', t.vert) + tgBtn('fix', 'Voorvoegsel/achtervoegsel', t.fix) + tgBtn('cut', 'Uitknippen', t.cut) + '</div></div>';
@@ -1180,9 +1241,15 @@ button.chip:hover { background: var(--action-hover); }
     return h;
   }
   function identBody(d) {
-    var modes = { supplier: [['vast', 'Vaste waarde'], ['kolom', 'Kolom uit het bestand']], group: [['kolom', 'Kolom uit het bestand']], ref: [['kolom', 'Kolom uit het bestand']], disc: [['kolom', 'Kolom uit het bestand'], ['geen', 'Niet gebruiken']] }[d.which];
+    var modes = { supplier: [['vast', 'Vaste waarde'], ['kolom', 'Kolom uit het bestand']], group: [['vast', 'Vaste waarde'], ['kolom', 'Kolom uit het bestand']], ref: [['kolom', 'Kolom uit het bestand']], disc: [['kolom', 'Kolom uit het bestand'], ['geen', 'Niet gebruiken']] }[d.which];
     var h = lab('Bron', '<select class="field" id="p-mode" data-d="mode" data-re="1">' + opts(modes, d.mode) + '</select>');
-    if (d.mode === 'vast') { h += lab('Vaste waarde', inp('p-val', 'val', d.val)); }
+    if (d.mode === 'vast' && d.which === 'supplier') {
+      h += comboHtml({ id: 'p-val', label: 'Vaste waarde', path: 'val', val: d.val, items: SUPPLIERS, hint: 'Uit Prodis. Een nummer dat niet in de lijst staat kan, maar wordt bij het bewaren gecontroleerd.' });
+    } else if (d.mode === 'vast' && d.which === 'group') {
+      var sup = MODELS[mapVer].ident.supplier;
+      if (sup.mode === 'vast') { h += comboHtml({ id: 'p-val', label: 'Vaste waarde', path: 'val', val: d.val, items: groupsFor(sup.val) }); }
+      else { h += '<p class="rowMeta pf">Kies eerst een vaste leverancier om groepen te tonen</p>' + lab('Vaste waarde', inp('p-val', 'val', d.val)); }
+    } else if (d.mode === 'vast') { h += lab('Vaste waarde', inp('p-val', 'val', d.val)); }
     if (d.mode === 'kolom') { h += colField(d); }
     if (d.which === 'ref') {
       h += '<div id="edWarn"' + (warnShown(ed.panel) ? '' : ' hidden') + '><div class="banner warn" role="alert">' + iconInfo + '<p><strong>Let op:</strong> de referentie bepaalt welk artikel welk artikel is. Verandert u de kolom, dan herkent CatalogImport geen enkel bestaand artikel meer.</p></div>' +
@@ -1456,6 +1523,7 @@ button.chip:hover { background: var(--action-hover); }
   function onField(e) {
     var el = e.target; if (!el || !el.getAttribute) { return; }
     if (el.hasAttribute('data-addq')) { filterAdd(el.value); return; }
+    if (el.hasAttribute('data-combo')) { if (e.type === 'input' && ed.panel) { comboTyped(el); } return; }
     var s = el.getAttribute('data-s'), dd = el.getAttribute('data-d'), val = el.type === 'checkbox' ? el.checked : el.value;
     if (s) {
       if (s === 'q') { ed.q = val; var gw = $('#edGridWrap'); if (gw && ed.viewBy !== 'kolom') { var B = vStat(mapVer)[1] === 'Concept' ? MODELS['3'] : null; gw.innerHTML = gridInner(MODELS[mapVer], B ? diffList(MODELS[mapVer], B) : [], ed.editOn && mapVer === '4' && vStat('4')[1] === 'Concept'); } }
@@ -1468,6 +1536,27 @@ button.chip:hover { background: var(--action-hover); }
       if (el.hasAttribute('data-re') && e.type === 'change') { showPanel(el.id); } else { refreshPanelState(); }
     }
   }
+  $('#edPanel').addEventListener('keydown', function (e) {
+    var el = e.target; if (!el || !el.hasAttribute || !el.hasAttribute('data-combo')) { return; }
+    var list = document.getElementById(el.id + '-lb'), n = list.children.length, open = !list.hidden, step = e.key === 'ArrowUp' ? -1 : 1;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) { comboList(el, el.value); n = list.children.length; if (n) { comboSetActive(el, step > 0 ? 0 : n - 1); } return; }
+      if (n) { comboSetActive(el, cb.active < 0 ? (step > 0 ? 0 : n - 1) : (cb.active + step + n) % n); }
+    } else if (e.key === 'Enter') {
+      if (open && cb.active >= 0 && list.children[cb.active]) { e.preventDefault(); comboPick(el, list.children[cb.active].getAttribute('data-code')); }
+    } else if (e.key === 'Escape') {
+      if (open) { e.preventDefault(); e.stopPropagation(); comboOpen(el, false); cb.active = -1; }
+    }
+  });
+  $('#edPanel').addEventListener('mousedown', function (e) { if (e.target.closest && e.target.closest('.comboList')) { e.preventDefault(); } });
+  $('#edPanel').addEventListener('click', function (e) {
+    var li = e.target.closest ? e.target.closest('[role="option"]') : null;
+    if (li && document.getElementById(li.getAttribute('data-cb'))) { comboPick(document.getElementById(li.getAttribute('data-cb')), li.getAttribute('data-code')); }
+  });
+  $('#edPanel').addEventListener('focusout', function (e) {
+    var el = e.target; if (el && el.hasAttribute && el.hasAttribute('data-combo')) { comboOpen(el, false); cb.active = -1; }
+  });
   document.addEventListener('input', onField);
   document.addEventListener('change', onField);
   document.addEventListener('keydown', function (e) {

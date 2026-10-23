@@ -6,11 +6,20 @@
  */
 
 import type { ReactNode } from 'react';
-import type { MappingView, RevisionDetail } from '../../api/types.ts';
+import type { MappingView, RevisionDetail, RevisionLegacyOrigin } from '../../api/types.ts';
 import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { Term } from '../../terms/Term.tsx';
 import { groupFilters } from './filterGroupModel.ts';
-import { FieldKeyTerm, FilterSummary, show, transformStepsText } from './revisionDetailParts.tsx';
+import {
+  LegacyHint,
+  LegacyOriginNotice,
+  LegacyTechnicalDetails,
+  UncoveredLegacyLines,
+  legacyColumnLabel,
+  usableLegacyOrigin,
+} from './LegacyOriginParts.tsx';
+import { lineForRow, type LegacyRowKey } from './legacyOrigin.ts';
+import { FieldKeyTerm,FilterSummary, show, transformStepsText } from './revisionDetailParts.tsx';
 import styles from './SetupScreens.module.css';
 import detailStyles from './RevisionDetailSection.module.css';
 
@@ -76,7 +85,20 @@ export function FileSection({ revision }: { revision: RevisionDetail }) {
   );
 }
 
-function IdentitySection({ revision }: { revision: RevisionDetail }) {
+function IdentitySection({ revision, legacy }: { revision: RevisionDetail; legacy: RevisionLegacyOrigin | null }) {
+  /** Naast de bron: de legacy-regel van dit revisieveld, gedempt (enkel bij een versie uit legacy). */
+  const hint = (revisionField: string) => {
+    if (legacy === null) {
+      return null;
+    }
+    const line = lineForRow(legacy.lines, { revisionField });
+    return line === null ? null : (
+      <>
+        {' '}
+        <LegacyHint line={line} />
+      </>
+    );
+  };
   return (
     <section className={styles.vdSection} aria-labelledby="vd-identity" data-testid="read-identity">
       <h3 id="vd-identity">{TEXT.sections.identity}</h3>
@@ -89,24 +111,28 @@ function IdentitySection({ revision }: { revision: RevisionDetail }) {
         </dt>
         <dd>
           <SourceValue column={revision.identitySupplierField} fixed={revision.identitySupplierFixedValue} />
+          {hint('identitySupplierField')}
         </dd>
         <dt>
           <Term domain="fieldKey" code="SUPPLIER_GROUP" />
         </dt>
         <dd>
           <SourceValue column={revision.identitySupplierGroupField} fixed={revision.identitySupplierGroupFixedValue} />
+          {hint('identitySupplierGroupField')}
         </dd>
         <dt>
           <Term domain="fieldKey" code="SUPPLIER_REFERENCE" />
         </dt>
         <dd>
           <SourceValue column={revision.identitySupplierReferenceField} />
+          {hint('identitySupplierReferenceField')}
         </dd>
         <dt>
           <Term domain="fieldKey" code="DISCOUNT_CODE" />
         </dt>
         <dd>
           <SourceValue column={revision.identityDiscountCodeField} />
+          {hint('identityDiscountCodeField')}
         </dd>
         {revision.identityUppercase !== undefined && (
           <Kv field="identityUppercase">{revision.identityUppercase ? TEXT.yes : TEXT.no}</Kv>
@@ -139,17 +165,29 @@ function mappingRequired(mapping: MappingView): string {
   return mapping.required === undefined ? TEXT.unknown : mapping.required ? TEXT.yes : TEXT.no;
 }
 
-function FieldsSection({ revision }: { revision: RevisionDetail }) {
+function FieldsSection({ revision, legacy }: { revision: RevisionDetail; legacy: RevisionLegacyOrigin | null }) {
   const head = TEXT.fieldsHead;
-  const base: { code: string; column: string; required: boolean }[] = [
-    { code: 'BASE_PRICE', column: revision.recordBasePriceField, required: true },
+  const base: { code: string; column: string; required: boolean; key: LegacyRowKey | null }[] = [
+    { code: 'BASE_PRICE', column: revision.recordBasePriceField, required: true, key: { revisionField: 'recordBasePriceField' } },
   ];
   if (revision.recordDescriptionField !== null) {
-    base.push({ code: 'DESCRIPTION', column: revision.recordDescriptionField, required: false });
+    base.push({
+      code: 'DESCRIPTION',
+      column: revision.recordDescriptionField,
+      required: false,
+      key: { revisionField: 'recordDescriptionField' },
+    });
   }
   if (revision.recordCurrencyField !== null) {
-    base.push({ code: 'CURRENCY', column: revision.recordCurrencyField, required: false });
+    base.push({ code: 'CURRENCY', column: revision.recordCurrencyField, required: false, key: null });
   }
+  const legacyLabel = legacy === null ? '' : legacyColumnLabel(legacy);
+  const legacyCell = (key: LegacyRowKey | null): ReactNode =>
+    legacy === null ? null : (
+      <td data-label={legacyLabel} data-testid="legacy-cell">
+        <LegacyHint line={key === null ? null : lineForRow(legacy.lines, key)} />
+      </td>
+    );
   return (
     <section className={styles.vdSection} aria-labelledby="vd-fields" data-testid="read-fields">
       <h3 id="vd-fields">{TEXT.sections.fields}</h3>
@@ -161,6 +199,7 @@ function FieldsSection({ revision }: { revision: RevisionDetail }) {
               <th>{head.source}</th>
               <th>{head.operation}</th>
               <th>{head.required}</th>
+              {legacy !== null && <th data-testid="legacy-column-head">{legacyLabel}</th>}
             </tr>
           </thead>
           <tbody>
@@ -176,6 +215,7 @@ function FieldsSection({ revision }: { revision: RevisionDetail }) {
                 </td>
                 <td data-label={head.operation}>{TEXT.unknown}</td>
                 <td data-label={head.required}>{row.required ? TEXT.yes : TEXT.no}</td>
+                {legacyCell(row.key)}
               </tr>
             ))}
             {revision.mappings.map((mapping) => (
@@ -188,12 +228,14 @@ function FieldsSection({ revision }: { revision: RevisionDetail }) {
                 <td data-label={head.source}>{mappingSource(mapping)}</td>
                 <td data-label={head.operation}>{mappingOperation(mapping)}</td>
                 <td data-label={head.required}>{mappingRequired(mapping)}</td>
+                {legacyCell({ mappingCode: mapping.targetFieldCode })}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       {revision.mappings.length === 0 && <p className={styles.moreNote}>{TEXT.noFields}</p>}
+      {legacy !== null && <UncoveredLegacyLines origin={legacy} revision={revision} />}
     </section>
   );
 }
@@ -275,14 +317,32 @@ function TranslationsSection({ revision }: { revision: RevisionDetail }) {
   );
 }
 
-export function RevisionReadView({ revision }: { revision: RevisionDetail }) {
+export type RevisionReadViewProps = {
+  revision: RevisionDetail;
+  /** De legacy-herkomst van deze versie (lui geladen); afwezig zolang ze er niet is. */
+  legacyOrigin?: RevisionLegacyOrigin | null;
+  /** `true` als het laden van de herkomst mislukte: een kleine melding, het leesbeeld blijft. */
+  legacyFailed?: boolean;
+  /** Versienummer van de herkomstversie (voor "geërfd van versie n"). */
+  legacyOriginVersionNumber?: number | null;
+};
+
+export function RevisionReadView({
+  revision,
+  legacyOrigin = null,
+  legacyFailed = false,
+  legacyOriginVersionNumber = null,
+}: RevisionReadViewProps) {
+  const legacy = usableLegacyOrigin(legacyOrigin);
   return (
     <div data-testid="revision-read-view">
+      <LegacyOriginNotice origin={legacyOrigin} failed={legacyFailed} originVersionNumber={legacyOriginVersionNumber} />
       <FileSection revision={revision} />
-      <IdentitySection revision={revision} />
-      <FieldsSection revision={revision} />
+      <IdentitySection revision={revision} legacy={legacy} />
+      <FieldsSection revision={revision} legacy={legacy} />
       <FiltersSection revision={revision} />
       <TranslationsSection revision={revision} />
+      {legacy !== null && <LegacyTechnicalDetails origin={legacy} />}
     </div>
   );
 }

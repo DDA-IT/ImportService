@@ -2114,3 +2114,46 @@ export type LegacyApplyResult = {
   receiptStatus: string;
   configurationFindings: LegacyConfigurationFinding[];
 };
+
+/** Waar de legacy-herkomst van een versie vandaan komt (RevisionLegacyOriginService). */
+export type RevisionLegacyOriginKind = 'MIGRATED' | 'INHERITED' | 'TEMPLATE_SOURCE';
+
+/** Waar een legacy-regel naartoe gaat: een mapping, een revisieveld of nergens. */
+export type LegacyLineTargetKind = 'MAPPING' | 'REVISION_FIELD' | 'NONE';
+
+/** be.dda.catalogimport.service.RevisionLegacyOriginService.LegacyLineView */
+export type LegacyOriginLine = {
+  number: number;
+  legacyFieldName: string;
+  targetKind: LegacyLineTargetKind;
+  targetFieldCode: string | null;
+  revisionField: string | null;
+  column: number;
+  position: number;
+  length: number;
+  prefix: string;
+  suffix: string;
+  fixedValue: string;
+  calculation: string;
+  calculationValue: string;
+  fill: string;
+  xmlElementPath: string;
+  includeExclude: string;
+  includeExcludeData: string;
+};
+
+/** be.dda.catalogimport.service.RevisionLegacyOriginService.RevisionLegacyOriginView */
+export type RevisionLegacyOrigin = {
+  revisionId: number;
+  fromLegacy: boolean;
+  originKind: RevisionLegacyOriginKind | null;
+  originRevisionId: number | null;
+  changedSinceMigration: boolean | null;
+  receiptId: number | null;
+  interfaceCode: string | null;
+  legacyDefinitionCode: string | null;
+  exportedAt: string | null;
+  appliedAt: string | null;
+  linesAvailable: boolean;
+  lines: LegacyOriginLine[];
+};

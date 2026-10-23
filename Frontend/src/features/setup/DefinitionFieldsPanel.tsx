@@ -97,7 +97,7 @@ export function DefinitionFieldsPanel({
           <p>{TEXT.draftBanner}</p>
         </div>
       )}
-      <ReadView definitionId={definition.id} revisionId={revision.id} version={readVersion} />
+      <ReadView definitionId={definition.id} revisionId={revision.id} version={readVersion} revisions={revisions} />
       {extra?.(revision)}
 
       <div className={styles.editBlock}>
@@ -133,15 +133,39 @@ export function DefinitionFieldsPanel({
   );
 }
 
-function ReadView({ definitionId, revisionId, version }: { definitionId: number; revisionId: number; version: number }) {
+function ReadView({
+  definitionId,
+  revisionId,
+  version,
+  revisions,
+}: {
+  definitionId: number;
+  revisionId: number;
+  version: number;
+  revisions: readonly RevisionRow[];
+}) {
   const detail = useQuery(`supplier-revision-read:${definitionId}:${revisionId}:${version}`, (signal) =>
     setupApi.getRevisionDetail(definitionId, revisionId, signal),
   );
+  // De legacy-herkomst laadt apart en lui: een fout of een trage herkomst blokkeert het leesbeeld nooit.
+  const origin = useQuery(`supplier-revision-legacy-origin:${definitionId}:${revisionId}:${version}`, (signal) =>
+    setupApi.getRevisionLegacyOrigin(definitionId, revisionId, signal),
+  );
+  const originRevisionId = origin.data?.originRevisionId ?? null;
+  const originVersionNumber =
+    originRevisionId === null ? null : (revisions.find((candidate) => candidate.id === originRevisionId)?.revisionNumber ?? null);
   return (
     <>
       {detail.error !== null && <ErrorBanner error={detail.error} />}
       {detail.loading && detail.data === null && <p className={styles.loading}>{TEXT.loading}</p>}
-      {detail.data !== null && <RevisionReadView revision={detail.data} />}
+      {detail.data !== null && (
+        <RevisionReadView
+          revision={detail.data}
+          legacyOrigin={origin.data}
+          legacyFailed={origin.error !== null}
+          legacyOriginVersionNumber={originVersionNumber}
+        />
+      )}
     </>
   );
 }

@@ -3314,3 +3314,22 @@ weggevallen berekening blijven zichtbaar via fixedValue/calculation; het ontvang
 TEMPLATE_SOURCE enkel voor de sjabloonrevisie die APPLY kopieerde; een handmatige opvolger binnen het sjabloon toont
 fromLegacy=false. fase5-perm-design kreeg een READ-rij voor de bestaande setup-leesendpoints en één voor legacy-origin.
 **Bron:** bouwer-zwaar (B2-rapport)
+
+## 2026-10-23 — Btw-code en eenheid: aanmaakstandaard per koppeling (geen veld per regel)
+**Vraag:** Moet een import de btw-code (en eenheid) kunnen vullen? Analyse denker-zwaar + telling PRODISWEB: veld 51
+(btw) is in alle 89 gebruikte importsoorten een vaste waarde `3`, nooit uit een kolom; veld 45 (eenheid) vast `ST` (86)
+of `DS` (3).
+**Beslissing (mens, aanbeveling):** Btw-code en eenheid blijven een aanmaakstandaard per koppeling (P-V3): enkel gebruikt
+wanneer CatalogImport later een artikel aanmaakt (P8), nooit om de btw-code of eenheid van een bestaand artikel te
+overschrijven. De vaste legacy-waarden (51 → btw, 45 → eenheid) worden bij de overname als aanmaakstandaard van de
+koppeling meegenomen, te kiezen met een zoeklijst uit Prodis (`vat_code`, `unit_of_measure`; enkel actieve rijen, dubbele
+code = melding). Geen nieuw importveld per regel en geen nieuwe gegevensdrager. Uitwerking (waar de aanmaakstandaard
+leeft, leesendpoints Prodis-referentie, GRANTs voor `catalogimport_ro`) via een denker.
+**Bron:** mens / denker-zwaar (analyse importeerbare velden) / telling PRODISWEB
+
+## 2026-10-23 — F2: keuzes "Uit legacy"-kolom
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** Enkel de berekeningen die de translator kent krijgen een
+eigen woord (1 +, 2 −, 3 ×, 4 ÷, A % van kolom, 7 vertaling, 14 vertaling (bevat), 15 hoofdletters); andere codes tonen
+"berekening in legacy" (ruwe code enkel in technische details). Lijst "Niet overgenomen uit legacy" met redenen "geen
+doelveld" en "niet aanwezig in deze versie".
+**Bron:** bouwer-gemiddeld (F2-rapport)
