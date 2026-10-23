@@ -1,4 +1,9 @@
 import '@testing-library/jest-dom/vitest';
+import { configure } from '@testing-library/react';
+
+// Onder belasting van de volledige suite (parallelle jsdom-workers) overschrijdt waitFor/findBy* de standaard
+// asyncUtilTimeout (1000 ms) soms. Ruimere grens voor async utils; echte fouten falen nog steeds, alleen later.
+configure({ asyncUtilTimeout: 5000 });
 
 // jsdom implementeert <dialog>.showModal()/close() niet (of onvolledig). Minimale polyfill: showModal
 // zet het `open`-attribuut (zodat de dialoog toegankelijk/zichtbaar is voor Testing Library), close

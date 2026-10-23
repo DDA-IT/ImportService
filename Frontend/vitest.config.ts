@@ -7,9 +7,11 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
-    // Zware jsdom-tests (bv. GroupDecisionDialog F9.10, UploadPage) duurden onder de belasting van de volledige suite
-    // ~5 s en faalden dan op de standaardgrens, terwijl ze los slagen. Ruimere grens i.p.v. een vals rode suite.
-    testTimeout: 15000,
-    hookTimeout: 15000,
+    // Zware jsdom-tests (bv. GroupDecisionDialog F9.10, UploadPage, FieldsEditor, FilterGroupDialog) duren onder de
+    // belasting van de volledige suite soms meer dan de standaardgrens, terwijl ze los slagen. Ruimere grens i.p.v.
+    // een vals rode suite. Workers beperkt tot de helft van de cores zodat jsdom-workers elkaar niet uithongeren.
+    testTimeout: 20000,
+    hookTimeout: 20000,
+    maxWorkers: '50%',
   },
 });
