@@ -170,6 +170,9 @@ class PermissionCoverageTest {
         m.put("DELETE " + s + "/revisions/{}/mappings/{}", "MANAGE");
         m.put("PUT " + s + "/revisions/{}/mappings/{}", "MANAGE");
         m.put("DELETE " + s + "/revisions/{}/filters/{}", "MANAGE");
+        // EB2 (beslissingslog 2026-10-23 "Editor-API-gaten"): kritiek-overrule van een revisieveld zetten of wissen.
+        m.put("PUT " + s + "/revisions/{}/field-criticality/{}", "MANAGE");
+        m.put("DELETE " + s + "/revisions/{}/field-criticality/{}", "MANAGE");
         // CD-B2 (beslissingslog 2026-10-23 "Aanmaakstandaard per koppeling: uitwerking (CD)" en "Vlag 'standaarden
         // overschrijven'"): aanmaakstandaard van een koppeling en de vlag op de definitie - setup-schrijfpaden, MANAGE,
         // niet achter de setup-vlag.

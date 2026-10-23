@@ -141,6 +141,8 @@ class SetupApiDisabledTest {
                 put(SETUP + "/revisions/{id}/mappings/{m}", 1L, 1L),
                 post(SETUP + "/revisions/{id}/filters", 1L), delete(SETUP + "/revisions/{id}/filters/{f}", 1L, 1L),
                 post(SETUP + "/revisions/{id}/field-criticality", 1L), post(SETUP + "/revisions/{id}/activate", 1L),
+                put(SETUP + "/revisions/{id}/field-criticality/{k}", 1L, "DESCRIPTION"),
+                delete(SETUP + "/revisions/{id}/field-criticality/{k}", 1L, "DESCRIPTION"),
                 post(SETUP + "/revisions/{id}/successor", 1L), post(SETUP + "/links"), post(SETUP + "/tasks"),
                 post(API + "/templates/{d}/materialisations", 1L),
                 put(API + "/links/{id}/bookmark-values/{name}", 1L, "X"))) {
@@ -190,6 +192,13 @@ class SetupApiDisabledTest {
         json(post(SETUP + "/revisions/{id}/field-criticality", revisionId),
                 "{\"fieldKey\":\"DESCRIPTION\",\"criticality\":\"CRITICAL\"}")
                 .andExpect(status().isCreated());
+        // EB2: zelfde keten zonder vlag: wijzigen (200) en wissen (204).
+        json(put(SETUP + "/revisions/{id}/field-criticality/{k}", revisionId, "DESCRIPTION"),
+                "{\"criticality\":\"NON_CRITICAL\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.criticality").value("NON_CRITICAL"));
+        json(delete(SETUP + "/revisions/{id}/field-criticality/{k}", revisionId, "DESCRIPTION"), "")
+                .andExpect(status().isNoContent());
         json(delete(SETUP + "/revisions/{id}/filters/{f}", revisionId, filterId), "")
                 .andExpect(status().isNoContent());
         json(post(SETUP + "/revisions/{id}/activate", revisionId), "{}")

@@ -164,6 +164,9 @@ class PermissionWriteEndpointsHttpTest {
         denied(post(API + "/setup/revisions/{id}/mappings", 1L), "{}");
         denied(post(API + "/setup/revisions/{id}/filters", 1L), "{}");
         denied(post(API + "/setup/revisions/{id}/field-criticality", 1L), "{}");
+        // EB2: kritiek-overrule zetten/wissen - zonder MANAGE geen rij geschreven of verwijderd.
+        denied(put(API + "/setup/revisions/{id}/field-criticality/{k}", 1L, "DESCRIPTION"), "{\"criticality\":\"CRITICAL\"}");
+        denied(delete(API + "/setup/revisions/{id}/field-criticality/{k}", 1L, "DESCRIPTION"), "");
         // E3/E4 (S1-X-4): wijzigen en verwijderen binnen een DRAFT-revisie raakt drempels, prijsbeleid en
         // de aanbiedingsidentiteit; zonder MANAGE komt de handler er niet aan te pas.
         denied(patch(API + "/setup/revisions/{id}", 1L), "{\"maxCriticalSharePercent\":50}");

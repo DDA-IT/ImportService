@@ -11,6 +11,7 @@ import be.dda.catalogimport.service.SetupService.CreateMappingCommand;
 import be.dda.catalogimport.service.SetupService.CreateRevisionCommand;
 import be.dda.catalogimport.service.SetupService.CreateSourceOrganisationCommand;
 import be.dda.catalogimport.service.SetupService.CreateTaskCommand;
+import be.dda.catalogimport.service.SetupService.SetFieldCriticalityCommand;
 import be.dda.catalogimport.service.SetupService.DefinitionOverwriteFlagView;
 import be.dda.catalogimport.service.SetupService.DefinitionView;
 import be.dda.catalogimport.service.SetupService.FieldCriticalityView;
@@ -270,6 +271,35 @@ public class CatalogImportSetupController {
                                              @RequestBody CreateFieldCriticalityCommand request) {
         ActorIdentity actor = currentActor.signer(request == null ? null : request.createdBy(), "createdBy");
         return setup.addFieldCriticality(revisionId, request, actor);
+    }
+
+    /**
+     * Zet of wijzigt de kritiek-overrule van één revisie-eigen veld van een {@code DRAFT}-revisie (EB2; beslissingslog
+     * 2026-10-23 "Editor-API-gaten"). Body {@code {criticality, createdBy?}}; zelfde waarde nog eens is een no-op.
+     * 200 met de weergave; 404 {@code REVISION_NOT_FOUND}; 409 {@code REVISION_NOT_EDITABLE},
+     * {@code REVISION_EDIT_CONFLICT}; 400 {@code FIELD_KEY_INVALID}, {@code CRITICALITY_REQUIRED},
+     * {@code CRITICALITY_INVALID}, {@code CONFIG_*}. Zoals elk setup-schrijfpad enkel MANAGE, niet achter de setup-vlag.
+     */
+    @RequiresPermission(Permission.MANAGE)
+    @PutMapping("/revisions/{revisionId}/field-criticality/{fieldKey}")
+    FieldCriticalityView setFieldCriticality(@PathVariable("revisionId") long revisionId,
+                                             @PathVariable("fieldKey") String fieldKey,
+                                             @RequestBody(required = false) SetFieldCriticalityCommand request) {
+        ActorIdentity actor = currentActor.signer(request == null ? null : request.createdBy(), "createdBy");
+        return setup.setFieldCriticality(revisionId, fieldKey, request, actor);
+    }
+
+    /**
+     * Wist de kritiek-overrule van één veld: terug naar de standaard (EB2). 204; 404 {@code REVISION_NOT_FOUND},
+     * {@code FIELD_CRITICALITY_NOT_FOUND}; 409 {@code REVISION_NOT_EDITABLE}, {@code REVISION_EDIT_CONFLICT}.
+     */
+    @RequiresPermission(Permission.MANAGE)
+    @DeleteMapping("/revisions/{revisionId}/field-criticality/{fieldKey}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void deleteFieldCriticality(@PathVariable("revisionId") long revisionId,
+                                @PathVariable("fieldKey") String fieldKey) {
+        requireSigningUser();
+        setup.deleteFieldCriticality(revisionId, fieldKey);
     }
 
     @RequiresPermission(Permission.MANAGE)

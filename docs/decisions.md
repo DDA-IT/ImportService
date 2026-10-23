@@ -3468,3 +3468,10 @@ geven ook LAYOUT_INVALID. Een onleesbare kopregel geeft status AVAILABLE met leg
 posities bestaan niet in het project (structure_format = CSV); geen voorbeeld voor andere formaten. rowsTruncated mag
 "mogelijk meer" zijn.
 **Bron:** bouwer-zwaar (EB5-rapport)
+
+## 2026-10-23 — EB2: keuzes kritiek wijzigen/verwijderen
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** DELETE (terug naar de standaard) en een no-op PUT
+valideren de configuratie niet. 409 `REVISION_EDIT_CONFLICT` is gegarandeerd bij vervangen/verwijderen van een tussentijds
+gewijzigde rij en bij een PK-botsing; twee gelijktijdige eerste inserts kunnen allebei slagen (last-writer-wins) omdat de
+entiteit geen `@Version` heeft — een strikte 409 daar vraagt een schema-/domeinkeuze (later, indien gewenst).
+**Bron:** bouwer-gemiddeld (EB2-rapport)

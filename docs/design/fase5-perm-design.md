@@ -45,6 +45,7 @@ leidt het effectieve recht af (één plek: `CurrentActor`/`PermissionService`). 
 | `POST /task-runs/{runId}/abort` (K-4c; vastgelopen ophaalrun afbreken, body `{reason}`, niet achter de allowlist — herstel moet werken als ophalen uitgezet is; MANAGE zoals "Nu ophalen", geen APPROVE want het is geen bundel-levenscyclusactie) | MANAGE |
 | `GET /prodis-reference/vat-codes`, `GET /prodis-reference/units-of-measure` (CD-B1, beslissingslog 2026-10-23 "Aanmaakstandaard per koppeling": keuzelijsten uit Prodis, MANAGE zoals de andere `prodis-reference`-lijsten, niet achter de setup-vlag) | MANAGE |
 | `PUT /setup/links/{id}/creation-defaults`, `PUT /setup/definitions/{id}/overwrite-creation-defaults` (CD-B2, beslissingslog 2026-10-23 "Aanmaakstandaard per koppeling: uitwerking (CD)" en "Vlag 'standaarden overschrijven' op de importdefinitie": aanmaakstandaard btw-code/eenheid van een koppeling en de vlag op de definitie; setup-schrijfpaden, niet achter de setup-vlag) | MANAGE |
+| `PUT` en `DELETE /setup/revisions/{id}/field-criticality/{fieldKey}` (EB2, beslissingslog 2026-10-23 "Editor-API-gaten": kritiek-overrule van een revisieveld zetten of wissen; setup-schrijfpad, niet achter de setup-vlag) | MANAGE |
 | `GET /api/catalog-import/me` | geen recht (`@NoPermissionRequired`) |
 
 `/me` is uitgezonderd: een rechtenloze gebruiker krijgt 200 met `permissions: []` in plaats van een 403 zonder uitleg.

@@ -58,6 +58,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -355,6 +356,10 @@ public class SetupService {
 
     /** @param fieldKey een sleutel uit {@link RevisionCriticalityField} */
     public record CreateFieldCriticalityCommand(String fieldKey, Criticality criticality, String createdBy) {
+    }
+
+    /** Body van {@code PUT .../field-criticality/{fieldKey}} (EB2); de veldsleutel staat in het pad. */
+    public record SetFieldCriticalityCommand(Criticality criticality, String createdBy) {
     }
 
     public record CreateLinkCommand(Long definitionId, String code, String name, String supplierCode,
@@ -1398,6 +1403,88 @@ public class SetupService {
         ImportRevisionFieldCriticality stored = fieldCriticalities.saveAndFlush(row);
         validateConfiguration(revision);
         return new FieldCriticalityView(revisionId, stored.getFieldKey(), stored.getCriticality().name());
+    }
+
+    /**
+     * Zet of wijzigt de kritiek-overrule van één revisie-eigen veld van een {@link RevisionStatus#DRAFT}-revisie
+     * (EB2, beslissingslog 2026-10-23 "Editor-API-gaten", G5). Zonder rij wordt ze aangemaakt; dezelfde waarde nog
+     * eens is een no-op (de audit blijft ongewijzigd). Bij een andere waarde wordt de rij <b>vervangen</b> (verwijderen,
+     * flushen, opnieuw toevoegen): {@code created_at/by/subject} betekenen "wie zette deze waarde, wanneer"; er is
+     * geen historiek van vorige waarden (precedent {@link #replaceMapping}).
+     *
+     * @throws NotFoundException   {@code REVISION_NOT_FOUND}
+     * @throws ConflictException   {@code REVISION_NOT_EDITABLE}; {@code REVISION_EDIT_CONFLICT} wanneer dezelfde rij
+     *                             gelijktijdig door een ander gewijzigd of verwijderd werd (herlaad en probeer opnieuw)
+     * @throws BadRequestException {@code FIELD_KEY_INVALID}, {@code CRITICALITY_REQUIRED}, {@code CRITICALITY_INVALID}
+     *                             (identiteitsveld naar NON_CRITICAL) of een {@code CONFIG_*}-fout; dan is er niets bewaard
+     */
+    public FieldCriticalityView setFieldCriticality(long revisionId, String fieldKey,
+                                                    SetFieldCriticalityCommand command, ActorIdentity actor) {
+        ImportDefinitionRevision revision = editableRevision(revisionId);
+        RevisionCriticalityField field = knownCriticalityField(fieldKey);
+        Criticality criticality = SetupInput.require(command == null ? null : command.criticality(), "criticality");
+        if (field.isIdentity() && criticality == Criticality.NON_CRITICAL) {
+            throw new BadRequestException(SetupInput.fieldCode("criticality", "INVALID"), "Field '" + fieldKey
+                    + "' is part of the offer identity and can never be " + Criticality.NON_CRITICAL);
+        }
+        ImportRevisionFieldCriticality.Key key = new ImportRevisionFieldCriticality.Key(revisionId, fieldKey);
+        try {
+            ImportRevisionFieldCriticality existing = fieldCriticalities.findById(key).orElse(null);
+            if (existing != null && existing.getCriticality() == criticality) {
+                return new FieldCriticalityView(revisionId, fieldKey, criticality.name());
+            }
+            if (existing != null) {
+                fieldCriticalities.delete(existing);
+                fieldCriticalities.flush();
+            }
+            ImportRevisionFieldCriticality row = new ImportRevisionFieldCriticality(revisionId, fieldKey,
+                    criticality);
+            row.setCreatedBy(SetupInput.orDefault(actor.username(), DEFAULT_CREATED_BY));
+            row.setCreatedBySubject(actor.subject());
+            fieldCriticalities.saveAndFlush(row);
+        } catch (OptimisticLockingFailureException stale) {
+            throw criticalityEditConflict(fieldKey);
+        } catch (DataIntegrityViolationException violation) {
+            throw violates(violation, "pk_import_revision_field_criticality")
+                    ? criticalityEditConflict(fieldKey) : violation;
+        }
+        validateConfiguration(revision);
+        return new FieldCriticalityView(revisionId, fieldKey, criticality.name());
+    }
+
+    /**
+     * Wist de kritiek-overrule van één veld van een {@link RevisionStatus#DRAFT}-revisie: het veld valt terug op de
+     * standaard van de soort (EB2).
+     *
+     * @throws NotFoundException {@code REVISION_NOT_FOUND}, {@code FIELD_CRITICALITY_NOT_FOUND} (geen rij voor dit veld)
+     * @throws ConflictException {@code REVISION_NOT_EDITABLE}; {@code REVISION_EDIT_CONFLICT} wanneer de rij
+     *                           gelijktijdig door een ander gewijzigd of verwijderd werd
+     */
+    public void deleteFieldCriticality(long revisionId, String fieldKey) {
+        editableRevision(revisionId);
+        knownCriticalityField(fieldKey);
+        ImportRevisionFieldCriticality existing = fieldCriticalities
+                .findById(new ImportRevisionFieldCriticality.Key(revisionId, fieldKey))
+                .orElseThrow(() -> new NotFoundException("FIELD_CRITICALITY_NOT_FOUND", "Revision " + revisionId
+                        + " has no criticality override for '" + fieldKey + "'; the default applies"));
+        try {
+            fieldCriticalities.delete(existing);
+            fieldCriticalities.flush();
+        } catch (OptimisticLockingFailureException stale) {
+            throw criticalityEditConflict(fieldKey);
+        }
+    }
+
+    private static RevisionCriticalityField knownCriticalityField(String fieldKey) {
+        return RevisionCriticalityField.byKey(fieldKey)
+                .orElseThrow(() -> new BadRequestException(SetupInput.fieldCode("fieldKey", "INVALID"), "fieldKey '"
+                        + fieldKey + "' is not a field of the revision itself; known keys are "
+                        + List.of(RevisionCriticalityField.values())));
+    }
+
+    private static ConflictException criticalityEditConflict(String fieldKey) {
+        return new ConflictException("REVISION_EDIT_CONFLICT", "The criticality of '" + fieldKey
+                + "' was changed by someone else at the same time; reload and try again");
     }
 
     // --- Een geërfde kindrij verwijderen (endpoint E4, bouwstap S1-X-4) ----------------------------
