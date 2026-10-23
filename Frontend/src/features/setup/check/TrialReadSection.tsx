@@ -38,7 +38,7 @@ export function TrialReadSection({ linkId, revision, result, onResult }: TrialRe
   const blockedReason = !manageGate.allowed
     ? manageGate.reason
     : revision === null
-      ? 'Er is geen versie van de beschrijving om mee te testen.'
+      ? 'Er is geen versie van de importdefinitie om mee te testen.'
       : null;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -65,7 +65,7 @@ export function TrialReadSection({ linkId, revision, result, onResult }: TrialRe
       </h2>
       <p className={styles.sectionIntro}>
         Wat is dit? Een proefinlezing: we lezen een echt bestand van de leverancier met
-        {revision === null ? ' de beschrijving' : ` versie ${revision.revisionNumber}`} en tonen wat een echte levering
+        {revision === null ? ' de importdefinitie' : ` versie ${revision.revisionNumber}`} en tonen wat een echte levering
         zou opleveren.
         {revision !== null && (
           <>

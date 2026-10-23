@@ -139,7 +139,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
   },
   mutationStatus: {
-    PLANNED: { label: 'Gepland', uitleg: 'Wordt bij het bevriezen van de bundel mee goedgekeurd.' },
+    PLANNED: { label: 'Gepland', uitleg: 'Wordt bij het bevriezen van de publicatie mee goedgekeurd.' },
     AWAITING_APPROVAL: { label: 'Wacht op goedkeuring', uitleg: 'Vraagt een uitdrukkelijke beslissing.' },
     READY_FOR_PUBLICATION: { label: 'Goedgekeurd', uitleg: 'Goedgekeurd en klaar om gepubliceerd te worden.' },
     REJECTED: { label: 'Afgekeurd', uitleg: 'Afgekeurd; er is altijd een reden vastgelegd.' },
@@ -149,10 +149,10 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     SKIPPED: {
       label: 'Overgeslagen',
-      uitleg: 'Niet gepubliceerd omdat de batch als nulmeting aanvaard is.',
+      uitleg: 'Niet gepubliceerd omdat de inlezing als nulmeting aanvaard is.',
     },
     RECORDED: { label: 'Vastgelegd', uitleg: 'Legt vast dat de controle afgerond is; geen echte wijziging.' },
-    EXPIRED: { label: 'Vervallen', uitleg: 'Door het annuleren van de bundel.' },
+    EXPIRED: { label: 'Vervallen', uitleg: 'Door het annuleren van de publicatie.' },
     IN_PROGRESS: { label: 'Wordt gepubliceerd', uitleg: 'De publicatie van deze wijziging loopt.' },
     PUBLISHED: { label: 'Gepubliceerd', uitleg: 'Deze wijziging is gepubliceerd.' },
     TECHNICALLY_FAILED: {
@@ -179,13 +179,13 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
   bundleStatus: {
     ASSEMBLING: {
       label: 'In opbouw',
-      uitleg: 'Batches toevoegen en wijzigingen beoordelen kan nog.',
+      uitleg: 'Inlezingen toevoegen en wijzigingen beoordelen kan nog.',
     },
     FROZEN: { label: 'Bevroren', uitleg: 'Afgesloten en klaar voor publicatie; nog te annuleren.' },
-    CANCELLED: { label: 'Geannuleerd', uitleg: 'Niet doorgegaan; de batches zijn weer vrij.' },
-    PUBLISHING: { label: 'Wordt gepubliceerd', uitleg: 'De publicatie van de bundel loopt.' },
-    PARTIALLY_PUBLISHED: { label: 'Deels gepubliceerd', uitleg: 'Een deel van de bundel is gepubliceerd.' },
-    PUBLISHED: { label: 'Gepubliceerd', uitleg: 'De hele bundel is gepubliceerd.' },
+    CANCELLED: { label: 'Geannuleerd', uitleg: 'Niet doorgegaan; de inlezingen zijn weer vrij.' },
+    PUBLISHING: { label: 'Wordt gepubliceerd', uitleg: 'De publicatie loopt.' },
+    PARTIALLY_PUBLISHED: { label: 'Deels gepubliceerd', uitleg: 'Een deel van de publicatie is gepubliceerd.' },
+    PUBLISHED: { label: 'Gepubliceerd', uitleg: 'De hele publicatie is gepubliceerd.' },
     PUBLICATION_FAILED: { label: 'Publicatie mislukt', uitleg: 'De publicatie is technisch mislukt.' },
   },
   revisionStatus: {
@@ -275,7 +275,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     [NULL_CODE]: { label: 'Nog niet beoordeeld', uitleg: 'Het beleid voor nieuwe artikelen is nog niet beoordeeld.' },
   },
   issueCaseStatus: {
-    AWAITING_REVIEW: { label: 'Wacht op beoordeling', uitleg: 'Een mens moet dit geval nog bekijken.' },
+    AWAITING_REVIEW: { label: 'Wacht op beoordeling', uitleg: 'Een mens moet deze afwijking nog bekijken.' },
     CORRECTED: { label: 'Gecorrigeerd', uitleg: 'Door een mens gecorrigeerd.' },
     REJECTED: {
       label: 'Afgewezen',
@@ -449,16 +449,16 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     code: { label: 'Code', uitleg: 'Een korte, unieke code waarmee u dit onderdeel later terugvindt.' },
     definition: {
-      label: 'Beschrijving van het bestand',
+      label: 'Importdefinitie',
       uitleg: 'Legt vast hoe het bestand van deze organisatie eruitziet en hoe het gelezen wordt.',
     },
     revision: {
       label: 'Versie',
-      uitleg: 'Een vastgelegde stand van de beschrijving; een nieuwe versie wordt pas gebruikt na activeren.',
+      uitleg: 'Een vastgelegde stand van de importdefinitie; een nieuwe versie wordt pas gebruikt na activeren.',
     },
     link: {
       label: 'Koppeling',
-      uitleg: 'Verbindt de beschrijving van het bestand met één leverancier en één Prodis-bibliotheek.',
+      uitleg: 'Verbindt de importdefinitie met één leverancier en één Prodis-bibliotheek.',
     },
     supplierCode: {
       label: 'Leverancier van de koppeling',
@@ -500,11 +500,11 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     READY_ACTIVE_REVISION: {
       label: 'Er is een versie in gebruik',
-      uitleg: 'De beschrijving van het bestand heeft een actieve versie waarmee leveringen gelezen worden.',
+      uitleg: 'De importdefinitie heeft een actieve versie waarmee leveringen gelezen worden.',
     },
     NO_ACTIVE_REVISION: {
       label: 'Er is nog geen versie in gebruik',
-      uitleg: 'Zonder actieve versie van de beschrijving kan geen enkele levering gelezen worden.',
+      uitleg: 'Zonder actieve versie van de importdefinitie kan geen enkele levering gelezen worden.',
     },
     READY_PRICE_FIELD: {
       label: 'De prijskolom is ingesteld',
@@ -516,11 +516,11 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     READY_LINK_BOOKMARKS: {
       label: 'De verplichte invulpunten van de koppeling zijn ingevuld',
-      uitleg: 'Alle waarden die de beschrijving per koppeling vraagt, zijn ingevuld.',
+      uitleg: 'Alle waarden die de importdefinitie per koppeling vraagt, zijn ingevuld.',
     },
     CONFIG_REQUIRED_BOOKMARK_MISSING: {
       label: 'Verplichte invulpunten zijn niet ingevuld',
-      uitleg: 'De beschrijving vraagt een of meer waarden die nog leeg zijn; zolang ze ontbreken, wordt een levering geweigerd.',
+      uitleg: 'De importdefinitie vraagt een of meer waarden die nog leeg zijn; zolang ze ontbreken, wordt een levering geweigerd.',
     },
     READY_DRAFT_ACTIVATABLE: {
       label: 'De conceptversie kan geactiveerd worden',
@@ -528,7 +528,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     INFO_NO_DRAFT_REVISION: {
       label: 'Er is geen conceptversie om te activeren',
-      uitleg: 'Er is geen versie in gebruik en ook geen concept; maak eerst een nieuwe versie van de beschrijving.',
+      uitleg: 'Er is geen versie in gebruik en ook geen concept; maak eerst een nieuwe versie van de importdefinitie.',
     },
     READY_TASK_ACCEPTS_UPLOAD: {
       label: 'De taak neemt opgeladen bestanden aan',
@@ -551,8 +551,8 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       uitleg: 'Of de bibliotheekcode echt bestaat in Prodis, wordt hier niet gecontroleerd.',
     },
     CONFIG_INVALID: {
-      label: 'Fout in de beschrijving van het bestand',
-      uitleg: 'De beschrijving van het bestand is onvolledig of ongeldig.',
+      label: 'Fout in de importdefinitie',
+      uitleg: 'De importdefinitie is onvolledig of ongeldig.',
     },
     INFO_CONFIG_CHECKS_SKIPPED: {
       label: 'Niet alle controles konden uitgevoerd worden',
@@ -573,7 +573,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     CONFIG_DELIMITER_MISSING: {
       label: 'Scheidingsteken ontbreekt',
-      uitleg: 'De beschrijving zegt niet welk teken de kolommen scheidt.',
+      uitleg: 'De importdefinitie zegt niet welk teken de kolommen scheidt.',
     },
     CONFIG_DELIMITER_INVALID: {
       label: 'Ongeldig scheidingsteken',
@@ -601,7 +601,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     CONFIG_PRICE_FIELD_MISSING: {
       label: 'Prijskolom ontbreekt',
-      uitleg: 'De beschrijving zegt niet in welke kolom de prijs staat.',
+      uitleg: 'De importdefinitie zegt niet in welke kolom de prijs staat.',
     },
     CONFIG_COLUMN_COUNT_INVALID: {
       label: 'Ongeldig aantal kolommen',
@@ -728,7 +728,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     HEADER_FIELD_MISSING: {
       label: 'Verplichte kolom ontbreekt',
-      uitleg: 'Een kolom die de beschrijving verwacht, staat niet in de kopregel van het bestand.',
+      uitleg: 'Een kolom die de importdefinitie verwacht, staat niet in de kopregel van het bestand.',
     },
     HEADER_DUPLICATE_FIELD: {
       label: 'Kolomnaam dubbel',
@@ -736,7 +736,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     HEADER_COLUMN_COUNT_MISMATCH: {
       label: 'Ander aantal kolommen',
-      uitleg: 'De kopregel heeft een ander aantal kolommen dan de beschrijving verwacht.',
+      uitleg: 'De kopregel heeft een ander aantal kolommen dan de importdefinitie verwacht.',
     },
     HEADER_FIELD_SHIFTED: {
       label: 'Kolom verschoven',
@@ -748,7 +748,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     HEADER_UNKNOWN_COLUMN: {
       label: 'Onbekende kolom',
-      uitleg: 'Het bestand bevat een kolom die de beschrijving niet kent; ze wordt niet gebruikt.',
+      uitleg: 'Het bestand bevat een kolom die de importdefinitie niet kent; ze wordt niet gebruikt.',
     },
     ROW_COLUMN_COUNT_MISMATCH: {
       label: 'Regel met een ander aantal kolommen',
@@ -811,11 +811,11 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     PRICE_OUT_OF_RANGE: { label: 'Prijs te groot', uitleg: 'De prijs is te groot om te bewaren.' },
     PRICE_ZERO_NOT_ALLOWED: {
       label: 'Prijs nul niet toegelaten',
-      uitleg: 'Een prijs van nul is voor deze beschrijving niet toegelaten.',
+      uitleg: 'Een prijs van nul is voor deze importdefinitie niet toegelaten.',
     },
     PRICE_NEGATIVE_NOT_ALLOWED: {
       label: 'Negatieve prijs niet toegelaten',
-      uitleg: 'Een negatieve prijs is voor deze beschrijving niet toegelaten.',
+      uitleg: 'Een negatieve prijs is voor deze importdefinitie niet toegelaten.',
     },
     PRICE_CURRENCY_MISMATCH: {
       label: 'Valuta past niet',
@@ -929,8 +929,8 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
   // NT-10: in welke stap een proefinlezing de blokkade vond.
   trialStage: {
     CONFIGURATION: {
-      label: 'Beschrijving van het bestand',
-      uitleg: 'Het probleem zit in de ingestelde beschrijving, nog voor het bestand gelezen werd.',
+      label: 'Importdefinitie',
+      uitleg: 'Het probleem zit in de ingestelde importdefinitie, nog voor het bestand gelezen werd.',
     },
     READING: {
       label: 'Lezen van het bestand',
@@ -959,7 +959,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     rejectedRecordCount: { label: 'Verworpen', uitleg: 'Regels met een fout; zo een regel wordt niet verwerkt.' },
     filteredOutCount: {
       label: 'Buiten filter',
-      uitleg: 'Regels die door de filters van de beschrijving overgeslagen worden.',
+      uitleg: 'Regels die door de filters van de importdefinitie overgeslagen worden.',
     },
     errorBeforeFilterCount: {
       label: 'Fout vóór het filter',
@@ -998,7 +998,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     REJECTED: { label: 'Verworpen', uitleg: 'Deze regel zou verworpen worden; de reden staat erbij.' },
     FILTERED_OUT: {
       label: 'Buiten filter',
-      uitleg: 'Deze regel valt buiten de filters van de beschrijving en wordt overgeslagen.',
+      uitleg: 'Deze regel valt buiten de filters van de importdefinitie en wordt overgeslagen.',
     },
     UNREADABLE: { label: 'Onleesbaar', uitleg: 'Deze regel kon niet in kolommen gesplitst worden.' },
   },
@@ -1026,7 +1026,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
   },
   // NT-10: de uitkomst van een leveringsgrens.
   thresholdOutcome: {
-    NOT_APPLICABLE: { label: 'Geen grens ingesteld', uitleg: 'Voor deze beschrijving geldt hier geen grens.' },
+    NOT_APPLICABLE: { label: 'Geen grens ingesteld', uitleg: 'Voor deze importdefinitie geldt hier geen grens.' },
     UNDETERMINED: {
       label: 'Niet vast te stellen',
       uitleg: 'Er zijn geen regels om het aandeel op te berekenen.',
@@ -1101,7 +1101,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     rejectedRecordCount: { label: 'Verworpen regels', uitleg: 'Regels met een fout; zo een regel wordt niet verwerkt.' },
     filteredOutCount: {
       label: 'Buiten filter',
-      uitleg: 'Regels die door de filters van de beschrijving van het bestand overgeslagen worden.',
+      uitleg: 'Regels die door de filters van de importdefinitie overgeslagen worden.',
     },
     errorBeforeFilterCount: {
       label: 'Fout vóór het filter',
@@ -1227,54 +1227,54 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
   },
   // NT-11b: wat voor beslissing er in het beslissingsregister van een bundel staat.
   decisionKind: {
-    APPROVE: { label: 'Goedkeuring', uitleg: 'Een mutatie of een groep mutaties is goedgekeurd.' },
-    REJECT: { label: 'Afkeuring', uitleg: 'Een mutatie of een groep mutaties is afgekeurd.' },
+    APPROVE: { label: 'Goedkeuring', uitleg: 'Een wijziging of een groep wijzigingen is goedgekeurd.' },
+    REJECT: { label: 'Afkeuring', uitleg: 'Een wijziging of een groep wijzigingen is afgekeurd.' },
     AUTO_APPROVE_PLANNED: {
       label: 'Automatische goedkeuring bij het bevriezen',
-      uitleg: 'Bij het bevriezen zijn de mutaties die nog gepland stonden in één keer goedgekeurd op naam van wie bevroor.',
+      uitleg: 'Bij het bevriezen zijn de wijzigingen die nog gepland stonden in één keer goedgekeurd op naam van wie bevroor.',
     },
-    FREEZE: { label: 'Bevriezing', uitleg: 'De bundel is bevroren: afgesloten en klaar voor publicatie.' },
-    CANCEL: { label: 'Annulering', uitleg: 'De bundel is geannuleerd.' },
+    FREEZE: { label: 'Bevriezing', uitleg: 'De publicatie is bevroren: afgesloten en klaar voor publicatie.' },
+    CANCEL: { label: 'Annulering', uitleg: 'De publicatie is geannuleerd.' },
   },
   // NT-11b: waar een beslissing in het beslissingsregister over ging.
   decisionScope: {
-    MUTATION: { label: 'Eén mutatie', uitleg: 'De beslissing ging over één mutatie.' },
-    GROUP: { label: 'Groep mutaties', uitleg: 'De beslissing ging over alle mutaties die aan een filter voldeden.' },
-    BUNDLE: { label: 'Hele bundel', uitleg: 'De beslissing ging over de bundel als geheel.' },
+    MUTATION: { label: 'Eén wijziging', uitleg: 'De beslissing ging over één wijziging.' },
+    GROUP: { label: 'Groep wijzigingen', uitleg: 'De beslissing ging over alle wijzigingen die aan een filter voldeden.' },
+    BUNDLE: { label: 'Hele publicatie', uitleg: 'De beslissing ging over de publicatie als geheel.' },
   },
   // NT-11b: de onderdelen van de filter die bij een groepsbeslissing bewaard wordt. De code is de naam van het filterveld.
   selectionFilterField: {
-    batchId: { label: 'Batch', uitleg: 'Enkel mutaties van deze batch.' },
-    status: { label: 'Status', uitleg: 'Enkel mutaties met deze status.' },
-    statusReason: { label: 'Reden van de status', uitleg: 'Enkel mutaties met deze reden.' },
-    actionType: { label: 'Soort', uitleg: 'Enkel mutaties van deze soort.' },
-    identityHash: { label: 'Wijzigingsgroep', uitleg: 'Enkel de wijzigingen van één artikel in één batch.' },
+    batchId: { label: 'Inlezing', uitleg: 'Enkel wijzigingen van deze inlezing.' },
+    status: { label: 'Status', uitleg: 'Enkel wijzigingen met deze status.' },
+    statusReason: { label: 'Reden van de status', uitleg: 'Enkel wijzigingen met deze reden.' },
+    actionType: { label: 'Soort', uitleg: 'Enkel wijzigingen van deze soort.' },
+    identityHash: { label: 'Wijzigingsgroep', uitleg: 'Enkel de wijzigingen van één artikel in één inlezing.' },
   },
   // NT-11b: waarom een bundel (nog) niet bevroren kan worden. Een code van de voorcontrole, dezelfde die het bevriezen zelf zou geven.
   freezeCheck: {
     BUNDLE_NOT_ASSEMBLING: {
-      label: 'De bundel is niet meer in opbouw',
-      uitleg: 'Enkel een bundel die nog in opbouw is, kan bevroren worden.',
+      label: 'De publicatie is niet meer in opbouw',
+      uitleg: 'Enkel een publicatie die nog in opbouw is, kan bevroren worden.',
     },
     BUNDLE_EMPTY: {
-      label: 'De bundel heeft geen batches',
-      uitleg: 'Een bundel zonder actieve batch kan niet bevroren worden.',
+      label: 'De publicatie heeft geen inlezingen',
+      uitleg: 'Een publicatie zonder actieve inlezing kan niet bevroren worden.',
     },
     BUNDLE_HAS_UNDECIDED_MUTATIONS: {
-      label: 'Er wachten nog mutaties op een beslissing',
-      uitleg: 'Bevriezen mag een openstaande vraag niet stilzwijgend beantwoorden; beslis eerst over deze mutaties.',
+      label: 'Er wachten nog wijzigingen op een beslissing',
+      uitleg: 'Bevriezen mag een openstaande vraag niet stilzwijgend beantwoorden; beslis eerst over deze wijzigingen.',
     },
     SOURCE_STATE_CHANGED_SINCE_SCREENING: {
       label: 'De bekende gegevens zijn veranderd sinds de controle',
       uitleg: 'Wat we over de artikelen wisten, is na de controle van de levering gewijzigd; controleer de levering opnieuw.',
     },
     BUNDLE_OFFER_CONFLICT: {
-      label: 'Dezelfde aanbieding zit in meer dan één batch',
-      uitleg: 'Twee batches van deze bundel willen hetzelfde artikel publiceren; keur één kant af.',
+      label: 'Dezelfde aanbieding zit in meer dan één inlezing',
+      uitleg: 'Twee inlezingen van deze publicatie willen hetzelfde artikel publiceren; keur één kant af.',
     },
     OFFER_ALREADY_IN_ANOTHER_BUNDLE: {
-      label: 'Een aanbieding zit ook in een andere bundel',
-      uitleg: 'Hetzelfde artikel kan in een andere open of bevroren bundel gepubliceerd worden; keur één kant af, of publiceer of annuleer eerst de andere bundel.',
+      label: 'Een aanbieding zit ook in een andere publicatie',
+      uitleg: 'Hetzelfde artikel kan in een andere open of bevroren publicatie gepubliceerd worden; keur één kant af, of publiceer of annuleer eerst de andere publicatie.',
     },
   },
   // NT-11b: de stand van de afspraken met Prodis over het bestand van een publicatie.
@@ -1286,22 +1286,22 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
   },
   // NT-11b: de tellers van een bundel op het overzicht. De code is de veldnaam in het antwoord van de server.
   bundleCounter: {
-    batchCount: { label: 'Batches', uitleg: 'Het aantal geleverde bestanden (batches) dat deel uitmaakt van de bundel.' },
+    batchCount: { label: 'Inlezingen', uitleg: 'Het aantal geleverde bestanden (inlezingen) dat deel uitmaakt van de publicatie.' },
     contentMutationCount: {
-      label: 'Mutaties',
-      uitleg: 'Het aantal voorgestelde wijzigingen in de bundel, zonder de afgeronde controles.',
+      label: 'Wijzigingen',
+      uitleg: 'Het aantal voorgestelde wijzigingen in de publicatie, zonder de afgeronde controles.',
     },
-    readyCount: { label: 'Goedgekeurd', uitleg: 'Mutaties die goedgekeurd zijn en klaarstaan om gepubliceerd te worden.' },
-    rejectedCount: { label: 'Afgekeurd', uitleg: 'Mutaties die afgekeurd zijn.' },
+    readyCount: { label: 'Goedgekeurd', uitleg: 'Wijzigingen die goedgekeurd zijn en klaarstaan om gepubliceerd te worden.' },
+    rejectedCount: { label: 'Afgekeurd', uitleg: 'Wijzigingen die afgekeurd zijn.' },
     blockedCount: {
       label: 'Tegengehouden',
-      uitleg: 'Mutaties met een kritiek herkenningsprobleem; daar is geen beslissing over mogelijk.',
+      uitleg: 'Wijzigingen met een kritiek herkenningsprobleem; daar is geen beslissing over mogelijk.',
     },
     identityIncidentCount: {
       label: 'Herkenningsproblemen',
       uitleg: 'Artikelen waarvan een kritieke verwijzing, zoals een streepjescode, gewijzigd, verdwenen of hergebruikt is.',
     },
-    expiredCount: { label: 'Vervallen', uitleg: 'Mutaties die vervallen zijn door het annuleren van de bundel.' },
+    expiredCount: { label: 'Vervallen', uitleg: 'Wijzigingen die vervallen zijn door het annuleren van de publicatie.' },
     bulkIncidentCount: {
       label: 'Gebundelde meldingen',
       uitleg: 'Groepen van zoveel gelijksoortige vaststellingen dat ze samen als één gebeurtenis beoordeeld worden.',
@@ -1313,15 +1313,15 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     warningCount: { label: 'Waarschuwingen', uitleg: 'Vaststellingen ter info; de betrokken regel blijft geldig.' },
     plannedCount: {
       label: 'Wordt bij bevriezen goedgekeurd',
-      uitleg: 'Mutaties met status gepland; bij het bevriezen worden ze in één keer goedgekeurd op uw naam.',
+      uitleg: 'Wijzigingen met status gepland; bij het bevriezen worden ze in één keer goedgekeurd op uw naam.',
     },
     awaitingApprovalCount: {
       label: 'Wacht op beslissing',
-      uitleg: 'Mutaties die een uitdrukkelijke beslissing vragen; zolang die er niet is, kan de bundel niet bevroren worden.',
+      uitleg: 'Wijzigingen die een uitdrukkelijke beslissing vragen; zolang die er niet is, kan de publicatie niet bevroren worden.',
     },
     staleMutationCount: {
       label: 'Gegevens veranderd sinds de controle',
-      uitleg: 'Mutaties waarvan de bekende artikelgegevens na de controle van de levering veranderd zijn.',
+      uitleg: 'Wijzigingen waarvan de bekende artikelgegevens na de controle van de levering veranderd zijn.',
     },
   },
   // NT-11c: waar een vaststelling over gaat (het onderwerp) bij een behandelgeval.
@@ -1353,7 +1353,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     AUTHORISATION_CONFIG: {
       label: 'Instellingen en rechten',
-      uitleg: 'Gaat over de beschrijving van het bestand en de rechten daarop.',
+      uitleg: 'Gaat over de importdefinitie en de rechten daarop.',
     },
     SUPPLEMENT: {
       label: 'Aanvullingen op een aanbieding',
@@ -1374,8 +1374,8 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     RECORD: { label: 'Alleen deze regel', uitleg: 'Enkel de betrokken regel van het bestand is getroffen.' },
     DELIVERY: { label: 'De hele levering', uitleg: 'Geen enkel artikel uit dit bestand is bruikbaar.' },
     DEFINITION: {
-      label: 'De beschrijving van het bestand',
-      uitleg: 'De beschrijving van het bestand zelf moet aangepast worden.',
+      label: 'De importdefinitie',
+      uitleg: 'De importdefinitie zelf moet aangepast worden.',
     },
     LIBRARY: {
       label: 'De bibliotheek',
@@ -1384,8 +1384,8 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
   },
   // NT-11c: het soort gebeurtenis in de geschiedenis van een behandelgeval.
   issueEventKind: {
-    CREATED: { label: 'Aangemaakt', uitleg: 'Het behandelgeval is voor het eerst aangemaakt.' },
-    STATUS_CHANGE: { label: 'Status gewijzigd', uitleg: 'De status van het behandelgeval is gewijzigd.' },
+    CREATED: { label: 'Aangemaakt', uitleg: 'De afwijking is voor het eerst aangemaakt.' },
+    STATUS_CHANGE: { label: 'Status gewijzigd', uitleg: 'De status van de afwijking is gewijzigd.' },
   },
   // NT-11c: wie een gebeurtenis in de geschiedenis van een behandelgeval veroorzaakte.
   issueEventSource: {
@@ -1458,7 +1458,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
   // NT-11c: waar de waarde van een extra veld vandaan komt.
   mappingValueKind: {
     SOURCE_FIELD: { label: 'Kolom uit het bestand', uitleg: 'De waarde komt uit een kolom van het bestand.' },
-    FIXED_VALUE: { label: 'Vaste waarde', uitleg: 'De waarde ligt vast in de beschrijving van het bestand.' },
+    FIXED_VALUE: { label: 'Vaste waarde', uitleg: 'De waarde ligt vast in de importdefinitie.' },
     BOOKMARK: {
       label: 'Waarde die per koppeling ingevuld wordt',
       uitleg: 'De waarde wordt per koppeling ingevuld; wordt in deze versie nog niet ondersteund.',
@@ -1504,8 +1504,8 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
   // NT-11c: voor wie een ingevulde waarde van een sjabloon geldt.
   bookmarkScope: {
     DEFINITION: {
-      label: 'Voor de hele beschrijving',
-      uitleg: 'De waarde wordt bij het materialiseren vastgelegd en geldt voor elke koppeling van de beschrijving.',
+      label: 'Voor de hele importdefinitie',
+      uitleg: 'De waarde wordt bij het materialiseren vastgelegd en geldt voor elke koppeling van de importdefinitie.',
     },
     LINK: { label: 'Per koppeling', uitleg: 'De waarde wordt voor elke koppeling apart ingevuld.' },
   },
@@ -1540,30 +1540,30 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
   // NT-11c: waarvoor een beschrijving van een bestand dient (eigen beschrijving of sjabloon).
   definitionUsage: {
     OWN_DEFINITION: {
-      label: 'Eigen beschrijving',
-      uitleg: 'Een beschrijving van het bestand van één organisatie, met eigen versies en koppelingen.',
+      label: 'Eigen importdefinitie',
+      uitleg: 'Een importdefinitie van één organisatie, met eigen versies en koppelingen.',
     },
     REUSABLE_TEMPLATE: {
-      label: 'Herbruikbaar sjabloon',
-      uitleg: 'Een model waaruit beschrijvingen van bestanden gemaakt worden; het krijgt nooit zelf een koppeling of levering.',
+      label: 'Herbruikbare importdefinitie',
+      uitleg: 'Een model waaruit importdefinities van bestanden gemaakt worden; het krijgt nooit zelf een koppeling of levering.',
     },
   },
   // NT-11c: de twee manieren om uit een sjabloon te materialiseren.
   materialisationMode: {
     NEW_DEFINITION: {
-      label: 'Nieuw — een nieuwe beschrijving met conceptversie en koppeling maken',
-      uitleg: 'Er komt een nieuwe beschrijving van het bestand met een conceptversie en een koppeling.',
+      label: 'Nieuw — een nieuwe importdefinitie met conceptversie en koppeling maken',
+      uitleg: 'Er komt een nieuwe importdefinitie met een conceptversie en een koppeling.',
     },
     REUSE_DEFINITION: {
-      label: 'Hergebruik — alleen een koppeling toevoegen aan een bestaande, deelbare beschrijving',
-      uitleg: 'Er komt alleen een koppeling bij een bestaande beschrijving die gedeeld mag worden; de beschrijving blijft ongewijzigd.',
+      label: 'Hergebruik — alleen een koppeling toevoegen aan een bestaande, deelbare importdefinitie',
+      uitleg: 'Er komt alleen een koppeling bij een bestaande importdefinitie die gedeeld mag worden; de importdefinitie blijft ongewijzigd.',
     },
   },
   // NT-11c: de meldingen bij een geslaagde materialisatie.
   materialisationWarning: {
     OPTIONAL_BOOKMARK_NOT_FILLED: {
       label: 'Een optionele waarde is niet ingevuld',
-      uitleg: 'Een optionele waarde is leeg gebleven; de standaardwaarde van het sjabloon geldt, als die er is.',
+      uitleg: 'Een optionele waarde is leeg gebleven; de standaardwaarde van de importdefinitie geldt, als die er is.',
     },
     LINK_SEARCH_SUPPLIER_NOT_DERIVED: {
       label: 'Leverancierscode in de bibliotheek is niet ingevuld',
@@ -1668,7 +1668,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     REPOINT: {
       label: 'Wordt verlegd',
-      uitleg: 'De bestaande koppeling blijft bestaan maar wijst voortaan naar de eigen beschrijving.',
+      uitleg: 'De bestaande koppeling blijft bestaan maar wijst voortaan naar de eigen importdefinitie.',
     },
   },
   // S9: Overname van de legacy-configuratie: controle tegen Prodis.
@@ -1780,7 +1780,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
   legacyReportCode: {
     DEFINITION_NOT_PRESENT: {
       label: 'Geen importsoort om over te nemen',
-      uitleg: 'De interface verwijst niet naar een bestaande importsoort, of de gegevens ervan ontbreken; zonder die beschrijving valt er niets over te nemen.',
+      uitleg: 'De interface verwijst niet naar een bestaande importsoort, of de gegevens ervan ontbreken; zonder die importdefinitie valt er niets over te nemen.',
     },
     INTERFACE_SETTING_DUPLICATED: {
       label: 'Instelling van de interface komt meerdere keren voor',
@@ -1879,15 +1879,15 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       uitleg: 'Een uitsluitingsrij blijkt elke regel uit te sluiten; dat zou de hele levering wegfilteren.',
     },
     DEFINITION_CODE_CONFLICT_MANUAL: {
-      label: 'Code van de beschrijving is al in gebruik',
-      uitleg: 'Een andere, handmatig gemaakte beschrijving heeft al deze code; kies een andere code of los het conflict zelf op.',
+      label: 'Code van de importdefinitie is al in gebruik',
+      uitleg: 'Een andere, handmatig gemaakte importdefinitie heeft al deze code; kies een andere code of los het conflict zelf op.',
     },
     TEMPLATE_CODE_CONFLICT_MANUAL: {
-      label: 'Code van het sjabloon is al in gebruik',
-      uitleg: 'Een andere definitie gebruikt al de code die het sjabloon zou krijgen; kies een andere code.',
+      label: 'Code van de importdefinitie is al in gebruik',
+      uitleg: 'Een andere definitie gebruikt al de code die de importdefinitie zou krijgen; kies een andere code.',
     },
     DEFINITION_CODE_OVERRIDE_INVALID: {
-      label: 'Gekozen code van de beschrijving is ongeldig',
+      label: 'Gekozen code van de importdefinitie is ongeldig',
       uitleg: 'De code die u koos is te lang of bevat tekens die niet mogen.',
     },
     SOURCE_ORGANISATION_TYPE_CONFLICT: {
@@ -1907,20 +1907,20 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       uitleg: 'De bestaande koppeling is anders dan wat de legacy-interface zegt; ze wordt nooit aangepast.',
     },
     SHARED_DEFINITION_DIVERGED: {
-      label: 'Gedeelde beschrijving wijkt af',
-      uitleg: 'Deze interface wijkt af van de beschrijving die ze met andere interfaces deelt; u kunt ze loskoppelen tot een eigen beschrijving.',
+      label: 'Gedeelde importdefinitie wijkt af',
+      uitleg: 'Deze interface wijkt af van de importdefinitie die ze met andere interfaces deelt; u kunt ze loskoppelen tot een eigen importdefinitie.',
     },
     DETACH_FROM_SHARED: {
-      label: 'Wordt losgekoppeld van de gedeelde beschrijving',
-      uitleg: 'Deze interface krijgt een eigen beschrijving; de koppeling wordt verlegd en de actieve versie van de gedeelde beschrijving wordt meteen als eigen versie actief. De nieuwe inhoud wordt een conceptversie.',
+      label: 'Wordt losgekoppeld van de gedeelde importdefinitie',
+      uitleg: 'Deze interface krijgt een eigen importdefinitie; de koppeling wordt verlegd en de actieve versie van de gedeelde importdefinitie wordt meteen als eigen versie actief. De nieuwe inhoud wordt een conceptversie.',
     },
     DETACH_NOT_NEEDED: {
       label: 'Loskoppelen is niet nodig',
-      uitleg: 'Deze interface wijkt niet af van een gedeelde beschrijving, dus er valt niets los te koppelen; de keuze wordt genegeerd.',
+      uitleg: 'Deze interface wijkt niet af van een gedeelde importdefinitie, dus er valt niets los te koppelen; de keuze wordt genegeerd.',
     },
     DETACHED_DEFINITION: {
-      label: 'Eigen beschrijving na loskoppelen',
-      uitleg: 'Deze interface heeft een eigen beschrijving gekregen en deelt ze met geen andere interface.',
+      label: 'Eigen importdefinitie na loskoppelen',
+      uitleg: 'Deze interface heeft een eigen importdefinitie gekregen en deelt ze met geen andere interface.',
     },
     DETACH_OPEN_BATCH: {
       label: 'Loskoppelen kan niet: er staat nog een bestand open',
@@ -1931,15 +1931,15 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       uitleg: 'Voor deze koppeling loopt op dit moment een inname. Wacht tot ze klaar is en probeer opnieuw.',
     },
     DETACHED_DEFINITION_CODE_CONFLICT: {
-      label: 'Code van de eigen beschrijving is al in gebruik',
-      uitleg: 'Een andere beschrijving gebruikt al de code die de eigen beschrijving zou krijgen; kies een andere code.',
+      label: 'Code van de eigen importdefinitie is al in gebruik',
+      uitleg: 'Een andere importdefinitie gebruikt al de code die de eigen importdefinitie zou krijgen; kies een andere code.',
     },
     DETACHED_DEFINITION_CODE_INVALID: {
-      label: 'Gekozen code van de eigen beschrijving is ongeldig',
+      label: 'Gekozen code van de eigen importdefinitie is ongeldig',
       uitleg: 'De code die u koos is te lang of bevat tekens die niet mogen.',
     },
     MANUAL_CHANGES_SINCE_MIGRATION: {
-      label: 'Beschrijving is na de vorige overname handmatig gewijzigd',
+      label: 'Importdefinitie is na de vorige overname handmatig gewijzigd',
       uitleg: 'De laatste versie wijkt af van wat de vorige overname schreef; die wijzigingen worden nooit overschreven.',
     },
     OPEN_DRAFT_EXISTS: {
@@ -2060,15 +2060,15 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     LEGACY_EXCLUDE_NOT_EXPRESSIBLE: {
       label: 'Uitsluiting kan niet uitgedrukt worden',
-      uitleg: 'Een uitsluitingsrij vergelijkt een kortingscode die in deze beschrijving niet beschikbaar is; de rij wordt niet overgenomen.',
+      uitleg: 'Een uitsluitingsrij vergelijkt een kortingscode die in deze importdefinitie niet beschikbaar is; de rij wordt niet overgenomen.',
     },
     DEFINITION_CODE_OVERRIDDEN: {
-      label: 'Gekozen code voor de beschrijving',
-      uitleg: 'U koos een andere code dan die van legacy; de beschrijving krijgt de gekozen code.',
+      label: 'Gekozen code voor de importdefinitie',
+      uitleg: 'U koos een andere code dan die van legacy; de importdefinitie krijgt de gekozen code.',
     },
     DEFINITION_CODE_OVERRIDE_NOT_USED: {
       label: 'Gekozen code niet gebruikt',
-      uitleg: 'Er wordt een bestaande gedeelde beschrijving hergebruikt, dus uw gekozen code is niet nodig.',
+      uitleg: 'Er wordt een bestaande gedeelde importdefinitie hergebruikt, dus uw gekozen code is niet nodig.',
     },
     LEGACY_DEFINITION_CODE_CHANGED: {
       label: 'Code van de importsoort is veranderd',
@@ -2088,7 +2088,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     LEGACY_CONTROL_CODE_NOT_MIGRATED: {
       label: 'Beheercode van legacy',
-      uitleg: 'Dit is een instelling voor het beheer van de importsoort in legacy en geen onderdeel van de beschrijving.',
+      uitleg: 'Dit is een instelling voor het beheer van de importsoort in legacy en geen onderdeel van de importdefinitie.',
     },
     CONNECTION_NOT_MIGRATED: {
       label: 'Verbinding wordt niet aangemaakt',
@@ -2096,7 +2096,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     PUBLICATION_PARAMETER_NOT_MIGRATED: {
       label: 'Parameter voor publicatie niet overgenomen',
-      uitleg: 'Een instelling voor de publicatie naar Prodis hoort niet bij de beschrijving van het bestand.',
+      uitleg: 'Een instelling voor de publicatie naar Prodis hoort niet bij de importdefinitie.',
     },
     INTERFACE_SETTING_NOT_MIGRATED: {
       label: 'Instelling van de interface niet overgenomen',
@@ -2155,8 +2155,8 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       uitleg: 'Een uitsluitingsrij kan nooit overeenkomen en wordt niet overgenomen.',
     },
     TEMPLATE_NOT_UPDATED: {
-      label: 'Sjabloon blijft ongewijzigd',
-      uitleg: 'Het sjabloon van de groep blijft zoals het was; pas het zo nodig zelf aan.',
+      label: 'Importdefinitie blijft ongewijzigd',
+      uitleg: 'De importdefinitie van de groep blijft zoals ze was; pas ze zo nodig zelf aan.',
     },
     SOURCE_ORGANISATION_NAME_KEPT: {
       label: 'Naam van de leverancier blijft',
@@ -2164,7 +2164,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     DEFINITION: {
       label: 'Importsoort wordt overgenomen',
-      uitleg: 'De legacy-importsoort wordt een beschrijving van het bestand in CatalogImport.',
+      uitleg: 'De legacy-importsoort wordt een importdefinitie in CatalogImport.',
     },
     SOURCE_ORGANISATION: {
       label: 'Leverancier wordt overgenomen',
@@ -2243,11 +2243,11 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       uitleg: 'De bibliotheek van de leverancier waarin de koppeling komt, is bepaald.',
     },
     SHARED_DEFINITION: {
-      label: 'Gedeelde beschrijving wordt hergebruikt',
-      uitleg: 'Een andere interface met dezelfde importsoort gebruikt al een gedeelde beschrijving; enkel koppeling en taak komen erbij.',
+      label: 'Gedeelde importdefinitie wordt hergebruikt',
+      uitleg: 'Een andere interface met dezelfde importsoort gebruikt al een gedeelde importdefinitie; enkel koppeling en taak komen erbij.',
     },
     DEFINITION_UNCHANGED: {
-      label: 'Beschrijving blijft ongewijzigd',
+      label: 'Importdefinitie blijft ongewijzigd',
       uitleg: 'De legacy-inhoud is gelijk aan wat de vorige overname schreef; er komt geen nieuwe versie.',
     },
     SUCCESSOR_DRAFT: {
@@ -2432,7 +2432,7 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     PARALLEL_RUN_NO_SNAPSHOT: {
       label: 'Geen bevroren gegevens',
-      uitleg: 'De bundel heeft geen bevroren gegevens om te vergelijken.',
+      uitleg: 'De publicatie heeft geen bevroren gegevens om te vergelijken.',
     },
     PARALLEL_RUN_FAILED: {
       label: 'Vergelijking mislukt',

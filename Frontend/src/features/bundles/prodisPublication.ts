@@ -63,10 +63,10 @@ export function prodisPublishGate(
   loopRunning: boolean,
 ): Gate {
   if (targetMode !== 'PRODUCTION') {
-    return denied('Kan niet: deze bundel is niet bedoeld voor de echte publicatie.', 'PUBLICATION_MODE_NOT_ENABLED');
+    return denied('Kan niet: deze publicatie is niet bedoeld voor de echte publicatie.', 'PUBLICATION_MODE_NOT_ENABLED');
   }
   if (bundleStatus !== 'FROZEN') {
-    return denied('Kan niet: alleen een bevroren bundel kan naar Prodis gepubliceerd worden.', 'BUNDLE_NOT_FROZEN');
+    return denied('Kan niet: alleen een bevroren publicatie kan naar Prodis gepubliceerd worden.', 'BUNDLE_NOT_FROZEN');
   }
   if (runs === null) {
     return denied('De lijst van publicatieruns is nog niet geladen (of het laden mislukte).');
@@ -77,7 +77,7 @@ export function prodisPublishGate(
   const active = runs.find((run) => ACTIVE_RUN_STATUSES.includes(run.status));
   if (active !== undefined) {
     return denied(
-      `Er loopt al een publicatierun (#${active.id}, status "${term('publicationRunStatus', active.status).label}") voor deze bundel.`,
+      `Er loopt al een publicatierun (#${active.id}, status "${term('publicationRunStatus', active.status).label}") voor deze publicatie.`,
       'PUBLICATION_RUN_IN_PROGRESS',
     );
   }

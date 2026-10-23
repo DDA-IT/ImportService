@@ -80,10 +80,10 @@ function setup(handler: (call: Call) => Response | null) {
   });
 }
 
-const CHECKBOX = 'Loskoppelen tot een eigen beschrijving';
+const CHECKBOX = 'Loskoppelen tot een eigen importdefinitie';
 
 describe('loskoppelen — keuze in de controle vooraf', () => {
-  it('toont het vinkje niet zonder afwijkende gedeelde beschrijving', async () => {
+  it('toont het vinkje niet zonder afwijkende gedeelde importdefinitie', async () => {
     setup(() => null);
     renderDetail();
     await screen.findByTestId('legacy-outcome');
@@ -103,7 +103,7 @@ describe('loskoppelen — keuze in de controle vooraf', () => {
 
     const box = await screen.findByLabelText(CHECKBOX);
     expect(box).not.toBeChecked();
-    expect(screen.queryByLabelText('Code van de eigen beschrijving')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Code van de eigen importdefinitie')).not.toBeInTheDocument();
     fireEvent.click(box);
 
     await waitFor(() => expect(api.reads('/preview')).toHaveLength(2));
@@ -111,7 +111,7 @@ describe('loskoppelen — keuze in de controle vooraf', () => {
     // Het vinkje blijft staan nu SHARED_DEFINITION_DIVERGED door DETACH_FROM_SHARED vervangen is.
     expect(await screen.findByLabelText(CHECKBOX)).toBeChecked();
 
-    fireEvent.change(screen.getByLabelText('Code van de eigen beschrijving'), { target: { value: ' MIJN-CODE ' } });
+    fireEvent.change(screen.getByLabelText('Code van de eigen importdefinitie'), { target: { value: ' MIJN-CODE ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Controle opnieuw uitvoeren' }));
     await waitFor(() => expect(api.reads('/preview')).toHaveLength(3));
     const url = api.reads('/preview')[2]!.url;
@@ -156,7 +156,7 @@ describe('loskoppelen — samenvatting, bevestiging en APPLY', () => {
     expect(detach).toHaveTextContent('GEDEELD-1');
     expect(detach).toHaveTextContent('LEGACY-KRAMP_ART');
     const planned = screen.getByTestId('legacy-planned');
-    expect(planned).toHaveTextContent('actieve versie van de gedeelde beschrijving wordt meteen als eigen versie actief');
+    expect(planned).toHaveTextContent('actieve versie van de gedeelde importdefinitie wordt meteen als eigen versie actief');
     expect(planned).toHaveTextContent('nieuwe inhoud van legacy wordt een conceptversie');
     expect(planned).toHaveTextContent('Wordt verlegd');
   });
@@ -195,11 +195,11 @@ describe('loskoppelen — samenvatting, bevestiging en APPLY', () => {
 
     // Links: nieuwe conceptversie en de overgenomen actieve versie van de eigen beschrijving.
     const links = within(screen.getByTestId('legacy-draft-links'));
-    expect(links.getByRole('link', { name: 'Eigen beschrijving LEGACY-KRAMP_ART, nieuwe conceptversie' })).toHaveAttribute(
+    expect(links.getByRole('link', { name: 'Eigen importdefinitie LEGACY-KRAMP_ART, nieuwe conceptversie' })).toHaveAttribute(
       'href',
       '/setup?definitionId=9&revisionId=32',
     );
-    const copy = links.getByRole('link', { name: 'Eigen beschrijving LEGACY-KRAMP_ART, overgenomen actieve versie' });
+    const copy = links.getByRole('link', { name: 'Eigen importdefinitie LEGACY-KRAMP_ART, overgenomen actieve versie' });
     expect(copy).toHaveAttribute('href', '/setup?definitionId=9&revisionId=31');
   });
 
@@ -207,7 +207,7 @@ describe('loskoppelen — samenvatting, bevestiging en APPLY', () => {
     const api = detachSetup();
     renderDetail();
     fireEvent.click(await screen.findByLabelText(CHECKBOX));
-    fireEvent.change(await screen.findByLabelText('Code van de eigen beschrijving'), { target: { value: 'MIJN-CODE' } });
+    fireEvent.change(await screen.findByLabelText('Code van de eigen importdefinitie'), { target: { value: 'MIJN-CODE' } });
     fireEvent.click(screen.getByRole('button', { name: 'Controle opnieuw uitvoeren' }));
     await waitFor(() => expect(api.reads('/preview')).toHaveLength(3));
     const dialog = await openDialog();
@@ -222,8 +222,8 @@ describe('loskoppelen — blokkerende codes', () => {
   it.each([
     ['DETACH_OPEN_BATCH', 'Loskoppelen kan niet: er staat nog een bestand open'],
     ['DETACH_RUN_IN_PROGRESS', 'Loskoppelen kan niet: er loopt een inname'],
-    ['DETACHED_DEFINITION_CODE_CONFLICT', 'Code van de eigen beschrijving is al in gebruik'],
-    ['DETACHED_DEFINITION_CODE_INVALID', 'Gekozen code van de eigen beschrijving is ongeldig'],
+    ['DETACHED_DEFINITION_CODE_CONFLICT', 'Code van de eigen importdefinitie is al in gebruik'],
+    ['DETACHED_DEFINITION_CODE_INVALID', 'Gekozen code van de eigen importdefinitie is ongeldig'],
   ])('%s toont een Nederlandse uitleg en blokkeert overnemen', async (code, label) => {
     setup((call) => {
       if (!call.url.includes('/preview')) return null;

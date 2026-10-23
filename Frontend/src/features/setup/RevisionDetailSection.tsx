@@ -56,7 +56,7 @@ import { formatDateTime } from '../../format.ts';
 const BOOKMARK_BOUNDARY_TEXT =
   `Gedeclareerde ${INVULPUNTEN} zijn hier bewust alleen-lezen: dit scherm voegt er geen toe, wijzigt en ` +
   `verwijdert er geen. Zo kan een opvolger nooit een bestaande waarde van een ${INVULPUNT} van een koppeling ` +
-  'zonder bijhorende declaratie achterlaten. Declaraties horen bij het sjabloonbeheer.';
+  'zonder bijhorende declaratie achterlaten. Declaraties horen bij het beheer van importdefinities.';
 
 type ChildKind = 'mapping' | 'filter';
 
@@ -250,7 +250,7 @@ function RevisionSummary({ revision }: { revision: RevisionDetail }) {
   return (
     <div className={styles.summary} data-testid="revision-summary">
       <p className={styles.headline}>
-        Versie {revision.revisionNumber} <StatusBadge status={revision.status} domain="revisionStatus" /> van beschrijving{' '}
+        Versie {revision.revisionNumber} <StatusBadge status={revision.status} domain="revisionStatus" /> van importdefinitie{' '}
         {revision.definitionId}
         {revision.basedOnRevisionId !== null && <> · gebaseerd op versie #{revision.basedOnRevisionId}</>}
       </p>

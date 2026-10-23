@@ -40,7 +40,7 @@ function CaseOverview({ issueCase }: { issueCase: IssueCaseRow }) {
   return (
     <>
       <div className={styles.detailHead}>
-        <Link to="/issue-cases" className={styles.backButton} aria-label="Terug naar de behandelgevallen">
+        <Link to="/issue-cases" className={styles.backButton} aria-label="Terug naar de afwijkingen">
           <BackIcon />
         </Link>
         <div className={styles.detailId}>
@@ -57,8 +57,8 @@ function CaseOverview({ issueCase }: { issueCase: IssueCaseRow }) {
       </div>
 
       <WhatIsThis>
-        Een behandelgeval bundelt dezelfde vaststelling uit meerdere leveringen, zodat u ze één keer beoordeelt.
-        Een afgewezen geval blijft onderdrukt zolang een identieke vaststelling terugkomt; een nieuwe waarneming
+        Een afwijking groepeert dezelfde vaststelling uit meerdere leveringen, zodat u ze één keer beoordeelt.
+        Een afgewezen afwijking blijft onderdrukt zolang een identieke vaststelling terugkomt; een nieuwe waarneming
         na uw beslissing wordt zichtbaar gemaakt.
       </WhatIsThis>
 
@@ -150,12 +150,12 @@ function CaseOverview({ issueCase }: { issueCase: IssueCaseRow }) {
 const OBSERVATION_COLUMNS: readonly DataTableColumn<IssueCaseObservationRow>[] = [
   {
     key: 'batchId',
-    header: 'Batch',
+    header: 'Inlezing',
     render: (row) => <NavLink to={`/batches/${row.batchId}`}>#{row.batchId}</NavLink>,
   },
   { key: 'deliveryId', header: 'Levering', render: (row) => `#${row.deliveryId}` },
   { key: 'attemptNo', header: 'Poging', render: (row) => row.attemptNo, align: 'right' },
-  { key: 'definitionRevisionId', header: 'Versie van de beschrijving', render: (row) => `#${row.definitionRevisionId}` },
+  { key: 'definitionRevisionId', header: 'Versie van de importdefinitie', render: (row) => `#${row.definitionRevisionId}` },
   { key: 'occurrenceCount', header: 'Aantal', render: (row) => row.occurrenceCount, align: 'right' },
   { key: 'firstDetectedAt', header: 'Eerst vastgesteld', render: (row) => formatDateTime(row.firstDetectedAt) },
   { key: 'lastDetectedAt', header: 'Laatst vastgesteld', render: (row) => formatDateTime(row.lastDetectedAt) },
@@ -191,7 +191,7 @@ const EVENT_COLUMNS: readonly DataTableColumn<IssueCaseEventRow>[] = [
   { key: 'reason', header: 'Reden', render: (row) => row.reason },
   {
     key: 'observationBatchId',
-    header: 'Batch',
+    header: 'Inlezing',
     render: (row) => (row.observationBatchId === null ? '—' : `#${row.observationBatchId}`),
   },
 ];
@@ -268,7 +268,7 @@ export function IssueCaseDetailPage() {
                   columns={OBSERVATION_COLUMNS}
                   rows={observations.data}
                   rowKey={(row) => row.issueGroupId}
-                  emptyMessage="Geen waarnemingen (meer) gekoppeld aan dit geval."
+                  emptyMessage="Geen waarnemingen (meer) gekoppeld aan deze afwijking."
                 />
               </div>
             )}

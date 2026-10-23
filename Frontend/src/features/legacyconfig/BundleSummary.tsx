@@ -108,7 +108,7 @@ export function Definition({ bundle }: { bundle: LegacyBundle }) {
 export function BundleSummary({ detail }: { detail: LegacyReceiptDetail }) {
   const { bundle } = detail;
   if (bundle === null) {
-    return <p className={styles.muted}>Deze ontvangst heeft geen leesbare bundel.</p>;
+    return <p className={styles.muted}>Deze ontvangst heeft geen leesbare publicatie.</p>;
   }
   return (
     <>

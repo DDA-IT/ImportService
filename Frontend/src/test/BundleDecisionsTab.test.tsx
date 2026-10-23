@@ -119,7 +119,7 @@ describe('BundleDecisionsTab', () => {
     global.fetch = originalFetch;
   });
 
-  it('F11.1: laadt de beslissingslijst van de bundel', async () => {
+  it('F11.1: laadt de beslissingslijst van de publicatie', async () => {
     renderTab(bundle());
     await screen.findByText('An Beslisser');
     expect(screen.getByText('Prijs gecontroleerd')).toBeInTheDocument();
@@ -135,7 +135,7 @@ describe('BundleDecisionsTab', () => {
     await screen.findByText('An Beslisser');
     expect(screen.getByText('Andere Beslisser')).toBeInTheDocument();
     // Beide regels moeten zichtbaar zijn
-    const rows_text = screen.queryAllByText(/Mutatie 501/);
+    const rows_text = screen.queryAllByText(/Wijziging 501/);
     expect(rows_text.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -152,7 +152,7 @@ describe('BundleDecisionsTab', () => {
     rows = [];
     renderTab(bundle());
 
-    await waitFor(() => expect(screen.getByText('Deze bundel bevat geen beslissingen.')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Deze publicatie bevat geen beslissingen.')).toBeInTheDocument());
   });
 
   it('F11.5: toont een fout bij het laden', async () => {
@@ -177,10 +177,10 @@ describe('BundleDecisionsTab', () => {
     expect(screen.getByText('Bevriezing')).toBeInTheDocument();
     expect(screen.getByText('Automatische goedkeuring bij het bevriezen')).toBeInTheDocument();
     // Bereik in gewoon Nederlands; een beslissing over één mutatie noemt het nummer.
-    expect(screen.getByText('Hele bundel')).toBeInTheDocument();
-    expect(screen.getByText('Groep mutaties')).toBeInTheDocument();
+    expect(screen.getByText('Hele publicatie')).toBeInTheDocument();
+    expect(screen.getByText('Groep wijzigingen')).toBeInTheDocument();
     // Mutatie 501 moet eenmaal zichtbaar zijn (in de eerste rij)
-    const mutationRefs = screen.queryAllByText(/Mutatie 501/);
+    const mutationRefs = screen.queryAllByText(/Wijziging 501/);
     expect(mutationRefs.length).toBeGreaterThanOrEqual(1);
   });
 

@@ -112,7 +112,7 @@ function ItemRow({ item }: { item: PublicationItemView }) {
       )}
       <TechnicalDetails
         items={[
-          { name: 'Mutatie', value: String(item.mutationId) },
+          { name: 'Wijziging', value: String(item.mutationId) },
           { name: 'Reden', value: item.reasonCode ?? '—' },
           { name: 'Detail van de reden', value: item.reasonDetail ?? '—' },
           { name: 'Laatste foutcode', value: item.lastErrorCode ?? '—' },

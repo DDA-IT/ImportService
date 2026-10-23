@@ -164,7 +164,7 @@ describe('verwerpen — fouten', () => {
 });
 
 describe('links naar de aangemaakte conceptversie', () => {
-  it('toont na een geslaagde overname links naar de gedeelde beschrijving en het sjabloon', async () => {
+  it('toont na een geslaagde overname links naar de gedeelde importdefinitie en de importdefinitie', async () => {
     mockApi((call) => {
       if (call.url.endsWith('/me')) return jsonResponse(TEST_IDENTITY);
       if (call.url.includes('/apply')) {
@@ -197,7 +197,7 @@ describe('links naar de aangemaakte conceptversie', () => {
     expect(within(links).getByRole('link', { name: /VROOAM2-SJ/ })).toHaveAttribute('href', '/setup?definitionId=31&revisionId=301');
   });
 
-  it('toont geen link zonder versie-id (bv. een koppeling op een ongewijzigde beschrijving)', async () => {
+  it('toont geen link zonder versie-id (bv. een koppeling op een ongewijzigde importdefinitie)', async () => {
     const base = appliedReport();
     const zonderVersie: LegacyConfigReport = {
       ...base,

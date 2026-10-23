@@ -231,19 +231,19 @@ describe('BundlePublicationTab — publiceren naar Prodis (P7)', () => {
   }
 
   describe('de knop', () => {
-    it('staat er niet bij een bundel die niet voor de echte publicatie bedoeld is', async () => {
+    it('staat er niet bij een publicatie die niet voor de echte publicatie bedoeld is', async () => {
       renderTab(bundle({ targetMode: 'SIMULATION' }));
       await screen.findByRole('button', { name: 'Proefpublicatie starten' });
       expect(screen.queryByRole('button', { name: 'Publiceren naar Prodis…' })).not.toBeInTheDocument();
     });
 
-    it('staat er niet bij een bundel in opbouw (enkel uitleg)', async () => {
+    it('staat er niet bij een publicatie in opbouw (enkel uitleg)', async () => {
       renderTab(bundle({ status: 'ASSEMBLING' }));
-      expect(await screen.findByText(/alleen gestart worden voor een bevroren bundel/)).toBeInTheDocument();
+      expect(await screen.findByText(/alleen gestart worden voor een bevroren publicatie/)).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Publiceren naar Prodis…' })).not.toBeInTheDocument();
     });
 
-    it('is beschikbaar voor APPROVE bij een bevroren bundel met doel PRODUCTION', async () => {
+    it('is beschikbaar voor APPROVE bij een bevroren publicatie met doel PRODUCTION', async () => {
       renderTab(bundle());
       expect(await screen.findByRole('button', { name: 'Publiceren naar Prodis…' })).toBeEnabled();
     });
@@ -331,7 +331,7 @@ describe('BundlePublicationTab — publiceren naar Prodis (P7)', () => {
       const dialog = await openDialog();
       fireEvent.click(within(dialog).getByRole('button', { name: 'Publiceren naar Prodis' }));
 
-      expect(await within(dialog).findByText('De bundel bevat onvolledige regels')).toBeInTheDocument();
+      expect(await within(dialog).findByText('De publicatie bevat onvolledige regels')).toBeInTheDocument();
       expect(continueCalls()).toHaveLength(0);
     });
   });

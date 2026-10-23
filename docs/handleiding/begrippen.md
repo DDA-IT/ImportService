@@ -6,10 +6,10 @@ Stand: 2026-09-25. Hoofdhandleiding:
 De enumwaarden hieronder komen uit `Domain/src/main/java/be/dda/catalogimport/domain/`. Een waarde die
 "gedeclareerd voor Fase 5" heet, bestaat in het model maar wordt vandaag niet gezet.
 
-**Inhoud:** [Begrippen A-Z](#begrippen-a-z) · [Batchstatus](#batchstatus-importbatchstatus) ·
+**Inhoud:** [Begrippen A-Z](#begrippen-a-z) · [Inlezingsstatus](#inlezingsstatus-importbatchstatus) ·
 [Eindoordeel](#eindoordeel-validationresult) · [Creatiebeleid](#creatiebeleid-creationoutcome) ·
-[Mutatiesoorten](#mutatiesoorten-mutationactiontype) · [Mutatiestatussen](#mutatiestatussen-mutationstatus) ·
-[Statusredenen](#veelvoorkomende-statusredenen-statusreason) · [Bundelstatus](#bundelstatus-publicationbundlestatus) ·
+[Wijzigingssoorten](#wijzigingssoorten-mutationactiontype) · [Wijzigingsstatussen](#wijzigingsstatussen-mutationstatus) ·
+[Statusredenen](#veelvoorkomende-statusredenen-statusreason) · [Publicatiestatus](#publicatiestatus-publicationbundlestatus) ·
 [Doelmodus](#doelmodus-publicationtargetmode) · [Beslissingen](#beslissingen-bundledecisionkind-en-bundledecisionscope) ·
 [Ernst](#ernst-van-een-issue-rowissueseverity) · [Versie](#versiestatus-revisionstatus) ·
 [Overig](#overige-opsommingen) · [Woordenlijst voor de schermen](#woordenlijst-voor-de-schermen)
@@ -18,66 +18,66 @@ De enumwaarden hieronder komen uit `Domain/src/main/java/be/dda/catalogimport/do
 
 | Begrip | Uitleg |
 | --- | --- |
-| **accept-baseline** | Geauditeerde actie die een `SCREENED` batch aanvaardt als nulmeting van de lokale bronstaat. Alles-of-niets: een volledige aanvaarding of geen wijzigingen. Geen publicatie. Kan één keer per batch en sluit bundel-opname uit. Verplicht: `acceptedBy` (niet `system`) en `reason`. |
+| **accept-baseline** | Geauditeerde actie die een `SCREENED` inlezing aanvaardt als nulmeting van de lokale bronstaat. Alles-of-niets: een volledige aanvaarding of geen wijzigingen. Geen publicatie. Kan één keer per inlezing en sluit publicatie-opname uit. Verplicht: `acceptedBy` (niet `system`) en `reason`. |
 | **Actor** | De naam die bij een schrijfactie wordt vastgelegd. Sinds 5-AUTH komt die naam uit de Keycloak-login (`preferred_username`); de actorvelden in een request zijn optioneel en moeten, indien aanwezig, gelijk zijn aan die naam (anders 400 `ACTOR_FIELD_MISMATCH`). |
 | **Aanbieding** | Eén artikel van een leverancier, geïdentificeerd door de aanbiedingsidentiteit. |
 | **Aanbiedingsidentiteit** | Leverancier + leveranciersgroep + leveranciersreferentie, optioneel + kortingscode. Bibliotheek en leverancier of aankoopvereniging zijn scope, geen sleutel. Een lege component verwerpt de regel. |
 | **Archief** | Plaats op het bestandssysteem waar het originele bestand ongewijzigd bewaard wordt, met SHA-256. |
-| **Batch** | Eén screening van één levering tegen één versie van de beschrijving van het bestand. Eenheid van de werkvoorraad. |
-| **Beslissing** | Vastlegging (wie, wanneer, waarom, van welke status) dat een mutatie is goedgekeurd of afgekeurd of dat een bundel is bevroren of geannuleerd. Het register is alleen-toevoegen. |
-| **Bevriezen (freeze)** | Sluit een bundel af (`FROZEN`) na controle; keurt resterende `PLANNED` mee goed op naam van de bevriezer. Onomkeerbaar in de applicatie. |
+| **Inlezing** | Eén screening van één levering tegen één versie van de importdefinitie. Eenheid van de inlezingen. |
+| **Beslissing** | Vastlegging (wie, wanneer, waarom, van welke status) dat een wijziging is goedgekeurd of afgekeurd of dat een publicatie is bevroren of geannuleerd. Het register is alleen-toevoegen. |
+| **Bevriezen (freeze)** | Sluit een publicatie af (`FROZEN`) na controle; keurt resterende `PLANNED` mee goed op naam van de bevriezer. Onomkeerbaar in de applicatie. |
 | **Bibliotheek (`libraryCode`)** | Doelbibliotheek van een koppeling (bv. `PSARF012`). Scope, geen deel van de identiteit. |
-| **Blokkeerreden (`blockedCode`)** | Reden waarom een batch `BLOCKED` is. |
+| **Blokkeerreden (`blockedCode`)** | Reden waarom een inlezing `BLOCKED` is. |
 | **Uitsluitingsgroep** | Reeks filters met hetzelfde groepsnummer (`matchGroup`) die samen waar moeten zijn voor een regel overgeslagen wordt. Elke voorwaarde is `EXCLUDE` met een lege kolom als leeg vergeleken; een lege vergelijkwaarde betekent "de kolom is leeg". Toe te voegen op een concept via "Uitsluitingsgroep toevoegen…" (één aanmaak per voorwaarde; bij een fout toont het scherm welke al bestaan). |
-| **Invulpunt** | Benoemde, getypeerde plaats in een sjabloon waar een waarde ingevuld wordt. Geldt voor de hele beschrijving (bij het aanmaken vastgezet, `DEFINITION`) of per koppeling (`LINK`). |
+| **Invulpunt** | Benoemde, getypeerde plaats in een importdefinitie waar een waarde ingevuld wordt. Geldt voor de hele importdefinitie (bij het aanmaken vastgezet, `DEFINITION`) of per koppeling (`LINK`). |
 | **Leverancier of aankoopvereniging** | Wie het bestand aanlevert: `SUPPLIER` of `PURCHASING_ASSOCIATION`. |
 | **Bronstaat** | Wat het systeem als huidige stand per aanbieding beschouwt. Alleen `accept-baseline` schrijft er vandaag in (herkomst `BASELINE_ACCEPTED`). |
 | **Bulkincident** | Een foutgroep die boven de percentagedrempel valt (bv. `BULK_PRICE_INCIDENT`). Leidt tot beoordeling. |
-| **`continue`** | `POST /batches/{id}/continue`: hervat een batch op `MUTATING`. Wordt niet op naam vastgelegd. |
+| **`continue`** | `POST /batches/{id}/continue`: hervat een inlezing op `MUTATING`. Wordt niet op naam vastgelegd. |
 | **Creatiebeleid** | Beoordeelt of nieuwe aanbiedingen zonder tussenkomst aangemaakt mogen worden (`creationOutcome`). |
-| **Beschrijving van het bestand (ImportDefinition)** | Beschrijving van hoe een bestand van een leverancier of aankoopvereniging gelezen wordt. Heeft versies. |
+| **Importdefinitie (ImportDefinition)** | Hoe een bestand van een leverancier of aankoopvereniging gelezen wordt. Heeft versies. |
 | **Delta** | Het verschil tussen een levering en de bronstaat: nieuw, gewijzigd, ongewijzigd. |
-| **Doelmodus** | `targetMode` van een bundel: `SIMULATION`, `TRIAL_LIBRARY`, `PRODUCTION`. |
+| **Doelmodus** | `targetMode` van een publicatie: `SIMULATION`, `TRIAL_LIBRARY`, `PRODUCTION`. |
 | **Eindoordeel** | `validationResult`; de inhoudelijke uitkomst van een screening; `null` = niet vastgesteld. |
 | **Foutgroep (issue group)** | Samenvatting van gelijksoortige vaststellingen met het echte aantal (`occurrenceCount`). Ontstaat vanaf 10 gelijksoortige vaststellingen. |
 | **freeze-check** | `GET /bundles/{id}/freeze-check`: droogloop van het bevriezen; momentopname zonder slot. |
 | **Groepsbeslissing** | `POST /bundles/{id}/decisions`: één beslissing over een gefilterde selectie. Raakt alleen `CREATE`/`UPDATE` in `PLANNED` of `AWAITING_APPROVAL` zonder beslissing. Minstens één filterveld verplicht. |
 | **`identityHash`** | SHA-256 (64 hex-tekens) van de aanbiedingsidentiteit; sleutel van de wijzigingsgroep. `null` bij de `IMPORT_MARKER`. |
-| **Importmarker (`IMPORT_MARKER`)** | Mutatie die vastlegt dat een screening is afgerond, ook als er niets veranderde. |
+| **Importmarker (`IMPORT_MARKER`)** | Wijziging die vastlegt dat een screening is afgerond, ook als er niets veranderde. |
 | **INITIAL_LOAD** | Creatiebeleid: de koppeling had nog geen actieve aanbieding; alle creaties wachten op goedkeuring. |
 | **Issue** | Eén vaststelling van de screening (rijnummer, code, veld, bronwaarde, ernst). Voorbeeldregels; het werkelijke aantal staat in de foutgroep. |
-| **Koppeling (ImportLink)** | Verbindt een beschrijving van het bestand met een leverancier en een bibliotheek. |
+| **Koppeling (ImportLink)** | Verbindt een importdefinitie met een leverancier en een bibliotheek. |
 | **Kritieke kolom / kritieke lijn** | Een kolom die de configuratie als kritiek markeert; een afgewezen regel met een fout op zo'n kolom is een kritieke lijn en vraagt beoordeling. |
 | **Levering (Delivery)** | Eén aangeleverd bestand met een `deliveryReference`. |
 | **`deliveryReference`** | Referentie van een levering; idempotentiesleutel per taak. Het uploadscherm stelt `<bestandsnaam>#<12 hex SHA-256>` voor (deterministisch); u kunt ze aanpassen. |
-| **`expirableCount`** | Veld van `BundleDetail`: aantal mutaties dat bij annuleren `EXPIRED` wordt. `null` bij een geannuleerde bundel (niet vastgesteld); 0 is geldig. Getoond in de annuleerdialoog. |
-| **PREVIEW (PSIMPORT-preview)** | `GET /bundles/{id}/psimport-preview`: read-only, niet-contractuele projectie van een `FROZEN` bundel (`previewOnly`, `UNVERIFIED_FIELD_INVENTORY`). Geen echt PSIMPORT-formaat, geen publicatie. |
-| **Mutatie** | Eén voorgestelde wijziging in het mutatieplan van een batch. |
-| **Mutatieplan** | De lijst mutaties van een batch. |
+| **`expirableCount`** | Veld van `BundleDetail`: aantal wijzigingen dat bij annuleren `EXPIRED` wordt. `null` bij een geannuleerde publicatie (niet vastgesteld); 0 is geldig. Getoond in de annuleerdialoog. |
+| **PREVIEW (PSIMPORT-preview)** | `GET /bundles/{id}/psimport-preview`: read-only, niet-contractuele projectie van een `FROZEN` publicatie (`previewOnly`, `UNVERIFIED_FIELD_INVENTORY`). Geen echt PSIMPORT-formaat, geen publicatie. |
+| **Wijziging** | Eén voorgestelde wijziging in de wijzigingenlijst van een inlezing. |
+| **Wijzigingenlijst** | De lijst wijzigingen van een inlezing. |
 | **Nulmeting** | Zie *accept-baseline*. |
-| **Publicatiebundel** | Verzameling batches die samen beoordeeld en bevroren wordt. |
-| **Versie** | Een versie van een beschrijving van het bestand (`Revision`): `DRAFT` → `ACTIVE` → `SUPERSEDED`. Een batch is gescreend tegen één vaste versie. |
+| **Publicatie** | Verzameling inlezingen die samen beoordeeld en bevroren wordt. |
+| **Versie** | Een versie van een importdefinitie (`Revision`): `DRAFT` → `ACTIVE` → `SUPERSEDED`. Een inlezing is gescreend tegen één vaste versie. |
 | **Setup-API** | Ontwikkelhulp voor het inrichten van een keten; standaard uit (`catalogimport.setup-api.enabled`); vereist een login en het recht `manage`/`read`; de vlag blijft een aparte, tweede beveiliging (vlag uit = 404). |
-| **Recht** | Toestemming voor een soort actie: `catalogImport.read` (Lezen), `.manage` (Beheren: upload, hervatten, bundel aanmaken) of `.approve` (Goedkeuren: aanvaarden, beslissen, bevriezen, annuleren). `approve` omvat `manage` en `read`; `manage` omvat `read`. Zonder recht: 403 `PERMISSION_DENIED`. |
+| **Recht** | Toestemming voor een soort actie: `catalogImport.read` (Lezen), `.manage` (Beheren: upload, hervatten, publicatie aanmaken) of `.approve` (Goedkeuren: aanvaarden, beslissen, bevriezen, annuleren). `approve` omvat `manage` en `read`; `manage` omvat `read`. Zonder recht: 403 `PERMISSION_DENIED`. |
 | **Rechtenbron** | Waar de rechten van een gebruiker vandaan komen. In productie Prodis (`GET /api/account`, `catalogimport.permissions.source=PRODIS`); lokaal/demo een YAML-lijst (`catalogimport.permissions.grants`, `CONFIGURED`). Onbereikbaar = 503 `PERMISSION_SOURCE_UNAVAILABLE`; verloren token = 401. Zonder toekenning heeft niemand iets. |
 | **Effectief recht** | Wat u uiteindelijk mag, nadat de hiërarchie is toegepast op de ruwe toekenning; dit geeft `GET /me` terug in `permissions` en het scherm gebruikt het om knoppen uit te schakelen. |
-| **Sjabloon** | Beschrijving van het bestand met `usageType = REUSABLE_TEMPLATE`; kan nooit een koppeling of batch krijgen. |
-| **Statusreden (`statusReason`)** | Tekstcode die zegt waarom een mutatie in een status staat. Filter is exact en hoofdlettergevoelig. |
+| **Herbruikbare importdefinitie** | Importdefinitie met `usageType = REUSABLE_TEMPLATE`; kan nooit een koppeling of inlezing krijgen. |
+| **Statusreden (`statusReason`)** | Tekstcode die zegt waarom een wijziging in een status staat. Filter is exact en hoofdlettergevoelig. |
 | **Taak (CatalogImportTask)** | Ingang voor leveringen op een koppeling. Vandaag alleen `MANUAL`. |
-| **Teller** | Aantal op een batch of bundel. `null` = niet vastgesteld, nooit 0. |
-| **Werkvoorraad** | Scherm 0: lijst van batches met telblokken en filters. |
-| **Wijzigingsgroep** | Alle mutaties met dezelfde `identityHash` (één aanbieding). Filter: `?identityHash=`. |
+| **Teller** | Aantal op een inlezing of publicatie. `null` = niet vastgesteld, nooit 0. |
+| **Inlezingen** | Scherm 0: lijst van inlezingen met telblokken en filters. |
+| **Wijzigingsgroep** | Alle wijzigingen met dezelfde `identityHash` (één aanbieding). Filter: `?identityHash=`. |
 
-## Batchstatus (`ImportBatchStatus`)
+## Inlezingsstatus (`ImportBatchStatus`)
 
 | Waarde | Terminaal | Betekenis |
 | --- | --- | --- |
 | `RECEIVED` | nee | geregistreerd, nog niet gestart |
 | `SCREENING` | nee | bronbestand wordt gelezen en gestaged |
-| `MUTATING` | nee | delta wordt bepaald en mutatielijst gemaakt; hervatbaar (`continue`) |
-| `SCREENED` | ja | screening afgerond; mutaties en marker geschreven |
-| `BLOCKED` | ja | contract-, structuur-, configuratie- of drempelfout; geen inhoudelijke mutaties, wel een marker |
-| `FAILED` | ja | technische fout of onderbreking; geen marker, geen mutaties |
+| `MUTATING` | nee | delta wordt bepaald en wijzigingenlijst gemaakt; hervatbaar (`continue`) |
+| `SCREENED` | ja | screening afgerond; wijzigingen en marker geschreven |
+| `BLOCKED` | ja | contract-, structuur-, configuratie- of drempelfout; geen inhoudelijke wijzigingen, wel een marker |
+| `FAILED` | ja | technische fout of onderbreking; geen marker, geen wijzigingen |
 | `BASELINE_ACCEPTED` | ja | aanvaard als nulmeting van de bronstaat |
 
 ## Eindoordeel (`ValidationResult`)
@@ -92,23 +92,23 @@ De enumwaarden hieronder komen uit `Domain/src/main/java/be/dda/catalogimport/do
 
 ## Creatiebeleid (`CreationOutcome`)
 
-| Waarde | Betekenis | `CREATE`-mutaties |
+| Waarde | Betekenis | `CREATE`-wijzigingen |
 | --- | --- | --- |
 | `AUTOMATIC` | binnen de drempel of geen creaties | `PLANNED` |
 | `INITIAL_LOAD` | koppeling had nog geen actieve aanbieding | `AWAITING_APPROVAL` (`INITIAL_LOAD_REQUIRES_APPROVAL`) |
 | `THRESHOLD_EXCEEDED` | creaties boven `creationThresholdSharePercent` van de bestaande omvang | `AWAITING_APPROVAL` (`BULK_CREATION_INCIDENT`) |
 | `null` | nog niet beoordeeld | — |
 
-## Mutatiesoorten (`MutationActionType`)
+## Wijzigingssoorten (`MutationActionType`)
 
 | Waarde | Betekenis |
 | --- | --- |
 | `CREATE` | nieuwe aanbieding (identiteit onbekend in de bronstaat) |
 | `UPDATE` | gewijzigde aanbieding (hash- en domeinniveau, plus basisprijs voor/na; `domainMask` zegt wat wijzigde, bv. `PRICE`) |
 | `IDENTITY_REFERENCE_INCIDENT` | een kritieke koppelreferentie (EAN, PIM-ID, CAB-ID, ...) is gewijzigd, verwijderd, hergebruikt of dubbelzinnig; wijzigt niets, wacht op beoordeling; in Fase 4 geen beslispad |
-| `IMPORT_MARKER` | vastlegging dat een screening werd afgerond; geen inhoudelijke mutatie |
+| `IMPORT_MARKER` | vastlegging dat een screening werd afgerond; geen inhoudelijke wijziging |
 
-## Mutatiestatussen (`MutationStatus`)
+## Wijzigingsstatussen (`MutationStatus`)
 
 | Waarde | Betekenis | Wordt vandaag gezet? |
 | --- | --- | --- |
@@ -119,7 +119,7 @@ De enumwaarden hieronder komen uit `Domain/src/main/java/be/dda/catalogimport/do
 | `REJECTED` | afgekeurd (reden verplicht) | ja |
 | `SKIPPED` | overgeslagen door `accept-baseline` (reden `BASELINE_ACCEPTED_WITHOUT_PUBLICATION`) | ja |
 | `RECORDED` | vastgelegd; status van de `IMPORT_MARKER` | ja |
-| `EXPIRED` | vervallen door annulering van de bundel | ja |
+| `EXPIRED` | vervallen door annulering van de publicatie | ja |
 | `IN_PROGRESS` | publicatie loopt | nee (Fase 5) |
 | `PUBLISHED` | gepubliceerd | nee (Fase 5) |
 | `TECHNICALLY_FAILED` | publicatie technisch mislukt | nee (Fase 5) |
@@ -138,15 +138,15 @@ Bekende waarden (niet uitputtend; **nog te verifiëren** of er meer bestaan):
 | `BULK_CREATION_INCIDENT` | creaties boven de drempel |
 | `BULK_PRICE_INCIDENT` | bulkincident op prijzen |
 | `BULK_IDENTITY_INCIDENT` | bulkincident op identiteitsreferenties |
-| `BASELINE_ACCEPTED_WITHOUT_PUBLICATION` | mutatie `SKIPPED` door `accept-baseline` |
+| `BASELINE_ACCEPTED_WITHOUT_PUBLICATION` | wijziging `SKIPPED` door `accept-baseline` |
 
-## Bundelstatus (`PublicationBundleStatus`)
+## Publicatiestatus (`PublicationBundleStatus`)
 
 | Waarde | Betekenis | Gebruikt? |
 | --- | --- | --- |
-| `ASSEMBLING` | in opbouw: batches toevoegen/verwijderen, mutaties beoordelen; enige status die wijzigingen aanvaardt | ja |
+| `ASSEMBLING` | in opbouw: inlezingen toevoegen/verwijderen, wijzigingen beoordelen; enige status die wijzigingen aanvaardt | ja |
 | `FROZEN` | bevroren; klaar voor publicatie; nog te annuleren | ja |
-| `CANCELLED` | geannuleerd; batches vrij; terminaal | ja |
+| `CANCELLED` | geannuleerd; inlezingen vrij; terminaal | ja |
 | `PUBLISHING` | publicatie loopt | nee (Fase 5) |
 | `PARTIALLY_PUBLISHED` | deels gepubliceerd | nee (Fase 5) |
 | `PUBLISHED` | volledig gepubliceerd; terminaal | nee (Fase 5) |
@@ -164,17 +164,17 @@ Bekende waarden (niet uitputtend; **nog te verifiëren** of er meer bestaan):
 
 | `BundleDecisionKind` | Betekenis |
 | --- | --- |
-| `APPROVE` | mutatie(s) goedgekeurd (individueel of groep) |
-| `REJECT` | mutatie(s) afgekeurd; reden altijd verplicht |
+| `APPROVE` | wijziging(s) goedgekeurd (individueel of groep) |
+| `REJECT` | wijziging(s) afgekeurd; reden altijd verplicht |
 | `AUTO_APPROVE_PLANNED` | resterende `PLANNED` bij het bevriezen goedgekeurd op naam van de bevriezer |
-| `FREEZE` | bundel bevroren |
-| `CANCEL` | bundel geannuleerd |
+| `FREEZE` | publicatie bevroren |
+| `CANCEL` | publicatie geannuleerd |
 
 | `BundleDecisionScope` | Betekenis |
 | --- | --- |
-| `MUTATION` | precies één mutatie |
+| `MUTATION` | precies één wijziging |
 | `GROUP` | een groepsactie via een filter; het echte aantal staat in `affectedCount` |
-| `BUNDLE` | een actie op de hele bundel (bevriezen, annuleren) |
+| `BUNDLE` | een actie op de hele publicatie (bevriezen, annuleren) |
 
 ## Ernst van een issue (`RowIssueSeverity`)
 
@@ -182,7 +182,7 @@ Bekende waarden (niet uitputtend; **nog te verifiëren** of er meer bestaan):
 | --- | --- |
 | `CRITICAL` | onbetrouwbare identiteit of kritieke referentie; regel vastgehouden; beoordeling nodig |
 | `BLOCKING` | de hele levering is onbruikbaar (contract-, structuur-, configuratie- of drempelfout) |
-| `ERROR` | de regel wordt verworpen (of de batch geblokkeerd) |
+| `ERROR` | de regel wordt verworpen (of de inlezing geblokkeerd) |
 | `WARNING` | informatief; regel blijft geldig |
 | `INFO` | puur informatief |
 
@@ -194,7 +194,7 @@ Bekende waarden (niet uitputtend; **nog te verifiëren** of er meer bestaan):
 | `SCREENING` | screening van een testbestand loopt |
 | `REVIEW_REQUIRED` | beoordeling nodig |
 | `PENDING_APPROVAL` | wacht op goedkeuring |
-| `ACTIVE` | actief; hoogstens één per beschrijving van het bestand; mag voor nieuwe leveringen gebruikt worden |
+| `ACTIVE` | actief; hoogstens één per importdefinitie; mag voor nieuwe leveringen gebruikt worden |
 | `SUPERSEDED` | vervangen; leesbaar, krijgt geen nieuwe leveringen |
 | `WITHDRAWN` | ingetrokken; mag niet geactiveerd worden |
 
@@ -206,7 +206,7 @@ overige waarden ergens gezet worden is **nog te verifiëren**.
 | Enum | Waarden | Betekenis |
 | --- | --- | --- |
 | `SourceOrganisationType` | `SUPPLIER`, `PURCHASING_ASSOCIATION` | leverancier of aankoopvereniging |
-| `DefinitionUsageType` | `OWN_DEFINITION`, `REUSABLE_TEMPLATE` | eigen beschrijving of herbruikbaar sjabloon |
+| `DefinitionUsageType` | `OWN_DEFINITION`, `REUSABLE_TEMPLATE` | eigen importdefinitie of herbruikbare importdefinitie |
 | `TaskTriggerType` | `MANUAL`, `SCHEDULED` | manueel gestart of gepland (scheduler bestaat nog niet) |
 | `TaskRunStatus` | `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED` | status van één taakuitvoering; `PENDING` en `RUNNING` houden de concurrency-token vast |
 | `SourceStateOrigin` | `BASELINE_ACCEPTED`, `PUBLISHED` | herkomst van een bronstaatrij; `PUBLISHED` is Fase 5 |
@@ -231,9 +231,14 @@ Dit is de **enige redactionele bron** voor de woorden en uitleg die de schermen 
 `Frontend/src/terms/dictionary.ts` volgt deze tabellen letterlijk; `Frontend/src/test/terms.test.ts` faalt als
 ze verschillen. Pas een tekst dus eerst hier aan en neem ze dan over in het woordenboek. De kolom *Code* is de
 technische waarde (klein, voor support); *Nederlands* en *Uitleg* zijn wat de gebruiker ziet. De lijst hierboven
-(Batchstatus, Eindoordeel, ...) blijft de technische referentie.
+(Inlezingsstatus, Eindoordeel, ...) blijft de technische referentie.
 
-### Batchstatus
+Schermwoorden sinds 2026-10-23 (beslissingslog "Naamgeving en redesign inrichting"): de schermen zeggen **inlezing** (technisch
+`Batch`), **wijziging** (`Mutation`), **publicatie** (`PublicationBundle`), **afwijking** (`IssueCase`) en **importdefinitie**
+(`ImportDefinition`; een **herbruikbare importdefinitie** is een `REUSABLE_TEMPLATE`, vroeger "sjabloon"; vroeger ook "beschrijving
+van het bestand"). Routes, codes, API en tabellen behouden hun technische naam.
+
+### Inlezingsstatus
 
 <!-- terms:batchStatus -->
 | Code | Nederlands | Uitleg |
@@ -262,14 +267,14 @@ technische waarde (klein, voor support); *Nederlands* en *Uitleg* zijn wat de ge
 <!-- terms:mutationStatus -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `PLANNED` | Gepland | Wordt bij het bevriezen van de bundel mee goedgekeurd. |
+| `PLANNED` | Gepland | Wordt bij het bevriezen van de publicatie mee goedgekeurd. |
 | `AWAITING_APPROVAL` | Wacht op goedkeuring | Vraagt een uitdrukkelijke beslissing. |
 | `READY_FOR_PUBLICATION` | Goedgekeurd | Goedgekeurd en klaar om gepubliceerd te worden. |
 | `REJECTED` | Afgekeurd | Afgekeurd; er is altijd een reden vastgelegd. |
 | `BLOCKED` | Tegengehouden | Kritiek herkenningsprobleem; geen beslissing mogelijk. |
-| `SKIPPED` | Overgeslagen | Niet gepubliceerd omdat de batch als nulmeting aanvaard is. |
+| `SKIPPED` | Overgeslagen | Niet gepubliceerd omdat de inlezing als nulmeting aanvaard is. |
 | `RECORDED` | Vastgelegd | Legt vast dat de controle afgerond is; geen echte wijziging. |
-| `EXPIRED` | Vervallen | Door het annuleren van de bundel. |
+| `EXPIRED` | Vervallen | Door het annuleren van de publicatie. |
 | `IN_PROGRESS` | Wordt gepubliceerd | De publicatie van deze wijziging loopt. |
 | `PUBLISHED` | Gepubliceerd | Deze wijziging is gepubliceerd. |
 | `TECHNICALLY_FAILED` | Technisch mislukt | De publicatie van deze wijziging is technisch mislukt. |
@@ -284,17 +289,17 @@ technische waarde (klein, voor support); *Nederlands* en *Uitleg* zijn wat de ge
 | `IDENTITY_REFERENCE_INCIDENT` | Herkenningsprobleem | Een kritieke verwijzing om het artikel te herkennen is gewijzigd, verdwenen, hergebruikt of dubbelzinnig; er wijzigt niets. |
 | `IMPORT_MARKER` | Afgeronde controle | Legt vast dat de controle van de levering klaar is, ook als er niets veranderde. |
 
-### Status van een bundel
+### Status van een publicatie
 
 <!-- terms:bundleStatus -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `ASSEMBLING` | In opbouw | Batches toevoegen en wijzigingen beoordelen kan nog. |
+| `ASSEMBLING` | In opbouw | Inlezingen toevoegen en wijzigingen beoordelen kan nog. |
 | `FROZEN` | Bevroren | Afgesloten en klaar voor publicatie; nog te annuleren. |
-| `CANCELLED` | Geannuleerd | Niet doorgegaan; de batches zijn weer vrij. |
-| `PUBLISHING` | Wordt gepubliceerd | De publicatie van de bundel loopt. |
-| `PARTIALLY_PUBLISHED` | Deels gepubliceerd | Een deel van de bundel is gepubliceerd. |
-| `PUBLISHED` | Gepubliceerd | De hele bundel is gepubliceerd. |
+| `CANCELLED` | Geannuleerd | Niet doorgegaan; de inlezingen zijn weer vrij. |
+| `PUBLISHING` | Wordt gepubliceerd | De publicatie loopt. |
+| `PARTIALLY_PUBLISHED` | Deels gepubliceerd | Een deel van de publicatie is gepubliceerd. |
+| `PUBLISHED` | Gepubliceerd | De hele publicatie is gepubliceerd. |
 | `PUBLICATION_FAILED` | Publicatie mislukt | De publicatie is technisch mislukt. |
 
 ### Status van een versie van de inrichting
@@ -380,12 +385,12 @@ technische waarde (klein, voor support); *Nederlands* en *Uitleg* zijn wat de ge
 | `THRESHOLD_EXCEEDED` | Drempel overschreden | Er zijn meer nieuwe artikelen dan de toegelaten drempel; ze wachten op goedkeuring. |
 | `null` | Nog niet beoordeeld | Het beleid voor nieuwe artikelen is nog niet beoordeeld. |
 
-### Status van een behandelgeval
+### Status van een afwijking
 
 <!-- terms:issueCaseStatus -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `AWAITING_REVIEW` | Wacht op beoordeling | Een mens moet dit geval nog bekijken. |
+| `AWAITING_REVIEW` | Wacht op beoordeling | Een mens moet deze afwijking nog bekijken. |
 | `CORRECTED` | Gecorrigeerd | Door een mens gecorrigeerd. |
 | `REJECTED` | Afgewezen | Door een mens afgewezen; een identieke herlevering blijft onderdrukt. |
 | `AUTO_RESOLVED` | Vanzelf opgelost | Zonder tussenkomst opgelost; wordt vandaag nog niet gebruikt. |
@@ -484,11 +489,11 @@ technische waarde (klein, voor support); *Nederlands* en *Uitleg* zijn wat de ge
 | `PARALLEL_RUN_COMPLETED` | Vergelijking afgerond | Alle artikelen zijn met Prodis vergeleken; er is niets geschreven. |
 | `PARALLEL_RUN_NOT_CONFIGURED` | Leesverbinding niet ingesteld | De alleen-lezen verbinding met Prodis is niet ingesteld; er is niets vergeleken. |
 | `PARALLEL_RUN_UNAVAILABLE` | Prodis niet bereikbaar | Prodis kon niet gelezen worden; er is niets vergeleken. |
-| `PARALLEL_RUN_NO_SNAPSHOT` | Geen bevroren gegevens | De bundel heeft geen bevroren gegevens om te vergelijken. |
+| `PARALLEL_RUN_NO_SNAPSHOT` | Geen bevroren gegevens | De publicatie heeft geen bevroren gegevens om te vergelijken. |
 | `PARALLEL_RUN_FAILED` | Vergelijking mislukt | De vergelijking is technisch mislukt; er is niets vergeleken. |
 | `PARALLEL_RUN_SUMMARY_UNREADABLE` | Samenvatting onleesbaar | De samenvatting van de vergelijking kon niet gelezen worden. |
 
-### Velden van de beschrijving van het bestand (versie)
+### Velden van de importdefinitie (versie)
 
 De code is hier de veldnaam van een versie, geen waarde: het gaat om het woord en de uitleg die bij
 het veld staan in het stappenplan "Nieuwe leverancier en taak".
@@ -541,9 +546,9 @@ het veld staan in het stappenplan "Nieuwe leverancier en taak".
 | --- | --- | --- |
 | `sourceOrganisation` | Leverancier of aankoopvereniging | De organisatie die het bestand aanlevert. |
 | `code` | Code | Een korte, unieke code waarmee u dit onderdeel later terugvindt. |
-| `definition` | Beschrijving van het bestand | Legt vast hoe het bestand van deze organisatie eruitziet en hoe het gelezen wordt. |
-| `revision` | Versie | Een vastgelegde stand van de beschrijving; een nieuwe versie wordt pas gebruikt na activeren. |
-| `link` | Koppeling | Verbindt de beschrijving van het bestand met één leverancier en één Prodis-bibliotheek. |
+| `definition` | Importdefinitie | Legt vast hoe het bestand van deze organisatie eruitziet en hoe het gelezen wordt. |
+| `revision` | Versie | Een vastgelegde stand van de importdefinitie; een nieuwe versie wordt pas gebruikt na activeren. |
+| `link` | Koppeling | Verbindt de importdefinitie met één leverancier en één Prodis-bibliotheek. |
 | `supplierCode` | Leverancier van de koppeling | De leverancier wiens artikelen via deze koppeling binnenkomen. |
 | `libraryCode` | Doelbibliotheek | De Prodis-bibliotheek waarin de gegevens uiteindelijk terechtkomen. |
 | `librarySearchSupplierCode` | Leverancierscode in de bibliotheek | De code waaronder Prodis deze leverancier zoekt; wordt nooit automatisch ingevuld. |
@@ -572,20 +577,20 @@ Een probleem draagt dezelfde code als de upload of het activeren van de versie z
 | --- | --- | --- |
 | `READY_LINK_ACTIVE` | De koppeling staat aan | De koppeling is als actief ingesteld. |
 | `INFO_LINK_INACTIVE` | De koppeling staat uit | De koppeling is als niet actief ingesteld; een opgeladen levering wordt toch aangenomen. |
-| `READY_ACTIVE_REVISION` | Er is een versie in gebruik | De beschrijving van het bestand heeft een actieve versie waarmee leveringen gelezen worden. |
-| `NO_ACTIVE_REVISION` | Er is nog geen versie in gebruik | Zonder actieve versie van de beschrijving kan geen enkele levering gelezen worden. |
+| `READY_ACTIVE_REVISION` | Er is een versie in gebruik | De importdefinitie heeft een actieve versie waarmee leveringen gelezen worden. |
+| `NO_ACTIVE_REVISION` | Er is nog geen versie in gebruik | Zonder actieve versie van de importdefinitie kan geen enkele levering gelezen worden. |
 | `READY_PRICE_FIELD` | De prijskolom is ingesteld | De versie in gebruik weet in welke kolom de prijs staat. |
 | `CONFIG_PRICE_FIELD_MISSING` | De prijskolom ontbreekt | De versie in gebruik zegt niet in welke kolom de prijs staat; zo kan geen enkele regel gelezen worden. |
-| `READY_LINK_BOOKMARKS` | De verplichte invulpunten van de koppeling zijn ingevuld | Alle waarden die de beschrijving per koppeling vraagt, zijn ingevuld. |
-| `CONFIG_REQUIRED_BOOKMARK_MISSING` | Verplichte invulpunten zijn niet ingevuld | De beschrijving vraagt een of meer waarden die nog leeg zijn; zolang ze ontbreken, wordt een levering geweigerd. |
+| `READY_LINK_BOOKMARKS` | De verplichte invulpunten van de koppeling zijn ingevuld | Alle waarden die de importdefinitie per koppeling vraagt, zijn ingevuld. |
+| `CONFIG_REQUIRED_BOOKMARK_MISSING` | Verplichte invulpunten zijn niet ingevuld | De importdefinitie vraagt een of meer waarden die nog leeg zijn; zolang ze ontbreken, wordt een levering geweigerd. |
 | `READY_DRAFT_ACTIVATABLE` | De conceptversie kan geactiveerd worden | De controle die bij het activeren gebeurt, vindt geen fouten in deze conceptversie. |
-| `INFO_NO_DRAFT_REVISION` | Er is geen conceptversie om te activeren | Er is geen versie in gebruik en ook geen concept; maak eerst een nieuwe versie van de beschrijving. |
+| `INFO_NO_DRAFT_REVISION` | Er is geen conceptversie om te activeren | Er is geen versie in gebruik en ook geen concept; maak eerst een nieuwe versie van de importdefinitie. |
 | `READY_TASK_ACCEPTS_UPLOAD` | De taak neemt opgeladen bestanden aan | Op deze taak kunt u een levering opladen. |
 | `LINK_HAS_NO_TASK` | Er is nog geen taak | Zonder taak is er geen ingang om een levering op te laden. |
 | `TASK_NOT_MANUAL` | De taak start niet handmatig | Deze taak haalt leveringen automatisch op en neemt geen opgeladen bestand aan. |
 | `TASK_HAS_DELIVERY_CONFIGURATION` | De taak haalt leveringen zelf op | Aan deze taak hangt een instelling om leveringen op te halen; ze neemt daarom geen opgeladen bestand aan. |
 | `INFO_LIBRARY_NOT_VERIFIED` | De doelbibliotheek is niet nagekeken | Of de bibliotheekcode echt bestaat in Prodis, wordt hier niet gecontroleerd. |
-| `CONFIG_INVALID` | Fout in de beschrijving van het bestand | De beschrijving van het bestand is onvolledig of ongeldig. |
+| `CONFIG_INVALID` | Fout in de importdefinitie | De importdefinitie is onvolledig of ongeldig. |
 | `INFO_CONFIG_CHECKS_SKIPPED` | Niet alle controles konden uitgevoerd worden | Sommige controles konden nog niet uitgevoerd worden omdat ze afhangen van een fout hierboven; na herstel kunnen er nog fouten bijkomen. |
 
 ### Controleren: vaststellingen bij het lezen van een levering
@@ -598,14 +603,14 @@ veldnaam erachter (zoals een ontbrekende kolom) wordt op het deel vóór de dubb
 | --- | --- | --- |
 | `CONFIG_FORMAT_UNSUPPORTED` | Bestandsformaat niet ondersteund | Het ingestelde bestandsformaat kan niet gelezen worden. |
 | `CONFIG_CHARSET_UNKNOWN` | Onbekende tekenset | De ingestelde tekenset bestaat niet of wordt niet ondersteund. |
-| `CONFIG_DELIMITER_MISSING` | Scheidingsteken ontbreekt | De beschrijving zegt niet welk teken de kolommen scheidt. |
+| `CONFIG_DELIMITER_MISSING` | Scheidingsteken ontbreekt | De importdefinitie zegt niet welk teken de kolommen scheidt. |
 | `CONFIG_DELIMITER_INVALID` | Ongeldig scheidingsteken | Het ingestelde scheidingsteken kan niet gebruikt worden. |
 | `CONFIG_QUOTE_INVALID` | Ongeldig aanhalingsteken | Het ingestelde aanhalingsteken kan niet gebruikt worden. |
 | `CONFIG_HEADER_LINE_INVALID` | Ongeldig regelnummer van de kopregel | Het ingestelde regelnummer van de kopregel kan niet gebruikt worden. |
 | `CONFIG_FIELD_REFERENCE_KIND_INVALID` | Ongeldige manier om kolommen te herkennen | De keuze tussen kolommen op naam of op positie is niet geldig. |
 | `CONFIG_HEADER_REFERENCE_INCONSISTENT` | Kopregel en kolomherkenning passen niet samen | Kolommen op naam herkennen kan alleen als het bestand een kopregel heeft. |
 | `CONFIG_IDENTITY_FIELD_MISSING` | Kolom voor de herkenning ontbreekt | Een van de kolommen waarmee een artikel herkend wordt, is niet ingesteld. |
-| `CONFIG_PRICE_FIELD_MISSING` | Prijskolom ontbreekt | De beschrijving zegt niet in welke kolom de prijs staat. |
+| `CONFIG_PRICE_FIELD_MISSING` | Prijskolom ontbreekt | De importdefinitie zegt niet in welke kolom de prijs staat. |
 | `CONFIG_COLUMN_COUNT_INVALID` | Ongeldig aantal kolommen | Het ingestelde aantal kolommen kan niet gebruikt worden. |
 | `CONFIG_FIELD_REFERENCE_INVALID` | Ongeldige kolomaanduiding | Een kolom is aangeduid op een manier die niet past bij de gekozen kolomherkenning. |
 | `CONFIG_CANONICALISATION_VERSION_UNSUPPORTED` | Herkenningsversie niet ondersteund | Deze toepassing kent de ingestelde herkenningsversie niet. |
@@ -638,12 +643,12 @@ veldnaam erachter (zoals een ontbrekende kolom) wordt op het deel vóór de dubb
 | `SOURCE_NO_DATA_RECORDS` | Geen regels met gegevens | Het bestand bevat geen enkele regel met gegevens, hooguit een kopregel. |
 | `SOURCE_BOM_REMOVED` | Onzichtbaar beginteken genegeerd | Het bestand begon met een onzichtbaar teken dat de tekenset aanduidt; dat teken is genegeerd. |
 | `HEADER_LINE_MISSING` | Kopregel ontbreekt | Het bestand eindigt voordat de ingestelde kopregel bereikt is. |
-| `HEADER_FIELD_MISSING` | Verplichte kolom ontbreekt | Een kolom die de beschrijving verwacht, staat niet in de kopregel van het bestand. |
+| `HEADER_FIELD_MISSING` | Verplichte kolom ontbreekt | Een kolom die de importdefinitie verwacht, staat niet in de kopregel van het bestand. |
 | `HEADER_DUPLICATE_FIELD` | Kolomnaam dubbel | Dezelfde kolomnaam komt meer dan eens voor in de kopregel. |
-| `HEADER_COLUMN_COUNT_MISMATCH` | Ander aantal kolommen | De kopregel heeft een ander aantal kolommen dan de beschrijving verwacht. |
+| `HEADER_COLUMN_COUNT_MISMATCH` | Ander aantal kolommen | De kopregel heeft een ander aantal kolommen dan de importdefinitie verwacht. |
 | `HEADER_FIELD_SHIFTED` | Kolom verschoven | Een verwachte kolom staat op een andere plaats; ze wordt op naam teruggevonden. |
 | `HEADER_FIELD_SEMANTIC_CHANGE` | Kolom van betekenis veranderd | Op de plaats van een belangrijke kolom staat een andere kolomnaam; doorgaan zou de verkeerde kolom lezen. |
-| `HEADER_UNKNOWN_COLUMN` | Onbekende kolom | Het bestand bevat een kolom die de beschrijving niet kent; ze wordt niet gebruikt. |
+| `HEADER_UNKNOWN_COLUMN` | Onbekende kolom | Het bestand bevat een kolom die de importdefinitie niet kent; ze wordt niet gebruikt. |
 | `ROW_COLUMN_COUNT_MISMATCH` | Regel met een ander aantal kolommen | Deze regel heeft meer of minder kolommen dan de kopregel en wordt verworpen. |
 | `ROW_TOO_LONG` | Regel te lang | Deze regel is langer dan toegelaten en wordt verworpen. |
 | `CSV_UNCLOSED_QUOTE` | Aanhalingsteken niet gesloten | In deze regel wordt een aanhalingsteken geopend maar niet gesloten; de regel wordt verworpen. |
@@ -664,8 +669,8 @@ veldnaam erachter (zoals een ontbrekende kolom) wordt op het deel vóór de dubb
 | `PRICE_UNREADABLE` | Prijs onleesbaar | De prijs is geen leesbaar getal. |
 | `PRICE_SCALE_EXCEEDED` | Te veel cijfers na de komma | De prijs heeft meer cijfers na de komma dan toegelaten; ze wordt nooit afgerond. |
 | `PRICE_OUT_OF_RANGE` | Prijs te groot | De prijs is te groot om te bewaren. |
-| `PRICE_ZERO_NOT_ALLOWED` | Prijs nul niet toegelaten | Een prijs van nul is voor deze beschrijving niet toegelaten. |
-| `PRICE_NEGATIVE_NOT_ALLOWED` | Negatieve prijs niet toegelaten | Een negatieve prijs is voor deze beschrijving niet toegelaten. |
+| `PRICE_ZERO_NOT_ALLOWED` | Prijs nul niet toegelaten | Een prijs van nul is voor deze importdefinitie niet toegelaten. |
+| `PRICE_NEGATIVE_NOT_ALLOWED` | Negatieve prijs niet toegelaten | Een negatieve prijs is voor deze importdefinitie niet toegelaten. |
 | `PRICE_CURRENCY_MISMATCH` | Valuta past niet | De valuta van een prijsonderdeel verschilt van die van de prijs. |
 | `PRICE_PERCENTAGE_NOT_COMPUTABLE` | Percentage niet te berekenen | Een percentage van een prijsonderdeel kan niet berekend worden. |
 | `PRICE_DERIVATION_MISMATCH` | Prijzen kloppen niet met elkaar | Een afgeleide prijs wijkt meer af dan toegelaten van wat de onderdelen opleveren. |
@@ -711,7 +716,7 @@ veldnaam erachter (zoals een ontbrekende kolom) wordt op het deel vóór de dubb
 <!-- terms:trialStage -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `CONFIGURATION` | Beschrijving van het bestand | Het probleem zit in de ingestelde beschrijving, nog voor het bestand gelezen werd. |
+| `CONFIGURATION` | Importdefinitie | Het probleem zit in de ingestelde importdefinitie, nog voor het bestand gelezen werd. |
 | `READING` | Lezen van het bestand | Het probleem trad op bij het lezen van de kopregel of van de regels. |
 | `FILE_LEVEL` | Het bestand als geheel | Het probleem gaat over het bestand als geheel, bijvoorbeeld geen enkele regel met gegevens. |
 | `IDENTITY` | Herkenning van artikelen | Het probleem gaat over het herkennen van artikelen, bijvoorbeeld hetzelfde artikel twee keer. |
@@ -727,7 +732,7 @@ De code is de naam van de teller in het antwoord van de proefinlezing.
 | `rawRecordCount` | Gelezen regels | Alle regels met gegevens, zonder kopregel en zonder lege regels. |
 | `validRecordCount` | Geldig | Regels die volledig gelezen konden worden. |
 | `rejectedRecordCount` | Verworpen | Regels met een fout; zo een regel wordt niet verwerkt. |
-| `filteredOutCount` | Buiten filter | Regels die door de filters van de beschrijving overgeslagen worden. |
+| `filteredOutCount` | Buiten filter | Regels die door de filters van de importdefinitie overgeslagen worden. |
 | `errorBeforeFilterCount` | Fout vóór het filter | Regels met een fout die al optrad voordat de filters konden beslissen. |
 | `criticalLineCount` | Kritieke regels | Regels met een fout in een kritieke kolom; die vragen een beoordeling door een mens. |
 | `duplicateIdentityCount` | Dubbele artikelen | Regels waarvan het artikel meer dan eens in het bestand staat, de eerste keer inbegrepen. |
@@ -745,7 +750,7 @@ De code is de naam van de teller in het antwoord van de proefinlezing.
 | --- | --- | --- |
 | `VALID` | Geldig | Deze regel zou gelezen en verwerkt worden. |
 | `REJECTED` | Verworpen | Deze regel zou verworpen worden; de reden staat erbij. |
-| `FILTERED_OUT` | Buiten filter | Deze regel valt buiten de filters van de beschrijving en wordt overgeslagen. |
+| `FILTERED_OUT` | Buiten filter | Deze regel valt buiten de filters van de importdefinitie en wordt overgeslagen. |
 | `UNREADABLE` | Onleesbaar | Deze regel kon niet in kolommen gesplitst worden. |
 
 ### Proefinlezing: waarvoor een kolom dient
@@ -775,7 +780,7 @@ De code is de naam van de teller in het antwoord van de proefinlezing.
 <!-- terms:thresholdOutcome -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `NOT_APPLICABLE` | Geen grens ingesteld | Voor deze beschrijving geldt hier geen grens. |
+| `NOT_APPLICABLE` | Geen grens ingesteld | Voor deze importdefinitie geldt hier geen grens. |
 | `UNDETERMINED` | Niet vast te stellen | Er zijn geen regels om het aandeel op te berekenen. |
 | `WITHIN` | Binnen de grens | Het aandeel ligt niet boven de ingestelde grens. |
 | `EXCEEDED` | Grens overschreden | Het aandeel ligt boven de ingestelde grens; een echte levering zou tegengehouden worden. |
@@ -809,7 +814,7 @@ De code is de naam van de teller in het antwoord van de proefinlezing.
 
 ### Tellers van een levering
 
-De code is hier de veldnaam van de teller in het antwoord van de server (werkvoorraad, batchdetail en het resultaat na het opladen).
+De code is hier de veldnaam van de teller in het antwoord van de server (inlezingen, inlezingsdetail en het resultaat na het opladen).
 
 <!-- terms:batchCounter -->
 | Code | Nederlands | Uitleg |
@@ -817,7 +822,7 @@ De code is hier de veldnaam van de teller in het antwoord van de server (werkvoo
 | `rawRecordCount` | Gelezen regels | Alle regels met gegevens in het bestand, zonder kopregel en zonder lege regels. |
 | `validRecordCount` | Geldige regels | Regels die volledig gelezen konden worden. |
 | `rejectedRecordCount` | Verworpen regels | Regels met een fout; zo een regel wordt niet verwerkt. |
-| `filteredOutCount` | Buiten filter | Regels die door de filters van de beschrijving van het bestand overgeslagen worden. |
+| `filteredOutCount` | Buiten filter | Regels die door de filters van de importdefinitie overgeslagen worden. |
 | `errorBeforeFilterCount` | Fout vóór het filter | Regels met een fout die al optrad voordat de filters konden beslissen. |
 | `duplicateIdentityCount` | Dubbele artikelen | Regels waarvan het artikel meer dan eens in het bestand staat, de eerste keer inbegrepen. |
 | `newCount` | Nieuwe artikelen | Artikelen die nog niet bekend waren. |
@@ -904,25 +909,25 @@ De verwijzingen waarmee een artikel herkend wordt. De uitleg bij de PIM- en CAB-
 | `EXPIRED_EXCEPTION` | Uitzondering verlopen | De uitzondering die deze vaststelling onderdrukte, is verlopen. |
 | `REOPENED` | Heropend | Opnieuw geopend na een eerdere afhandeling. |
 
-### Soort beslissing in het beslissingsregister van een bundel
+### Soort beslissing in het beslissingsregister van een publicatie
 
 <!-- terms:decisionKind -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `APPROVE` | Goedkeuring | Een mutatie of een groep mutaties is goedgekeurd. |
-| `REJECT` | Afkeuring | Een mutatie of een groep mutaties is afgekeurd. |
-| `AUTO_APPROVE_PLANNED` | Automatische goedkeuring bij het bevriezen | Bij het bevriezen zijn de mutaties die nog gepland stonden in één keer goedgekeurd op naam van wie bevroor. |
-| `FREEZE` | Bevriezing | De bundel is bevroren: afgesloten en klaar voor publicatie. |
-| `CANCEL` | Annulering | De bundel is geannuleerd. |
+| `APPROVE` | Goedkeuring | Een wijziging of een groep wijzigingen is goedgekeurd. |
+| `REJECT` | Afkeuring | Een wijziging of een groep wijzigingen is afgekeurd. |
+| `AUTO_APPROVE_PLANNED` | Automatische goedkeuring bij het bevriezen | Bij het bevriezen zijn de wijzigingen die nog gepland stonden in één keer goedgekeurd op naam van wie bevroor. |
+| `FREEZE` | Bevriezing | De publicatie is bevroren: afgesloten en klaar voor publicatie. |
+| `CANCEL` | Annulering | De publicatie is geannuleerd. |
 
 ### Waarover een beslissing in het beslissingsregister ging
 
 <!-- terms:decisionScope -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `MUTATION` | Eén mutatie | De beslissing ging over één mutatie. |
-| `GROUP` | Groep mutaties | De beslissing ging over alle mutaties die aan een filter voldeden. |
-| `BUNDLE` | Hele bundel | De beslissing ging over de bundel als geheel. |
+| `MUTATION` | Eén wijziging | De beslissing ging over één wijziging. |
+| `GROUP` | Groep wijzigingen | De beslissing ging over alle wijzigingen die aan een filter voldeden. |
+| `BUNDLE` | Hele publicatie | De beslissing ging over de publicatie als geheel. |
 
 ### Onderdelen van de filter van een groepsbeslissing
 
@@ -931,25 +936,25 @@ De code is hier de naam van het filterveld zoals de server het bewaart.
 <!-- terms:selectionFilterField -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `batchId` | Batch | Enkel mutaties van deze batch. |
-| `status` | Status | Enkel mutaties met deze status. |
-| `statusReason` | Reden van de status | Enkel mutaties met deze reden. |
-| `actionType` | Soort | Enkel mutaties van deze soort. |
-| `identityHash` | Wijzigingsgroep | Enkel de wijzigingen van één artikel in één batch. |
+| `batchId` | Inlezing | Enkel wijzigingen van deze inlezing. |
+| `status` | Status | Enkel wijzigingen met deze status. |
+| `statusReason` | Reden van de status | Enkel wijzigingen met deze reden. |
+| `actionType` | Soort | Enkel wijzigingen van deze soort. |
+| `identityHash` | Wijzigingsgroep | Enkel de wijzigingen van één artikel in één inlezing. |
 
-### Waarom een bundel nog niet bevroren kan worden
+### Waarom een publicatie nog niet bevroren kan worden
 
 De code is dezelfde als die het bevriezen zelf zou geven.
 
 <!-- terms:freezeCheck -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `BUNDLE_NOT_ASSEMBLING` | De bundel is niet meer in opbouw | Enkel een bundel die nog in opbouw is, kan bevroren worden. |
-| `BUNDLE_EMPTY` | De bundel heeft geen batches | Een bundel zonder actieve batch kan niet bevroren worden. |
-| `BUNDLE_HAS_UNDECIDED_MUTATIONS` | Er wachten nog mutaties op een beslissing | Bevriezen mag een openstaande vraag niet stilzwijgend beantwoorden; beslis eerst over deze mutaties. |
+| `BUNDLE_NOT_ASSEMBLING` | De publicatie is niet meer in opbouw | Enkel een publicatie die nog in opbouw is, kan bevroren worden. |
+| `BUNDLE_EMPTY` | De publicatie heeft geen inlezingen | Een publicatie zonder actieve inlezing kan niet bevroren worden. |
+| `BUNDLE_HAS_UNDECIDED_MUTATIONS` | Er wachten nog wijzigingen op een beslissing | Bevriezen mag een openstaande vraag niet stilzwijgend beantwoorden; beslis eerst over deze wijzigingen. |
 | `SOURCE_STATE_CHANGED_SINCE_SCREENING` | De bekende gegevens zijn veranderd sinds de controle | Wat we over de artikelen wisten, is na de controle van de levering gewijzigd; controleer de levering opnieuw. |
-| `BUNDLE_OFFER_CONFLICT` | Dezelfde aanbieding zit in meer dan één batch | Twee batches van deze bundel willen hetzelfde artikel publiceren; keur één kant af. |
-| `OFFER_ALREADY_IN_ANOTHER_BUNDLE` | Een aanbieding zit ook in een andere bundel | Hetzelfde artikel kan in een andere open of bevroren bundel gepubliceerd worden; keur één kant af, of publiceer of annuleer eerst de andere bundel. |
+| `BUNDLE_OFFER_CONFLICT` | Dezelfde aanbieding zit in meer dan één inlezing | Twee inlezingen van deze publicatie willen hetzelfde artikel publiceren; keur één kant af. |
+| `OFFER_ALREADY_IN_ANOTHER_BUNDLE` | Een aanbieding zit ook in een andere publicatie | Hetzelfde artikel kan in een andere open of bevroren publicatie gepubliceerd worden; keur één kant af, of publiceer of annuleer eerst de andere publicatie. |
 
 ### Afspraken met Prodis over het bestand van een publicatie
 
@@ -958,31 +963,31 @@ De code is dezelfde als die het bevriezen zelf zou geven.
 | --- | --- | --- |
 | `UNVERIFIED_FIELD_INVENTORY` | Velden nog niet bevestigd | De lijst met velden voor het importbestand van Prodis is nog niet door Prodis bevestigd; het bestand is een voorbeeld. |
 
-### Tellers van een bundel
+### Tellers van een publicatie
 
-De code is hier de veldnaam van de teller in het antwoord van de server (overzicht van een bundel).
+De code is hier de veldnaam van de teller in het antwoord van de server (overzicht van een publicatie).
 
 <!-- terms:bundleCounter -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `batchCount` | Batches | Het aantal geleverde bestanden (batches) dat deel uitmaakt van de bundel. |
-| `contentMutationCount` | Mutaties | Het aantal voorgestelde wijzigingen in de bundel, zonder de afgeronde controles. |
-| `readyCount` | Goedgekeurd | Mutaties die goedgekeurd zijn en klaarstaan om gepubliceerd te worden. |
-| `rejectedCount` | Afgekeurd | Mutaties die afgekeurd zijn. |
-| `blockedCount` | Tegengehouden | Mutaties met een kritiek herkenningsprobleem; daar is geen beslissing over mogelijk. |
+| `batchCount` | Inlezingen | Het aantal geleverde bestanden (inlezingen) dat deel uitmaakt van de publicatie. |
+| `contentMutationCount` | Wijzigingen | Het aantal voorgestelde wijzigingen in de publicatie, zonder de afgeronde controles. |
+| `readyCount` | Goedgekeurd | Wijzigingen die goedgekeurd zijn en klaarstaan om gepubliceerd te worden. |
+| `rejectedCount` | Afgekeurd | Wijzigingen die afgekeurd zijn. |
+| `blockedCount` | Tegengehouden | Wijzigingen met een kritiek herkenningsprobleem; daar is geen beslissing over mogelijk. |
 | `identityIncidentCount` | Herkenningsproblemen | Artikelen waarvan een kritieke verwijzing, zoals een streepjescode, gewijzigd, verdwenen of hergebruikt is. |
-| `expiredCount` | Vervallen | Mutaties die vervallen zijn door het annuleren van de bundel. |
+| `expiredCount` | Vervallen | Wijzigingen die vervallen zijn door het annuleren van de publicatie. |
 | `bulkIncidentCount` | Gebundelde meldingen | Groepen van zoveel gelijksoortige vaststellingen dat ze samen als één gebeurtenis beoordeeld worden. |
 | `criticalIssueCount` | Kritieke problemen | Vaststellingen van de hoogste ernst; ze houden een regel vast voor beoordeling. |
 | `warningCount` | Waarschuwingen | Vaststellingen ter info; de betrokken regel blijft geldig. |
-| `plannedCount` | Wordt bij bevriezen goedgekeurd | Mutaties met status gepland; bij het bevriezen worden ze in één keer goedgekeurd op uw naam. |
-| `awaitingApprovalCount` | Wacht op beslissing | Mutaties die een uitdrukkelijke beslissing vragen; zolang die er niet is, kan de bundel niet bevroren worden. |
-| `staleMutationCount` | Gegevens veranderd sinds de controle | Mutaties waarvan de bekende artikelgegevens na de controle van de levering veranderd zijn. |
+| `plannedCount` | Wordt bij bevriezen goedgekeurd | Wijzigingen met status gepland; bij het bevriezen worden ze in één keer goedgekeurd op uw naam. |
+| `awaitingApprovalCount` | Wacht op beslissing | Wijzigingen die een uitdrukkelijke beslissing vragen; zolang die er niet is, kan de publicatie niet bevroren worden. |
+| `staleMutationCount` | Gegevens veranderd sinds de controle | Wijzigingen waarvan de bekende artikelgegevens na de controle van de levering veranderd zijn. |
 
-### Behandelgevallen: waar een vaststelling over gaat
+### Afwijkingen: waar een vaststelling over gaat
 
-De tabellen van dit deel (tot en met "Sjablonen") horen bij de schermen Behandelgevallen, het detail van een versie
-in Inrichting en Sjablonen (NT-11c).
+De tabellen van dit deel (tot en met "Importdefinities") horen bij de schermen Afwijkingen, het detail van een versie
+in Inrichting en Importdefinities (NT-11c).
 
 <!-- terms:issueDomain -->
 | Code | Nederlands | Uitleg |
@@ -994,10 +999,10 @@ in Inrichting en Sjablonen (NT-11c).
 | `PRICE` | Prijzen | Gaat over bedragen, percentages en prijsafwijkingen. |
 | `COMPLETENESS_DELETE` | Volledigheid en verdwenen artikelen | Gaat over artikelen die ontbreken of verdwenen zijn; wordt vandaag nog niet gebruikt. |
 | `PUBLICATION_TECHNICAL` | Technische fout bij het verwerken | Gaat over technische fouten bij het verwerken of publiceren. |
-| `AUTHORISATION_CONFIG` | Instellingen en rechten | Gaat over de beschrijving van het bestand en de rechten daarop. |
+| `AUTHORISATION_CONFIG` | Instellingen en rechten | Gaat over de importdefinitie en de rechten daarop. |
 | `SUPPLEMENT` | Aanvullingen op een aanbieding | Gaat over aanvullingen bij een aanbieding; wordt vandaag nog niet gebruikt. |
 
-### Behandelgevallen: op welk niveau vastgesteld
+### Afwijkingen: op welk niveau vastgesteld
 
 <!-- terms:controlLevel -->
 | Code | Nederlands | Uitleg |
@@ -1006,25 +1011,25 @@ in Inrichting en Sjablonen (NT-11c).
 | `STRUCTURE` | Kopregel en kolommen | Vastgesteld op de opbouw van het bestand, zoals de kopregel of het aantal kolommen. |
 | `RECORD` | Eén regel | Vastgesteld op één regel van het bestand; alleen die regel wordt verworpen. |
 
-### Behandelgevallen: hoe ver de gevolgen reiken
+### Afwijkingen: hoe ver de gevolgen reiken
 
 <!-- terms:impactScope -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
 | `RECORD` | Alleen deze regel | Enkel de betrokken regel van het bestand is getroffen. |
 | `DELIVERY` | De hele levering | Geen enkel artikel uit dit bestand is bruikbaar. |
-| `DEFINITION` | De beschrijving van het bestand | De beschrijving van het bestand zelf moet aangepast worden. |
+| `DEFINITION` | De importdefinitie | De importdefinitie zelf moet aangepast worden. |
 | `LIBRARY` | De bibliotheek | Raakt de bibliotheek, bijvoorbeeld een verwijzing die aan een ander artikel hangt. |
 
-### Behandelgevallen: soort gebeurtenis in de geschiedenis
+### Afwijkingen: soort gebeurtenis in de geschiedenis
 
 <!-- terms:issueEventKind -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `CREATED` | Aangemaakt | Het behandelgeval is voor het eerst aangemaakt. |
-| `STATUS_CHANGE` | Status gewijzigd | De status van het behandelgeval is gewijzigd. |
+| `CREATED` | Aangemaakt | De afwijking is voor het eerst aangemaakt. |
+| `STATUS_CHANGE` | Status gewijzigd | De status van de afwijking is gewijzigd. |
 
-### Behandelgevallen: wie een gebeurtenis veroorzaakte
+### Afwijkingen: wie een gebeurtenis veroorzaakte
 
 <!-- terms:issueEventSource -->
 | Code | Nederlands | Uitleg |
@@ -1106,7 +1111,7 @@ De code is hier een veld uit de veldcatalogus (waarnaar een extra veld schrijft)
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
 | `SOURCE_FIELD` | Kolom uit het bestand | De waarde komt uit een kolom van het bestand. |
-| `FIXED_VALUE` | Vaste waarde | De waarde ligt vast in de beschrijving van het bestand. |
+| `FIXED_VALUE` | Vaste waarde | De waarde ligt vast in de importdefinitie. |
 | `BOOKMARK` | Waarde die per koppeling ingevuld wordt | De waarde wordt per koppeling ingevuld; wordt in deze versie nog niet ondersteund. |
 | `DERIVED` | Afgeleide waarde | De waarde wordt afgeleid uit andere velden; wordt in deze versie nog niet ondersteund. |
 
@@ -1131,7 +1136,7 @@ De code is hier een veld uit de veldcatalogus (waarnaar een extra veld schrijft)
 | `EXCLUDE` | Overslaan | Regels die passen, worden overgeslagen en niet verder gecontroleerd; dat is geen fout. |
 | `REJECT` | Verwerpen | Regels die passen, horen niet te bestaan; ze worden verworpen en geteld. |
 
-### Sjablonen: soort waarde van een invulpunt
+### Importdefinities: soort waarde van een invulpunt
 
 Overal heet dit "invulpunt" (beslissing van de mens, zie het beslissingslog); in de tabel zelf staat het woord niet.
 
@@ -1148,15 +1153,15 @@ Overal heet dit "invulpunt" (beslissing van de mens, zie het beslissingslog); in
 | `LIBRARY_REFERENCE` | Verwijzing naar een bibliotheek | De code van een Prodis-bibliotheek. |
 | `POLICY_PROFILE_REFERENCE` | Verwijzing naar een prijsprofiel | Een bestaand prijs- of beleidsprofiel van een versie. |
 
-### Sjablonen: voor wie een ingevulde waarde geldt
+### Importdefinities: voor wie een ingevulde waarde geldt
 
 <!-- terms:bookmarkScope -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `DEFINITION` | Voor de hele beschrijving | De waarde wordt bij het materialiseren vastgelegd en geldt voor elke koppeling van de beschrijving. |
+| `DEFINITION` | Voor de hele importdefinitie | De waarde wordt bij het materialiseren vastgelegd en geldt voor elke koppeling van de importdefinitie. |
 | `LINK` | Per koppeling | De waarde wordt voor elke koppeling apart ingevuld. |
 
-### Sjablonen: waar een ingevulde waarde terechtkomt
+### Importdefinities: waar een ingevulde waarde terechtkomt
 
 <!-- terms:bookmarkPlace -->
 | Code | Nederlands | Uitleg |
@@ -1169,28 +1174,28 @@ Overal heet dit "invulpunt" (beslissing van de mens, zie het beslissingslog); in
 | `LINK_SEARCH_SUPPLIER` | Leverancierscode in de bibliotheek | De waarde wordt de code waaronder Prodis de leverancier zoekt; ze wordt nooit uit de leverancier afgeleid. |
 | `LINK_SUPPLIER_ORGANISATION` | Leverancier van de koppeling | De waarde wordt de leverancier van de koppeling. |
 
-### Waarvoor een beschrijving van een bestand dient
+### Waarvoor een importdefinitie dient
 
 <!-- terms:definitionUsage -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `OWN_DEFINITION` | Eigen beschrijving | Een beschrijving van het bestand van één organisatie, met eigen versies en koppelingen. |
-| `REUSABLE_TEMPLATE` | Herbruikbaar sjabloon | Een model waaruit beschrijvingen van bestanden gemaakt worden; het krijgt nooit zelf een koppeling of levering. |
+| `OWN_DEFINITION` | Eigen importdefinitie | Een importdefinitie van één organisatie, met eigen versies en koppelingen. |
+| `REUSABLE_TEMPLATE` | Herbruikbare importdefinitie | Een model waaruit importdefinities van bestanden gemaakt worden; het krijgt nooit zelf een koppeling of levering. |
 
-### Sjablonen: nieuw of hergebruik
+### Importdefinities: nieuw of hergebruik
 
 <!-- terms:materialisationMode -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `NEW_DEFINITION` | Nieuw — een nieuwe beschrijving met conceptversie en koppeling maken | Er komt een nieuwe beschrijving van het bestand met een conceptversie en een koppeling. |
-| `REUSE_DEFINITION` | Hergebruik — alleen een koppeling toevoegen aan een bestaande, deelbare beschrijving | Er komt alleen een koppeling bij een bestaande beschrijving die gedeeld mag worden; de beschrijving blijft ongewijzigd. |
+| `NEW_DEFINITION` | Nieuw — een nieuwe importdefinitie met conceptversie en koppeling maken | Er komt een nieuwe importdefinitie met een conceptversie en een koppeling. |
+| `REUSE_DEFINITION` | Hergebruik — alleen een koppeling toevoegen aan een bestaande, deelbare importdefinitie | Er komt alleen een koppeling bij een bestaande importdefinitie die gedeeld mag worden; de importdefinitie blijft ongewijzigd. |
 
-### Sjablonen: meldingen bij het materialiseren
+### Importdefinities: meldingen bij het materialiseren
 
 <!-- terms:materialisationWarning -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `OPTIONAL_BOOKMARK_NOT_FILLED` | Een optionele waarde is niet ingevuld | Een optionele waarde is leeg gebleven; de standaardwaarde van het sjabloon geldt, als die er is. |
+| `OPTIONAL_BOOKMARK_NOT_FILLED` | Een optionele waarde is niet ingevuld | Een optionele waarde is leeg gebleven; de standaardwaarde van de importdefinitie geldt, als die er is. |
 | `LINK_SEARCH_SUPPLIER_NOT_DERIVED` | Leverancierscode in de bibliotheek is niet ingevuld | Die code wordt nooit automatisch uit de leverancier afgeleid; vul ze zo nodig zelf in. |
 
 ### Overname van de legacy-configuratie: status van een ontvangst
@@ -1246,7 +1251,7 @@ Een wachtwoord wordt nergens getoond: u ziet enkel wat ermee gebeurd is.
 | `SUCCESSOR_DRAFT` | Nieuwe conceptversie | Er komt een nieuwe conceptversie naast de bestaande; de actieve versie blijft ongemoeid. |
 | `UNCHANGED` | Blijft ongewijzigd | De inhoud is gelijk aan wat al overgenomen was; er verandert niets. |
 | `NONE` | Geen | Hier is geen actie voor nodig of mogelijk. |
-| `REPOINT` | Wordt verlegd | De bestaande koppeling blijft bestaan maar wijst voortaan naar de eigen beschrijving. |
+| `REPOINT` | Wordt verlegd | De bestaande koppeling blijft bestaan maar wijst voortaan naar de eigen importdefinitie. |
 
 ### Overname van de legacy-configuratie: controle tegen Prodis
 
@@ -1297,7 +1302,7 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 <!-- terms:legacyReportCode -->
 | Code | Nederlands | Uitleg |
 | --- | --- | --- |
-| `DEFINITION_NOT_PRESENT` | Geen importsoort om over te nemen | De interface verwijst niet naar een bestaande importsoort, of de gegevens ervan ontbreken; zonder die beschrijving valt er niets over te nemen. |
+| `DEFINITION_NOT_PRESENT` | Geen importsoort om over te nemen | De interface verwijst niet naar een bestaande importsoort, of de gegevens ervan ontbreken; zonder die importdefinitie valt er niets over te nemen. |
 | `INTERFACE_SETTING_DUPLICATED` | Instelling van de interface komt meerdere keren voor | Legacy leest er maar één van en niet te bepalen welke; maak de interface eerst eenduidig. |
 | `SUPPLIER_NOT_DECLARED` | Leverancier ontbreekt in de interface | Zonder leverancier kan niet bepaald worden voor wie de koppeling is. |
 | `SUPPLIER_CODE_TOO_LONG` | Leveranciersnummer is te lang | Het leveranciersnummer van de interface past niet in CatalogImport. |
@@ -1322,22 +1327,22 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 | `BASE_PRICE_FIELD_MISSING` | Kolom basisprijs ontbreekt | De basisprijs heeft in de importsoort geen kolom. |
 | `BASE_PRICE_TRANSFORM_UNSUPPORTED` | Bewerking op de basisprijs niet ondersteund | De basisprijs wordt in legacy bewerkt of vast ingesteld; een prijs wordt nooit stilzwijgend aangepast. |
 | `LEGACY_EXCLUDE_EXCLUDES_ALL` | Uitsluiting sluit alles uit | Een uitsluitingsrij blijkt elke regel uit te sluiten; dat zou de hele levering wegfilteren. |
-| `DEFINITION_CODE_CONFLICT_MANUAL` | Code van de beschrijving is al in gebruik | Een andere, handmatig gemaakte beschrijving heeft al deze code; kies een andere code of los het conflict zelf op. |
-| `TEMPLATE_CODE_CONFLICT_MANUAL` | Code van het sjabloon is al in gebruik | Een andere definitie gebruikt al de code die het sjabloon zou krijgen; kies een andere code. |
-| `DEFINITION_CODE_OVERRIDE_INVALID` | Gekozen code van de beschrijving is ongeldig | De code die u koos is te lang of bevat tekens die niet mogen. |
+| `DEFINITION_CODE_CONFLICT_MANUAL` | Code van de importdefinitie is al in gebruik | Een andere, handmatig gemaakte importdefinitie heeft al deze code; kies een andere code of los het conflict zelf op. |
+| `TEMPLATE_CODE_CONFLICT_MANUAL` | Code van de importdefinitie is al in gebruik | Een andere definitie gebruikt al de code die de importdefinitie zou krijgen; kies een andere code. |
+| `DEFINITION_CODE_OVERRIDE_INVALID` | Gekozen code van de importdefinitie is ongeldig | De code die u koos is te lang of bevat tekens die niet mogen. |
 | `SOURCE_ORGANISATION_TYPE_CONFLICT` | Leverancier bestaat al als ander soort organisatie | Er is al een organisatie met dit nummer die geen leverancier is; die wordt nooit omgezet. |
 | `LINK_CODE_CONFLICT_MANUAL` | Code van de koppeling is al in gebruik | Een handmatig gemaakte koppeling heeft al de code die hier zou ontstaan. |
 | `LINK_SCOPE_CONFLICT_MANUAL` | Er bestaat al een koppeling voor deze leverancier en bibliotheek | Dezelfde combinatie van leverancier en bibliotheek is al in gebruik; er wordt nooit stil samengevoegd. |
 | `LINK_DIFFERS_NOT_CHANGED` | Bestaande koppeling wijkt af | De bestaande koppeling is anders dan wat de legacy-interface zegt; ze wordt nooit aangepast. |
-| `SHARED_DEFINITION_DIVERGED` | Gedeelde beschrijving wijkt af | Deze interface wijkt af van de beschrijving die ze met andere interfaces deelt; u kunt ze loskoppelen tot een eigen beschrijving. |
-| `DETACH_FROM_SHARED` | Wordt losgekoppeld van de gedeelde beschrijving | Deze interface krijgt een eigen beschrijving; de koppeling wordt verlegd en de actieve versie van de gedeelde beschrijving wordt meteen als eigen versie actief. De nieuwe inhoud wordt een conceptversie. |
-| `DETACH_NOT_NEEDED` | Loskoppelen is niet nodig | Deze interface wijkt niet af van een gedeelde beschrijving, dus er valt niets los te koppelen; de keuze wordt genegeerd. |
-| `DETACHED_DEFINITION` | Eigen beschrijving na loskoppelen | Deze interface heeft een eigen beschrijving gekregen en deelt ze met geen andere interface. |
+| `SHARED_DEFINITION_DIVERGED` | Gedeelde importdefinitie wijkt af | Deze interface wijkt af van de importdefinitie die ze met andere interfaces deelt; u kunt ze loskoppelen tot een eigen importdefinitie. |
+| `DETACH_FROM_SHARED` | Wordt losgekoppeld van de gedeelde importdefinitie | Deze interface krijgt een eigen importdefinitie; de koppeling wordt verlegd en de actieve versie van de gedeelde importdefinitie wordt meteen als eigen versie actief. De nieuwe inhoud wordt een conceptversie. |
+| `DETACH_NOT_NEEDED` | Loskoppelen is niet nodig | Deze interface wijkt niet af van een gedeelde importdefinitie, dus er valt niets los te koppelen; de keuze wordt genegeerd. |
+| `DETACHED_DEFINITION` | Eigen importdefinitie na loskoppelen | Deze interface heeft een eigen importdefinitie gekregen en deelt ze met geen andere interface. |
 | `DETACH_OPEN_BATCH` | Loskoppelen kan niet: er staat nog een bestand open | Voor deze koppeling staat nog een bestand dat niet afgerond is. Rond het eerst af en probeer opnieuw. |
 | `DETACH_RUN_IN_PROGRESS` | Loskoppelen kan niet: er loopt een inname | Voor deze koppeling loopt op dit moment een inname. Wacht tot ze klaar is en probeer opnieuw. |
-| `DETACHED_DEFINITION_CODE_CONFLICT` | Code van de eigen beschrijving is al in gebruik | Een andere beschrijving gebruikt al de code die de eigen beschrijving zou krijgen; kies een andere code. |
-| `DETACHED_DEFINITION_CODE_INVALID` | Gekozen code van de eigen beschrijving is ongeldig | De code die u koos is te lang of bevat tekens die niet mogen. |
-| `MANUAL_CHANGES_SINCE_MIGRATION` | Beschrijving is na de vorige overname handmatig gewijzigd | De laatste versie wijkt af van wat de vorige overname schreef; die wijzigingen worden nooit overschreven. |
+| `DETACHED_DEFINITION_CODE_CONFLICT` | Code van de eigen importdefinitie is al in gebruik | Een andere importdefinitie gebruikt al de code die de eigen importdefinitie zou krijgen; kies een andere code. |
+| `DETACHED_DEFINITION_CODE_INVALID` | Gekozen code van de eigen importdefinitie is ongeldig | De code die u koos is te lang of bevat tekens die niet mogen. |
+| `MANUAL_CHANGES_SINCE_MIGRATION` | Importdefinitie is na de vorige overname handmatig gewijzigd | De laatste versie wijkt af van wat de vorige overname schreef; die wijzigingen worden nooit overschreven. |
 | `OPEN_DRAFT_EXISTS` | Er is al een conceptversie | Rond de bestaande conceptversie eerst af of verwijder ze voor er een nieuwe komt. |
 | `REVISION_NOT_CLONEABLE` | Laatste versie kan niet gekopieerd worden | Van de laatste versie kan geen nieuwe conceptversie gemaakt worden. |
 | `PRODIS_SUPPLIER_NOT_FOUND` | Leverancier niet gevonden in Prodis | Dit leveranciersnummer bestaat niet in de Prodis-database. |
@@ -1367,16 +1372,16 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 | `INCLUDE_EXCLUDE_SUBSTRING_NOT_MIGRATED` | Filter op een deel van de waarde | Een filter op positie en lengte wordt niet overgenomen; er komt geen filter. |
 | `INCLUDE_FILTER_EMPTY_VALUE_NOT_MIGRATED` | Filter met een lege vergelijkwaarde | Een filter dat op een lege waarde vergelijkt, wordt niet overgenomen. |
 | `INCLUDE_EXCLUDE_WITH_FIXED_VALUE` | Filter op een veld met vaste waarde | Het veld heeft een vaste waarde, dus filteren heeft geen zin; er komt geen filter. |
-| `LEGACY_EXCLUDE_NOT_EXPRESSIBLE` | Uitsluiting kan niet uitgedrukt worden | Een uitsluitingsrij vergelijkt een kortingscode die in deze beschrijving niet beschikbaar is; de rij wordt niet overgenomen. |
-| `DEFINITION_CODE_OVERRIDDEN` | Gekozen code voor de beschrijving | U koos een andere code dan die van legacy; de beschrijving krijgt de gekozen code. |
-| `DEFINITION_CODE_OVERRIDE_NOT_USED` | Gekozen code niet gebruikt | Er wordt een bestaande gedeelde beschrijving hergebruikt, dus uw gekozen code is niet nodig. |
+| `LEGACY_EXCLUDE_NOT_EXPRESSIBLE` | Uitsluiting kan niet uitgedrukt worden | Een uitsluitingsrij vergelijkt een kortingscode die in deze importdefinitie niet beschikbaar is; de rij wordt niet overgenomen. |
+| `DEFINITION_CODE_OVERRIDDEN` | Gekozen code voor de importdefinitie | U koos een andere code dan die van legacy; de importdefinitie krijgt de gekozen code. |
+| `DEFINITION_CODE_OVERRIDE_NOT_USED` | Gekozen code niet gebruikt | Er wordt een bestaande gedeelde importdefinitie hergebruikt, dus uw gekozen code is niet nodig. |
 | `LEGACY_DEFINITION_CODE_CHANGED` | Code van de importsoort is veranderd | De interface verwijst nu naar een andere importsoort dan bij de vorige overname. |
 | `PRODIS_SUPPLIER_NAME_EMPTY` | Leverancier heeft geen naam in Prodis | De leverancier krijgt een tijdelijke naam met het nummer; pas die later aan. |
 | `LIBRARY_CODE_NOT_LEGACY_MATCH` | Andere bibliotheek dan legacy | De bibliotheek die u koos is niet die van het legacy-bibliotheeknummer. |
 | `IDENTITY_CHANGE` | Herkenning van artikelen verandert | De nieuwe conceptversie herkent artikelen anders; met overnemen bevestigt u die wijziging. |
-| `LEGACY_CONTROL_CODE_NOT_MIGRATED` | Beheercode van legacy | Dit is een instelling voor het beheer van de importsoort in legacy en geen onderdeel van de beschrijving. |
+| `LEGACY_CONTROL_CODE_NOT_MIGRATED` | Beheercode van legacy | Dit is een instelling voor het beheer van de importsoort in legacy en geen onderdeel van de importdefinitie. |
 | `CONNECTION_NOT_MIGRATED` | Verbinding wordt niet aangemaakt | Een verbindingsprofiel vraagt een eigen keuze; het rapport toont enkel een voorstel met server, map en login. |
-| `PUBLICATION_PARAMETER_NOT_MIGRATED` | Parameter voor publicatie niet overgenomen | Een instelling voor de publicatie naar Prodis hoort niet bij de beschrijving van het bestand. |
+| `PUBLICATION_PARAMETER_NOT_MIGRATED` | Parameter voor publicatie niet overgenomen | Een instelling voor de publicatie naar Prodis hoort niet bij de importdefinitie. |
 | `INTERFACE_SETTING_NOT_MIGRATED` | Instelling van de interface niet overgenomen | Voor deze instelling bestaat in CatalogImport geen plaats. |
 | `SECRET_LABEL_OMITTED` | Geheime instelling weggelaten | Een wachtwoord of sleutel wordt nooit doorgegeven; vul ze zo nodig zelf in. |
 | `SCHEDULE_NOT_MIGRATED` | Planning niet overgenomen | De legacy-planning wordt niet overgenomen; de taak wordt handmatig gestart. |
@@ -1391,9 +1396,9 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 | `LEGACY_XML_PATH_NOT_MIGRATED` | XML-pad niet overgenomen | Enkel CSV-bestanden worden overgenomen, dus een XML-pad niet. |
 | `LEGACY_EXCLUDES_SKIPPED` | Uitsluitingen worden niet toegepast | De interface zegt de uitsluitingen over te slaan, dus ze worden niet overgenomen. |
 | `LEGACY_EXCLUDE_NEVER_MATCHES` | Uitsluiting past nooit | Een uitsluitingsrij kan nooit overeenkomen en wordt niet overgenomen. |
-| `TEMPLATE_NOT_UPDATED` | Sjabloon blijft ongewijzigd | Het sjabloon van de groep blijft zoals het was; pas het zo nodig zelf aan. |
+| `TEMPLATE_NOT_UPDATED` | Importdefinitie blijft ongewijzigd | De importdefinitie van de groep blijft zoals ze was; pas ze zo nodig zelf aan. |
 | `SOURCE_ORGANISATION_NAME_KEPT` | Naam van de leverancier blijft | De bestaande leverancier behoudt haar naam en wordt nooit hernoemd. |
-| `DEFINITION` | Importsoort wordt overgenomen | De legacy-importsoort wordt een beschrijving van het bestand in CatalogImport. |
+| `DEFINITION` | Importsoort wordt overgenomen | De legacy-importsoort wordt een importdefinitie in CatalogImport. |
 | `SOURCE_ORGANISATION` | Leverancier wordt overgenomen | De leverancier van de interface wordt als leverancier in CatalogImport gebruikt; bestaat ze al, dan wordt ze hergebruikt. |
 | `DELIMITER` | Scheidingsteken wordt overgenomen | Het scheidingsteken van de interface wordt dat van het bestand. |
 | `CHARSET` | Tekenset wordt overgenomen | De tekenset van de interface wordt die van het bestand. |
@@ -1413,6 +1418,6 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 | `PRODIS_SUPPLIER` | Leverancier gevonden in Prodis | Het leveranciersnummer bestaat precies één keer in Prodis. |
 | `PRODIS_SUPPLIER_GROUP` | Groep gevonden in Prodis | De vaste groep bestaat bij de leverancier in Prodis. |
 | `LIBRARY_CODE` | Bibliotheek wordt overgenomen | De bibliotheek van de leverancier waarin de koppeling komt, is bepaald. |
-| `SHARED_DEFINITION` | Gedeelde beschrijving wordt hergebruikt | Een andere interface met dezelfde importsoort gebruikt al een gedeelde beschrijving; enkel koppeling en taak komen erbij. |
-| `DEFINITION_UNCHANGED` | Beschrijving blijft ongewijzigd | De legacy-inhoud is gelijk aan wat de vorige overname schreef; er komt geen nieuwe versie. |
+| `SHARED_DEFINITION` | Gedeelde importdefinitie wordt hergebruikt | Een andere interface met dezelfde importsoort gebruikt al een gedeelde importdefinitie; enkel koppeling en taak komen erbij. |
+| `DEFINITION_UNCHANGED` | Importdefinitie blijft ongewijzigd | De legacy-inhoud is gelijk aan wat de vorige overname schreef; er komt geen nieuwe versie. |
 | `SUCCESSOR_DRAFT` | Nieuwe conceptversie | De legacy-definitie is gewijzigd; er komt een nieuwe conceptversie die u zelf nakijkt en activeert. |

@@ -74,7 +74,7 @@ function DefinitionPanel({ detail, report }: Omit<ReportDetailPanelProps, 'baseI
             <div className={styles.fact}>
               <dt>Loskoppelen</dt>
               <dd>
-                Van de gedeelde beschrijving {detach.fromDefinitionCode} naar de eigen beschrijving {detach.toDefinitionCode}
+                Van de gedeelde importdefinitie {detach.fromDefinitionCode} naar de eigen importdefinitie {detach.toDefinitionCode}
               </dd>
             </div>
           )}

@@ -25,102 +25,102 @@ export type CodeEntry = {
  */
 export const CODE_MESSAGES: Record<string, CodeEntry> = {
   BUNDLE_NOT_FOUND: {
-    title: 'Bundel niet gevonden',
-    explanation: 'Deze publicatiebundel bestaat niet (meer), of het id in de link klopt niet.',
-    whatNow: 'Ga terug naar de bundellijst en zoek de bundel opnieuw op.',
+    title: 'Publicatie niet gevonden',
+    explanation: 'Deze publicatie bestaat niet (meer), of het id in de link klopt niet.',
+    whatNow: 'Ga terug naar de lijst met publicaties en zoek de publicatie opnieuw op.',
   },
   BATCH_NOT_FOUND: {
-    title: 'Batch niet gevonden',
-    explanation: 'Deze batch (levering) bestaat niet (meer).',
+    title: 'Inlezing niet gevonden',
+    explanation: 'Deze inlezing (levering) bestaat niet (meer).',
   },
   DEFINITION_NOT_FOUND: {
-    title: 'Beschrijving van het bestand niet gevonden',
-    explanation: 'Deze beschrijving van het bestand bestaat niet (meer), of het id in de link klopt niet.',
-    whatNow: 'Ga terug naar het inrichtingsoverzicht en zoek de beschrijving opnieuw op.',
+    title: 'Importdefinitie niet gevonden',
+    explanation: 'Deze importdefinitie bestaat niet (meer), of het id in de link klopt niet.',
+    whatNow: 'Ga terug naar het inrichtingsoverzicht en zoek de importdefinitie opnieuw op.',
   },
   DELIVERY_NOT_FOUND: {
     title: 'Levering niet gevonden',
     explanation: 'Deze levering bestaat niet (meer).',
   },
   BATCH_NOT_IN_BUNDLE: {
-    title: 'Batch zit niet in deze bundel',
-    explanation: 'De opgevraagde batch is geen (actief) lid van deze bundel.',
+    title: 'Inlezing zit niet in deze publicatie',
+    explanation: 'De opgevraagde inlezing is geen (actief) lid van deze publicatie.',
   },
   MUTATION_NOT_IN_BUNDLE: {
-    title: 'Mutatie zit niet in deze bundel',
-    explanation: 'Deze mutatie hoort niet bij een batch die lid is van deze bundel.',
+    title: 'Wijziging zit niet in deze publicatie',
+    explanation: 'Deze wijziging hoort niet bij een inlezing die lid is van deze publicatie.',
   },
   BUNDLE_REFERENCE_REUSED_WITH_DIFFERENT_SCOPE: {
     title: 'Referentie is al in gebruik met andere instellingen',
     explanation:
-      'Er bestaat al een bundel met deze bundelreferentie, maar met een andere doelmodus, ' +
+      'Er bestaat al een publicatie met deze publicatiereferentie, maar met een andere doelmodus, ' +
       'doelmoment of publicatiebeleid dan wat u nu aanmaakt.',
-    whatNow: 'Gebruik een andere referentie, of maak de bundel opnieuw aan met dezelfde instellingen als de bestaande.',
+    whatNow: 'Gebruik een andere referentie, of maak de publicatie opnieuw aan met dezelfde instellingen als de bestaande.',
   },
   BUNDLE_NOT_ASSEMBLING: {
-    title: 'Bundel is niet meer in opbouw',
+    title: 'Publicatie is niet meer in opbouw',
     explanation:
-      'Deze actie mag alleen zolang de bundel nog in opbouw is. Deze bundel is al bevroren, ' +
+      'Deze actie mag alleen zolang de publicatie nog in opbouw is. Deze publicatie is al bevroren, ' +
       'geannuleerd of verder in het proces.',
   },
   BUNDLE_NOT_FROZEN: {
-    title: 'Bundel is nog niet bevroren',
+    title: 'Publicatie is nog niet bevroren',
     explanation:
-      'Deze actie is alleen mogelijk voor een bevroren bundel (bijvoorbeeld het voorbeeldbestand voor ' +
+      'Deze actie is alleen mogelijk voor een bevroren publicatie (bijvoorbeeld het voorbeeldbestand voor ' +
       'Prodis of een publicatierun).',
-    whatNow: 'Bevries de bundel eerst, of kies een bevroren bundel.',
+    whatNow: 'Bevries de publicatie eerst, of kies een bevroren publicatie.',
   },
   BATCH_ALREADY_IN_BUNDLE: {
-    title: 'Batch zit al in een bundel',
-    explanation: 'Deze batch is al lid van deze of een andere bundel en kan niet nogmaals toegevoegd worden.',
+    title: 'Inlezing zit al in een publicatie',
+    explanation: 'Deze inlezing is al lid van deze of een andere publicatie en kan niet nogmaals toegevoegd worden.',
   },
   BATCH_IN_PUBLICATION_BUNDLE: {
-    title: 'Batch zit in een publicatiebundel',
+    title: 'Inlezing zit in een publicatie',
     explanation:
-      'Aanvaarden als nulmeting en opname in een bundel sluiten elkaar per batch uit. ' +
-      'Deze batch is al lid van een niet-geannuleerde bundel en kan daarom niet als nulmeting aanvaard worden.',
-    whatNow: 'Werk de batch af via de bundel, of annuleer de bundel; daarna kan de batch weer als nulmeting aanvaard worden.',
+      'Aanvaarden als nulmeting en opname in een publicatie sluiten elkaar per inlezing uit. ' +
+      'Deze inlezing is al lid van een niet-geannuleerde publicatie en kan daarom niet als nulmeting aanvaard worden.',
+    whatNow: 'Werk de inlezing af via de publicatie, of annuleer de publicatie; daarna kan de inlezing weer als nulmeting aanvaard worden.',
   },
   BATCH_NOT_ACCEPTABLE: {
-    title: 'Batch kan niet aanvaard worden',
+    title: 'Inlezing kan niet aanvaard worden',
     explanation:
-      'Aanvaarden als nulmeting kan alleen voor een batch die gecontroleerd is, en één keer per batch. Deze batch is ' +
+      'Aanvaarden als nulmeting kan alleen voor een inlezing die gecontroleerd is, en één keer per inlezing. Deze inlezing is ' +
       'al aanvaard of nog niet (of niet meer) gecontroleerd.',
-    whatNow: 'Laad de batch opnieuw en controleer de status.',
+    whatNow: 'Laad de inlezing opnieuw en controleer de status.',
   },
   BATCH_NOT_RESUMABLE: {
-    title: 'Batch kan niet hervat worden',
+    title: 'Inlezing kan niet hervat worden',
     explanation:
-      'Hervatten kan alleen voor een batch die halverwege onderbroken is (status "Wijzigingen worden bepaald"). ' +
-      'Deze batch staat in een andere status.',
-    whatNow: 'Laad de batch opnieuw en controleer de status.',
+      'Hervatten kan alleen voor een inlezing die halverwege onderbroken is (status "Wijzigingen worden bepaald"). ' +
+      'Deze inlezing staat in een andere status.',
+    whatNow: 'Laad de inlezing opnieuw en controleer de status.',
   },
   BATCH_NOT_BUNDLEABLE: {
-    title: 'Batch is niet bundelbaar',
-    explanation: 'Deze batch voldoet niet aan de voorwaarden om in een publicatiebundel opgenomen te worden.',
+    title: 'Inlezing kan niet in een publicatie opgenomen worden',
+    explanation: 'Deze inlezing voldoet niet aan de voorwaarden om in een publicatie opgenomen te worden.',
   },
   BATCH_VALIDATION_NOT_ESTABLISHED: {
-    title: 'Batch is nog niet gevalideerd',
-    explanation: 'De controle van deze batch is nog niet afgerond; het eindoordeel staat nog niet vast.',
+    title: 'Inlezing is nog niet gevalideerd',
+    explanation: 'De controle van deze inlezing is nog niet afgerond; het eindoordeel staat nog niet vast.',
   },
   BATCH_VALIDATION_BLOCKING: {
-    title: 'Batch heeft blokkerende validatiefouten',
-    explanation: 'De controle van deze batch vond blokkerende problemen; de batch kan zo niet toegevoegd worden.',
+    title: 'Inlezing heeft blokkerende validatiefouten',
+    explanation: 'De controle van deze inlezing vond blokkerende problemen; de inlezing kan zo niet toegevoegd worden.',
   },
   BATCH_HAS_DECIDED_MUTATIONS: {
-    title: 'Batch draagt al beslissingen',
+    title: 'Inlezing draagt al beslissingen',
     explanation:
-      'Deze batch draagt al beslissingen; verwijderen zou een ondertekende beslissing uit het dossier ' +
+      'Deze inlezing draagt al beslissingen; verwijderen zou een ondertekende beslissing uit het dossier ' +
       'laten verdwijnen.',
   },
   MUTATION_NOT_DECIDABLE: {
-    title: 'Mutatie is niet beslisbaar',
-    explanation: 'Deze mutatie staat in een status waarin goedkeuren of afkeuren niet mogelijk is.',
+    title: 'Wijziging is niet beslisbaar',
+    explanation: 'Deze wijziging staat in een status waarin goedkeuren of afkeuren niet mogelijk is.',
   },
   MUTATION_BLOCKED_BY_IDENTITY_INCIDENT: {
     title: 'Geblokkeerd door een identiteitsincident',
     explanation:
-      'Deze mutatie is tegengehouden door een kritiek herkenningsprobleem (een verwijzing om het artikel te ' +
+      'Deze wijziging is tegengehouden door een kritiek herkenningsprobleem (een verwijzing om het artikel te ' +
       'herkennen klopt niet); in deze fase van de applicatie is daar nog geen beslissing voor mogelijk.',
   },
   IDENTITY_DECISION_NOT_IN_SCOPE: {
@@ -132,60 +132,60 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   DECISION_FILTER_REQUIRED: {
     title: 'Filter ontbreekt',
     explanation:
-      'Een groepsbeslissing vereist minstens één filterveld (batch, status, soort, statusreden of ' +
+      'Een groepsbeslissing vereist minstens één filterveld (inlezing, status, soort, statusreden of ' +
       'wijzigingsgroep).',
   },
   DECISION_FILTER_UNKNOWN_FIELD: {
     title: 'Onbekend filterveld',
     explanation:
       'De groepsbeslissing bevat een veld dat de server niet kent; ze is geweigerd zodat ze niet ' +
-      'meer mutaties raakt dan je ziet.',
+      'meer wijzigingen raakt dan je ziet.',
     showBackendDetail: true,
   },
   BUNDLE_EMPTY: {
-    title: 'Bundel is leeg',
-    explanation: 'Deze bundel heeft geen (actieve) leden en kan zo niet bevroren worden.',
-    whatNow: 'Voeg eerst minstens één batch toe.',
+    title: 'Publicatie is leeg',
+    explanation: 'Deze publicatie heeft geen (actieve) leden en kan zo niet bevroren worden.',
+    whatNow: 'Voeg eerst minstens één inlezing toe.',
   },
   BUNDLE_HAS_UNDECIDED_MUTATIONS: {
-    title: 'Er wachten nog mutaties op een beslissing',
+    title: 'Er wachten nog wijzigingen op een beslissing',
     explanation: 'Bevriezen mag die vraag niet stilzwijgend beantwoorden.',
-    whatNow: 'Beoordeel eerst de mutaties met status "Wacht op goedkeuring".',
+    whatNow: 'Beoordeel eerst de wijzigingen met status "Wacht op goedkeuring".',
     showBackendDetail: true,
   },
   SOURCE_STATE_CHANGED_SINCE_SCREENING: {
     title: 'Bronstaat is veranderd sinds de controle',
-    explanation: 'De bekende stand van de artikelen is veranderd sinds de controle van een batch in deze bundel, bijvoorbeeld omdat intussen een andere batch als nulmeting aanvaard is. Dat geldt ook voor artikelen die bij de controle ongewijzigd waren.',
+    explanation: 'De bekende stand van de artikelen is veranderd sinds de controle van een inlezing in deze publicatie, bijvoorbeeld omdat intussen een andere inlezing als nulmeting aanvaard is. Dat geldt ook voor artikelen die bij de controle ongewijzigd waren.',
     whatNow: 'Laat de betrokken levering opnieuw controleren.',
     showBackendDetail: true,
   },
   BUNDLE_OFFER_CONFLICT: {
     title: 'Conflict tussen aanbiedingen',
     explanation:
-      'Twee publiceerbare mutaties in deze bundel raken dezelfde aanbieding. De backend geeft hieronder ' +
+      'Twee publiceerbare wijzigingen in deze publicatie raken dezelfde aanbieding. De backend geeft hieronder ' +
       'tot tien voorbeelden.',
-    whatNow: 'Keur er één af, of publiceer/annuleer eerst de andere bundel.',
+    whatNow: 'Keur er één af, of publiceer/annuleer eerst de andere publicatie.',
     showBackendDetail: true,
   },
   OFFER_ALREADY_IN_ANOTHER_BUNDLE: {
-    title: 'Aanbieding zit al in een andere bundel',
+    title: 'Aanbieding zit al in een andere publicatie',
     // Spiegel van PublicationBundleDao.findCrossBundleOfferConflicts: elke andere bundel die niet
     // CANCELLED is telt mee — dus ook een bundel die nog in opbouw is, niet enkel een bevroren.
     explanation:
-      'Een aanbieding in deze bundel staat ook publiceerbaar in een andere bundel die niet geannuleerd ' +
+      'Een aanbieding in deze publicatie staat ook publiceerbaar in een andere publicatie die niet geannuleerd ' +
       'is (in opbouw of bevroren). De backend geeft hieronder tot tien voorbeelden.',
-    whatNow: 'Keur één kant af, of publiceer/annuleer eerst de andere bundel.',
+    whatNow: 'Keur één kant af, of publiceer/annuleer eerst de andere publicatie.',
     showBackendDetail: true,
   },
   BUNDLE_CONTENT_CHANGED_DURING_FREEZE: {
     title: 'Inhoud is veranderd tijdens het bevriezen',
-    explanation: 'De inhoud van de bundel is tussen het laden en het bevestigen van deze actie gewijzigd.',
-    whatNow: 'Laad de bundel opnieuw en probeer opnieuw te bevriezen.',
+    explanation: 'De inhoud van de publicatie is tussen het laden en het bevestigen van deze actie gewijzigd.',
+    whatNow: 'Laad de publicatie opnieuw en probeer opnieuw te bevriezen.',
     showBackendDetail: true,
   },
   BUNDLE_NOT_CANCELLABLE: {
-    title: 'Bundel kan niet geannuleerd worden',
-    explanation: 'Deze bundel staat in een status waarin annuleren niet meer mogelijk is.',
+    title: 'Publicatie kan niet geannuleerd worden',
+    explanation: 'Deze publicatie staat in een status waarin annuleren niet meer mogelijk is.',
   },
   TASK_NOT_FOUND: {
     title: 'Taak niet gevonden',
@@ -200,7 +200,7 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   NO_ACTIVE_REVISION: {
     title: 'Geen actieve versie',
     explanation:
-      'De beschrijving van het bestand van deze taak heeft geen actieve versie; een levering kan dus niet ' +
+      'De importdefinitie van deze taak heeft geen actieve versie; een levering kan dus niet ' +
       'gecontroleerd worden.',
     whatNow: 'Activeer de conceptversie onder Inrichting (open de versie → "Versie activeren").',
   },
@@ -218,8 +218,8 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   },
   BUNDLE_CONTENT_CHANGED_DURING_CANCEL: {
     title: 'Inhoud is veranderd tijdens het annuleren',
-    explanation: 'De inhoud van de bundel is tussen het laden en het bevestigen van deze actie gewijzigd.',
-    whatNow: 'Laad de bundel opnieuw en probeer opnieuw te annuleren.',
+    explanation: 'De inhoud van de publicatie is tussen het laden en het bevestigen van deze actie gewijzigd.',
+    whatNow: 'Laad de publicatie opnieuw en probeer opnieuw te annuleren.',
     showBackendDetail: true,
   },
   AUTHENTICATION_REQUIRED: {
@@ -283,15 +283,15 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   },
   PUBLICATION_RUN_IN_PROGRESS: {
     title: 'Er loopt al een publicatierun',
-    explanation: 'Deze bundel heeft al een niet-afgeronde publicatierun; wacht tot die klaar is.',
+    explanation: 'Deze publicatie heeft al een niet-afgeronde publicatierun; wacht tot die klaar is.',
     showBackendDetail: true,
   },
   BUNDLE_CONTENT_CHANGED_SINCE_FREEZE: {
     title: 'Inhoud is veranderd sinds het bevriezen',
     explanation:
-      'De inhoud van de bundel wijkt af van wat bij het bevriezen vastgelegd is (de controlesom klopt niet ' +
+      'De inhoud van de publicatie wijkt af van wat bij het bevriezen vastgelegd is (de controlesom klopt niet ' +
       'meer); er is niets gepubliceerd.',
-    whatNow: 'Onderzoek de wijziging voor u deze bundel opnieuw probeert te publiceren.',
+    whatNow: 'Onderzoek de wijziging voor u deze publicatie opnieuw probeert te publiceren.',
     showBackendDetail: true,
   },
   PUBLICATION_RUN_NOT_FOUND: {
@@ -315,16 +315,16 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     whatNow: 'Vraag de beheerder om de schrijfverbinding in te stellen en probeer daarna opnieuw.',
   },
   BUNDLE_NOT_SNAPSHOTTED: {
-    title: 'De bundel heeft geen bevroren gegevens',
+    title: 'De publicatie heeft geen bevroren gegevens',
     explanation:
-      'Deze bundel draagt geen bevroren gegevens van de artikelen (bijvoorbeeld omdat hij bevroren werd voor ' +
+      'Deze publicatie draagt geen bevroren gegevens van de artikelen (bijvoorbeeld omdat hij bevroren werd voor ' +
       'die functie bestond). Er is niets naar Prodis geschreven.',
-    whatNow: 'Stel een nieuwe bundel samen en bevries die opnieuw voor u publiceert.',
+    whatNow: 'Stel een nieuwe publicatie samen en bevries die opnieuw voor u publiceert.',
   },
   BUNDLE_HAS_INCOMPLETE_ROWS: {
-    title: 'De bundel bevat onvolledige regels',
+    title: 'De publicatie bevat onvolledige regels',
     explanation:
-      'Een aantal regels van de bundel is onvolledig (er ontbreken gegevens van de wijziging of van de prijs). ' +
+      'Een aantal regels van de publicatie is onvolledig (er ontbreken gegevens van de wijziging of van de prijs). ' +
       'Zolang dat zo is, wordt er niets naar Prodis geschreven.',
     whatNow: 'Bekijk het voorbeeld van het importbestand om de onvolledige regels te vinden en los ze op.',
     showBackendDetail: true,
@@ -344,16 +344,16 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     showBackendDetail: true,
   },
   BUNDLE_TARGET_MODE_NOT_PRODUCTION: {
-    title: 'Deze bundel is niet bedoeld voor de echte publicatie',
+    title: 'Deze publicatie is niet bedoeld voor de echte publicatie',
     explanation:
-      'Deze bundel heeft een ander publicatiedoel dan de echte publicatie naar Prodis. Er is niets naar Prodis ' +
+      'Deze publicatie heeft een ander publicatiedoel dan de echte publicatie naar Prodis. Er is niets naar Prodis ' +
       'geschreven.',
-    whatNow: 'Stel een bundel samen met als doel de echte publicatie, of gebruik hier de proefpublicatie.',
+    whatNow: 'Stel een publicatie samen met als doel de echte publicatie, of gebruik hier de proefpublicatie.',
   },
   PRODUCTION_RUN_IN_PROGRESS: {
     title: 'Er loopt al een publicatie naar Prodis',
     explanation:
-      'Er wordt al een andere bundel naar Prodis gepubliceerd; er kan er maar een tegelijk lopen. Er is niets ' +
+      'Er wordt al een andere publicatie naar Prodis gepubliceerd; er kan er maar een tegelijk lopen. Er is niets ' +
       'gestart.',
     whatNow: 'Wacht tot die publicatie klaar is (of ga er verder mee) en probeer het dan opnieuw.',
     showBackendDetail: true,
@@ -401,27 +401,27 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   // S1-F2 — sjabloon-/materialisatiewizard (scherm 1b, alleen-lezen deel), zie `docs/decisions.md`
   // 2026-09-27 "scherm 1a/1b".
   TEMPLATE_NOT_FOUND: {
-    title: 'Sjabloon niet gevonden',
-    explanation: 'Dit sjabloon bestaat niet (meer), of het id in de link klopt niet.',
-    whatNow: 'Ga terug naar de sjablonenlijst en kies het sjabloon opnieuw.',
+    title: 'Importdefinitie niet gevonden',
+    explanation: 'Deze importdefinitie bestaat niet (meer), of het id in de link klopt niet.',
+    whatNow: 'Ga terug naar de lijst met importdefinities en kies de importdefinitie opnieuw.',
   },
   TEMPLATE_REVISION_NOT_FOUND: {
-    title: 'Sjabloonversie niet gevonden',
-    explanation: 'Deze versie van het sjabloon bestaat niet (meer).',
+    title: 'Versie van de importdefinitie niet gevonden',
+    explanation: 'Deze versie van de importdefinitie bestaat niet (meer).',
     whatNow: 'Laad de lijst met versies opnieuw en kies een bestaande versie.',
   },
   DEFINITION_NOT_A_TEMPLATE: {
-    title: 'Geen sjabloon',
-    explanation: 'Deze beschrijving van het bestand is geen herbruikbaar sjabloon.',
+    title: 'Geen herbruikbare importdefinitie',
+    explanation: 'Deze importdefinitie is geen herbruikbare importdefinitie.',
   },
   NO_ACTIVE_TEMPLATE_REVISION: {
-    title: 'Geen actieve sjabloonversie',
-    explanation: 'Dit sjabloon heeft geen actieve versie; er kan geen sjabloonversie gekozen worden zonder er zelf één op te geven.',
-    whatNow: 'Kies expliciet een sjabloonversie.',
+    title: 'Geen actieve versie van de importdefinitie',
+    explanation: 'Deze importdefinitie heeft geen actieve versie; er kan geen versie van de importdefinitie gekozen worden zonder er zelf één op te geven.',
+    whatNow: 'Kies expliciet een versie van de importdefinitie.',
   },
   BOOKMARK_NOT_FOUND: {
     title: 'Invulpunt niet gevonden',
-    explanation: 'Dit invulpunt bestaat niet (meer) op deze sjabloonversie.',
+    explanation: 'Dit invulpunt bestaat niet (meer) op deze versie van de importdefinitie.',
   },
   // S1-F3 — het schrijfdeel van scherm 1b: materialiseren + waarde van een invulpunt wijzigen. Verschillende
   // codes hieronder zouden via een familie-fallback (`CONFIG_*`, `_NOT_FOUND`, `_IN_USE`) al een
@@ -429,37 +429,37 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   MATERIALISATION_MODE_REQUIRED: {
     title: 'Kies nieuw of hergebruik',
     explanation:
-      'Er is niet opgegeven of dit sjabloon een nieuwe beschrijving van het bestand wordt of een bestaande ' +
-      'beschrijving hergebruikt. Die keuze heeft bewust geen standaardwaarde: ze bepaalt of twee leveranciers ' +
+      'Er is niet opgegeven of deze herbruikbare importdefinitie een nieuwe importdefinitie wordt of een bestaande ' +
+      'importdefinitie hergebruikt. Die keuze heeft bewust geen standaardwaarde: ze bepaalt of twee leveranciers ' +
       'voortaan één configuratie delen.',
-    whatNow: 'Kies expliciet "nieuwe beschrijving" of "bestaande beschrijving hergebruiken".',
+    whatNow: 'Kies expliciet "nieuwe importdefinitie" of "bestaande importdefinitie hergebruiken".',
   },
   REUSE_DEFINITION_REQUIRED: {
-    title: 'Geen bestaande beschrijving gekozen',
-    explanation: 'Hergebruiken kan alleen met een expliciet gekozen bestaande beschrijving van het bestand.',
-    whatNow: 'Kies de bestaande beschrijving waaraan deze koppeling moet hangen.',
+    title: 'Geen bestaande importdefinitie gekozen',
+    explanation: 'Hergebruiken kan alleen met een expliciet gekozen bestaande importdefinitie.',
+    whatNow: 'Kies de bestaande importdefinitie waaraan deze koppeling moet hangen.',
   },
   REUSE_DEFINITION_NOT_ALLOWED: {
-    title: 'Bestaande beschrijving hoort niet bij "nieuw"',
+    title: 'Bestaande importdefinitie hoort niet bij "nieuw"',
     explanation:
-      'Er is een bestaande beschrijving meegegeven terwijl er een nieuwe beschrijving van het bestand aangemaakt wordt. ' +
+      'Er is een bestaande importdefinitie meegegeven terwijl er een nieuwe importdefinitie aangemaakt wordt. ' +
       'De server corrigeert dat niet stil: één van de twee is verkeerd.',
-    whatNow: 'Kies "bestaande beschrijving hergebruiken", of verwijder de gekozen beschrijving.',
+    whatNow: 'Kies "bestaande importdefinitie hergebruiken", of verwijder de gekozen importdefinitie.',
   },
   DEFINITION_SCOPE_VALUE_NOT_ALLOWED_ON_REUSE: {
-    title: 'Waarde in de beschrijving kan niet bij hergebruik',
+    title: 'Waarde in de importdefinitie kan niet bij hergebruik',
     explanation:
-      'Bij het hergebruiken van een bestaande beschrijving van het bestand blijft haar versie ongewijzigd. Een invulpunt dat in ' +
-      'de beschrijving zelf vastligt, zou die versie wijzigen en dus de instellingen van elke andere leverancier ' +
-      'met die beschrijving mee veranderen.',
+      'Bij het hergebruiken van een bestaande importdefinitie blijft haar versie ongewijzigd. Een invulpunt dat in ' +
+      'de importdefinitie zelf vastligt, zou die versie wijzigen en dus de instellingen van elke andere leverancier ' +
+      'met die importdefinitie mee veranderen.',
     whatNow:
-      'Maak een nieuwe beschrijving aan als deze waarde moet verschillen, of laat de waarden in de beschrijving leeg.',
+      'Maak een nieuwe importdefinitie aan als deze waarde moet verschillen, of laat de waarden in de importdefinitie leeg.',
     showBackendDetail: true,
   },
   LINK_FIELD_BOTH_BOOKMARK_AND_EXPLICIT: {
     title: 'Twee bronnen voor dezelfde waarde',
     explanation:
-      'Een invulpunt van dit sjabloon vult dit koppelingsveld al. Datzelfde veld nog eens rechtstreeks ' +
+      'Een invulpunt van deze herbruikbare importdefinitie vult dit koppelingsveld al. Datzelfde veld nog eens rechtstreeks ' +
       'meegeven zou twee bronnen voor één waarde opleveren.',
     whatNow: 'Vul de waarde enkel bij het invulpunt in.',
     showBackendDetail: true,
@@ -486,11 +486,11 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     showBackendDetail: true,
   },
   DEFINITION_CODE_IN_USE: {
-    title: 'Code van de beschrijving is al in gebruik',
+    title: 'Code van de importdefinitie is al in gebruik',
     explanation:
-      'Er bestaat al een beschrijving van het bestand met deze code bij deze leverancier of aankoopvereniging. Er is niets ' +
+      'Er bestaat al een importdefinitie met deze code bij deze leverancier of aankoopvereniging. Er is niets ' +
       'aangemaakt.',
-    whatNow: 'Kies een andere code voor de beschrijving, of hergebruik de bestaande beschrijving.',
+    whatNow: 'Kies een andere code voor de importdefinitie, of hergebruik de bestaande importdefinitie.',
     showBackendDetail: true,
   },
   LINK_CODE_IN_USE: {
@@ -500,43 +500,43 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     showBackendDetail: true,
   },
   LINK_SCOPE_IN_USE: {
-    title: 'Deze leverancier hangt al aan deze beschrijving',
+    title: 'Deze leverancier hangt al aan deze importdefinitie',
     explanation:
-      'Voor deze beschrijving bestaat al een koppeling met dezelfde leverancier en dezelfde bibliotheek. Er ' +
+      'Voor deze importdefinitie bestaat al een koppeling met dezelfde leverancier en dezelfde bibliotheek. Er ' +
       'is niets aangemaakt.',
     whatNow: 'Gebruik de bestaande koppeling, of kies een andere leverancier/bibliotheek.',
     showBackendDetail: true,
   },
   DEFINITION_NOT_FROM_TEMPLATE: {
-    title: 'Beschrijving komt niet uit dit sjabloon',
+    title: 'Importdefinitie komt niet uit deze herbruikbare importdefinitie',
     explanation:
-      'Alleen een beschrijving van het bestand die zelf uit dit sjabloon aangemaakt is, kan hier hergebruikt worden.',
-    whatNow: 'Kies een beschrijving uit de historiek van dit sjabloon.',
+      'Alleen een importdefinitie die zelf uit deze herbruikbare importdefinitie aangemaakt is, kan hier hergebruikt worden.',
+    whatNow: 'Kies een importdefinitie uit de historiek van deze herbruikbare importdefinitie.',
   },
   TEMPLATE_REVISION_MISMATCH_ON_REUSE: {
-    title: 'Andere sjabloonversie dan de gekozen beschrijving',
+    title: 'Andere versie van de herbruikbare importdefinitie dan de gekozen importdefinitie',
     explanation:
-      'De gekozen bestaande beschrijving is bevroren op een andere sjabloonversie dan de versie die u nu ' +
-      'gekozen heeft. Stil hergebruiken zou de sjabloonversievergelijking half en onzichtbaar uitvoeren.',
+      'De gekozen bestaande importdefinitie is bevroren op een andere versie van de herbruikbare importdefinitie dan de versie die u nu ' +
+      'gekozen heeft. Stil hergebruiken zou de vergelijking van de versies half en onzichtbaar uitvoeren.',
     whatNow:
-      'Kies de sjabloonversie waarop die beschrijving bevroren is, of maak een nieuwe beschrijving aan.',
+      'Kies de versie van de herbruikbare importdefinitie waarop die importdefinitie bevroren is, of maak een nieuwe importdefinitie aan.',
     showBackendDetail: true,
   },
   DEFINITION_NOT_SHAREABLE: {
-    title: 'Beschrijving is niet deelbaar',
+    title: 'Importdefinitie is niet deelbaar',
     explanation:
-      'Deze beschrijving van het bestand heeft een invulpunt dat per koppeling ingevuld wordt, op een plaats die in de versie ' +
-      'zelf ligt (en dus mee bepaalt hoe een artikel herkend wordt). Zo’n beschrijving mag nooit door twee ' +
+      'Deze importdefinitie heeft een invulpunt dat per koppeling ingevuld wordt, op een plaats die in de versie ' +
+      'zelf ligt (en dus mee bepaalt hoe een artikel herkend wordt). Zo’n importdefinitie mag nooit door twee ' +
       'leveranciers gedeeld worden.',
-    whatNow: 'Maak een nieuwe beschrijving aan voor deze leverancier.',
+    whatNow: 'Maak een nieuwe importdefinitie aan voor deze leverancier.',
     showBackendDetail: true,
   },
   TEMPLATE_REVISION_NOT_MATERIALISABLE: {
-    title: 'Deze sjabloonversie kan niet gebruikt worden',
+    title: 'Deze versie van de herbruikbare importdefinitie kan niet gebruikt worden',
     explanation:
-      'Alleen een actieve of vervangen sjabloonversie kan gebruikt worden om een beschrijving van het bestand aan te maken; een ' +
+      'Alleen een actieve of vervangen versie van de herbruikbare importdefinitie kan gebruikt worden om een importdefinitie aan te maken; een ' +
       'concept heeft haar eigen controle nog niet doorlopen.',
-    whatNow: 'Kies een actieve (of bewust een oudere, vervangen) sjabloonversie.',
+    whatNow: 'Kies een actieve (of bewust een oudere, vervangen) versie van de importdefinitie.',
   },
   SOURCE_ORGANISATION_NOT_FOUND: {
     title: 'Organisatie niet gevonden',
@@ -552,10 +552,10 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   LINK_BOOKMARK_LOCKED_BY_OPEN_BATCH: {
     title: 'Koppeling is vergrendeld door een open levering',
     explanation:
-      'Deze koppeling heeft een open batch (levering die nog loopt). De waarde van een invulpunt wijzigen zou ' +
+      'Deze koppeling heeft een open inlezing (levering die nog loopt). De waarde van een invulpunt wijzigen zou ' +
       'bepalen wat er in die lopende levering gefilterd, gemapt en gepubliceerd wordt, met andere ' +
       'configuratie dan waarmee ze begonnen is. De waarde is niet gewijzigd.',
-    whatNow: 'Wacht tot de batch afgerond is, of annuleer/publiceer ze eerst.',
+    whatNow: 'Wacht tot de inlezing afgerond is, of annuleer/publiceer ze eerst.',
   },
   BOOKMARK_UNKNOWN: {
     title: 'Onbekend invulpunt',
@@ -569,16 +569,16 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     title: 'Dit invulpunt geldt niet per koppeling',
     explanation:
       'Op een koppeling kunnen alleen waarden ingevuld worden van invulpunten die per koppeling gelden. Een ' +
-      'waarde die in de beschrijving van het bestand vastligt, verandert nooit per koppeling.',
+      'waarde die in de importdefinitie vastligt, verandert nooit per koppeling.',
     showBackendDetail: true,
   },
   // `NO_ACTIVE_REVISION` (409 bij het wijzigen van een bookmarkwaarde: niets declareert welke bookmarks
   // deze koppeling heeft) staat hierboven al — niet gedupliceerd, de bestaande tekst dekt dit geval.
   // S2-F1 — behandelgeval (issue_case), zie `docs/design/issue-case-design.md` §6 (S2-B3, leesendpoints).
   ISSUE_CASE_NOT_FOUND: {
-    title: 'Behandelgeval niet gevonden',
-    explanation: 'Dit behandelgeval bestaat niet (meer), of het id in de link klopt niet.',
-    whatNow: 'Ga terug naar de lijst met behandelgevallen en zoek het geval opnieuw op.',
+    title: 'Afwijking niet gevonden',
+    explanation: 'Deze afwijking bestaat niet (meer), of het id in de link klopt niet.',
+    whatNow: 'Ga terug naar de lijst met afwijkingen en zoek de afwijking opnieuw op.',
   },
   // S2-F2 — de statuswijziging (S2-B2, `POST /issue-cases/{id}/status`, recht MANAGE).
   ISSUE_CASE_STATUS_REQUIRED: {
@@ -587,26 +587,26 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   },
   ISSUE_CASE_STATUS_UNKNOWN: {
     title: 'Onbekende status',
-    explanation: 'De meegegeven status is geen geldige waarde voor een behandelgeval.',
+    explanation: 'De meegegeven status is geen geldige waarde voor een afwijking.',
   },
   ISSUE_CASE_REASON_REQUIRED: {
     title: 'Reden ontbreekt',
-    explanation: 'Elke statuswijziging van een behandelgeval vereist een reden; die ontbreekt.',
+    explanation: 'Elke statuswijziging van een afwijking vereist een reden; die ontbreekt.',
     whatNow: 'Vul een reden in.',
   },
   ISSUE_CASE_TRANSITION_NOT_ALLOWED: {
     title: 'Overgang niet toegestaan',
     explanation:
-      'Deze statusovergang is niet toegestaan vanuit de huidige status van dit behandelgeval (bijvoorbeeld ' +
+      'Deze statusovergang is niet toegestaan vanuit de huidige status van deze afwijking (bijvoorbeeld ' +
       'rechtstreeks van "Gecorrigeerd" naar "Afgewezen", of dezelfde status naar zichzelf).',
-    whatNow: 'Laad het geval opnieuw en kies een toegestane actie voor de huidige status.',
+    whatNow: 'Laad de afwijking opnieuw en kies een toegestane actie voor de huidige status.',
   },
   ISSUE_CASE_STATUS_CHANGED: {
     title: 'Status is intussen gewijzigd',
     explanation:
-      'De status van dit behandelgeval is sinds het laden gewijzigd (bv. door een andere gebruiker of ' +
+      'De status van deze afwijking is sinds het laden gewijzigd (bv. door een andere gebruiker of ' +
       'een systeemheropening); er is niets opgeslagen.',
-    whatNow: 'Laad het geval opnieuw en probeer de actie opnieuw.',
+    whatNow: 'Laad de afwijking opnieuw en probeer de actie opnieuw.',
   },
   // S1-F4 — het schrijfdeel van scherm 1a: opvolgrevisie maken, een DRAFT wijzigen, activeren
   // (`docs/design/revision-successor-design.md` §5, §6). Geen enkele van deze codes stond hier al.
@@ -617,8 +617,8 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   REVISION_NOT_FOUND: {
     title: 'Versie niet gevonden',
     explanation:
-      'Deze versie van de beschrijving van het bestand bestaat niet (meer), of ze hoort bij een andere ' +
-      'beschrijving dan die in de link.',
+      'Deze versie van de importdefinitie bestaat niet (meer), of ze hoort bij een andere ' +
+      'importdefinitie dan die in de link.',
     whatNow: 'Laad het inrichtingsoverzicht opnieuw en kies een bestaande versie.',
   },
   REVISION_NOT_CLONEABLE: {
@@ -641,7 +641,7 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   REVISION_DRAFT_ALREADY_EXISTS: {
     title: 'Er staat al een concept open',
     explanation:
-      'Deze beschrijving van het bestand heeft al een openstaand concept. Er is er hoogstens één toegelaten, ' +
+      'Deze importdefinitie heeft al een openstaand concept. Er is er hoogstens één toegelaten, ' +
       'zodat nooit onduidelijk is welke werkversie geactiveerd gaat worden. Er is niets aangemaakt.',
     whatNow:
       'Werk het bestaande concept af (activeren) of laat het door een beheerder verwijderen; de server ' +
@@ -652,13 +652,13 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     title: 'Deze versie is niet bewerkbaar',
     explanation:
       'Alleen een concept wordt gewijzigd. Een actieve of vervangen versie blijft bevroren: ' +
-      'batches die eronder gecontroleerd zijn, moeten reproduceerbaar blijven. Er is niets opgeslagen.',
+      'inlezingen die eronder gecontroleerd zijn, moeten reproduceerbaar blijven. Er is niets opgeslagen.',
     whatNow: 'Maak een opvolger van deze versie en breng de wijziging daarin aan.',
   },
   REVISION_CANONICALISATION_CHANGE_BLOCKED: {
     title: 'Herkenningsversie kan niet gewijzigd worden',
     explanation:
-      'Voor deze beschrijving van het bestand zijn er al aanvaarde artikelen. De herkenningsversie zit vooraan ' +
+      'Voor deze importdefinitie zijn er al aanvaarde artikelen. De herkenningsversie zit vooraan ' +
       'in de sleutel waarmee elk artikel herkend wordt, dus na deze wijziging zou élk bestaand artikel ' +
       'als nieuw terugkomen (een massale aanmaak) en daar is geen migratie voor. Er is niets opgeslagen — ' +
       'ook niet de andere velden die in hetzelfde verzoek meekwamen.',
@@ -679,7 +679,7 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   REVISION_ACTIVATION_CONFLICT: {
     title: 'Gelijktijdige activatie',
     explanation:
-      'Een andere versie van deze beschrijving van het bestand is op hetzelfde moment geactiveerd. Er is ' +
+      'Een andere versie van deze importdefinitie is op hetzelfde moment geactiveerd. Er is ' +
       'niets geactiveerd en niets als vervangen gemarkeerd.',
     whatNow: 'Laad de lijst met versies opnieuw en kijk welke versie nu actief is voor u het opnieuw probeert.',
   },
@@ -776,7 +776,7 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
       'verwijderen. Zonder dat doel blijft er een invulpunt staan waarvan de waarde nergens landt. Er ' +
       'is niets verwijderd.',
     whatNow:
-      'Dit scherm wijzigt bewust geen declaraties van invulpunten. Laat de declaratie door sjabloonbeheer ' +
+      'Dit scherm wijzigt bewust geen declaraties van invulpunten. Laat de declaratie door beheer van importdefinities ' +
       'aanpassen, of laat deze rij staan.',
     showBackendDetail: true,
   },
@@ -957,8 +957,8 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     whatNow: 'Vul drie hoofdletters in, of laat het veld leeg voor euro.',
   },
   DEFINITION_ID_REQUIRED: {
-    title: 'De beschrijving van het bestand ontbreekt',
-    explanation: 'Er is geen beschrijving van het bestand meegegeven. Dit zou via dit scherm niet mogen gebeuren.',
+    title: 'De importdefinitie ontbreekt',
+    explanation: 'Er is geen importdefinitie meegegeven. Dit zou via dit scherm niet mogen gebeuren.',
   },
   LINK_ID_REQUIRED: {
     title: 'De koppeling ontbreekt',
@@ -973,8 +973,8 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
   LINK_NOT_OF_REVISION_DEFINITION: {
     title: 'Koppeling en versie horen niet bij elkaar',
     explanation:
-      'Deze koppeling hoort bij een andere beschrijving van het bestand dan de gekozen versie. Er is niets gelezen.',
-    whatNow: 'Herlaad de pagina en kies een versie van de beschrijving van deze koppeling.',
+      'Deze koppeling hoort bij een andere importdefinitie dan de gekozen versie. Er is niets gelezen.',
+    whatNow: 'Herlaad de pagina en kies een versie van de importdefinitie van deze koppeling.',
   },
   // Analyse-opvolging stap 3a — `ApiExceptionHandler` geeft deze twee fouten nu een eigen code. Zelfde tekst als
   // de regel "413 zonder code" hieronder, zodat een upload boven de limiet er hetzelfde uitziet als voorheen.
@@ -991,8 +991,8 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     whatNow: 'Herlaad de pagina en probeer het opnieuw; blijft het gebeuren, verwittig dan de beheerder.',
   },
   BATCH_BEING_PROCESSED: {
-    title: 'Deze batch wordt al verwerkt',
-    explanation: 'Deze batch wordt op dit moment al verwerkt. Probeer het later opnieuw.',
+    title: 'Deze inlezing wordt al verwerkt',
+    explanation: 'Deze inlezing wordt op dit moment al verwerkt. Probeer het later opnieuw.',
   },
   BASELINE_ACCEPTANCE_IN_PROGRESS: {
     title: 'Aanvaarding loopt nog',
@@ -1097,7 +1097,7 @@ type FamilyFallback = { match: (code: string) => boolean; title: string; explana
 const FAMILY_FALLBACKS: FamilyFallback[] = [
   {
     match: (code) => code.startsWith('CONFIG_') || code.startsWith('CONFIG'),
-    title: 'De beschrijving van het bestand klopt niet',
+    title: 'De importdefinitie klopt niet',
     explanation: DICTIONARY.readinessCheck.CONFIG_INVALID!.uitleg,
   },
   {

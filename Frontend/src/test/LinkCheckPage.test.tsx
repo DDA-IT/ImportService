@@ -692,7 +692,7 @@ describe('NT-10 — scherm "Controleren"', () => {
 
     const problems = within(result).getByTestId('trial-config-problems');
     expect(within(within(problems).getByTestId('trial-config-problem-list')).getAllByRole('listitem')).toHaveLength(3);
-    expect(problems).toHaveTextContent('3 problemen in de beschrijving van het bestand');
+    expect(problems).toHaveTextContent('3 problemen in de importdefinitie');
     expect(problems).toHaveTextContent('Veld: Kolom leverancier — Doelveld: EAN-barcode');
     expect(problems).toHaveTextContent('Kolom: Merkkolom');
     expect(problems).toHaveTextContent('Veld: Scheidingsteken');
@@ -718,7 +718,7 @@ describe('NT-10 — scherm "Controleren"', () => {
 
     const result = await runTrial();
 
-    expect(within(result).getByTestId('trial-config-problems')).toHaveTextContent('Probleem in de beschrijving van het bestand');
+    expect(within(result).getByTestId('trial-config-problems')).toHaveTextContent('Probleem in de importdefinitie');
     expect(within(result).queryByTestId('trial-config-skipped')).not.toBeInTheDocument();
   });
 

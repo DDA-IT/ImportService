@@ -164,22 +164,22 @@ describe('rechten in de UI (5B-5)', () => {
     });
   });
 
-  describe('accept-baseline (APPROVE), opnemen in bundel en hervatten (MANAGE)', () => {
+  describe('accept-baseline (APPROVE), opnemen in publicatie en hervatten (MANAGE)', () => {
     const screened = { batchId: 101, status: 'SCREENED' } as unknown as BatchDetail;
     const mutating = { batchId: 101, status: 'MUTATING' } as unknown as BatchDetail;
 
-    it('zonder APPROVE: accept-baseline uit met reden, opnemen in bundel (MANAGE) blijft aan', () => {
+    it('zonder APPROVE: accept-baseline uit met reden, opnemen in publicatie (MANAGE) blijft aan', () => {
       withActor(NO_APPROVE, <BatchActions batch={screened} onChanged={vi.fn()} />);
       const baseline = screen.getByRole('button', { name: 'Aanvaarden als nulmeting' });
       expect(baseline).toBeDisabled();
       expect(baseline).toHaveAttribute('title', APPROVE_REASON);
       expect(screen.getByTestId('permission-reason-approve')).toHaveTextContent(APPROVE_REASON);
-      expect(screen.getByRole('button', { name: 'Opnemen in bundel' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Opnemen in publicatie' })).toBeEnabled();
     });
 
-    it('zonder MANAGE: opnemen in bundel uit met reden, accept-baseline (APPROVE) blijft aan', () => {
+    it('zonder MANAGE: opnemen in publicatie uit met reden, accept-baseline (APPROVE) blijft aan', () => {
       withActor(NO_MANAGE, <BatchActions batch={screened} onChanged={vi.fn()} />);
-      const add = screen.getByRole('button', { name: 'Opnemen in bundel' });
+      const add = screen.getByRole('button', { name: 'Opnemen in publicatie' });
       expect(add).toBeDisabled();
       expect(add).toHaveAttribute('title', MANAGE_REASON);
       expect(screen.getByRole('button', { name: 'Aanvaarden als nulmeting' })).toBeEnabled();
@@ -187,22 +187,22 @@ describe('rechten in de UI (5B-5)', () => {
 
     it('zonder MANAGE: hervatten (continue) uit met reden; met MANAGE aan', () => {
       const { unmount } = withActor(READ_ONLY, <BatchActions batch={mutating} onChanged={vi.fn()} />);
-      const resume = screen.getByRole('button', { name: 'Batch hervatten' });
+      const resume = screen.getByRole('button', { name: 'Inlezing hervatten' });
       expect(resume).toBeDisabled();
       expect(resume).toHaveAttribute('title', MANAGE_REASON);
       expect(screen.getByTestId('permission-reason-manage')).toHaveTextContent(MANAGE_REASON);
       unmount();
 
       withActor(NO_APPROVE, <BatchActions batch={mutating} onChanged={vi.fn()} />);
-      expect(screen.getByRole('button', { name: 'Batch hervatten' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Inlezing hervatten' })).toBeEnabled();
       expect(screen.queryByTestId('permission-reason-manage')).not.toBeInTheDocument();
     });
   });
 
-  describe('bundel aanmaken (MANAGE)', () => {
+  describe('publicatie aanmaken (MANAGE)', () => {
     it('zonder MANAGE: submit uitgeschakeld met reden', () => {
       withActor(READ_ONLY, <CreateBundleForm onCreated={vi.fn()} />);
-      const submit = screen.getByRole('button', { name: 'Bundel aanmaken' });
+      const submit = screen.getByRole('button', { name: 'Publicatie aanmaken' });
       expect(submit).toBeDisabled();
       expect(submit).toHaveAttribute('title', MANAGE_REASON);
       expect(screen.getByTestId('permission-reason-manage')).toHaveTextContent(MANAGE_REASON);
@@ -210,11 +210,11 @@ describe('rechten in de UI (5B-5)', () => {
 
     it('met MANAGE: submit aan', () => {
       withActor(NO_APPROVE, <CreateBundleForm onCreated={vi.fn()} />);
-      expect(screen.getByRole('button', { name: 'Bundel aanmaken' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Publicatie aanmaken' })).toBeEnabled();
     });
   });
 
-  describe('groepsbeslissing en mutatie goedkeuren/afkeuren (APPROVE)', () => {
+  describe('groepsbeslissing en wijziging goedkeuren/afkeuren (APPROVE)', () => {
     function renderGroup(identity: ActorIdentity) {
       withActor(
         identity,
@@ -255,9 +255,9 @@ describe('rechten in de UI (5B-5)', () => {
           </MemoryRouter>
         </ActorProvider>,
       );
-      const approve = await screen.findByRole('button', { name: `Goedkeuren mutatie 501: ${APPROVE_REASON}` });
+      const approve = await screen.findByRole('button', { name: `Goedkeuren wijziging 501: ${APPROVE_REASON}` });
       expect(approve).toBeDisabled();
-      expect(screen.getByRole('button', { name: `Afkeuren mutatie 501: ${APPROVE_REASON}` })).toBeDisabled();
+      expect(screen.getByRole('button', { name: `Afkeuren wijziging 501: ${APPROVE_REASON}` })).toBeDisabled();
       unmount();
 
       render(
@@ -271,7 +271,7 @@ describe('rechten in de UI (5B-5)', () => {
           </MemoryRouter>
         </ActorProvider>,
       );
-      expect(await screen.findByRole('button', { name: 'Goedkeuren mutatie 501' })).toBeEnabled();
+      expect(await screen.findByRole('button', { name: 'Goedkeuren wijziging 501' })).toBeEnabled();
     });
   });
 

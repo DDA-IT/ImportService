@@ -75,7 +75,7 @@ function dateInputToInstantEndExclusive(value: string): string | undefined {
 }
 
 const COLUMNS: readonly DataTableColumn<BatchRow>[] = [
-  { key: 'batchId', header: 'Batch', render: (row) => <Link to={`/batches/${row.batchId}`}>#{row.batchId}</Link> },
+  { key: 'batchId', header: 'Inlezing', render: (row) => <Link to={`/batches/${row.batchId}`}>#{row.batchId}</Link> },
   { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} domain="batchStatus" /> },
   {
     key: 'validationResult',
@@ -202,8 +202,8 @@ export function WorkQueuePage() {
       </header>
       <WhatIsThis>
         <p>
-          Een batch is de controle van één aangeleverde levering. De tegels tellen de batches per status en per
-          eindoordeel; de tabel toont ze één voor één. Open een batch om de tellers, de vastgestelde problemen en de
+          Een inlezing is de controle van één aangeleverde levering. De tegels tellen de inlezingen per status en per
+          eindoordeel; de tabel toont ze één voor één. Open een inlezing om de tellers, de vastgestelde problemen en de
           voorgestelde wijzigingen te bekijken.
         </p>
       </WhatIsThis>
@@ -239,7 +239,7 @@ export function WorkQueuePage() {
           {issueCaseSummary.data !== null && (
             <div className={styles.group} data-testid="issue-case-summary-tiles">
               <Link to="/issue-cases" className={`${styles.tile} ${styles.tileLink}`}>
-                <span className={styles.tileLabel}>Open behandelgevallen</span>
+                <span className={styles.tileLabel}>Open afwijkingen</span>
                 <span className={styles.tileValue}>{openIssueCaseCount}</span>
               </Link>
             </div>
@@ -325,7 +325,7 @@ export function WorkQueuePage() {
               columns={COLUMNS}
               rows={list.data.content}
               rowKey={(row) => row.batchId}
-              emptyMessage="Geen batches gevonden."
+              emptyMessage="Geen inlezingen gevonden."
             />
             <Pager
               page={list.data.page}

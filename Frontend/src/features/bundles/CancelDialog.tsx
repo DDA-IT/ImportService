@@ -34,19 +34,19 @@ export type CancelDialogProps = {
 };
 
 function mutations(count: number): string {
-  return `${count} ${count === 1 ? 'mutatie' : 'mutaties'}`;
+  return `${count} ${count === 1 ? 'wijziging' : 'wijzigingen'}`;
 }
 
 function resultMessage(result: BundleDetail): string {
   if (result.status !== 'CANCELLED') {
     return (
-      `De server aanvaardde het annuleren, maar de bundel heeft nu de status "${term('bundleStatus', result.status).label}" ` +
-      `in plaats van "${term('bundleStatus', 'CANCELLED').label}". Controleer de bundel en het beslissingsregister.`
+      `De server aanvaardde het annuleren, maar de publicatie heeft nu de status "${term('bundleStatus', result.status).label}" ` +
+      `in plaats van "${term('bundleStatus', 'CANCELLED').label}". Controleer de publicatie en het beslissingsregister.`
     );
   }
   return (
-    `Bundel ${result.bundleReference} is geannuleerd door ${result.cancelledBy ?? '—'} op ` +
-    `${formatDateTime(result.cancelledAt)}. De niet-afgeronde mutaties zijn vervallen en de batches ` +
+    `Publicatie ${result.bundleReference} is geannuleerd door ${result.cancelledBy ?? '—'} op ` +
+    `${formatDateTime(result.cancelledAt)}. De niet-afgeronde wijzigingen zijn vervallen en de inlezingen ` +
     'zijn vrijgegeven. Het werkelijke aantal staat op de regel "Annulering" in het beslissingsregister.'
   );
 }
@@ -73,7 +73,7 @@ export function CancelDialog({ bundle, onClose, onCancelled }: CancelDialogProps
   return (
     <ConfirmDialog
       open
-      title={`Bundel ${bundle.bundleReference} annuleren`}
+      title={`Publicatie ${bundle.bundleReference} annuleren`}
       body={
         <div className={styles.body}>
           {expirable !== null && (
@@ -84,30 +84,30 @@ export function CancelDialog({ bundle, onClose, onCancelled }: CancelDialogProps
           )}
           <WhatIsThis>
             <p>
-              Annuleren stopt de bundel. De mutaties die nog niet afgerond zijn, vervallen en komen nooit terug; de
-              batches komen weer vrij om in een andere bundel te gaan of als nulmeting aanvaard te worden.
+              Annuleren stopt de publicatie. De wijzigingen die nog niet afgerond zijn, vervallen en komen nooit terug; de
+              inlezingen komen weer vrij om in een andere publicatie te gaan of als nulmeting aanvaard te worden.
             </p>
           </WhatIsThis>
           <p className={styles.muted}>
-            Het getal is een momentopname (van het laden van de bundel); het annuleren telt zelf opnieuw en
+            Het getal is een momentopname (van het laden van de publicatie); het annuleren telt zelf opnieuw en
             schrijft het werkelijke aantal in het beslissingsregister.
           </p>
           <p>
-            Elke niet-afgeronde mutatie (status &quot;{term('mutationStatus', 'PLANNED').label}&quot;, &quot;
+            Elke niet-afgeronde wijziging (status &quot;{term('mutationStatus', 'PLANNED').label}&quot;, &quot;
             {term('mutationStatus', 'AWAITING_APPROVAL').label}&quot; of &quot;
-            {term('mutationStatus', 'READY_FOR_PUBLICATION').label}&quot;) van de actieve batches vervalt; afgekeurde,
-            tegengehouden en overgeslagen mutaties, herkenningsproblemen en de afgeronde controle blijven zoals ze staan.
-            De batches komen vrij om als nulmeting aanvaard te worden of in een andere bundel te gaan.
+            {term('mutationStatus', 'READY_FOR_PUBLICATION').label}&quot;) van de actieve inlezingen vervalt; afgekeurde,
+            tegengehouden en overgeslagen wijzigingen, herkenningsproblemen en de afgeronde controle blijven zoals ze staan.
+            De inlezingen komen vrij om als nulmeting aanvaard te worden of in een andere publicatie te gaan.
           </p>
           <p className={styles.warning}>
-            Dit maakt de beslissingen in deze bundel niet ongedaan in het register — ze blijven bewaard — maar de
-            mutaties zelf zijn daarna definitief vervallen.
+            Dit maakt de beslissingen in deze publicatie niet ongedaan in het register — ze blijven bewaard — maar de
+            wijzigingen zelf zijn daarna definitief vervallen.
           </p>
         </div>
       }
       reasonRequirement="required"
       typedConfirmationText={bundle.bundleReference}
-      confirmLabel="Bundel annuleren"
+      confirmLabel="Publicatie annuleren"
       cancelLabel="Sluiten zonder annuleren"
       variant="danger"
       pending={runner.pending}

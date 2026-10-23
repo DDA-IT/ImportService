@@ -78,7 +78,7 @@ describe('BatchActions (B-F2)', () => {
 
   const confirm = (dialog: HTMLElement) => within(dialog).getByRole('button', { name: 'Aanvaarden als nulmeting' });
 
-  it('normaal: verstuurt acceptedBy en reden, meldt het resultaat en herlaadt de batch', async () => {
+  it('normaal: verstuurt acceptedBy en reden, meldt het resultaat en herlaadt de inlezing', async () => {
     const { onChanged } = renderActions();
     const dialog = openBaseline();
     fill(dialog);
@@ -89,14 +89,14 @@ describe('BatchActions (B-F2)', () => {
     const call = posts()[0]!;
     expect(call[0].toString()).toBe('/api/catalog-import/batches/101/accept-baseline');
     expect(JSON.parse(String(call[1]?.body))).toEqual({ acceptedBy: 'An Beslisser', reason: 'Nulmeting' });
-    expect(screen.getByRole('status').textContent).toContain('6 mutaties');
+    expect(screen.getByRole('status').textContent).toContain('6 wijzigingen');
     expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
   it.each(['RECEIVED', 'BLOCKED', 'FAILED', 'BASELINE_ACCEPTED'])('toont geen acties bij status %s', (status) => {
     renderActions(status);
     expect(screen.queryByRole('button', { name: 'Aanvaarden als nulmeting' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Opnemen in bundel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Opnemen in publicatie' })).not.toBeInTheDocument();
   });
 
   it('ontbrekende reden of typ-bevestiging blokkeert bevestigen', () => {
@@ -115,14 +115,14 @@ describe('BatchActions (B-F2)', () => {
   it('409 BATCH_IN_PUBLICATION_BUNDLE: uitleg in de open dialoog, geen herlaad', async () => {
     baselineResponse = () =>
       Promise.resolve(
-        jsonResponse({ error: 'Batch 101 is in a bundle', code: 'BATCH_IN_PUBLICATION_BUNDLE' }, 409),
+        jsonResponse({ error: 'Inlezing 101 is in a bundle', code: 'BATCH_IN_PUBLICATION_BUNDLE' }, 409),
       );
     const { onChanged } = renderActions();
     const dialog = openBaseline();
     fill(dialog);
     fireEvent.click(confirm(dialog));
 
-    expect(await within(dialog).findByText('Batch zit in een publicatiebundel')).toBeInTheDocument();
+    expect(await within(dialog).findByText('Inlezing zit in een publicatie')).toBeInTheDocument();
     expect(within(dialog).getByText(/BATCH_IN_PUBLICATION_BUNDLE · HTTP 409/)).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(onChanged).not.toHaveBeenCalled();
@@ -130,12 +130,12 @@ describe('BatchActions (B-F2)', () => {
 
   it('409 BATCH_NOT_ACCEPTABLE wordt vertaald getoond', async () => {
     baselineResponse = () =>
-      Promise.resolve(jsonResponse({ error: 'Batch 101 is in status BASELINE_ACCEPTED', code: 'BATCH_NOT_ACCEPTABLE' }, 409));
+      Promise.resolve(jsonResponse({ error: 'Inlezing 101 is in status BASELINE_ACCEPTED', code: 'BATCH_NOT_ACCEPTABLE' }, 409));
     renderActions();
     const dialog = openBaseline();
     fill(dialog);
     fireEvent.click(confirm(dialog));
-    expect(await within(dialog).findByText('Batch kan niet aanvaard worden')).toBeInTheDocument();
+    expect(await within(dialog).findByText('Inlezing kan niet aanvaard worden')).toBeInTheDocument();
   });
 
   it('dubbele klik levert één POST', async () => {
@@ -155,12 +155,12 @@ describe('BatchActions (B-F2)', () => {
     expect(posts()).toHaveLength(1);
   });
 
-  it('bundel-opname: kies een bundel, typ de referentie, batch wordt toegevoegd en herladen', async () => {
+  it('publicatie-opname: kies een publicatie, typ de referentie, inlezing wordt toegevoegd en herladen', async () => {
     const { onChanged } = renderActions();
-    fireEvent.click(screen.getByRole('button', { name: 'Opnemen in bundel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Opnemen in publicatie' }));
     const dialog = screen.getByRole('dialog');
     const select = await within(dialog).findByRole('combobox');
-    const submit = within(dialog).getByRole('button', { name: 'Opnemen in bundel' });
+    const submit = within(dialog).getByRole('button', { name: 'Opnemen in publicatie' });
     expect(submit).toBeDisabled();
 
     fireEvent.change(select, { target: { value: '42' } });

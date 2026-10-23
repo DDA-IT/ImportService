@@ -133,11 +133,11 @@ describe('BundlePublicationTab', () => {
   it('buiten FROZEN: geen actieknop, wel uitleg — geen crash, geen lege pagina', async () => {
     renderTab(bundle({ status: 'ASSEMBLING' }));
 
-    expect(await screen.findByText(/alleen gestart worden voor een bevroren bundel/)).toBeInTheDocument();
+    expect(await screen.findByText(/alleen gestart worden voor een bevroren publicatie/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Proefpublicatie starten' })).not.toBeInTheDocument();
     // Enkel Nederlandse woorden: de bundelstatus staat als woord in de uitleg, nooit als code.
-    expect(screen.getByText(/alleen gestart worden voor een bevroren bundel/).textContent).toContain('In opbouw');
-    expect(screen.getByText(/alleen gestart worden voor een bevroren bundel/).textContent).not.toContain('ASSEMBLING');
+    expect(screen.getByText(/alleen gestart worden voor een bevroren publicatie/).textContent).toContain('In opbouw');
+    expect(screen.getByText(/alleen gestart worden voor een bevroren publicatie/).textContent).not.toContain('ASSEMBLING');
   });
 
   it('FROZEN zonder actieve run: de knop is beschikbaar en start een run', async () => {

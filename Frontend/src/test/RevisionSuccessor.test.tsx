@@ -743,12 +743,12 @@ describe('S1-F4 — schrijfdeel van scherm 1a (opvolgrevisie / DRAFT bewerken / 
     fireEvent.click(screen.getByTestId('activate-revision'));
 
     const warning = screen.getByTestId('reopen-rejected-cases-warning');
-    // NT-11c: zelfde betekenis in gewoon Nederlands — geen statuscode en geen "importdefinitie" meer.
-    expect(warning).toHaveTextContent('afgewezen behandelgevallen van alle koppelingen van deze beschrijving van het bestand');
+    // NT-11c: zelfde betekenis in gewoon Nederlands — geen statuscode en geen technische klassenaam (ImportDefinition).
+    expect(warning).toHaveTextContent('afgewezen afwijkingen van alle koppelingen van deze importdefinitie');
     expect(warning).toHaveTextContent('opnieuw geopend');
     expect(warning).toHaveTextContent('bewust aanvaard gevolg');
     expect(warning.textContent).not.toContain('REJECTED');
-    expect(warning.textContent).not.toContain('importdefinitie');
+    expect(warning.textContent).not.toContain('ImportDefinition');
     // De waarschuwing staat vóór de bevestiging, in dezelfde dialoog.
     expect(within(screen.getByRole('dialog')).getByTestId('reopen-rejected-cases-warning')).toBe(warning);
     expect(writeCalls(fetchMock)).toHaveLength(0);

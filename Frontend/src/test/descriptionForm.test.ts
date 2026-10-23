@@ -24,7 +24,7 @@ describe('validateDescription', () => {
     expect(validateDescription(VALID, false)).toEqual({});
   });
 
-  it('een lege code en naam blokkeren enkel zolang de beschrijving niet bewaard is', () => {
+  it('een lege code en naam blokkeren enkel zolang de importdefinitie niet bewaard is', () => {
     const form = { ...VALID, definitionCode: ' ', definitionName: '' };
     expect(Object.keys(validateDescription(form, false)).sort()).toEqual(['definitionCode', 'definitionName']);
     expect(validateDescription(form, true)).toEqual({});

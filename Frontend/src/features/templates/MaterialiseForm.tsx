@@ -183,16 +183,16 @@ export function MaterialiseForm({
   /** De eerste cliëntvalidatiefout, of `null`. De server valideert alles opnieuw. */
   function firstValidationError(): string | null {
     if (mode === NO_MODE) {
-      return 'Kies of dit een nieuwe beschrijving van het bestand wordt of een bestaande hergebruikt.';
+      return 'Kies of dit een nieuwe importdefinitie wordt of een bestaande hergebruikt.';
     }
     if (reuse && reuseDefinitionId === '') {
-      return 'Kies de bestaande beschrijving waaraan deze koppeling moet hangen.';
+      return 'Kies de bestaande importdefinitie waaraan deze koppeling moet hangen.';
     }
     if (!reuse && definitionCode.trim() === '') {
-      return 'Vul de code van de beschrijving in.';
+      return 'Vul de code van de importdefinitie in.';
     }
     if (!reuse && definitionName.trim() === '') {
-      return 'Vul de naam van de beschrijving in.';
+      return 'Vul de naam van de importdefinitie in.';
     }
     if (linkCode.trim() === '') {
       return 'Vul een koppelingscode in.';
@@ -276,11 +276,11 @@ export function MaterialiseForm({
     <form className={styles.form} onSubmit={handleSubmit} data-testid="materialise-form">
       <h3 className={styles.title}>Materialiseren</h3>
       <p className={styles.revisionRow}>
-        Sjabloonversie: <strong>{templateRevisionNumber}</strong> ({term('revisionStatus', templateRevisionStatus).label})
+        Versie van de importdefinitie: <strong>{templateRevisionNumber}</strong> ({term('revisionStatus', templateRevisionStatus).label})
         {templateRevisionStatus === 'SUPERSEDED' && (
           <span className={styles.supersededNote}>
             {' '}
-            — dit is een oudere sjabloonversie; dat mag, maar gebeurt hier bewust en niet stilzwijgend.
+            — dit is een oudere versie van de importdefinitie; dat mag, maar gebeurt hier bewust en niet stilzwijgend.
           </span>
         )}
       </p>
@@ -292,9 +292,9 @@ export function MaterialiseForm({
         hint="Geen automatische keuze: er is bewust geen voorselectie. Deze keuze bepaalt of twee leveranciers één configuratie delen."
         help={
           <>
-            <strong>Nieuw</strong> maakt een nieuwe beschrijving van het bestand met een conceptversie en een
-            koppeling; die beschrijving is dan van de organisatie van het sjabloon. <strong>Hergebruik</strong>{' '}
-            hangt alleen een koppeling aan een bestaande beschrijving die gedeeld mag worden; die beschrijving blijft
+            <strong>Nieuw</strong> maakt een nieuwe importdefinitie met een conceptversie en een
+            koppeling; die importdefinitie is dan van de organisatie van de herbruikbare importdefinitie. <strong>Hergebruik</strong>{' '}
+            hangt alleen een koppeling aan een bestaande importdefinitie die gedeeld mag worden; die importdefinitie blijft
             ongewijzigd en heeft daarna meerdere leveranciers.
           </>
         }
@@ -317,7 +317,7 @@ export function MaterialiseForm({
       {mode === 'NEW_DEFINITION' && (
         <>
           <Field
-            label="Code van de beschrijving"
+            label="Code van de importdefinitie"
             htmlFor="materialise-definition-code"
             required
             help={term('setupField', 'code').uitleg}
@@ -331,7 +331,7 @@ export function MaterialiseForm({
               maxLength={50}
             />
           </Field>
-          <Field label="Naam van de beschrijving"htmlFor="materialise-definition-name" required>
+          <Field label="Naam van de importdefinitie"htmlFor="materialise-definition-name" required>
             <input
               id="materialise-definition-name"
               className={styles.input}
@@ -344,7 +344,7 @@ export function MaterialiseForm({
           <Field
             label="Wijzigingsreden"
             htmlFor="materialise-change-reason"
-            hint="Optioneel; zonder opgave bewaart de server een vaste zin met sjabloon en versie."
+            hint="Optioneel; zonder opgave bewaart de server een vaste zin met importdefinitie en versie."
           >
             <input
               id="materialise-change-reason"
@@ -360,10 +360,10 @@ export function MaterialiseForm({
 
       {reuse && (
         <Field
-          label="Bestaande beschrijving"
+          label="Bestaande importdefinitie"
           htmlFor="materialise-reuse-definition"
           required
-          hint="Alleen een deelbare beschrijving uit dit sjabloon; de beschrijving en haar versie blijven ongewijzigd."
+          hint="Alleen een deelbare importdefinitie uit deze herbruikbare importdefinitie; de importdefinitie en haar versie blijven ongewijzigd."
         >
           <select
             id="materialise-reuse-definition"
@@ -371,7 +371,7 @@ export function MaterialiseForm({
             value={reuseDefinitionId}
             onChange={(event) => setReuseDefinitionId(event.target.value)}
           >
-            <option value="">— kies een bestaande beschrijving —</option>
+            <option value="">— kies een bestaande importdefinitie —</option>
             {materialisations.map((row) => {
               // De technische naam van de bookmark staat niet in de zichtbare tekst (V7): het label van de bookmark,
               // of — bij een onbekende naam — een neutrale omschrijving.
@@ -383,10 +383,10 @@ export function MaterialiseForm({
                 row.blockingBookmarkName !== null
                   ? blockingLabel !== null
                     ? `niet deelbaar door ${INVULPUNT} "${blockingLabel}"`
-                    : `niet deelbaar door een ${INVULPUNT} van dit sjabloon`
-                  : 'niet deelbaar: geen herkomstversie uit dit sjabloon';
+                    : `niet deelbaar door een ${INVULPUNT} van deze herbruikbare importdefinitie`
+                  : 'niet deelbaar: geen herkomstversie uit deze herbruikbare importdefinitie';
               const revisionPart =
-                row.templateRevisionNumber !== null ? `sjabloonversie ${row.templateRevisionNumber}` : 'geen sjabloonversie';
+                row.templateRevisionNumber !== null ? `versie van de importdefinitie ${row.templateRevisionNumber}` : 'geen versie van de importdefinitie';
               return (
                 <option
                   key={row.definitionId}
@@ -433,7 +433,7 @@ export function MaterialiseForm({
 
           {supplierFromBookmark ? (
             <p className={styles.fromBookmark}>
-              De leverancierscode komt uit een {INVULPUNT} van dit sjabloon (bestemming:{' '}
+              De leverancierscode komt uit een {INVULPUNT} van deze herbruikbare importdefinitie (bestemming:{' '}
               {term('bookmarkPlace', BOOKMARK_PLACE_LINK_SUPPLIER_ORGANISATION).label}); vul ze hieronder bij dat{' '}
               {INVULPUNT} in.
             </p>
@@ -457,7 +457,7 @@ export function MaterialiseForm({
 
           {libraryFromBookmark ? (
             <p className={styles.fromBookmark}>
-              De bibliotheekcode komt uit een {INVULPUNT} van dit sjabloon (bestemming:{' '}
+              De bibliotheekcode komt uit een {INVULPUNT} van deze herbruikbare importdefinitie (bestemming:{' '}
               {term('bookmarkPlace', BOOKMARK_PLACE_LINK_LIBRARY_CODE).label}); vul ze hieronder bij dat {INVULPUNT} in.
             </p>
           ) : (
@@ -480,7 +480,7 @@ export function MaterialiseForm({
 
           {searchSupplierFromBookmark ? (
             <p className={styles.fromBookmark}>
-              De bibliotheekzoekleverancier komt uit een {INVULPUNT} van dit sjabloon (bestemming:{' '}
+              De bibliotheekzoekleverancier komt uit een {INVULPUNT} van deze herbruikbare importdefinitie (bestemming:{' '}
               {term('bookmarkPlace', BOOKMARK_PLACE_LINK_SEARCH_SUPPLIER).label}).
             </p>
           ) : (
@@ -504,14 +504,14 @@ export function MaterialiseForm({
           <fieldset className={styles.fieldset} data-testid="materialise-bookmark-values">
             <legend className={styles.legend}>{INVULPUNTEN_CAP}</legend>
             <WhatIsThis>
-              Een {INVULPUNT} is een waarde die u hier invult. Een waarde &laquo;voor de hele beschrijving&raquo; wordt bij
+              Een {INVULPUNT} is een waarde die u hier invult. Een waarde &laquo;voor de hele importdefinitie&raquo; wordt bij
               het materialiseren vastgelegd; een waarde &laquo;per koppeling&raquo; geldt alleen voor deze koppeling.
-              Laat u een optionele waarde leeg, dan geldt de standaardwaarde van het sjabloon, als die er is.
+              Laat u een optionele waarde leeg, dan geldt de standaardwaarde van de importdefinitie, als die er is.
             </WhatIsThis>
             {reuse && (
               <p className={styles.scopeNote}>
-                Bij hergebruik worden alleen de waarden per koppeling gevraagd: de waarden voor de hele beschrijving
-                liggen vast in de bestaande versie en zouden bij elke leverancier op die beschrijving tegelijk
+                Bij hergebruik worden alleen de waarden per koppeling gevraagd: de waarden voor de hele importdefinitie
+                liggen vast in de bestaande versie en zouden bij elke leverancier op die importdefinitie tegelijk
                 veranderen.
               </p>
             )}
@@ -530,7 +530,7 @@ export function MaterialiseForm({
                       required={bookmark.required}
                       hint={
                         hasUsableDefault(bookmark)
-                          ? `${termLabel('bookmarkScope', bookmark.valueScope, 'Andere geldigheid')} · standaard uit het sjabloon: ${bookmark.defaultValue}`
+                          ? `${termLabel('bookmarkScope', bookmark.valueScope, 'Andere geldigheid')} · standaard uit de importdefinitie: ${bookmark.defaultValue}`
                           : termLabel('bookmarkScope', bookmark.valueScope, 'Andere geldigheid')
                       }
                       help={
@@ -585,11 +585,11 @@ export function MaterialiseForm({
         <div className={styles.notice} role="status" data-testid="materialise-result">
           <p>
             {outcome.definitionCreated
-              ? `Nieuwe beschrijving ${outcome.definitionCode} gematerialiseerd`
-              : `Bestaande beschrijving ${outcome.definitionCode} hergebruikt`}{' '}
+              ? `Nieuwe importdefinitie ${outcome.definitionCode} gematerialiseerd`
+              : `Bestaande importdefinitie ${outcome.definitionCode} hergebruikt`}{' '}
             — koppeling <strong>{outcome.importLinkCode}</strong>, versie{' '}
             {outcome.definitionRevisionNumber} ({term('revisionStatus', outcome.definitionRevisionStatus).label}).
-            Gebruikte sjabloonversie: {outcome.templateRevisionNumber} (
+            Gebruikte versie van de importdefinitie: {outcome.templateRevisionNumber} (
             {term('revisionStatus', outcome.templateRevisionStatus).label}).
           </p>
           {outcome.warnings.length > 0 && (

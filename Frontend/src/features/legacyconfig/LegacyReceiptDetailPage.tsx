@@ -101,7 +101,7 @@ function ApplyResultView({ result }: { result: LegacyApplyResult }) {
             <ul className={styles.plainList} data-testid="legacy-apply-findings">
               {result.configurationFindings.map((finding, index) => (
                 <li key={`${index}:${finding.code}`}>
-                  <Term domain="issueCode" code={finding.code} unknownLabel="Fout in de beschrijving van het bestand" />
+                  <Term domain="issueCode" code={finding.code} unknownLabel="Fout in de importdefinitie" />
                   <TechnicalDetails
                     items={[
                       { name: 'Code', value: finding.code },

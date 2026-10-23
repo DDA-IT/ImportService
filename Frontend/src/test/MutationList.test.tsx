@@ -203,7 +203,7 @@ describe('MutationList', () => {
 
     const afterReason = calls.length;
     expect(afterReason).toBeGreaterThan(before);
-    fireEvent.change(screen.getByLabelText('Batch'), { target: { value: '77' } });
+    fireEvent.change(screen.getByLabelText('Inlezing'), { target: { value: '77' } });
     // Typen alleen stuurt niets: anders vuurt elke toetsaanslag een verzoek af.
     expect(calls.length).toBe(afterReason);
 
@@ -211,15 +211,15 @@ describe('MutationList', () => {
     await waitFor(() => expect(lastCall(calls)).toMatchObject({ statusReason: 'BULK_PRICE_INCIDENT', batchId: 77 }));
   });
 
-  it('T5.7: laat een ongeldig batchnummer niet stil als 0 doorgaan', async () => {
+  it('T5.7: laat een ongeldig inlezingsnummer niet stil als 0 doorgaan', async () => {
     const { source, calls } = fakeSource(page([mutation()]));
     renderList({ source });
     await screen.findByText('Wacht op goedkeuring', BADGE);
 
-    fireEvent.change(screen.getByLabelText('Batch'), { target: { value: 'abc' } });
+    fireEvent.change(screen.getByLabelText('Inlezing'), { target: { value: 'abc' } });
     fireEvent.click(screen.getByRole('button', { name: 'Filteren' }));
 
-    await waitFor(() => expect(screen.getByText(/is geen geldig batchnummer/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/is geen geldig inlezingsnummer/)).toBeInTheDocument());
     expect(lastCall(calls).batchId).toBeUndefined();
   });
 
@@ -236,7 +236,7 @@ describe('MutationList', () => {
     expect((screen.getByLabelText('Wijzigingsgroep') as HTMLInputElement).value).toBe(HASH_A);
   });
 
-  it('T5.9: een batchbron toont geen batchId-filter en stuurt er nooit een mee', async () => {
+  it('T5.9: een inlezingsbron toont geen batchId-filter en stuurt er nooit een mee', async () => {
     const { source, calls } = fakeSource(
       page([mutation()]),
       ['status', 'actionType', 'statusReason', 'identityHash'],
@@ -245,7 +245,7 @@ describe('MutationList', () => {
     renderList({ source, initialQuery: { batchId: 999 } });
     await screen.findByText('Wacht op goedkeuring', BADGE);
 
-    expect(screen.queryByLabelText('Batch')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Inlezing')).not.toBeInTheDocument();
     // Ook een meegegeven initiële waarde gaat niet mee als de bron dit filter niet ondersteunt.
     expect(lastCall(calls).batchId).toBeUndefined();
     expect(screen.getByLabelText('Status')).toBeInTheDocument();
@@ -273,7 +273,7 @@ describe('MutationList', () => {
     renderList({ source, rowActions: [action] });
 
     const button = await screen.findByRole('button', {
-      name: 'Goedkeuren mutatie 1: Geblokkeerd door een kritiek identiteitsincident.',
+      name: 'Goedkeuren wijziging 1: Geblokkeerd door een kritiek identiteitsincident.',
     });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('title', 'Geblokkeerd door een kritiek identiteitsincident.');
@@ -293,7 +293,7 @@ describe('MutationList', () => {
     const onAfterAction = vi.fn();
     renderList({ source, rowActions: [action], onAfterAction });
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Afkeuren mutatie 1' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Afkeuren wijziging 1' }));
     const dialog = await screen.findByRole('dialog');
 
     // Zonder verplichte reden blijft bevestigen geblokkeerd (ConfirmDialog, T4).
@@ -327,7 +327,7 @@ describe('MutationList', () => {
     const onAfterAction = vi.fn();
     renderList({ source, rowActions: [action], onAfterAction });
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Goedkeuren mutatie 1' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Goedkeuren wijziging 1' }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Goedkeuren' }));
 
@@ -360,8 +360,8 @@ describe('MutationList', () => {
 
   it('T5.15: een lege pagina toont de meegegeven boodschap, geen lege tabel', async () => {
     const { source } = fakeSource(page([]));
-    renderList({ source, emptyMessage: 'Deze bundel bevat geen mutaties.' });
+    renderList({ source, emptyMessage: 'Deze publicatie bevat geen wijzigingen.' });
 
-    expect(await screen.findByText('Deze bundel bevat geen mutaties.')).toBeInTheDocument();
+    expect(await screen.findByText('Deze publicatie bevat geen wijzigingen.')).toBeInTheDocument();
   });
 });

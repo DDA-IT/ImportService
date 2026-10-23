@@ -115,7 +115,7 @@ export function BatchIssueGroupsSection({
             columns={columns}
             rows={data.content}
             rowKey={(row) => row.id}
-            emptyMessage="Deze batch heeft geen foutgroepen."
+            emptyMessage="Deze inlezing heeft geen foutgroepen."
           />
           <Pager
             page={data.page}

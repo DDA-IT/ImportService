@@ -19,7 +19,7 @@ describe('StatusBadge met domein', () => {
     expect(screen.queryByText('BLOCKED')).not.toBeInTheDocument();
   });
 
-  it('koppelt de uitleg als verborgen beschrijving via aria-describedby', () => {
+  it('koppelt de uitleg als verborgen importdefinitie via aria-describedby', () => {
     render(<StatusBadge status="REJECTED" domain="mutationStatus" />);
     const badge = screen.getByText('Afgekeurd');
     const describedBy = badge.getAttribute('aria-describedby');
@@ -29,7 +29,7 @@ describe('StatusBadge met domein', () => {
     );
   });
 
-  it('kiest het woord per domein: REJECTED is bij een behandelgeval "Afgewezen"', () => {
+  it('kiest het woord per domein: REJECTED is bij een afwijking "Afgewezen"', () => {
     render(<StatusBadge status="REJECTED" domain="issueCaseStatus" />);
     expect(screen.getByText('Afgewezen')).toBeInTheDocument();
   });

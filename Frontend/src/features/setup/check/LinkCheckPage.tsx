@@ -86,7 +86,7 @@ function ActivateSection({
         3. Deze versie in gebruik nemen
       </h2>
       <p className={styles.sectionIntro}>
-        Wat is dit? Activeren betekent: vanaf nu worden nieuwe leveringen met deze versie van de beschrijving
+        Wat is dit? Activeren betekent: vanaf nu worden nieuwe leveringen met deze versie van de importdefinitie
         gelezen. Zolang er geen versie in gebruik is, kan de koppeling geen leveringen ontvangen.
       </p>
       {revision === null && <p className={styles.muted}>Er is geen conceptversie om in gebruik te nemen.</p>}
@@ -121,7 +121,7 @@ function ActivateSection({
                   <p>
                     Versie {revision.revisionNumber} wordt in gebruik genomen: nieuwe leveringen worden er vanaf nu
                     mee gelezen. Een versie die nu in gebruik is, wordt vervangen en blijft leesbaar. Vóór het
-                    activeren wordt de beschrijving nog eens volledig nagekeken.
+                    activeren wordt de importdefinitie nog eens volledig nagekeken.
                   </p>
                   <p className={styles.muted}>
                     Leveringen die al gelezen zijn, blijven bij hun eigen versie en worden niet opnieuw beoordeeld.
@@ -233,14 +233,14 @@ export function LinkCheckPage() {
       </header>
       <p className={styles.intro}>
         Hier ziet u of deze koppeling klaar is om leveringen te ontvangen, test u een bestand zonder iets op te slaan,
-        en neemt u de versie van de beschrijving in gebruik.
+        en neemt u de versie van de importdefinitie in gebruik.
       </p>
 
       {context.error !== null && <ErrorBanner error={context.error} />}
       {context.loading && loaded === null && <p className={styles.loading}>Bezig met laden…</p>}
       {loaded !== null && link === null && (
         <p className={styles.validationError} role="alert" data-testid="check-link-not-found">
-          Deze koppeling bestaat niet (meer) of hoort niet bij de beschrijving uit het adres.{' '}
+          Deze koppeling bestaat niet (meer) of hoort niet bij de importdefinitie uit het adres.{' '}
           <Link to="/setup">Terug naar Inrichting</Link>
         </p>
       )}
@@ -319,7 +319,7 @@ export function LinkCheckPage() {
             <section id={ANCHOR_LINK_VALUES} className={styles.section} aria-label="Waarden van de koppeling">
               <h2 className={styles.sectionTitle}>Waarden van de koppeling</h2>
               <p className={styles.sectionIntro}>
-                Wat is dit? Waarden die de beschrijving per koppeling vraagt (invulpunten). Vul de ontbrekende in en
+                Wat is dit? Waarden die de importdefinitie per koppeling vraagt (invulpunten). Vul de ontbrekende in en
                 klik daarna op &laquo;Opnieuw controleren&raquo;.
               </p>
               <LinkBookmarkValuesSection linkId={link.id} linkCode={link.code} />

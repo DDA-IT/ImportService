@@ -161,7 +161,7 @@ describe('UploadPage', () => {
     global.fetch = originalFetch;
   });
 
-  it('normaal: uploadt multipart en toont 201-resultaat met tellers, "—" bij null en link naar de batch', async () => {
+  it('normaal: uploadt multipart en toont 201-resultaat met tellers, "—" bij null en link naar de inlezing', async () => {
     mockFetch(TASKS, () => Promise.resolve(json(UPLOAD_OK, 201)));
     renderPage();
     await fillIn();
@@ -309,7 +309,7 @@ describe('UploadPage', () => {
     renderPage();
     await fillIn();
     submit();
-    expect(await screen.findByText('De beschrijving van het bestand klopt niet')).toBeInTheDocument();
+    expect(await screen.findByText('De importdefinitie klopt niet')).toBeInTheDocument();
     // De code is niet de titel; ze blijft opvraagbaar onder "Technische details (voor support)".
     expect(screen.getByText(/CONFIG_PRICE_FIELD_MISSING · HTTP 409/)).toBeInTheDocument();
   });

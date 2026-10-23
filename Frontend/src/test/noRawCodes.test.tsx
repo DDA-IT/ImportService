@@ -111,6 +111,31 @@ describe('NT-11a — geen ruwe codes als zichtbare tekst', () => {
     expect(rawCodesIn(container)).toEqual(['BULK_PRICE_INCIDENT', 'SCREENED']);
   });
 
+  it('N2: de oud-woordenbewaker ziet de oude schermwoorden, maar niet de details en niet "gebundelde"', () => {
+    const { container } = render(
+      <div>
+        <p>Batch hervatten</p>
+        <p>Terug naar de publicatiebundels en de werkvoorraad</p>
+        <p>Mutaties van een behandelgeval</p>
+        <p>Een sjabloon en de beschrijving van het bestand</p>
+        <p>Gebundelde meldingen en de publicatie van de inlezing</p>
+        <details>
+          <summary>Technische details (voor support)</summary>
+          <p>batch bundel mutatie</p>
+        </details>
+      </div>,
+    );
+    expect(oldWordingIn(container).map((word) => word.toLowerCase())).toEqual([
+      'batch',
+      'publicatiebundel',
+      'werkvoorraad',
+      'mutatie',
+      'behandelgeval',
+      'sjablo',
+      'beschrijving van het bestand',
+    ]);
+  });
+
   it('IssueCodeTerm: bekende code, code met veldnaam, onbekende CONFIG-code en onbekende code', () => {
     const { container } = render(
       <p>
@@ -124,13 +149,13 @@ describe('NT-11a — geen ruwe codes als zichtbare tekst', () => {
       expect.stringContaining('BYTE_SIZE_MISMATCH'),
     );
     expect(screen.getByText('Verplichte kolom ontbreekt')).toBeInTheDocument();
-    expect(screen.getByText('Fout in de beschrijving van het bestand')).toBeInTheDocument();
+    expect(screen.getByText('Fout in de importdefinitie')).toBeInTheDocument();
     const unknown = screen.getByText('Ander probleem');
     expect(unknown).toHaveAttribute('title', expect.stringContaining('EEN_TOEKOMSTIGE_CODE'));
     expectNoRawCodes(container, 'IssueCodeTerm');
   });
 
-  it('werkvoorraad: tegels, keuzelijsten, tabel en blokkeerreden', async () => {
+  it('inlezingen: tegels, keuzelijsten, tabel en blokkeerreden', async () => {
     global.fetch = vi.fn((input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes('/batches/summary')) {
@@ -201,13 +226,13 @@ describe('NT-11a — geen ruwe codes als zichtbare tekst', () => {
       </MemoryRouter>,
     );
     await screen.findByText('#101');
-    expectNoRawCodes(container, 'werkvoorraad');
+    expectNoRawCodes(container, 'inlezingen');
     // Een bekende blokkeerreden toont haar Nederlandse woord; een onbekende van een latere backend een neutraal woord.
     expect(screen.getByText('Ander aantal regels dan verwacht')).toBeInTheDocument();
     expect(screen.getByText('Ander probleem')).toBeInTheDocument();
   });
 
-  it('batchdetail: kop, blokkade, tellers, foutgroepen, problemen, levering en mutaties', async () => {
+  it('inlezingsdetail: kop, blokkade, tellers, foutgroepen, problemen, levering en wijzigingen', async () => {
     const batch = {
       batchId: 101,
       deliveryId: 7,
@@ -394,24 +419,24 @@ describe('NT-11a — geen ruwe codes als zichtbare tekst', () => {
 
     // UI-7: de inhoud staat achter tabbladen; elk tabblad wordt apart gecontroleerd.
     await screen.findByTestId('batch-blocked');
-    expectNoRawCodes(container, 'batchdetail (overzicht)');
+    expectNoRawCodes(container, 'inlezingsdetail (overzicht)');
     fireEvent.click(screen.getByRole('tab', { name: 'Problemen' }));
     await screen.findByTestId('batch-issue-groups');
     await waitFor(() => expect(screen.getAllByText('Veel gelijke prijsafwijkingen').length).toBeGreaterThan(0));
     await screen.findByText('Kop ontbreekt');
-    expectNoRawCodes(container, 'batchdetail (problemen)');
+    expectNoRawCodes(container, 'inlezingsdetail (problemen)');
     expect(screen.getAllByText('Ander probleem').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('tab', { name: 'Levering' }));
     await screen.findByText('prijzen.csv');
-    expectNoRawCodes(container, 'batchdetail (levering)');
-    fireEvent.click(screen.getByRole('tab', { name: 'Mutaties' }));
+    expectNoRawCodes(container, 'inlezingsdetail (levering)');
+    fireEvent.click(screen.getByRole('tab', { name: 'Wijzigingen' }));
     await screen.findByText('Overgeslagen door de nulmeting', { selector: 'span' });
-    expectNoRawCodes(container, 'batchdetail (mutaties)');
+    expectNoRawCodes(container, 'inlezingsdetail (wijzigingen)');
     // Onbekende waarden van een latere backend tonen een neutraal woord.
     expect(screen.getAllByText('Andere reden').length).toBeGreaterThan(0);
   });
 
-  it('acties op een batch: nulmeting/bundel en hervatten', () => {
+  it('acties op een inlezing: nulmeting/publicatie en hervatten', () => {
     for (const status of ['SCREENED', 'MUTATING']) {
       const { container, unmount } = render(
         <ActorProvider identity={TEST_IDENTITY}>
@@ -634,7 +659,7 @@ function publicationRun(overrides: Partial<PublicationRunView> = {}): Publicatio
   };
 }
 
-describe('NT-11b — bundelschermen: geen ruwe codes als zichtbare tekst', () => {
+describe('NT-11b — publicatieschermen: geen ruwe codes als zichtbare tekst', () => {
   const originalFetch = global.fetch;
   let detail: BundleDetail;
   let preflight: FreezePreflight;
@@ -757,8 +782,8 @@ describe('NT-11b — bundelschermen: geen ruwe codes als zichtbare tekst', () =>
       plannedCount: 7,
       awaitingApprovalCount: 3,
       staleMutationCount: 2,
-      inBundleConflicts: ['link 7 offer SUP1/GRP1/REF-1 in 2 batches (e.g. 101 and 102)'],
-      crossBundleConflicts: ['link 7 offer SUP2/GRP2/REF-2 (batch 101 here, batch 301 in bundle 9)'],
+      inBundleConflicts: ['link 7 offer SUP1/GRP1/REF-1 in 2 inlezingen (e.g. 101 and 102)'],
+      crossBundleConflicts: ['link 7 offer SUP2/GRP2/REF-2 (inlezing 101 here, inlezing 301 in bundle 9)'],
     };
     mutations = [
       bundleMutation(),
@@ -859,18 +884,18 @@ describe('NT-11b — bundelschermen: geen ruwe codes als zichtbare tekst', () =>
     global.fetch = originalFetch;
   });
 
-  it('bundellijst met elke status en doelmodus, en het aanmaakformulier met de waarschuwing voor een echte publicatie', async () => {
+  it('lijst met publicaties met elke status en doelmodus, en het aanmaakformulier met de waarschuwing voor een echte publicatie', async () => {
     renderBundle('/bundles');
     await screen.findByRole('link', { name: 'BND-0' });
-    expectNoRawCodes(document.body, 'bundellijst');
+    expectNoRawCodes(document.body, 'lijst met publicaties');
 
     fireEvent.change(screen.getByLabelText(/^Doelmodus/), { target: { value: 'PRODUCTION' } });
     await screen.findByRole('alert');
     expect(screen.getByRole('alert').textContent).toContain('echte publicatie');
-    expectNoRawCodes(document.body, 'bundellijst met waarschuwing');
+    expectNoRawCodes(document.body, 'lijst met publicaties met waarschuwing');
   });
 
-  it('bundeloverzicht in elke status (tellers, acties, redenen van uitgeschakelde knoppen)', async () => {
+  it('publicatieoverzicht in elke status (tellers, acties, redenen van uitgeschakelde knoppen)', async () => {
     for (const status of PUBLICATION_BUNDLE_STATUSES) {
       detail = bundleDetail({
         status,
@@ -908,30 +933,30 @@ describe('NT-11b — bundelschermen: geen ruwe codes als zichtbare tekst', () =>
     expectNoRawCodes(document.body, 'leden');
   });
 
-  it('mutaties: lijst, filter op statusreden, groepsactie en beslissingsdialoog', async () => {
+  it('wijzigingen: lijst, filter op statusreden, groepsactie en beslissingsdialoog', async () => {
     renderBundle('/bundles/42/mutations');
     await screen.findByRole('table');
     await screen.findByText('Tegengehouden', { selector: 'span' });
-    expectNoRawCodes(document.body, 'mutatielijst');
+    expectNoRawCodes(document.body, 'wijzigingenlijst');
 
     fireEvent.change(screen.getByLabelText('Statusreden'), { target: { value: 'BULK_PRICE_INCIDENT' } });
     fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'AWAITING_APPROVAL' } });
     const groupButton = await screen.findByRole('button', { name: /^Groep goedkeuren \(/ });
     await waitFor(() => expect(groupButton).toBeEnabled());
-    expectNoRawCodes(document.body, 'mutatielijst met filter');
+    expectNoRawCodes(document.body, 'wijzigingenlijst met filter');
 
     fireEvent.click(groupButton);
     await screen.findByRole('dialog');
     expectNoRawCodes(document.body, 'groepsactie');
     fireEvent.click(screen.getByRole('button', { name: 'Annuleren' }));
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Goedkeuren mutatie 1' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Goedkeuren wijziging 1' }));
     await screen.findByRole('dialog');
-    expectNoRawCodes(document.body, 'beslissing over één mutatie');
+    expectNoRawCodes(document.body, 'beslissing over één wijziging');
     fireEvent.click(screen.getByRole('button', { name: 'Annuleren' }));
 
     // Een herziening noemt de eerdere beslisser.
-    fireEvent.click(await screen.findByRole('button', { name: 'Goedkeuren mutatie 5' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Goedkeuren wijziging 5' }));
     await screen.findByRole('dialog');
     expectNoRawCodes(document.body, 'herziening');
   });
@@ -954,10 +979,10 @@ describe('NT-11b — bundelschermen: geen ruwe codes als zichtbare tekst', () =>
     expectNoRawCodes(document.body, 'publicatie');
   });
 
-  it('publicatie van een bundel die nog niet bevroren is', async () => {
+  it('publicatie die nog niet bevroren is', async () => {
     renderBundle('/bundles/42/publication');
-    await screen.findByText(/alleen gestart worden voor een bevroren bundel/);
-    expectNoRawCodes(document.body, 'publicatie zonder bevroren bundel');
+    await screen.findByText(/alleen gestart worden voor een bevroren publicatie/);
+    expectNoRawCodes(document.body, 'publicatie zonder bevroren publicatie');
   });
 });
 
@@ -1157,7 +1182,7 @@ function setupRevisionDetail(id: number): RevisionDetail {
   } as unknown as RevisionDetail;
 }
 
-describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes als zichtbare tekst', () => {
+describe('NT-11c — afwijkingen, inrichting en importdefinities: geen ruwe codes als zichtbare tekst', () => {
   const originalFetch = global.fetch;
 
   afterEach(() => {
@@ -1167,7 +1192,7 @@ describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes 
     global.fetch = originalFetch;
   });
 
-  it('behandelgevallenlijst: elke status, bekende en onbekende ernst en vaststelling', async () => {
+  it('afwijkingenlijst: elke status, bekende en onbekende ernst en vaststelling', async () => {
     const codes = ['PRICE_MISSING', 'HEADER_FIELD_MISSING:Prijs', 'EEN_TOEKOMSTIGE_CODE', 'CONFIG_NIEUWE_FOUT'];
     const severities = ['CRITICAL', 'WARNING', 'EEN_NIEUWE_ERNST', 'BLOCKING'];
     const rows = ISSUE_CASE_STATUSES.map((status, index) =>
@@ -1188,21 +1213,21 @@ describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes 
       </MemoryRouter>,
     );
     await screen.findByRole('link', { name: '#600' });
-    expectNoRawCodes(document.body, 'behandelgevallenlijst');
+    expectNoRawCodes(document.body, 'afwijkingenlijst');
     // Een bekende code toont haar Nederlandse woord, een onbekende een neutraal woord; de code staat in de tooltip.
     expect(screen.getAllByText('Ander probleem').length).toBeGreaterThan(0);
     expect(screen.getByText('Andere ernst')).toBeInTheDocument();
     expect(screen.getAllByText('Verplichte kolom ontbreekt', { selector: 'span' }).length).toBeGreaterThan(0);
   });
 
-  it('behandelgeval: elke status met classificatie en geschiedenis, en de dialoog van de afhandelactie', async () => {
+  it('afwijking: elke status met classificatie en geschiedenis, en de dialoog van de afhandelactie', async () => {
     const events = [
       {
         id: 1,
         eventKind: 'CREATED',
         previousStatus: null,
         newStatus: 'AWAITING_REVIEW',
-        reason: 'Eerste vaststelling in batch 10',
+        reason: 'Eerste vaststelling in inlezing 10',
         source: 'SYSTEM',
         changedBy: null,
         changedBySubject: null,
@@ -1267,7 +1292,7 @@ describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes 
       );
       await screen.findByTestId('issue-case-events');
       await screen.findByTestId('issue-case-observations');
-      expectNoRawCodes(document.body, `behandelgeval in status ${status}`);
+      expectNoRawCodes(document.body, `afwijking in status ${status}`);
 
       const actionName = status === 'AWAITING_REVIEW' ? 'Corrigeren' : 'Heropenen';
       fireEvent.click(screen.getByRole('button', { name: actionName }));
@@ -1283,7 +1308,7 @@ describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes 
       {
         id: 10,
         code: 'DEF-10',
-        name: 'Beschrijving van het bestand',
+        name: 'Importdefinitie',
         usageType: 'OWN_DEFINITION',
         sourceOrganisationId: 1,
         sourceOrganisationCode: 'ORG-1',
@@ -1400,7 +1425,7 @@ describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes 
 
     fireEvent.click(screen.getByTestId('activate-revision'));
     await screen.findByRole('dialog');
-    expect(screen.getByTestId('reopen-rejected-cases-warning').textContent).toContain('afgewezen behandelgevallen');
+    expect(screen.getByTestId('reopen-rejected-cases-warning').textContent).toContain('afgewezen afwijkingen');
     expectNoRawCodes(document.body, 'activeerdialoog');
     fireEvent.click(screen.getByRole('button', { name: 'Sluiten zonder activeren' }));
 
@@ -1698,8 +1723,8 @@ describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes 
     expectNoRawCodes(document.body, 'materialiseren: hergebruik');
     fireEvent.change(screen.getByLabelText(/^Nieuw of hergebruik/), { target: { value: 'NEW_DEFINITION' } });
     expectNoRawCodes(document.body, 'materialiseren: nieuw');
-    fireEvent.change(screen.getByLabelText(/^Code van de beschrijving/), { target: { value: 'DEF-30' } });
-    fireEvent.change(screen.getByLabelText(/^Naam van de beschrijving/), { target: { value: 'Leverancier Z' } });
+    fireEvent.change(screen.getByLabelText(/^Code van de importdefinitie/), { target: { value: 'DEF-30' } });
+    fireEvent.change(screen.getByLabelText(/^Naam van de importdefinitie/), { target: { value: 'Leverancier Z' } });
     fireEvent.change(screen.getByLabelText(/^Koppelingscode/), { target: { value: 'LNK-77' } });
     fireEvent.change(screen.getByLabelText(/^Koppelingsnaam/), { target: { value: 'Koppeling 77' } });
     fireEvent.change(screen.getByLabelText(/^Bibliotheekcode/), { target: { value: 'BIB1' } });
@@ -1722,8 +1747,8 @@ describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes 
     const s = emptySetupState();
     s.organisations = [organisation(5, { code: 'ORG-5', name: 'Leverancier' })];
     s.definitions = [
-      definition(1, 5, { code: 'TPL-1-SJ', name: 'Sjabloon', usageType: 'REUSABLE_TEMPLATE', activeRevisionId: 100 }),
-      definition(2, 5, { code: 'TPL-2-SJ', name: 'Conceptsjabloon', usageType: 'REUSABLE_TEMPLATE', activeRevisionId: null }),
+      definition(1, 5, { code: 'TPL-1-SJ', name: 'Importdefinitie', usageType: 'REUSABLE_TEMPLATE', activeRevisionId: 100 }),
+      definition(2, 5, { code: 'TPL-2-SJ', name: 'Conceptimportdefinitie', usageType: 'REUSABLE_TEMPLATE', activeRevisionId: null }),
       definition(20, 5, { code: 'DEF-20', name: 'Leverancier X', activeRevisionId: 200 }),
       definition(21, 5, { code: 'DEF-21', name: 'Detailleverancier Y', activeRevisionId: 201 }),
     ];
@@ -1770,7 +1795,7 @@ describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes 
     const s = emptySetupState();
     s.organisations = [organisation(5, { code: 'ORG-5', name: 'Leverancier' })];
     s.definitions = [
-      definition(2, 5, { code: 'TPL-2-SJ', name: 'Conceptsjabloon', usageType: 'REUSABLE_TEMPLATE', activeRevisionId: null }),
+      definition(2, 5, { code: 'TPL-2-SJ', name: 'Conceptimportdefinitie', usageType: 'REUSABLE_TEMPLATE', activeRevisionId: null }),
       definition(20, 5, { code: 'TPL-2', name: 'Eigen importdefinitie', activeRevisionId: 200 }),
     ];
     s.links = [link(77, 20, { code: 'LNK-77', name: 'Koppeling 77' })];

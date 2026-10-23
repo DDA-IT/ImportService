@@ -167,7 +167,7 @@ describe('groupDecisionGate (F9, spiegel van de backend)', () => {
     expect(groupDecisionGate('ASSEMBLING', { batchId: 1 }, 1).allowed).toBe(true);
   });
 
-  it('F9.8: weigert buiten ASSEMBLING, met de reden dat de bundel bevroren is', () => {
+  it('F9.8: weigert buiten ASSEMBLING, met de reden dat de publicatie bevroren is', () => {
     const gate = groupDecisionGate('FROZEN', { batchId: 1 }, 5);
     expect(gate.allowed).toBe(false);
     expect(gate.allowed ? '' : gate.reason).toContain('bevroren');
@@ -335,7 +335,7 @@ describe('GroupDecisionDialog in BundleMutationsTab', () => {
     fireEvent.click(await screen.findByRole('button', { name: `Toon de hele wijzigingsgroep ${HASH}` }));
     fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'AWAITING_APPROVAL' } });
     fireEvent.change(screen.getByLabelText('Soort'), { target: { value: 'UPDATE' } });
-    fireEvent.change(screen.getByLabelText('Batch'), { target: { value: '77' } });
+    fireEvent.change(screen.getByLabelText('Inlezing'), { target: { value: '77' } });
     fireEvent.change(screen.getByLabelText('Statusreden'), { target: { value: 'BULK_PRICE_INCIDENT' } });
     fireEvent.click(screen.getByRole('button', { name: 'Filteren' }));
 
@@ -367,7 +367,7 @@ describe('GroupDecisionDialog in BundleMutationsTab', () => {
 
     // Getypt maar NIET op "Filteren" geklikt: de lijst filtert hier niet op, de groepsactie dus ook niet.
     // (De keuzelijsten, ook die van de statusreden, passen zichzelf meteen toe; enkel de tekstvelden wachten.)
-    fireEvent.change(screen.getByLabelText('Batch'), { target: { value: '999' } });
+    fireEvent.change(screen.getByLabelText('Inlezing'), { target: { value: '999' } });
     fireEvent.change(screen.getByLabelText('Wijzigingsgroep', { exact: true }), { target: { value: HASH } });
 
     const dialog = await openGroupDialog('Groep goedkeuren', 1);
@@ -385,16 +385,16 @@ describe('GroupDecisionDialog in BundleMutationsTab', () => {
     fireEvent.change(await screen.findByLabelText('Status'), { target: { value: 'PLANNED' } });
 
     const dialog = await openGroupDialog('Groep goedkeuren', 1234);
-    expect(within(dialog).getByText(/De lijst toont/).textContent).toContain('1234 mutaties');
-    expect(within(dialog).getByText(/nooit een tegengehouden mutatie/)).toBeInTheDocument();
-    expect(within(dialog).getByRole('heading').textContent).toBe('1234 mutaties goedkeuren (groepsactie)');
+    expect(within(dialog).getByText(/De lijst toont/).textContent).toContain('1234 wijzigingen');
+    expect(within(dialog).getByText(/nooit een tegengehouden wijziging/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading').textContent).toBe('1234 wijzigingen goedkeuren (groepsactie)');
     expect(posts()).toHaveLength(0);
 
     const listLoadsBefore = fetchCalls().filter((call) => call.method === 'GET').length;
     fireEvent.click(within(dialog).getByRole('button', { name: 'Groep goedkeuren' }));
 
     // Het werkelijke aantal komt van de server en wordt eerlijk naast het getoonde gezet.
-    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('1200 mutaties goedgekeurd'));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('1200 wijzigingen goedgekeurd'));
     expect(screen.getByRole('status').textContent).toContain('De lijst toonde 1234');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     // Lijst en bundeltellers worden expliciet ververst.
@@ -505,12 +505,12 @@ describe('GroupDecisionDialog in BundleMutationsTab', () => {
     expect(approve.getAttribute('title')).toContain('status "Tegengehouden"');
   });
 
-  it('F9.20: een bevroren bundel biedt de groepsactie niet aan', async () => {
+  it('F9.20: een bevroren publicatie biedt de groepsactie niet aan', async () => {
     renderTab(bundle({ status: 'FROZEN', plannedCount: null, awaitingApprovalCount: null }));
     fireEvent.change(await screen.findByLabelText('Status'), { target: { value: 'PLANNED' } });
 
     const approve = await screen.findByRole('button', { name: 'Groep goedkeuren (1)' });
-    await waitFor(() => expect(approve.getAttribute('title')).toContain('de bundel is bevroren'));
+    await waitFor(() => expect(approve.getAttribute('title')).toContain('de publicatie is bevroren'));
     expect(approve).toBeDisabled();
   });
 });

@@ -107,7 +107,7 @@ export function SummaryStep({ data }: { data: WizardData }) {
         <>
           <p className={styles.note}>
             De versie is nog een <Term domain="revisionStatus" code="DRAFT" />. Zolang ze niet geactiveerd is, staat
-            de taak bij Levering uploaden als &laquo;nog niet klaar&raquo; en kan er niets opgeladen worden.
+            de taak bij Bestand uploaden als &laquo;nog niet klaar&raquo; en kan er niets opgeladen worden.
           </p>
           <div className={styles.actions}>
             <Link

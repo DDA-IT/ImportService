@@ -52,9 +52,9 @@ describe('BatchActions continue (B-F3)', () => {
 
   const posts = () => vi.mocked(global.fetch).mock.calls.filter((call) => call[1]?.method === 'POST');
 
-  it('normaal: bevestiging vermeldt de naamloosheid, POST zonder body, batch wordt herladen', async () => {
+  it('normaal: bevestiging vermeldt de naamloosheid, POST zonder body, inlezing wordt herladen', async () => {
     const { onChanged } = renderActions();
-    fireEvent.click(screen.getByRole('button', { name: 'Batch hervatten' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Inlezing hervatten' }));
     expect(screen.getByText(/niet op naam vastgelegd/)).toBeInTheDocument();
     expect(posts()).toHaveLength(0);
 
@@ -73,18 +73,18 @@ describe('BatchActions continue (B-F3)', () => {
     'toont geen hervatknop bij status %s',
     (status) => {
       renderActions(status);
-      expect(screen.queryByRole('button', { name: 'Batch hervatten' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Inlezing hervatten' })).not.toBeInTheDocument();
     },
   );
 
   it('409 BATCH_NOT_RESUMABLE: vertaalde fout, geen herlaad', async () => {
     continueResponse = () =>
-      Promise.resolve(jsonResponse({ error: 'Batch 101 is in status SCREENED', code: 'BATCH_NOT_RESUMABLE' }, 409));
+      Promise.resolve(jsonResponse({ error: 'Inlezing 101 is in status SCREENED', code: 'BATCH_NOT_RESUMABLE' }, 409));
     const { onChanged } = renderActions();
-    fireEvent.click(screen.getByRole('button', { name: 'Batch hervatten' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Inlezing hervatten' }));
     fireEvent.click(screen.getByRole('button', { name: 'Hervatten bevestigen' }));
 
-    expect(await screen.findByText('Batch kan niet hervat worden')).toBeInTheDocument();
+    expect(await screen.findByText('Inlezing kan niet hervat worden')).toBeInTheDocument();
     expect(screen.getByText(/BATCH_NOT_RESUMABLE · HTTP 409/)).toBeInTheDocument();
     expect(onChanged).not.toHaveBeenCalled();
   });
@@ -93,7 +93,7 @@ describe('BatchActions continue (B-F3)', () => {
     let release: (r: Response) => void = () => {};
     continueResponse = () => new Promise<Response>((resolve) => (release = resolve));
     const { onChanged } = renderActions();
-    fireEvent.click(screen.getByRole('button', { name: 'Batch hervatten' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Inlezing hervatten' }));
     const button = screen.getByRole('button', { name: 'Hervatten bevestigen' });
     fireEvent.click(button);
     fireEvent.click(button);
@@ -115,14 +115,14 @@ describe('BatchActions continue (B-F3)', () => {
         </ActorProvider>,
       );
 
-      expect(screen.getByRole('heading', { name: 'Deze batch wordt nog verwerkt' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Deze inlezing wordt nog verwerkt' })).toBeInTheDocument();
       expect(
         screen.getByText('De controle loopt nog. Hervatten kan pas als ze stopt; vernieuw de pagina later.')
       ).toBeInTheDocument();
 
-      const button = screen.getByRole('button', { name: 'Batch hervatten' });
+      const button = screen.getByRole('button', { name: 'Inlezing hervatten' });
       expect(button).toBeDisabled();
-      expect(button).toHaveAttribute('title', 'De batch wordt nog verwerkt');
+      expect(button).toHaveAttribute('title', 'De inlezing wordt nog verwerkt');
     });
 
     it('processingActive=false: normaal gedrag (hervatbaar)', async () => {
@@ -135,10 +135,10 @@ describe('BatchActions continue (B-F3)', () => {
         </ActorProvider>,
       );
 
-      expect(screen.getByRole('heading', { name: 'Deze batch is onderbroken' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Deze inlezing is onderbroken' })).toBeInTheDocument();
       expect(screen.getByText(/bepalen van de wijzigingen/)).toBeInTheDocument();
 
-      const button = screen.getByRole('button', { name: 'Batch hervatten' });
+      const button = screen.getByRole('button', { name: 'Inlezing hervatten' });
       expect(button).toBeEnabled();
 
       fireEvent.click(button);
@@ -155,12 +155,12 @@ describe('BatchActions continue (B-F3)', () => {
         </ActorProvider>,
       );
 
-      expect(screen.getByRole('heading', { name: 'Deze batch is onderbroken' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Deze inlezing is onderbroken' })).toBeInTheDocument();
       expect(
         screen.getByText('De controle is niet afgerond. Loopt ze nog, dan weigert de server het hervatten.')
       ).toBeInTheDocument();
 
-      const button = screen.getByRole('button', { name: 'Batch hervatten' });
+      const button = screen.getByRole('button', { name: 'Inlezing hervatten' });
       expect(button).toBeEnabled();
 
       fireEvent.click(button);

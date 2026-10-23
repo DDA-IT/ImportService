@@ -74,7 +74,7 @@ function RecurrenceBadge({ row }: { row: IssueCaseRow }) {
   }
   const title =
     row.statusChangedAt === null
-      ? 'Dit geval is nog nooit beoordeeld.'
+      ? 'Deze afwijking is nog nooit beoordeeld.'
       : 'Er is een nieuwe waarneming bijgekomen ná de laatste beslissing.';
   return (
     <span className={styles.recurrenceBadge} title={title} data-testid={`recurrence-${row.id}`}>
@@ -86,7 +86,7 @@ function RecurrenceBadge({ row }: { row: IssueCaseRow }) {
 const COLUMNS: readonly DataTableColumn<IssueCaseRow>[] = [
   {
     key: 'id',
-    header: 'Geval',
+    header: 'Afwijking',
     render: (row) => <Link to={`/issue-cases/${row.id}`}>#{row.id}</Link>,
   },
   { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} domain="issueCaseStatus" /> },
@@ -177,9 +177,9 @@ export function IssueCaseListPage() {
         </div>
       </header>
       <WhatIsThis>
-        Een behandelgeval bundelt dezelfde vaststelling uit meerdere leveringen, zodat u ze één keer beoordeelt. Een
-        afgewezen geval blijft onderdrukt zolang een identieke vaststelling terugkomt; een nieuwe waarneming na uw
-        beslissing krijgt de aanduiding &laquo;Nieuwe waarneming&raquo;. Open een geval om het te beoordelen.
+        Een afwijking groepeert dezelfde vaststelling uit meerdere leveringen, zodat u ze één keer beoordeelt. Een
+        afgewezen afwijking blijft onderdrukt zolang een identieke vaststelling terugkomt; een nieuwe waarneming na uw
+        beslissing krijgt de aanduiding &laquo;Nieuwe waarneming&raquo;. Open een afwijking om ze te beoordelen.
       </WhatIsThis>
 
       <div className={pageCss.card}>
@@ -275,7 +275,7 @@ export function IssueCaseListPage() {
               columns={COLUMNS}
               rows={list.data.content}
               rowKey={(row) => row.id}
-              emptyMessage="Geen behandelgevallen gevonden."
+              emptyMessage="Geen afwijkingen gevonden."
             />
             <Pager
               page={list.data.page}

@@ -45,7 +45,7 @@ import styles from './RevisionActions.module.css';
  * waarneming opnieuw geopend.
  */
 export const REOPEN_REJECTED_CASES_WARNING =
-  'Alle afgewezen behandelgevallen van alle koppelingen van deze beschrijving van het bestand ' +
+  'Alle afgewezen afwijkingen van alle koppelingen van deze importdefinitie ' +
   'worden bij de eerstvolgende waarneming opnieuw geopend. Dat is een bewust aanvaard gevolg van een ' +
   'nieuwe versie — geen fout — maar het betekent dat eerder afgewezen problemen opnieuw op de werklijst ' +
   'komen zodra ze zich nog eens voordoen.';
@@ -126,7 +126,7 @@ export function ActivateRevisionAction({ revision, onActivated, wording, extraWa
               {extraWarning}
               {wording?.explanation === undefined ? (
                 <p>
-                  Dit concept wordt <strong>actief</strong> en de huidige actieve versie van deze beschrijving
+                  Dit concept wordt <strong>actief</strong> en de huidige actieve versie van deze importdefinitie
                   van het bestand wordt <strong>vervangen</strong>. De volledige configuratie wordt eerst
                   gecontroleerd met dezelfde regels als bij het lezen van een levering.
                 </p>

@@ -138,8 +138,8 @@ describe('describe(error) — errors/codes.ts', () => {
       const error = new ApiError(409, 'CONFIG_INCOMPLETE', 'Config incomplete', '/import-links/1');
       const result = describeError(error);
 
-      expect(result.title).toBe('De beschrijving van het bestand klopt niet');
-      expect(result.explanation).toContain('beschrijving van het bestand');
+      expect(result.title).toBe('De importdefinitie klopt niet');
+      expect(result.explanation).toContain('importdefinitie');
       expect(result.title).not.toContain('CONFIG_INCOMPLETE');
       expect(result.technical).toContain('CONFIG_INCOMPLETE');
     });

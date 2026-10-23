@@ -16,7 +16,7 @@ multipart-bestand via `POST /api/catalog-import/tasks/{taskId}/deliveries`
 
 Het "pad" is dus het pad op **uw eigen machine**, dat u aan het uploadscherm (bestandskiezer) meegeeft. Een server-side inbox/pad-import en een scheduler bestaan niet (uitgesteld, zie README sectie 1).
 
-Status: uploadscherm **Beschikbaar** (`/upload`, navigatielink "Levering uploaden", zie 4.4, lokaal via
+Status: uploadscherm **Beschikbaar** (`/upload`, navigatielink "Bestand uploaden", zie 4.4, lokaal via
 frontend `npm run dev`). De API zelf vereist sinds 5-AUTH een Keycloak-login: zonder sessie geeft
 `/api/**` **401 `AUTHENTICATION_REQUIRED`** en een schrijfaanroep zonder CSRF-header `X-XSRF-TOKEN` (cookie
 `CATALOGIMPORT-XSRF-TOKEN`) 403 `CSRF_TOKEN_INVALID`. Er is geen token-flow voor scripts (V1 = A1): uploaden met `curl` kan
@@ -27,7 +27,7 @@ voorlopig niet; gebruik het uploadscherm.
 1. Backend draait: zie README sectie 9.2 (twee commando's, poort 8081 met profiel `local`) en de
    Prodis-Keycloak (`:9080`, realm `prodis`, client `catalog-import`, `CATALOG_OIDC_CLIENT_SECRET` in de
    omgeving; zie hoofd-`README.md`, "Lokaal aanmelden"). Open de frontend op `http://localhost:5173` en meld u aan.
-2. Er is een **actieve versie** van de beschrijving van het bestand (anders 409 `NO_ACTIVE_REVISION`), met een
+2. Er is een **actieve versie** van de importdefinitie (anders 409 `NO_ACTIVE_REVISION`), met een
    basisprijsveld (anders 409 `CONFIG_PRICE_FIELD_MISSING`).
 3. Er is een **koppeling** en een **manuele taak**. Heeft u die nog niet: maak ze zelf aan via **Inrichting →
    "Nieuwe leverancier en taak"** (recht *Beheren*) en controleer en activeer de conceptversie op het scherm
@@ -51,7 +51,7 @@ Elke rij bevat `id` (het `taskId`), `name`, `active`, `triggerType` (moet `MANUA
 
 ## 3. Eisen aan het CSV-bestand
 
-Bijna alles hangt af van de **actieve versie** van de beschrijving van het bestand, niet van de upload. Het
+Bijna alles hangt af van de **actieve versie** van de importdefinitie, niet van de upload. Het
 bestand moet dus passen bij die versie. Wilt u dat vooraf nagaan zonder iets op te slaan, gebruik dan de
 **proefinlezing** op het scherm Controleren (README 4.7).
 
@@ -186,7 +186,7 @@ teruggevonden, **niet** opnieuw gescreend.
 | --- | --- | --- |
 | "Taak niet gevonden" | `taskId` bestaat niet | taak opnieuw kiezen |
 | "Taak is niet manueel" | geselecteerde taak is niet `MANUAL` | een manuele taak kiezen |
-| "Geen actieve versie" | de beschrijving van het bestand van deze taak heeft geen actieve versie | de conceptversie activeren: Inrichting → "Controleren" (recht Beheren) |
+| "Geen actieve versie" | de importdefinitie van deze taak heeft geen actieve versie | de conceptversie activeren: Inrichting → "Controleren" (recht Beheren) |
 | "Referentie is al gebruikt voor een ander bestand" (HTTP 409) | dezelfde `deliveryReference` met ander bestand | nieuwe referentie kiezen |
 | "Bestand te groot" (HTTP 413) | bestand groter dan limiet (standaard 1 GB, `CATALOG_MAX_UPLOAD_SIZE`) | bestand splitsen of limiet verhogen |
 | "Onverwachte serverfout" (HTTP 500) | technische fout op de server | serverlog lezen; herhaal met dezelfde referentie (veilig) |
@@ -194,26 +194,26 @@ teruggevonden, **niet** opnieuw gescreend.
 
 **Na succes:**
 
-Het scherm toont het resultaat: `Levering #{id}` en `Batch #{id}`. Klik de batchnummer door naar het
-batchdetail (`/batches/{id}`, **Beschikbaar** — `Frontend/src/features/upload/UploadPage.tsx`,
+Het scherm toont het resultaat: `Levering #{id}` en `Inlezing #{id}`. Klik het inlezingsnummer door naar het
+inlezingsdetail (`/batches/{id}`, **Beschikbaar** — `Frontend/src/features/upload/UploadPage.tsx`,
 `<Link to={/batches/${delivery.batchId}}>`; zie README 4.2); via API: `GET /api/catalog-import/batches/{id}`, zie sectie 6
 van [`README.md`](README.md).
 
-De batch staat op status `SCREENED` (gereed), `BLOCKED` (levering onbruikbaar) of `FAILED` (technische fout).
+De inlezing staat op status `SCREENED` (gereed), `BLOCKED` (levering onbruikbaar) of `FAILED` (technische fout).
 Tellers: ruwe records, geldige, afgewezen, dubbele identiteiten, nieuw, gewijzigd, ongewijzigd,
-inhoudsmutaties.
+inhoudswijzigingen.
 
 **Vervolg:**
 
-Een `SCREENED` batch kan op twee manieren verder, en nooit op allebei (zie sectie 7 van `README.md`):
+Een `SCREENED` inlezing kan op twee manieren verder, en nooit op allebei (zie sectie 7 van `README.md`):
 - **accept-baseline** — nulmeting van de bronstaat (geen publicatie).
-- **Opnemen in een publicatiebundel** — voorbereiding voor publicatie.
+- **Opnemen in een publicatie** — voorbereiding voor publicatie.
 
-Beide acties staan **niet** op het uploadscherm zelf, maar wel op het batchdetail waar u via de batchlink
+Beide acties staan **niet** op het uploadscherm zelf, maar wel op het inlezingsdetail waar u via de inlezingslink
 hierboven terechtkomt (**Beschikbaar** — `Frontend/src/features/batches/BatchActions.tsx`): een `SCREENED`
-batch toont daar twee knoppen:
+inlezing toont daar twee knoppen:
 - **"Aanvaarden als nulmeting":** verplichte reden (tekstveld) en typ-bevestiging (`NULMETING`).
-- **"Opnemen in bundel":** selecteer een bundel uit de dropdown (alleen bundels in status `ASSEMBLING`; placeholder "— kies een bundel —") en typ de bundelreferentie ter bevestiging; geen redenveld.
+- **"Opnemen in publicatie":** selecteer een publicatie uit de dropdown (alleen publicaties in status `ASSEMBLING`; placeholder "— kies een publicatie —") en typ de publicatiereferentie ter bevestiging; geen redenveld.
 
 Alternatief: de API (flow 4 en 5 van [`standaardflows.md`](standaardflows.md)). Bij 409
 `BATCH_IN_PUBLICATION_BUNDLE` of `BATCH_NOT_ACCEPTABLE` legt het scherm uit waarom de actie niet kan.
@@ -279,12 +279,12 @@ bestandsnamen, geen pad; verborgen bestanden, submappen en symlinks staan er nie
 ## 5. De `deliveryReference`
 
 - **Uniek per levering, per taak.** Intern wordt de sleutel `manual:<referentie>`.
-- **Identiek bestand, zelfde referentie: 200**, dezelfde levering en batch, **geen nieuwe screening**. Dit is
+- **Identiek bestand, zelfde referentie: 200**, dezelfde levering en inlezing, **geen nieuwe screening**. Dit is
   ook de **herstelroute** als de verbinding wegviel tijdens een lange upload: herhaal met dezelfde
   referentie.
 - **Zelfde referentie, ander bestand: 409** `DELIVERY_REFERENCE_REUSED_WITH_DIFFERENT_CONTENT`. Kies een
   nieuwe referentie.
-- **Nieuwe referentie, zelfde inhoud: nieuwe batch** (in het scenario: geen wijzigingen).
+- **Nieuwe referentie, zelfde inhoud: nieuwe inlezing** (in het scenario: geen wijzigingen).
 - Kies een **deterministische** referentie (bv. de bestandsnaam of leveranciers-/periodecode),
   **nooit met tijdstempel**: dan is een herhaalde aanroep geen retry maar een dubbele levering.
 
@@ -294,19 +294,19 @@ Statuscode **201** = nieuwe levering; **200** = idempotente herhaling. Beide bev
 
 | Veld | Betekenis |
 | --- | --- |
-| `deliveryId`, `batchId` | de levering en haar batch (voor de vervolgcalls) |
+| `deliveryId`, `batchId` | de levering en haar inlezing (voor de vervolgcalls) |
 | `status` | `SCREENED`, `BLOCKED` (met `blockedCode`) of `FAILED` |
 | `blockedCode` | reden bij `BLOCKED` of `FAILED` (bv. `HEADER_FIELD_MISSING:prijs`, `SCREENING_FAILED`) |
 | `rawRecordCount`, `validRecordCount`, `rejectedRecordCount` | gelezen, geldige en afgewezen datalijnen |
 | `duplicateIdentityCount` | regels met een dubbele identiteit |
 | `newCount`, `changedCount`, `unchangedCount` | nieuw, gewijzigd, ongewijzigd t.o.v. de bronstaat |
-| `contentMutationCount` | inhoudelijke mutaties (zonder marker) |
+| `contentMutationCount` | inhoudelijke wijzigingen (zonder marker) |
 
 Een teller die `null` is, is **niet vastgesteld**; lees dat nooit als 0 (README 6.2). Het antwoord bevat
-`validationResult` niet; dat staat op de batch.
+`validationResult` niet; dat staat op de inlezing.
 
 Resultaat bekijken (alle `GET`; na login altijd bereikbaar; open ze in het aangemelde tabblad via
-`http://localhost:5173/<pad>`, of gebruik het batchdetail in de UI):
+`http://localhost:5173/<pad>`, of gebruik het inlezingsdetail in de UI):
 
 ```
 GET /api/catalog-import/batches/{batchId}                 # status, validationResult, alle tellers
@@ -316,19 +316,19 @@ GET /api/catalog-import/batches/{batchId}/mutations?size=50
 GET /api/catalog-import/deliveries/{deliveryId}
 ```
 
-**Scherm 0 (werkvoorraad)** op `http://localhost:5173/` — **Beschikbaar**, alleen-lezen: de batch staat
-bovenaan (nieuwste eerst). Doorklikken naar het batchdetail werkt (**Beschikbaar**, zie boven).
+**Scherm 0 (inlezingen)** op `http://localhost:5173/` — **Beschikbaar**, alleen-lezen: de inlezing staat
+bovenaan (nieuwste eerst). Doorklikken naar het inlezingsdetail werkt (**Beschikbaar**, zie boven).
 
 Verwacht voor `levering-1.csv` (echt gedraaid via het scenario): 7 regels, 6 geldig, 1 afgewezen (prijs
-`abc`), `INITIAL_LOAD`; identieke herupload geeft 200 met dezelfde batch. Voor `levering-2.csv` **na**
+`abc`), `INITIAL_LOAD`; identieke herupload geeft 200 met dezelfde inlezing. Voor `levering-2.csv` **na**
 `accept-baseline`: 1 `UPDATE` (S-1), 1 `CREATE` (S-8), 5 ongewijzigd, 1 afgewezen.
 
 Volledige lijst van statussen, oordelen en tellers: [`begrippen.md`](begrippen.md) en README sectie 6.
 
 ## 7. Volgende stap
 
-Een `SCREENED` batch kan op twee manieren verder, en nooit op allebei: **accept-baseline** (nulmeting) of
-opnemen in een **publicatiebundel** (flow 3 en 4 in [`standaardflows.md`](standaardflows.md)). Een tweede
+Een `SCREENED` inlezing kan op twee manieren verder, en nooit op allebei: **accept-baseline** (nulmeting) of
+opnemen in een **publicatie** (flow 3 en 4 in [`standaardflows.md`](standaardflows.md)). Een tweede
 levering vóór `accept-baseline` is opnieuw een `INITIAL_LOAD`.
 
 ## 8. Probleemoplossing
@@ -337,9 +337,9 @@ levering vóór `accept-baseline` is opnieuw een `INITIAL_LOAD`.
 | --- | --- | --- |
 | 404 `TASK_NOT_FOUND` | `taskId` bestaat niet | opnieuw opzoeken met `GET /tasks` |
 | 409 `TASK_NOT_MANUAL` | taak heeft niet `triggerType=MANUAL` | een MANUAL-taak gebruiken |
-| 409 `NO_ACTIVE_REVISION` | de beschrijving van het bestand heeft geen actieve versie | versie activeren (flow 1, scherm Controleren) |
+| 409 `NO_ACTIVE_REVISION` | de importdefinitie heeft geen actieve versie | versie activeren (flow 1, scherm Controleren) |
 | 409 `CONFIG_PRICE_FIELD_MISSING` / `CONFIG_REQUIRED_BOOKMARK_MISSING` | versie zonder prijsveld, of een verplicht invulpunt van de koppeling is niet ingevuld; er is niets gearchiveerd | versie of invulpuntwaarde corrigeren (de checklist op Controleren toont het) |
-| 409 `TASK_RUN_IN_PROGRESS` | een eerdere uitvoering op deze taak is niet afgerond | wachten; blijft het staan, batchstatus onderzoeken (README 7 punt 15) |
+| 409 `TASK_RUN_IN_PROGRESS` | een eerdere uitvoering op deze taak is niet afgerond | wachten; blijft het staan, inlezingsstatus onderzoeken (README 7 punt 15) |
 | 409 `DELIVERY_REFERENCE_REUSED_WITH_DIFFERENT_CONTENT` | referentie eerder gebruikt met ander bestand | nieuwe referentie |
 | 400 (zonder `code`) | ontbrekend of te lang veld, negatieve verwachting | parameters controleren |
 | 400 `ACTOR_FIELD_MISMATCH` | `uploadedBy` meegegeven en verschillend van uw login | veld weglaten |
@@ -353,4 +353,4 @@ levering vóór `accept-baseline` is opnieuw een `INITIAL_LOAD`.
 | 413 of 500 zonder body | bestand groter dan de grens (1 GB) | bestand splitsen of `CATALOG_MAX_UPLOAD_SIZE` verhogen; exacte statuscode bij te groot bestand **nog te verifiëren** |
 | Verbinding valt weg tijdens screening | de synchrone verwerking kan doorlopen op de server | herhaal met **dezelfde** referentie en hetzelfde bestand (200 = bestaande uitkomst) |
 | Veel regels afgewezen (`PRICE_UNREADABLE`) | decimaalnotatie of tekst in de prijskolom | `/issues` bekijken, bestand corrigeren, nieuwe referentie |
-| Batch `BLOCKED` op `CRITICAL_RECORD_THRESHOLD_EXCEEDED` | te veel fouten op kritieke kolommen t.o.v. de drempel | bestand corrigeren of drempel op een nieuwe versie bewust verhogen |
+| Inlezing `BLOCKED` op `CRITICAL_RECORD_THRESHOLD_EXCEEDED` | te veel fouten op kritieke kolommen t.o.v. de drempel | bestand corrigeren of drempel op een nieuwe versie bewust verhogen |

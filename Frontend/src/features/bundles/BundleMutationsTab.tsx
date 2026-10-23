@@ -45,8 +45,8 @@ function DecisionBody({ row, revision }: { row: MutationRow; revision: boolean }
   return (
     <div className={styles.dialogBody}>
       <p>
-        Mutatie {row.id} (<Term domain="mutationAction" code={row.actionType} />, status{' '}
-        <Term domain="mutationStatus" code={row.status} />) van batch {row.batchId}.
+        Wijziging {row.id} (<Term domain="mutationAction" code={row.actionType} />, status{' '}
+        <Term domain="mutationStatus" code={row.status} />) van inlezing {row.batchId}.
       </p>
       <p>
         Basisprijs: {formatAmount(row.beforeBasePrice, row.basePriceCurrency)} →{' '}
@@ -104,7 +104,7 @@ export function BundleMutationsTab() {
       reasonRequirement: (row) => (isRevision(row) ? 'required' : 'optional'),
       gate: gateFor,
       confirmTitle: (row) =>
-        isRevision(row) ? `Beslissing op mutatie ${row.id} herzien naar goedgekeurd` : `Mutatie ${row.id} goedkeuren`,
+        isRevision(row) ? `Beslissing op wijziging ${row.id} herzien naar goedgekeurd` : `Wijziging ${row.id} goedkeuren`,
       confirmBody: (row) => <DecisionBody row={row} revision={isRevision(row)} />,
       run: async (row, input) => {
         const result = await bundlesApi.approve(bundle.id, row.id, {
@@ -123,7 +123,7 @@ export function BundleMutationsTab() {
       reasonRequirement: () => 'required',
       gate: gateFor,
       confirmTitle: (row) =>
-        isRevision(row) ? `Beslissing op mutatie ${row.id} herzien naar afgekeurd` : `Mutatie ${row.id} afkeuren`,
+        isRevision(row) ? `Beslissing op wijziging ${row.id} herzien naar afgekeurd` : `Wijziging ${row.id} afkeuren`,
       confirmBody: (row) => <DecisionBody row={row} revision={isRevision(row)} />,
       run: async (row, input) => {
         const result = await bundlesApi.reject(bundle.id, row.id, {
@@ -140,12 +140,12 @@ export function BundleMutationsTab() {
     <div className={styles.tab}>
       <WhatIsThis>
         <p>
-          Een mutatie is één voorgestelde wijziging aan een artikel, bijvoorbeeld een nieuwe prijs of een nieuw artikel.
-          Hier beslist u per mutatie of ze goedgekeurd of afgekeurd wordt; een afkeuring vraagt altijd een reden. Met de
+          Een wijziging is één voorgestelde wijziging aan een artikel, bijvoorbeeld een nieuwe prijs of een nieuw artikel.
+          Hier beslist u per wijziging of ze goedgekeurd of afgekeurd wordt; een afkeuring vraagt altijd een reden. Met de
           filters kunt u de lijst beperken en daarna in één keer over de hele lijst beslissen (groepsactie).
         </p>
         <p>
-          Elke beslissing wordt bijgeschreven in het beslissingsregister en kan zolang de bundel in opbouw is, nog
+          Elke beslissing wordt bijgeschreven in het beslissingsregister en kan zolang de publicatie in opbouw is, nog
           herzien worden; beide beslissingen blijven dan in het register staan.
         </p>
       </WhatIsThis>
@@ -157,7 +157,7 @@ export function BundleMutationsTab() {
       <MutationList
         source={source}
         rowActions={rowActions}
-        emptyMessage="Deze bundel bevat (met deze filter) geen mutaties."
+        emptyMessage="Deze publicatie bevat (met deze filter) geen wijzigingen."
         onAfterAction={reloadBundle}
         toolbar={({ filter, listedCount, reload }) => (
           <GroupDecisionDialog

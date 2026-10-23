@@ -295,7 +295,7 @@ describe('NewSupplierWizardPage (NT-6)', () => {
 
     await screen.findByRole('heading', { name: /Stap 2/ });
     // NT-7: het sjabloonpad is een tweede weg in dit scherm zelf (geen verwijzing naar Sjablonen meer).
-    expect(screen.getByRole('button', { name: 'Vanuit een sjabloon van deze leverancier of aankoopvereniging' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Vanuit een importdefinitie van deze leverancier of aankoopvereniging' })).toBeEnabled();
     expectNoOldWording(document.body, 'stappenplan stap 2');
     click('Zelf beschrijven');
 

@@ -27,7 +27,7 @@ export function ParallelRunSummaryView({ runId, summary }: ParallelRunSummaryVie
       <div className={styles.summary} data-testid="parallel-run-summary">
         <p className={styles.summaryTitle}>Proefvergelijking met Prodis</p>
         <p>
-          Er is nog geen proefvergelijking met Prodis voor deze bundel. Start eerst een proefpublicatie om te zien wat
+          Er is nog geen proefvergelijking met Prodis voor deze publicatie. Start eerst een proefpublicatie om te zien wat
           er zou gebeuren.
         </p>
       </div>

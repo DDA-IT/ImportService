@@ -95,13 +95,13 @@ export function ApplyDialog({
             <p data-testid="legacy-detach-confirm">
               <strong>Let op, uitzondering:</strong> omdat u loskoppelt, wordt
               {report.planned.detach.carriesActive
-                ? ' de huidige actieve versie van de gedeelde beschrijving meteen als eigen versie geactiveerd (de koppeling wordt verlegd naar de eigen beschrijving). De nieuwe inhoud blijft een conceptversie.'
-                : ' de koppeling verlegd naar de eigen beschrijving; er is geen actieve versie om te activeren en de nieuwe inhoud blijft een conceptversie.'}
+                ? ' de huidige actieve versie van de gedeelde importdefinitie meteen als eigen versie geactiveerd (de koppeling wordt verlegd naar de eigen importdefinitie). De nieuwe inhoud blijft een conceptversie.'
+                : ' de koppeling verlegd naar de eigen importdefinitie; er is geen actieve versie om te activeren en de nieuwe inhoud blijft een conceptversie.'}
             </p>
           )}
           <WhatIsThis>
             <p>
-              Overnemen maakt de beschrijving van het bestand als conceptversie aan, samen met de koppeling en een
+              Overnemen maakt de importdefinitie als conceptversie aan, samen met de koppeling en een
               handmatige taak. Er wordt niets geactiveerd en er wordt nooit een bestaande koppeling of actieve versie
               gewijzigd. Enige uitzondering: bij loskoppelen wordt de koppeling verlegd en de kopie van de actieve versie
               geactiveerd.

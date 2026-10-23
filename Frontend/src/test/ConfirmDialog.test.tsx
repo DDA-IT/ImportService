@@ -22,7 +22,7 @@ function renderDialog(
     <ActorProvider identity={identity}>
       <ConfirmDialog
         open
-        title="Bundel bevriezen"
+        title="Publicatie bevriezen"
         reasonRequirement="required"
         onConfirm={onConfirm}
         onCancel={onCancel}
@@ -101,7 +101,7 @@ describe('ConfirmDialog', () => {
   it('T4.7: is een native modale <dialog> (showModal) met open-attribuut en titel als naam', () => {
     renderDialog({ reasonRequirement: 'none' });
 
-    const dialog = screen.getByRole('dialog', { name: 'Bundel bevriezen' });
+    const dialog = screen.getByRole('dialog', { name: 'Publicatie bevriezen' });
     expect(dialog.tagName).toBe('DIALOG');
     expect(dialog).toHaveAttribute('open');
   });

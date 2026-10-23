@@ -44,10 +44,10 @@ import styles from './IssueCaseActions.module.css';
 function AdministrativeNotice() {
   return (
     <p className={styles.notice} data-testid="issue-case-administrative-notice">
-      Dit is een administratieve beoordeling van het behandelgeval, geen dataherstel: een tegengehouden
-      mutatie blijft tegengehouden. Om die gegevens alsnog te verwerken is een nieuwe, correcte levering
+      Dit is een administratieve beoordeling van de afwijking, geen dataherstel: een tegengehouden
+      wijziging blijft tegengehouden. Om die gegevens alsnog te verwerken is een nieuwe, correcte levering
       nodig, of een aparte goedkeuring via &laquo;Aanvaarden als nulmeting&raquo; of de beslissing over de
-      bundel.
+      publicatie.
     </p>
   );
 }
@@ -82,7 +82,7 @@ function ActionDialog({ issueCase, action, onClose, onDone }: ActionDialogProps)
       return;
     }
     onDone(
-      `Behandelgeval #${issueCase.id} staat nu op "${term('issueCaseStatus', result.status).label}" ` +
+      `Afwijking #${issueCase.id} staat nu op "${term('issueCaseStatus', result.status).label}" ` +
         `(door ${result.statusChangedBy ?? '—'}).`,
     );
   }
@@ -90,7 +90,7 @@ function ActionDialog({ issueCase, action, onClose, onDone }: ActionDialogProps)
   return (
     <ConfirmDialog
       open
-      title={`Behandelgeval #${issueCase.id} — ${issueCaseActionLabel(action)}`}
+      title={`Afwijking #${issueCase.id} — ${issueCaseActionLabel(action)}`}
       body={
         <div className={styles.body}>
           <AdministrativeNotice />

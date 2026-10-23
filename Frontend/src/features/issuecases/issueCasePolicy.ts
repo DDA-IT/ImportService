@@ -58,14 +58,14 @@ export function issueCaseActionGate(status: IssueCaseStatus, action: IssueCaseAc
         return ALLOWED;
       }
       return denied(
-        `Kan niet: "${issueCaseActionLabel(action)}" kan alleen bij een geval dat op beoordeling wacht ` +
-          `(dit geval staat op "${term('issueCaseStatus', status).label}"). Heropen het geval eerst.`,
+        `Kan niet: "${issueCaseActionLabel(action)}" kan alleen bij een afwijking die op beoordeling wacht ` +
+          `(deze afwijking staat op "${term('issueCaseStatus', status).label}"). Heropen de afwijking eerst.`,
         TRANSITION_NOT_ALLOWED_CODE,
       );
     case 'REOPEN':
       if (status === 'AWAITING_REVIEW') {
         return denied(
-          'Kan niet: dit geval wacht al op beoordeling, heropenen is dan niet zinvol.',
+          'Kan niet: deze afwijking wacht al op beoordeling, heropenen is dan niet zinvol.',
           TRANSITION_NOT_ALLOWED_CODE,
         );
       }

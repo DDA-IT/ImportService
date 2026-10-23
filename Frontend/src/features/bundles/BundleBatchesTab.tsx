@@ -135,12 +135,12 @@ export function BundleBatchesTab() {
   }
 
   const memberColumns: readonly DataTableColumn<BundleBatchRow>[] = [
-    { key: 'batchId', header: 'Batch', render: (row) => row.batchId },
+    { key: 'batchId', header: 'Inlezing', render: (row) => row.batchId },
     { key: 'importLinkId', header: 'Koppeling', render: (row) => getImportLinkLabel(row.importLinkId, links.data?.content) },
-    { key: 'batchStatus', header: 'Batchstatus', render: (row) => <StatusBadge status={row.batchStatus} domain="batchStatus" /> },
+    { key: 'batchStatus', header: 'Inlezingsstatus', render: (row) => <StatusBadge status={row.batchStatus} domain="batchStatus" /> },
     {
       key: 'batchContentMutationCount',
-      header: 'Mutaties',
+      header: 'Wijzigingen',
       render: (row) => <Count value={row.batchContentMutationCount} />,
       align: 'right',
     },
@@ -191,11 +191,11 @@ export function BundleBatchesTab() {
           checked={selected.has(row.batchId)}
           disabled={!addGate.allowed}
           onChange={() => toggleSelected(row.batchId)}
-          aria-label={`Batch ${row.batchId} selecteren`}
+          aria-label={`Inlezing ${row.batchId} selecteren`}
         />
       ),
     },
-    { key: 'batchId', header: 'Batch', render: (row) => row.batchId },
+    { key: 'batchId', header: 'Inlezing', render: (row) => row.batchId },
     { key: 'importLinkId', header: 'Koppeling', render: (row) => getImportLinkLabel(row.importLinkId, links.data?.content) },
     { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} domain="batchStatus" /> },
     {
@@ -205,7 +205,7 @@ export function BundleBatchesTab() {
     },
     {
       key: 'contentMutationCount',
-      header: 'Mutaties',
+      header: 'Wijzigingen',
       render: (row) => <Count value={row.contentMutationCount} />,
       align: 'right',
     },
@@ -216,8 +216,8 @@ export function BundleBatchesTab() {
     <div className={styles.tab}>
       <WhatIsThis>
         <p>
-          Leden zijn de gecontroleerde leveringen (batches) die in deze bundel zitten. Onder &quot;Kandidaten
-          toevoegen&quot; staan de leveringen die klaar zijn om in een bundel te gaan. Zolang de bundel in opbouw is,
+          Leden zijn de gecontroleerde leveringen (inlezingen) die in deze publicatie zitten. Onder &quot;Kandidaten
+          toevoegen&quot; staan de leveringen die klaar zijn om in een publicatie te gaan. Zolang de publicatie in opbouw is,
           kunt u er leveringen aan toevoegen of uit halen; een verwijderd lid blijft met de reden zichtbaar, zodat te
           volgen is wat er gebeurd is.
         </p>
@@ -233,7 +233,7 @@ export function BundleBatchesTab() {
               columns={memberColumns}
               rows={members.data.content}
               rowKey={(row) => row.id}
-              emptyMessage="Deze bundel heeft nog geen leden."
+              emptyMessage="Deze publicatie heeft nog geen leden."
             />
             <Pager
               page={members.data.page}
@@ -252,7 +252,7 @@ export function BundleBatchesTab() {
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Kandidaten toevoegen</h2>
         {!addGate.allowed && <p className={styles.gateReason}>{addGate.reason}</p>}
-        <p className={styles.notice}>Weigert één batch, dan wordt er niets toegevoegd.</p>
+        <p className={styles.notice}>Weigert één inlezing, dan wordt er niets toegevoegd.</p>
 
         {candidates.error !== null && <ErrorBanner error={candidates.error} />}
         {candidates.loading && candidates.data === null && <p className={styles.loading}>Bezig met laden…</p>}
@@ -289,15 +289,15 @@ export function BundleBatchesTab() {
             title={gateTitle(addGate)}
             onClick={handleAdd}
           >
-            {addAction.pending ? 'Bezig…' : `${selected.size} geselecteerde batch(es) toevoegen`}
+            {addAction.pending ? 'Bezig…' : `${selected.size} geselecteerde inlezing(en) toevoegen`}
           </button>
         </div>
       </section>
 
       <ConfirmDialog
         open={removeTarget !== null}
-        title={`Batch ${removeTarget?.batchId ?? ''} verwijderen`}
-        body="Deze batch draagt mogelijk al beslissingen; verwijderen van een batch met beslissingen wordt geweigerd."
+        title={`Inlezing ${removeTarget?.batchId ?? ''} verwijderen`}
+        body="Deze inlezing draagt mogelijk al beslissingen; verwijderen van een inlezing met beslissingen wordt geweigerd."
         reasonRequirement="required"
         variant="danger"
         pending={removeAction.pending}

@@ -116,8 +116,8 @@ export function describeLegacyPart(element: string): string {
   if (element === 'INDET') return 'de instellingen van de interface';
   if (element === 'PLAN:link') return 'de geplande koppeling';
   if (element === 'PLAN:task') return 'de geplande taak';
-  if (element === 'PLAN:template') return 'het geplande sjabloon';
-  if (element === 'PLAN:definition') return 'de geplande beschrijving van het bestand';
+  if (element === 'PLAN:template') return 'de geplande importdefinitie';
+  if (element === 'PLAN:definition') return 'de geplande importdefinitie';
   if (element === 'PLAN:detach') return 'het geplande loskoppelen';
   if (element === 'CONNECTION') return 'de verbinding van de interface';
   return 'een onderdeel van legacy';

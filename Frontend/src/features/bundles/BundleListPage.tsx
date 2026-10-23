@@ -60,13 +60,13 @@ const COLUMNS: readonly DataTableColumn<BundleSummary>[] = [
   },
   {
     key: 'batchCount',
-    header: 'Batches',
+    header: 'Inlezingen',
     render: (row) => <Count value={row.batchCount} />,
     align: 'right',
   },
   {
     key: 'contentMutationCount',
-    header: 'Mutaties',
+    header: 'Wijzigingen',
     render: (row) => <Count value={row.contentMutationCount} />,
     align: 'right',
   },
@@ -115,9 +115,9 @@ export function BundleListPage() {
 
       <WhatIsThis>
         <p>
-          Een bundel verzamelt goedgekeurde wijzigingen die samen gepubliceerd worden. U voegt er gecontroleerde
-          leveringen (batches) aan toe, beoordeelt de wijzigingen, en bevriest de bundel wanneer alles klaar is.
-          Bevriezen sluit de bundel af: daarna kan er niets meer bij of af, alleen nog geannuleerd worden.
+          Een publicatie verzamelt goedgekeurde wijzigingen die samen gepubliceerd worden. U voegt er gecontroleerde
+          leveringen (inlezingen) aan toe, beoordeelt de wijzigingen, en bevriest de publicatie wanneer alles klaar is.
+          Bevriezen sluit de publicatie af: daarna kan er niets meer bij of af, alleen nog geannuleerd worden.
         </p>
         <p>
           Bij het aanmaken kiest u de doelmodus: een proefpublicatie schrijft niets naar Prodis, een controlebibliotheek
@@ -156,7 +156,7 @@ export function BundleListPage() {
               columns={COLUMNS}
               rows={data.content}
               rowKey={(row) => row.id}
-              emptyMessage="Geen publicatiebundels gevonden."
+              emptyMessage="Geen publicaties gevonden."
             />
             <Pager
               page={data.page}

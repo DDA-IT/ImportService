@@ -214,7 +214,7 @@ export function LinkBookmarkValuesSection({ linkId, linkCode }: LinkBookmarkValu
         <>
           {query.data.lockedByOpenBatch && (
             <p className={styles.locked} role="alert" data-testid="link-locked-warning">
-              Deze koppeling heeft een open levering: een wijziging wordt geweigerd zolang die batch loopt.
+              Deze koppeling heeft een open levering: een wijziging wordt geweigerd zolang die inlezing loopt.
             </p>
           )}
           {query.data.missingRequiredNames.length > 0 && (

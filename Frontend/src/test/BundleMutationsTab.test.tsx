@@ -144,7 +144,7 @@ describe('BundleMutationsTab', () => {
     global.fetch = originalFetch;
   });
 
-  it('F8.1: laadt de mutatielijst van de bundel zonder lege filterparameters', async () => {
+  it('F8.1: laadt de wijzigingenlijst van de publicatie zonder lege filterparameters', async () => {
     renderTab(bundle());
     await screen.findByText('Wacht op goedkeuring', { selector: 'span' });
 
@@ -175,7 +175,7 @@ describe('BundleMutationsTab', () => {
     await screen.findByText('Wacht op goedkeuring', { selector: 'span' });
 
     fireEvent.change(screen.getByLabelText('Statusreden'), { target: { value: 'BULK_PRICE_INCIDENT' } });
-    fireEvent.change(screen.getByLabelText('Batch'), { target: { value: '77' } });
+    fireEvent.change(screen.getByLabelText('Inlezing'), { target: { value: '77' } });
     fireEvent.click(screen.getByRole('button', { name: 'Filteren' }));
 
     // De keuzelijst van de statusreden past meteen toe (een eerste verzoek zonder batch); "Filteren" voegt de batch toe.
@@ -202,29 +202,29 @@ describe('BundleMutationsTab', () => {
     await screen.findByText('Vastgelegd', { selector: 'span' });
 
     expect(screen.queryByRole('button', { name: /Toon de hele wijzigingsgroep/ })).not.toBeInTheDocument();
-    const approve = screen.getByRole('button', { name: /Goedkeuren mutatie 900/ });
+    const approve = screen.getByRole('button', { name: /Goedkeuren wijziging 900/ });
     expect(approve).toBeDisabled();
-    expect(approve.getAttribute('title')).toContain('geen inhoudelijke mutatie');
+    expect(approve.getAttribute('title')).toContain('geen inhoudelijke wijziging');
   });
 
-  it('F8.6: een BLOCKED-mutatie is niet beslisbaar, met een Nederlandse reden (zonder code)', async () => {
+  it('F8.6: een BLOCKED-wijziging is niet beslisbaar, met een Nederlandse reden (zonder code)', async () => {
     rows = [mutation({ id: 901, status: 'BLOCKED', statusReason: 'IDENTITY_INCIDENT' })];
     renderTab(bundle());
     await screen.findByText('Tegengehouden', { selector: 'span' });
 
-    const approve = screen.getByRole('button', { name: /Goedkeuren mutatie 901/ });
+    const approve = screen.getByRole('button', { name: /Goedkeuren wijziging 901/ });
     expect(approve).toBeDisabled();
     expect(approve.getAttribute('title')).toContain('herkenningsprobleem');
     expect(approve.getAttribute('title')).toContain('technische code: MUTATION_BLOCKED_BY_IDENTITY_INCIDENT');
   });
 
-  it('F8.7: een bevroren bundel biedt geen beslissing aan, met de reden erbij', async () => {
+  it('F8.7: een bevroren publicatie biedt geen beslissing aan, met de reden erbij', async () => {
     renderTab(bundle({ status: 'FROZEN', plannedCount: null, awaitingApprovalCount: null }));
     await screen.findByText('Wacht op goedkeuring', { selector: 'span' });
 
-    const approve = screen.getByRole('button', { name: /Goedkeuren mutatie 501/ });
+    const approve = screen.getByRole('button', { name: /Goedkeuren wijziging 501/ });
     expect(approve).toBeDisabled();
-    expect(approve.getAttribute('title')).toContain('de bundel is bevroren');
+    expect(approve.getAttribute('title')).toContain('de publicatie is bevroren');
     expect(approve.getAttribute('title')).toContain('technische code: BUNDLE_NOT_ASSEMBLING');
   });
 
@@ -232,7 +232,7 @@ describe('BundleMutationsTab', () => {
     decisionResponse = { mutation: mutation(), decision: null, idempotent: true };
     renderTab(bundle());
 
-    fireEvent.click(await screen.findByRole('button', { name: /Goedkeuren mutatie 501/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Goedkeuren wijziging 501/ }));
     const dialog = await screen.findByRole('dialog');
     // Goedkeuren zonder herziening: reden optioneel, bevestigen mag meteen.
     fireEvent.click(within(dialog).getByRole('button', { name: 'Goedkeuren' }));
@@ -258,7 +258,7 @@ describe('BundleMutationsTab', () => {
     ];
     renderTab(bundle());
 
-    fireEvent.click(await screen.findByRole('button', { name: /Goedkeuren mutatie 502/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Goedkeuren wijziging 502/ }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/herzien naar goedgekeurd/)).toBeInTheDocument();
     expect(within(dialog).getByText(/Eerdere Beslisser/)).toBeInTheDocument();
@@ -274,7 +274,7 @@ describe('BundleMutationsTab', () => {
     decisionResponse = { mutation: mutation({ status: 'REJECTED' }), decision: null, idempotent: false };
     renderTab(bundle());
 
-    fireEvent.click(await screen.findByRole('button', { name: /Afkeuren mutatie 501/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Afkeuren wijziging 501/ }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByRole('button', { name: 'Afkeuren' })).toBeDisabled();
 
@@ -304,7 +304,7 @@ describe('BundleMutationsTab', () => {
     }) as unknown as typeof fetch;
 
     renderTab(bundle());
-    fireEvent.click(await screen.findByRole('button', { name: /Goedkeuren mutatie 501/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Goedkeuren wijziging 501/ }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Goedkeuren' }));
 

@@ -141,16 +141,16 @@ function fillConfirmation(dialog: HTMLElement, typed: string = REFERENCE, reason
 }
 
 function confirmButton(dialog: HTMLElement): HTMLElement {
-  return within(dialog).getByRole('button', { name: 'Bundel bevriezen' });
+  return within(dialog).getByRole('button', { name: 'Publicatie bevriezen' });
 }
 
 /** Tien voorbeelden zoals `BundleFreezeService.describeInBundle` ze opbouwt, en de volledige 409-tekst. */
 const IN_BUNDLE_EXAMPLES = Array.from(
   { length: 10 },
-  (_, index) => `link 7 offer SUP${index}/GRP${index}/REF-${index} in 2 batches (e.g. ${100 + index} and ${200 + index})`,
+  (_, index) => `link 7 offer SUP${index}/GRP${index}/REF-${index} in 2 inlezingen (e.g. ${100 + index} and ${200 + index})`,
 );
 const OFFER_CONFLICT_MESSAGE =
-  'Bundle 42 contains the same offer in more than one batch, which would make the last import silently win: ' +
+  'Bundle 42 contains the same offer in more than one inlezing, which would make the last import silently win: ' +
   IN_BUNDLE_EXAMPLES.join(', ') +
   '. Reject one side before freezing';
 
@@ -188,7 +188,7 @@ describe('FreezeDialog (F10, §10.5)', () => {
 
     const dialog = await openFreezeDialog();
     const planned = await waitForPreflight(dialog);
-    expect(planned.textContent).toContain('1234 mutaties');
+    expect(planned.textContent).toContain('1234 wijzigingen');
     expect(planned.textContent).toContain('Gepland');
     expect(planned.textContent).not.toContain('PLANNED');
     expect(planned.textContent).toContain('uw naam');
@@ -215,7 +215,7 @@ describe('FreezeDialog (F10, §10.5)', () => {
     await waitForPreflight(dialog);
     const blockers = within(dialog).getByRole('list', { name: 'Blokkades' });
     expect(blockers.textContent).not.toContain('BUNDLE_HAS_UNDECIDED_MUTATIONS');
-    expect(blockers.textContent).toContain('3 mutaties');
+    expect(blockers.textContent).toContain('3 wijzigingen');
     expect(blockers.textContent).toContain('Wacht op goedkeuring');
     expect(blockers.textContent).not.toContain('AWAITING_APPROVAL');
     // De technische code blijft opvraagbaar onder "Technische details (voor support)" (V7).
@@ -232,7 +232,7 @@ describe('FreezeDialog (F10, §10.5)', () => {
   });
 
   it('F10.F3: de conflictvoorbeelden van de voorvlucht staan volledig in beeld en blokkeren', async () => {
-    const crossExample = 'link 7 offer SUP1/GRP1/REF-1 (batch 101 here, batch 301 in bundle 9)';
+    const crossExample = 'link 7 offer SUP1/GRP1/REF-1 (inlezing 101 here, inlezing 301 in bundle 9)';
     preflightResponse = () =>
       jsonResponse(
         preflight({
@@ -246,9 +246,9 @@ describe('FreezeDialog (F10, §10.5)', () => {
 
     const dialog = await openFreezeDialog();
     await waitForPreflight(dialog);
-    const inBundle = within(dialog).getByRole('list', { name: 'Conflicten binnen deze bundel' });
+    const inBundle = within(dialog).getByRole('list', { name: 'Conflicten binnen deze publicatie' });
     expect(within(inBundle).getAllByRole('listitem').map((item) => item.textContent)).toEqual(IN_BUNDLE_EXAMPLES);
-    const crossBundle = within(dialog).getByRole('list', { name: 'Conflicten met een andere bundel' });
+    const crossBundle = within(dialog).getByRole('list', { name: 'Conflicten met een andere publicatie' });
     expect(within(crossBundle).getByRole('listitem').textContent).toBe(crossExample);
 
     fillConfirmation(dialog);
@@ -301,7 +301,7 @@ describe('FreezeDialog (F10, §10.5)', () => {
       expect(detail.textContent).toContain(example);
     }
     // Met de uitleg uit §10.5 en altijd de technische regel met de stabiele code.
-    expect(within(dialog).getByText('Keur er één af, of publiceer/annuleer eerst de andere bundel.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Keur er één af, of publiceer/annuleer eerst de andere publicatie.')).toBeInTheDocument();
     expect(within(dialog).getByText('BUNDLE_OFFER_CONFLICT · HTTP 409 · /bundles/42/freeze')).toBeInTheDocument();
 
     // Geen succes, geen herhaling van het bevriezen; wel een verse voorvlucht (een lezing).
@@ -315,8 +315,8 @@ describe('FreezeDialog (F10, §10.5)', () => {
   it('F10.F7: de regelafbrekingen van een conflictmelding blijven behouden (OFFER_ALREADY_IN_ANOTHER_BUNDLE)', async () => {
     const message =
       'Bundle 42 contains offers that are also publishable in another open or frozen bundle:\n' +
-      'link 7 offer SUP1/GRP1/REF-1 (batch 101 here, batch 301 in bundle 9)\n' +
-      'link 7 offer SUP2/GRP2/REF-2 (batch 102 here, batch 302 in bundle 9)\n' +
+      'link 7 offer SUP1/GRP1/REF-1 (inlezing 101 here, inlezing 301 in bundle 9)\n' +
+      'link 7 offer SUP2/GRP2/REF-2 (inlezing 102 here, inlezing 302 in bundle 9)\n' +
       'Reject one side, or publish or cancel the other bundle first';
     freezeResponse = () => jsonResponse({ error: message, code: 'OFFER_ALREADY_IN_ANOTHER_BUNDLE' }, 409);
     renderOverview(bundle());
@@ -330,7 +330,7 @@ describe('FreezeDialog (F10, §10.5)', () => {
     expect(within(dialog).getByText(/OFFER_ALREADY_IN_ANOTHER_BUNDLE · HTTP 409/)).toBeInTheDocument();
   });
 
-  it('F10.F8: een andere 409 (bundel intussen bevroren) geeft geen succesmelding', async () => {
+  it('F10.F8: een andere 409 (publicatie intussen bevroren) geeft geen succesmelding', async () => {
     freezeResponse = () =>
       jsonResponse(
         { error: 'Bundle 42 is FROZEN; only an ASSEMBLING bundle can be frozen', code: 'BUNDLE_NOT_ASSEMBLING' },
@@ -342,7 +342,7 @@ describe('FreezeDialog (F10, §10.5)', () => {
     fillConfirmation(dialog);
     fireEvent.click(confirmButton(dialog));
 
-    expect(await within(dialog).findByText('Bundel is niet meer in opbouw')).toBeInTheDocument();
+    expect(await within(dialog).findByText('Publicatie is niet meer in opbouw')).toBeInTheDocument();
     expect(within(dialog).getByText(/BUNDLE_NOT_ASSEMBLING · HTTP 409/)).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(reloadBundle).not.toHaveBeenCalled();
@@ -364,7 +364,7 @@ describe('FreezeDialog (F10, §10.5)', () => {
     expect(posts()).toHaveLength(1);
   });
 
-  it('F10.F10: happy path — verstuurt actor en reden, meldt het resultaat van de server en herlaadt de bundel', async () => {
+  it('F10.F10: happy path — verstuurt actor en reden, meldt het resultaat van de server en herlaadt de publicatie', async () => {
     const { reloadBundle } = renderOverview(bundle());
     const dialog = await openFreezeDialog();
     await waitForPreflight(dialog);
@@ -378,7 +378,7 @@ describe('FreezeDialog (F10, §10.5)', () => {
     expect(JSON.parse(String(post.body))).toEqual({ frozenBy: 'An Beslisser', reason: 'Klaar voor publicatie' });
 
     const notice = screen.getByRole('status').textContent ?? '';
-    expect(notice).toContain(`Bundel ${REFERENCE} is bevroren door An Beslisser`);
+    expect(notice).toContain(`Publicatie ${REFERENCE} is bevroren door An Beslisser`);
     expect(notice).toContain(`vingerafdruk ${HASH.slice(0, 16)}`);
     expect(notice).not.toContain('AUTO_APPROVE_PLANNED');
     expect(reloadBundle).toHaveBeenCalledTimes(1);
@@ -416,16 +416,16 @@ describe('FreezeDialog (F10, §10.5)', () => {
     expect(fetchCalls()).toHaveLength(0);
   });
 
-  it('F10.F13: een bevroren bundel biedt bevriezen niet aan (uitgeschakeld mét reden), en laadt geen voorvlucht', async () => {
+  it('F10.F13: een bevroren publicatie biedt bevriezen niet aan (uitgeschakeld mét reden), en laadt geen voorvlucht', async () => {
     renderOverview(frozenBundle());
 
     const button = await screen.findByRole('button', { name: 'Bevriezen' });
     expect(button).toBeDisabled();
-    expect(button.getAttribute('title')).toContain('de bundel is bevroren');
+    expect(button.getAttribute('title')).toContain('de publicatie is bevroren');
     // De code blijft opvraagbaar in de tooltip, maar staat niet in de zichtbare tekst.
     expect(button.getAttribute('title')).toContain('technische code: BUNDLE_NOT_ASSEMBLING');
     expect(screen.queryByText(/BUNDLE_NOT_ASSEMBLING/)).not.toBeInTheDocument();
-    expect(screen.getByText('Kan niet: de bundel is bevroren.')).toBeInTheDocument();
+    expect(screen.getByText('Kan niet: de publicatie is bevroren.')).toBeInTheDocument();
 
     fireEvent.click(button);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

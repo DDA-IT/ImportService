@@ -10,7 +10,7 @@ import { NotFoundPage } from '../routes';
 afterEach(() => cleanup());
 
 describe('NotFoundPage', () => {
-  it('toont de melding en een link naar de werkvoorraad, zonder inline styles', () => {
+  it('toont de melding en een link naar de inlezingen, zonder inline styles', () => {
     const { container } = render(
       <MemoryRouter>
         <NotFoundPage />

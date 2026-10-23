@@ -62,9 +62,9 @@ export function BundleOverviewTab() {
   const undecided = isAssembling ? bundle.awaitingApprovalCount : null;
   const freezeHint =
     undecided !== null && undecided > 0
-      ? `Er ${undecided === 1 ? 'wacht' : 'wachten'} nog ${undecided} ${undecided === 1 ? 'mutatie' : 'mutaties'} ` +
+      ? `Er ${undecided === 1 ? 'wacht' : 'wachten'} nog ${undecided} ${undecided === 1 ? 'wijziging' : 'wijzigingen'} ` +
         'op een beslissing; de voorcontrole zal bevriezen blokkeren.'
-      : `Keurt de resterende mutaties met status "${term('mutationStatus', 'PLANNED').label}" goed op uw naam en legt de bundel vast. Eerst volgt een voorcontrole.`;
+      : `Keurt de resterende wijzigingen met status "${term('mutationStatus', 'PLANNED').label}" goed op uw naam en legt de publicatie vast. Eerst volgt een voorcontrole.`;
 
   function openDialogFor(dialog: Exclude<OpenDialog, null>) {
     setNotice(null);
@@ -111,17 +111,17 @@ export function BundleOverviewTab() {
     <div className={styles.tab}>
       <WhatIsThis>
         <p>
-          Dit is de samenvatting van de bundel: hoeveel leveringen (batches) en wijzigingen (mutaties) erin zitten en in
+          Dit is de samenvatting van de publicatie: hoeveel leveringen (inlezingen) en wijzigingen erin zitten en in
           welke toestand ze staan.
         </p>
         <p>
-          Bevriezen sluit de bundel af. De mutaties die nog gepland staan, worden in één keer goedgekeurd op uw naam,
-          de getallen en de vingerafdruk van de bundel liggen vast, en er kan niets meer bij of af. Een bevroren bundel
+          Bevriezen sluit de publicatie af. De wijzigingen die nog gepland staan, worden in één keer goedgekeurd op uw naam,
+          de getallen en de vingerafdruk van de publicatie liggen vast, en er kan niets meer bij of af. Een bevroren publicatie
           kan alleen nog geannuleerd worden.
         </p>
         <p>
-          Annuleren laat de mutaties die nog niet klaar zijn vervallen en geeft de batches weer vrij voor een andere
-          bundel.
+          Annuleren laat de wijzigingen die nog niet klaar zijn vervallen en geeft de inlezingen weer vrij voor een andere
+          publicatie.
         </p>
       </WhatIsThis>
 
@@ -162,13 +162,13 @@ export function BundleOverviewTab() {
         {isAssembling && bundle.staleMutationCount !== null && bundle.staleMutationCount > 0 && (
           <p className={styles.staleWarning} role="alert">
             De bekende artikelgegevens zijn veranderd sinds de controle van de levering ({bundle.staleMutationCount}{' '}
-            mutatie(s)); bevriezen zal geweigerd worden. Controleer de levering opnieuw.
+            wijziging(s)); bevriezen zal geweigerd worden. Controleer de levering opnieuw.
           </p>
         )}
 
         {bundle.contentHash !== null && (
           <p className={styles.hash}>
-            Vingerafdruk van de bundel: <code>{bundle.contentHash.slice(0, 16)}…</code>{' '}
+            Vingerafdruk van de publicatie: <code>{bundle.contentHash.slice(0, 16)}…</code>{' '}
             <button type="button" className={`${button.secondary} ${button.small}`} onClick={handleCopyHash}>
               {copied ? 'Gekopieerd' : 'Kopieer de volledige vingerafdruk'}
             </button>
@@ -233,7 +233,7 @@ export function BundleOverviewTab() {
             </button>
             <p className={styles.actionReason}>
               {cancelGate.allowed
-                ? 'Laat de niet-afgeronde mutaties definitief vervallen en geeft de batches vrij.'
+                ? 'Laat de niet-afgeronde wijzigingen definitief vervallen en geeft de inlezingen vrij.'
                 : cancelGate.reason}
             </p>
           </div>

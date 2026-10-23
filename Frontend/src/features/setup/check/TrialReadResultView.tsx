@@ -139,8 +139,8 @@ function ConfigProblems({ result }: { result: TrialReadResult }) {
       <p>
         <strong>
           {result.configProblems.length === 1
-            ? 'Probleem in de beschrijving van het bestand.'
-            : `${result.configProblems.length} problemen in de beschrijving van het bestand.`}
+            ? 'Probleem in de importdefinitie.'
+            : `${result.configProblems.length} problemen in de importdefinitie.`}
         </strong>
       </p>
       <ul className={styles.list} data-testid="trial-config-problem-list">
@@ -216,7 +216,7 @@ function CharsetHint({ counters }: { counters: TrialCounters }) {
   return (
     <p className={styles.warning} role="note" data-testid="trial-charset-hint">
       {count} {count === 1 ? 'regel bevat' : 'regels bevatten'} tekens die niet gelezen konden worden — kies mogelijk
-      een andere <Term domain="revisionField" code="charset" /> in de beschrijving van het bestand.
+      een andere <Term domain="revisionField" code="charset" /> in de importdefinitie.
     </p>
   );
 }
@@ -227,7 +227,7 @@ function Columns({ header }: { header: TrialHeader | null }) {
       <>
         <h3 className={styles.subTitle}>Kolommen</h3>
         <p className={styles.muted}>
-          De kolommen konden niet bekeken worden, omdat de beschrijving van het bestand een fout bevat.
+          De kolommen konden niet bekeken worden, omdat de importdefinitie een fout bevat.
         </p>
       </>
     );

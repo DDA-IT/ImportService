@@ -69,7 +69,7 @@ const EVENTS = [
     eventKind: 'CREATED',
     previousStatus: null,
     newStatus: 'AWAITING_REVIEW',
-    reason: 'Eerste vaststelling in batch 10',
+    reason: 'Eerste vaststelling in inlezing 10',
     source: 'SYSTEM',
     changedBy: null,
     changedBySubject: null,
@@ -190,11 +190,11 @@ describe('IssueCaseDetailPage', () => {
     expect(within(rows[2]!).getByText('Een mens')).toBeInTheDocument();
   });
 
-  it('S2-F1.9: onbekend geval toont ISSUE_CASE_NOT_FOUND leesbaar', async () => {
+  it('S2-F1.9: onbekende afwijking toont ISSUE_CASE_NOT_FOUND leesbaar', async () => {
     stubFetch({ caseResponses: [json({ code: 'ISSUE_CASE_NOT_FOUND', error: 'Issue case 999 not found' }, 404)] });
     renderAt('/issue-cases/999');
 
-    expect(await screen.findByText('Behandelgeval niet gevonden')).toBeInTheDocument();
+    expect(await screen.findByText('Afwijking niet gevonden')).toBeInTheDocument();
     expect(screen.getByText(/ISSUE_CASE_NOT_FOUND · HTTP 404/)).toBeInTheDocument();
   });
 

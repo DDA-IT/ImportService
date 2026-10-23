@@ -168,7 +168,7 @@ function TemplateMaterialise({
   if (usable.length === 0) {
     return (
       <p className={styles.note} role="status" data-testid="wizard-template-no-revision">
-        Dit sjabloon heeft nog geen actieve versie en kan daarom nog niet gebruikt worden.
+        Deze importdefinitie heeft nog geen actieve versie en kan daarom nog niet gebruikt worden.
       </p>
     );
   }
@@ -182,7 +182,7 @@ function TemplateMaterialise({
   return (
     <div data-testid="wizard-template-materialise">
       <Field
-        label="Versie van het sjabloon"
+        label="Versie van de importdefinitie"
         htmlFor="wizard-template-revision"
         required
         hint="Standaard de actieve versie. Een oudere (vervangen) versie kan, maar kies die bewust."
@@ -234,13 +234,13 @@ export function TemplateStep({
   return (
     <section className={styles.form} aria-labelledby="wizard-step-2-title" data-testid="wizard-template-step">
       <h2 id="wizard-step-2-title" className={styles.stepTitle}>
-        Stap 2 — Startpunt: vanuit een sjabloon
+        Stap 2 — Startpunt: vanuit een importdefinitie
       </h2>
       <p className={styles.note}>
-        Een sjabloon is een herbruikbare beschrijving van een bestand. Hieruit maakt u in één keer de beschrijving van
-        het bestand (als conceptversie) en de koppeling. Een taak volgt in de volgende stap. Er worden enkel sjablonen
-        van {organisation.name} getoond: een sjabloon kan alleen gebruikt worden voor de organisatie die het zelf
-        aanlevert.
+        Een herbruikbare importdefinitie is een model voor een bestand. Hieruit maakt u in één keer een eigen importdefinitie
+        (als conceptversie) en de koppeling. Een taak volgt in de volgende stap. Er worden enkel herbruikbare importdefinities
+        van {organisation.name} getoond: een herbruikbare importdefinitie kan alleen gebruikt worden voor de organisatie die
+        het bestand zelf aanlevert.
       </p>
 
       {templates.error !== null && <ErrorBanner error={templates.error} />}
@@ -248,7 +248,7 @@ export function TemplateStep({
 
       {templates.data !== null && rows.length === 0 && (
         <p className={styles.note} role="status" data-testid="wizard-no-templates">
-          Er is geen sjabloon voor {organisation.code} — {organisation.name}. Een sjabloon van een andere organisatie
+          Er is geen importdefinitie voor {organisation.code} — {organisation.name}. Een importdefinitie van een andere organisatie
           kan hier niet gebruikt worden. Kies &laquo;Zelf beschrijven&raquo; om het bestand zelf te beschrijven.
         </p>
       )}
@@ -265,7 +265,7 @@ export function TemplateStep({
         )}
 
       {rows.length > 0 && (
-        <Field label="Sjabloon" htmlFor="wizard-template-select" required>
+        <Field label="Importdefinitie" htmlFor="wizard-template-select" required>
           <select
             id="wizard-template-select"
             className={styles.select}

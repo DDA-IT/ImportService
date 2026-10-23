@@ -318,7 +318,7 @@ export function LinkStep({ organisation, definition, onLink }: LinkStepProps) {
             onLink(toWizardLink(candidate), `U gaat verder met de bestaande koppeling ${candidate.code}.`);
           }}
         >
-          Deze beschrijving heeft al een koppeling met code <strong>{candidate.code}</strong>: {candidate.name}{' '}
+          Deze importdefinitie heeft al een koppeling met code <strong>{candidate.code}</strong>: {candidate.name}{' '}
           (leverancier {candidate.supplierCode}, bibliotheek {candidate.libraryCode}). Kiest u deze, dan wordt er
           niets nieuws aangemaakt.
         </ExistingChoice>

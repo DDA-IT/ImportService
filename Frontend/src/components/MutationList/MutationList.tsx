@@ -54,7 +54,7 @@ export function MutationList({
   source,
   rowActions,
   initialQuery,
-  emptyMessage = 'Geen mutaties gevonden.',
+  emptyMessage = 'Geen wijzigingen gevonden.',
   onAfterAction,
   toolbar,
 }: MutationListProps) {
@@ -128,8 +128,8 @@ export function MutationList({
 
   function buildColumns(): readonly DataTableColumn<MutationRow>[] {
     const base: DataTableColumn<MutationRow>[] = [
-      { key: 'id', header: 'Mutatie', render: (row) => row.id, align: 'right' },
-      { key: 'batchId', header: 'Batch', render: (row) => row.batchId, align: 'right' },
+      { key: 'id', header: 'Wijziging', render: (row) => row.id, align: 'right' },
+      { key: 'batchId', header: 'Inlezing', render: (row) => row.batchId, align: 'right' },
       { key: 'actionType', header: 'Soort', render: (row) => <Term domain="mutationAction" code={row.actionType} /> },
       {
         key: 'status',
@@ -272,7 +272,7 @@ export function MutationList({
                         ? gate.reason
                         : `${gate.reason} (technische code: ${gate.code})`
                   }
-                  aria-label={gate.allowed ? `${action.label} mutatie ${row.id}` : `${action.label} mutatie ${row.id}: ${gate.reason}`}
+                  aria-label={gate.allowed ? `${action.label} wijziging ${row.id}` : `${action.label} wijziging ${row.id}: ${gate.reason}`}
                   onClick={() => {
                     runner.reset();
                     setPendingAction({ action, row });
@@ -338,7 +338,7 @@ export function MutationList({
 
         {supports('batchId') && (
           <label className={styles.filter} htmlFor="mutation-filter-batch-id">
-            Batch
+            Inlezing
             <input
               id="mutation-filter-batch-id"
               type="text"
@@ -354,7 +354,7 @@ export function MutationList({
             Statusreden
             <select
               id="mutation-filter-status-reason"
-              title="Toon enkel de mutaties met deze reden voor hun status."
+              title="Toon enkel de wijzigingen met deze reden voor hun status."
               value={draft.statusReason}
               onChange={(event) => applyFilters({ ...draft, statusReason: event.target.value })}
             >
@@ -399,14 +399,14 @@ export function MutationList({
 
       {batchIdInvalid && (
         <p className={styles.notice}>
-          "{applied.batchId}" is geen geldig batchnummer; er wordt niet op batch gefilterd.
+          "{applied.batchId}" is geen geldig inlezingsnummer; er wordt niet op inlezing gefilterd.
         </p>
       )}
       {query.statusReason !== undefined && (
         <p className={styles.notice}>
           Gefilterd op de reden &quot;
           <Term domain="mutationStatusReason" code={query.statusReason} unknownLabel="Andere reden" />
-          &quot;; een reden die bij geen enkele mutatie hoort, geeft een lege lijst.
+          &quot;; een reden die bij geen enkele wijziging hoort, geeft een lege lijst.
         </p>
       )}
       {query.identityHash !== undefined && (
@@ -451,7 +451,7 @@ export function MutationList({
           pendingAction === null
             ? ''
             : (pendingAction.action.confirmTitle?.(pendingAction.row) ??
-              `${pendingAction.action.label} — mutatie ${pendingAction.row.id}`)
+              `${pendingAction.action.label} — wijziging ${pendingAction.row.id}`)
         }
         body={pendingAction === null ? undefined : pendingAction.action.confirmBody?.(pendingAction.row)}
         reasonRequirement={pendingRequirement}

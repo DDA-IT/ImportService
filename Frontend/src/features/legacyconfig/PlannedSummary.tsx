@@ -38,13 +38,13 @@ export function PlannedSummary({ report }: { report: LegacyConfigReport }) {
         </Row>
       )}
       {planned.template !== undefined && planned.template !== null && (
-        <Row label="Sjabloon">
+        <Row label="Importdefinitie">
           <Action code={planned.template.action} />
           {planned.template.action !== 'NONE' && <span>{planned.template.code}</span>}
         </Row>
       )}
       {planned.definition !== null && (
-        <Row label="Gedeelde beschrijving van het bestand">
+        <Row label="Gedeelde importdefinitie">
           <Action code={planned.definition.action} />
           <span>{planned.definition.code}</span>
           <span>
@@ -55,14 +55,14 @@ export function PlannedSummary({ report }: { report: LegacyConfigReport }) {
       {planned.detach !== undefined && planned.detach !== null && (
         <Row label="Loskoppelen">
           <span data-testid="legacy-detach">
-            De interface verlaat de gedeelde beschrijving <strong>{planned.detach.fromDefinitionCode}</strong> en krijgt een
-            eigen beschrijving <strong>{planned.detach.toDefinitionCode}</strong>. De andere interfaces blijven de gedeelde
-            beschrijving volgen.
+            De interface verlaat de gedeelde importdefinitie <strong>{planned.detach.fromDefinitionCode}</strong> en krijgt een
+            eigen importdefinitie <strong>{planned.detach.toDefinitionCode}</strong>. De andere interfaces blijven de gedeelde
+            importdefinitie volgen.
           </span>
           <span>
             {planned.detach.carriesActive
-              ? 'De huidige actieve versie van de gedeelde beschrijving wordt meteen als eigen versie actief; de nieuwe inhoud van legacy wordt een conceptversie.'
-              : 'De gedeelde beschrijving heeft geen actieve versie; de eigen beschrijving start met een conceptversie met de nieuwe inhoud.'}
+              ? 'De huidige actieve versie van de gedeelde importdefinitie wordt meteen als eigen versie actief; de nieuwe inhoud van legacy wordt een conceptversie.'
+              : 'De gedeelde importdefinitie heeft geen actieve versie; de eigen importdefinitie start met een conceptversie met de nieuwe inhoud.'}
           </span>
         </Row>
       )}

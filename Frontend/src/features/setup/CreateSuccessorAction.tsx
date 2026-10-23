@@ -94,7 +94,7 @@ export function CreateSuccessorAction({ revision, onCreated }: CreateSuccessorAc
           body={
             <div className={styles.dialogBody}>
               <p>
-                Er komt een nieuw <strong>concept</strong> bij deze beschrijving van het bestand, als exacte
+                Er komt een nieuw <strong>concept</strong> bij deze importdefinitie, als exacte
                 kopie van versie {revision.revisionNumber} (status &laquo;{term('revisionStatus', revision.status).label}
                 &raquo;): alle instellingen, extra velden, filters, kritiek-overrules en gedeclareerde invulpunten gaan
                 ongewijzigd mee.
@@ -104,7 +104,7 @@ export function CreateSuccessorAction({ revision, onCreated }: CreateSuccessorAc
                 Ook de herkenningsversie blijft staan. Wat u daarna in het concept wijzigt, bepaalt het gevolg.
               </p>
               <p className={styles.muted}>
-                Per beschrijving van het bestand mag er hoogstens één concept open staan; staat er al één, dan
+                Per importdefinitie mag er hoogstens één concept open staan; staat er al één, dan
                 weigert de server deze aanvraag en wordt er niets aangemaakt.
               </p>
             </div>

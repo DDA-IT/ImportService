@@ -85,7 +85,7 @@ export function whatToDo(check: ReadinessCheck, context: ChecklistContext): Acti
         'Een bestand opladen kan alleen op een handmatige taak zonder ophaalinstelling. Voeg zo een taak toe.',
       );
     case 'INFO_NO_DRAFT_REVISION':
-      return { text: 'Maak bij Inrichting een nieuwe versie van de beschrijving van het bestand.', to: '/setup', label: 'Naar Inrichting' };
+      return { text: 'Maak bij Inrichting een nieuwe versie van de importdefinitie.', to: '/setup', label: 'Naar Inrichting' };
     case 'INFO_LIBRARY_NOT_VERIFIED':
       return { text: 'Kijk zelf na of de bibliotheekcode in Prodis bestaat.' };
     case 'INFO_LINK_INACTIVE':
@@ -98,7 +98,7 @@ export function whatToDo(check: ReadinessCheck, context: ChecklistContext): Acti
 /** Een fout in de beschrijving: een concept past u zelf aan, een versie in gebruik vraagt een nieuwe versie. */
 function revisionAction(check: ReadinessCheck, context: ChecklistContext): Action {
   if (check.subject.type !== 'REVISION') {
-    return { text: 'Pas de beschrijving van het bestand aan bij Inrichting.', to: '/setup', label: 'Naar Inrichting' };
+    return { text: 'Pas de importdefinitie aan bij Inrichting.', to: '/setup', label: 'Naar Inrichting' };
   }
   const revision = context.revisions.find((row) => row.id === check.subject.id);
   const to = revisionDetailHref(context.definitionId, check.subject.id);

@@ -59,19 +59,19 @@ function AcceptBaselineDialog({
       return;
     }
     onDone(
-      `Batch ${batchId} is aanvaard als nulmeting door ${result.acceptedBy}; ` +
-        `${result.skippedMutationCount} mutaties zijn overgeslagen (er is niets gepubliceerd).`,
+      `Inlezing ${batchId} is aanvaard als nulmeting door ${result.acceptedBy}; ` +
+        `${result.skippedMutationCount} wijzigingen zijn overgeslagen (er is niets gepubliceerd).`,
     );
   }
 
   return (
     <ConfirmDialog
       open
-      title={`Batch ${batchId} aanvaarden als nulmeting`}
+      title={`Inlezing ${batchId} aanvaarden als nulmeting`}
       body={
         <p>
-          De batch wordt de nulmeting van de lokale bronstaat. Er wordt niets gepubliceerd. Dit kan één keer
-          per batch en sluit opname in een bundel voorgoed uit.
+          De inlezing wordt de nulmeting van de lokale bronstaat. Er wordt niets gepubliceerd. Dit kan één keer
+          per inlezing en sluit opname in een publicatie voorgoed uit.
         </p>
       }
       reasonRequirement="required"
@@ -112,32 +112,32 @@ function AddToBundleDialog({
     if (result === undefined) {
       return;
     }
-    onDone(`Batch ${batchId} is opgenomen in bundel ${selected.bundleReference}.`);
+    onDone(`Inlezing ${batchId} is opgenomen in publicatie ${selected.bundleReference}.`);
   }
 
   return (
     <ConfirmDialog
       open
-      title={`Batch ${batchId} opnemen in een bundel`}
+      title={`Inlezing ${batchId} opnemen in een publicatie`}
       body={
         <div>
           <p>
-            Opname in een bundel sluit het aanvaarden als nulmeting voor deze batch uit, tot de bundel geannuleerd
+            Opname in een publicatie sluit het aanvaarden als nulmeting voor deze inlezing uit, tot de publicatie geannuleerd
             wordt.
           </p>
-          {bundles.loading && <p>Bundels worden geladen…</p>}
+          {bundles.loading && <p>Publicaties worden geladen…</p>}
           {!bundles.loading && bundles.error !== null && <ErrorBanner error={bundles.error} />}
           {!bundles.loading && bundles.error === null && options.length === 0 && (
-            <p>Er is geen bundel in opbouw. Maak eerst een bundel aan.</p>
+            <p>Er is geen publicatie in opbouw. Maak eerst een publicatie aan.</p>
           )}
           {options.length > 0 && (
             <label>
-              Bundel{' '}
+              Publicatie{' '}
               <select
                 value={bundleId ?? ''}
                 onChange={(event) => setBundleId(event.target.value === '' ? null : Number(event.target.value))}
               >
-                <option value="">— kies een bundel —</option>
+                <option value="">— kies een publicatie —</option>
                 {options.map((bundle) => (
                   <option key={bundle.id} value={bundle.id}>
                     {bundle.bundleReference}
@@ -150,10 +150,10 @@ function AddToBundleDialog({
       }
       reasonRequirement="none"
       typedConfirmationText={selected?.bundleReference}
-      confirmLabel="Opnemen in bundel"
+      confirmLabel="Opnemen in publicatie"
       pending={runner.pending}
       error={runner.error !== null ? <ErrorBanner error={runner.error} /> : undefined}
-      confirmBlockedReason={selected === null ? 'Kies eerst een bundel in opbouw.' : null}
+      confirmBlockedReason={selected === null ? 'Kies eerst een publicatie in opbouw.' : null}
       onConfirm={handleConfirm}
       onCancel={onClose}
     />
@@ -201,7 +201,7 @@ function ContinueSection({
       setConfirming(false);
       onDone(
         <>
-          Batch {batchId} is hervat; nieuwe status: <Term domain="batchStatus" code={result.status} />.
+          Inlezing {batchId} is hervat; nieuwe status: <Term domain="batchStatus" code={result.status} />.
         </>,
       );
     } finally {
@@ -214,21 +214,21 @@ function ContinueSection({
   let buttonTitle: string | undefined;
 
   if (isProcessing) {
-    titleText = 'Deze batch wordt nog verwerkt';
+    titleText = 'Deze inlezing wordt nog verwerkt';
     explanationText = 'De controle loopt nog. Hervatten kan pas als ze stopt; vernieuw de pagina later.';
-    buttonTitle = 'De batch wordt nog verwerkt';
+    buttonTitle = 'De inlezing wordt nog verwerkt';
   } else if (processingActive === false) {
-    titleText = 'Deze batch is onderbroken';
+    titleText = 'Deze inlezing is onderbroken';
     explanationText = (
       <>
-        De batch heeft de status <Term domain="batchStatus" code="MUTATING" />: de controle stopte halverwege het
+        De inlezing heeft de status <Term domain="batchStatus" code="MUTATING" />: de controle stopte halverwege het
         bepalen van de wijzigingen. Hervatten gaat verder waar ze stopte.
       </>
     );
     buttonTitle = manageGate.allowed ? undefined : manageGate.reason;
   } else {
     // processingActive === undefined (oudere server)
-    titleText = 'Deze batch is onderbroken';
+    titleText = 'Deze inlezing is onderbroken';
     explanationText = 'De controle is niet afgerond. Loopt ze nog, dan weigert de server het hervatten.';
     buttonTitle = manageGate.allowed ? undefined : manageGate.reason;
   }
@@ -247,7 +247,7 @@ function ContinueSection({
               title={buttonTitle}
               onClick={() => setConfirming(true)}
             >
-              Batch hervatten
+              Inlezing hervatten
             </button>
           </div>
           {!manageGate.allowed && <p data-testid="permission-reason-manage">{manageGate.reason}</p>}
@@ -255,7 +255,7 @@ function ContinueSection({
       ) : (
         <div role="group" aria-label="Hervatten bevestigen">
           <p>
-            <strong>Let op:</strong> deze actie wordt niet op naam vastgelegd. Noteer zelf wie de batch hervatte
+            <strong>Let op:</strong> deze actie wordt niet op naam vastgelegd. Noteer zelf wie de inlezing hervatte
             als dat nodig is.
           </p>
           {runner.error !== null && <ErrorBanner error={runner.error} />}
@@ -293,11 +293,11 @@ export function BatchActions({ batch, onChanged }: Props) {
       {notice !== null && <p role="status">{notice}</p>}
       {batch.status === 'SCREENED' && (
         <>
-          <h2 className={styles.title}>Hoe verder met deze batch?</h2>
+          <h2 className={styles.title}>Hoe verder met deze inlezing?</h2>
           <p>
-            Kies één van twee routes; ze sluiten elkaar per batch uit. Aanvaarden als nulmeting legt de
-            huidige stand van de artikelen vast als vertrekpunt, zonder publicatie. Opname in een bundel bereidt
-            publicatie voor. Is de batch al lid van een bundel, dan kan ze niet meer als nulmeting aanvaard worden.
+            Kies één van twee routes; ze sluiten elkaar per inlezing uit. Aanvaarden als nulmeting legt de
+            huidige stand van de artikelen vast als vertrekpunt, zonder publicatie. Opname in een publicatie bereidt het
+            publiceren voor. Is de inlezing al lid van een publicatie, dan kan ze niet meer als nulmeting aanvaard worden.
           </p>
           <div className={styles.buttons}>
             <button
@@ -316,7 +316,7 @@ export function BatchActions({ batch, onChanged }: Props) {
               title={manageGate.allowed ? undefined : manageGate.reason}
               onClick={() => setDialog('bundle')}
             >
-              Opnemen in bundel
+              Opnemen in publicatie
             </button>
           </div>
           {!approveGate.allowed && <p data-testid="permission-reason-approve">{approveGate.reason}</p>}

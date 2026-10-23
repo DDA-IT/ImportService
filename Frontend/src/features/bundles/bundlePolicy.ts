@@ -32,7 +32,7 @@ export function isReadOnlyBundleStatus(status: PublicationBundleStatus): boolean
 }
 
 function readOnlyReason(status: PublicationBundleStatus): string {
-  return `Deze bundel staat in een status die deze versie van het scherm niet bedient (${term('bundleStatus', status).label}).`;
+  return `Deze publicatie staat in een status die deze versie van het scherm niet bedient (${term('bundleStatus', status).label}).`;
 }
 
 /**
@@ -69,7 +69,7 @@ export function bundleActionGate(status: PublicationBundleStatus, action: Bundle
     if (status === 'ASSEMBLING' || status === 'FROZEN') {
       return ALLOWED;
     }
-    return denied('Kan niet: deze bundel is al geannuleerd.', 'BUNDLE_NOT_CANCELLABLE');
+    return denied('Kan niet: deze publicatie is al geannuleerd.', 'BUNDLE_NOT_CANCELLABLE');
   }
 
   // Alle overige acties (batches toevoegen/verwijderen, mutatie (her)beslissen, groepsactie, bevriezen)
@@ -78,10 +78,10 @@ export function bundleActionGate(status: PublicationBundleStatus, action: Bundle
     return ALLOWED;
   }
   if (status === 'FROZEN') {
-    return denied('Kan niet: de bundel is bevroren.', 'BUNDLE_NOT_ASSEMBLING');
+    return denied('Kan niet: de publicatie is bevroren.', 'BUNDLE_NOT_ASSEMBLING');
   }
   // CANCELLED
-  return denied('Kan niet: de bundel is geannuleerd.', 'BUNDLE_NOT_ASSEMBLING');
+  return denied('Kan niet: de publicatie is geannuleerd.', 'BUNDLE_NOT_ASSEMBLING');
 }
 
 /** Reikwijdte van een mutatiebeslissing: een herziening (de mutatie draagt al een beslissing) mag
@@ -127,7 +127,7 @@ export function mutationDecisionGate(
   }
 
   if (actionType === 'IMPORT_MARKER') {
-    return denied('Dit is geen inhoudelijke mutatie; hier is niets te beslissen.');
+    return denied('Dit is geen inhoudelijke wijziging; hier is niets te beslissen.');
   }
 
   // actionType is nu CREATE of UPDATE.
@@ -143,7 +143,7 @@ export function mutationDecisionGate(
   }
 
   // Overige statussen: EXPIRED, SKIPPED, RECORDED, IN_PROGRESS, PUBLISHED, TECHNICALLY_FAILED.
-  return denied('Deze mutatie staat in een status waarin goedkeuren of afkeuren niet mogelijk is.', 'MUTATION_NOT_DECIDABLE');
+  return denied('Deze wijziging staat in een status waarin goedkeuren of afkeuren niet mogelijk is.', 'MUTATION_NOT_DECIDABLE');
 }
 
 /** De twee statussen die een groepsactie raakt — spiegel van `BundleDecisionService.toSelection`. */
@@ -174,7 +174,7 @@ export function groupDecisionGate(
 
   if (isEmptyDecisionFilter(filter)) {
     return denied(
-      'Zet eerst minstens één filter in de lijst; een groepsactie over de hele bundel bestaat niet.',
+      'Zet eerst minstens één filter in de lijst; een groepsactie over de hele publicatie bestaat niet.',
       'DECISION_FILTER_REQUIRED',
     );
   }
@@ -182,7 +182,7 @@ export function groupDecisionGate(
   if (filter.status !== undefined && !GROUP_DECIDABLE_STATUSES.includes(filter.status)) {
     return denied(
       `De lijst is gefilterd op status "${term('mutationStatus', filter.status).label}"; een groepsactie raakt alleen ` +
-        `mutaties met status "${term('mutationStatus', 'PLANNED').label}" of "${term('mutationStatus', 'AWAITING_APPROVAL').label}". ` +
+        `wijzigingen met status "${term('mutationStatus', 'PLANNED').label}" of "${term('mutationStatus', 'AWAITING_APPROVAL').label}". ` +
         'Pas de statusfilter aan.',
     );
   }
@@ -195,18 +195,18 @@ export function groupDecisionGate(
   }
 
   if (listedCount === null) {
-    return denied('Het aantal mutaties voor deze filter is nog niet gekend (de lijst laadt nog, of het laden mislukte).');
+    return denied('Het aantal wijzigingen voor deze filter is nog niet gekend (de lijst laadt nog, of het laden mislukte).');
   }
 
   if (listedCount === 0) {
-    return denied('De lijst toont met deze filter geen mutaties; er is niets te beslissen.');
+    return denied('De lijst toont met deze filter geen wijzigingen; er is niets te beslissen.');
   }
 
   return ALLOWED;
 }
 
 function mutationsCount(count: number): string {
-  return `${count} ${count === 1 ? 'mutatie' : 'mutaties'}`;
+  return `${count} ${count === 1 ? 'wijziging' : 'wijzigingen'}`;
 }
 
 /**
@@ -218,9 +218,9 @@ function mutationsCount(count: number): string {
 export function freezeBlockerReason(code: string, preflight: FreezePreflight): string {
   switch (code) {
     case 'BUNDLE_NOT_ASSEMBLING':
-      return 'De bundel is niet meer in opbouw; alleen een bundel die nog in opbouw is, kan bevroren worden.';
+      return 'De publicatie is niet meer in opbouw; alleen een publicatie die nog in opbouw is, kan bevroren worden.';
     case 'BUNDLE_EMPTY':
-      return 'De bundel heeft geen actieve batch; een lege bundel kan niet bevroren worden.';
+      return 'De publicatie heeft geen actieve inlezing; een lege publicatie kan niet bevroren worden.';
     case 'BUNDLE_HAS_UNDECIDED_MUTATIONS':
       return (
         `Er ${preflight.awaitingApprovalCount === 1 ? 'wacht' : 'wachten'} nog ` +
@@ -234,11 +234,11 @@ export function freezeBlockerReason(code: string, preflight: FreezePreflight): s
         'controleer de levering opnieuw.'
       );
     case 'BUNDLE_OFFER_CONFLICT':
-      return 'Dezelfde aanbieding staat publiceerbaar in meer dan één batch van deze bundel; keur er één af.';
+      return 'Dezelfde aanbieding staat publiceerbaar in meer dan één inlezing van deze publicatie; keur er één af.';
     case 'OFFER_ALREADY_IN_ANOTHER_BUNDLE':
       return (
-        'Een aanbieding staat ook publiceerbaar in een andere, niet-geannuleerde bundel; keur één kant af, ' +
-        'of publiceer of annuleer eerst de andere bundel.'
+        'Een aanbieding staat ook publiceerbaar in een andere, niet-geannuleerde publicatie; keur één kant af, ' +
+        'of publiceer of annuleer eerst de andere publicatie.'
       );
     default:
       // De onbekende code zelf staat onder "Technische details" in de voorcontrole, niet in deze tekst.
@@ -257,7 +257,7 @@ export function publicationRunGate(
   runs: readonly PublicationRunView[] | null,
 ): Gate {
   if (bundleStatus !== 'FROZEN') {
-    return denied('Kan niet: alleen een bevroren bundel kan een proefpublicatie starten.', 'BUNDLE_NOT_FROZEN');
+    return denied('Kan niet: alleen een bevroren publicatie kan een proefpublicatie starten.', 'BUNDLE_NOT_FROZEN');
   }
   if (runs === null) {
     return denied('De lijst van publicatieruns is nog niet geladen (of het laden mislukte).');
@@ -265,7 +265,7 @@ export function publicationRunGate(
   const active = runs.find((run) => run.status === 'REQUESTED' || run.status === 'PREPARING');
   if (active !== undefined) {
     return denied(
-      `Er loopt al een publicatierun (#${active.id}, status "${term('publicationRunStatus', active.status).label}") voor deze bundel.`,
+      `Er loopt al een publicatierun (#${active.id}, status "${term('publicationRunStatus', active.status).label}") voor deze publicatie.`,
       'PUBLICATION_RUN_IN_PROGRESS',
     );
   }
@@ -335,7 +335,7 @@ export function cancelGate(bundleStatus: PublicationBundleStatus, expirableCount
   }
   if (expirableCount === null) {
     return denied(
-      'Het aantal mutaties dat vervalt is nog niet vastgesteld (het tellen loopt nog, of mislukte); zonder dat ' +
+      'Het aantal wijzigingen dat vervalt is nog niet vastgesteld (het tellen loopt nog, of mislukte); zonder dat ' +
         'getal kan niet geannuleerd worden.',
     );
   }

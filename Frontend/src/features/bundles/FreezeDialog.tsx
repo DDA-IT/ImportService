@@ -53,15 +53,15 @@ export type FreezeDialogProps = {
 };
 
 function mutations(count: number): string {
-  return `${count} ${count === 1 ? 'mutatie' : 'mutaties'}`;
+  return `${count} ${count === 1 ? 'wijziging' : 'wijzigingen'}`;
 }
 
 /** Wat de gebruiker na het antwoord te zien krijgt; nooit "gelukt" als de server iets anders toont. */
 function resultMessage(result: BundleDetail): string {
   if (result.status !== 'FROZEN') {
     return (
-      `De server aanvaardde het bevriezen, maar de bundel heeft nu de status "${term('bundleStatus', result.status).label}" ` +
-      `in plaats van "${term('bundleStatus', 'FROZEN').label}". Controleer de bundel en het beslissingsregister.`
+      `De server aanvaardde het bevriezen, maar de publicatie heeft nu de status "${term('bundleStatus', result.status).label}" ` +
+      `in plaats van "${term('bundleStatus', 'FROZEN').label}". Controleer de publicatie en het beslissingsregister.`
     );
   }
   const hash =
@@ -69,8 +69,8 @@ function resultMessage(result: BundleDetail): string {
       ? 'geen vingerafdruk ontvangen'
       : `vingerafdruk ${result.contentHash.slice(0, 16)}…`;
   return (
-    `Bundel ${result.bundleReference} is bevroren door ${result.frozenBy ?? '—'} op ${formatDateTime(result.frozenAt)} ` +
-    `(${hash}). Tellers en vingerafdruk staan nu vast. Hoeveel mutaties met status "${term('mutationStatus', 'PLANNED').label}" ` +
+    `Publicatie ${result.bundleReference} is bevroren door ${result.frozenBy ?? '—'} op ${formatDateTime(result.frozenAt)} ` +
+    `(${hash}). Tellers en vingerafdruk staan nu vast. Hoeveel wijzigingen met status "${term('mutationStatus', 'PLANNED').label}" ` +
     'daarbij op uw naam goedgekeurd zijn, staat in het beslissingsregister (automatische goedkeuring bij het bevriezen).'
   );
 }
@@ -104,7 +104,7 @@ function Preflight({ preflight, actor }: { preflight: FreezePreflight; actor: st
       </p>
       <dl className={styles.figures} aria-label="Voorcontrole">
         <div className={styles.figure}>
-          <dt>Actieve batches</dt>
+          <dt>Actieve inlezingen</dt>
           <dd>{preflight.batchCount}</dd>
         </div>
         <div className={styles.figure}>
@@ -137,12 +137,12 @@ function Preflight({ preflight, actor }: { preflight: FreezePreflight; actor: st
       )}
       {(preflight.inBundleConflicts.length > 0 || preflight.crossBundleConflicts.length > 0) && (
         <p>
-          Twee publiceerbare mutaties op dezelfde aanbieding: keur er één af, of publiceer/annuleer eerst de
-          andere bundel. De server geeft hoogstens tien voorbeelden per soort conflict.
+          Twee publiceerbare wijzigingen op dezelfde aanbieding: keur er één af, of publiceer/annuleer eerst de
+          andere publicatie. De server geeft hoogstens tien voorbeelden per soort conflict.
         </p>
       )}
-      <ConflictExamples label="Conflicten binnen deze bundel" examples={preflight.inBundleConflicts} />
-      <ConflictExamples label="Conflicten met een andere bundel" examples={preflight.crossBundleConflicts} />
+      <ConflictExamples label="Conflicten binnen deze publicatie" examples={preflight.inBundleConflicts} />
+      <ConflictExamples label="Conflicten met een andere publicatie" examples={preflight.crossBundleConflicts} />
     </>
   );
 }
@@ -180,13 +180,13 @@ export function FreezeDialog({ bundle, onClose, onFrozen }: FreezeDialogProps) {
   return (
     <ConfirmDialog
       open
-      title={`Bundel ${bundle.bundleReference} bevriezen`}
+      title={`Publicatie ${bundle.bundleReference} bevriezen`}
       body={
         <div className={styles.body}>
           <WhatIsThis>
             <p>
-              Bevriezen sluit de bundel af: de mutaties met status &quot;{term('mutationStatus', 'PLANNED').label}&quot;
-              worden in één keer goedgekeurd op uw naam, de getallen en de vingerafdruk van de bundel liggen vast, en er
+              Bevriezen sluit de publicatie af: de wijzigingen met status &quot;{term('mutationStatus', 'PLANNED').label}&quot;
+              worden in één keer goedgekeurd op uw naam, de getallen en de vingerafdruk van de publicatie liggen vast, en er
               kan niets meer bij of af.
             </p>
             <p>
@@ -208,18 +208,18 @@ export function FreezeDialog({ bundle, onClose, onFrozen }: FreezeDialogProps) {
             Opnieuw controleren
           </button>
           <p className={styles.warning}>
-            Echt publiceren naar Prodis kan nog niet; een proefpublicatie wel. Een bevroren bundel blokkeert de
-            betrokken aanbiedingen voor elke andere bundel tot ze gepubliceerd of geannuleerd wordt.
+            Echt publiceren naar Prodis kan nog niet; een proefpublicatie wel. Een bevroren publicatie blokkeert de
+            betrokken aanbiedingen voor elke andere publicatie tot ze gepubliceerd of geannuleerd wordt.
           </p>
           <p>
-            Bevriezen is binnen de applicatie niet ongedaan te maken; daarna kan de bundel alleen nog geannuleerd
+            Bevriezen is binnen de applicatie niet ongedaan te maken; daarna kan de publicatie alleen nog geannuleerd
             worden.
           </p>
         </div>
       }
       reasonRequirement="required"
       typedConfirmationText={bundle.bundleReference}
-      confirmLabel="Bundel bevriezen"
+      confirmLabel="Publicatie bevriezen"
       cancelLabel="Sluiten zonder bevriezen"
       variant="danger"
       pending={runner.pending}

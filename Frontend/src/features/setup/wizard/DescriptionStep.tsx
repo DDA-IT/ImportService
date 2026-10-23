@@ -214,7 +214,7 @@ export function DescriptionStep({ organisation, definition, onDefinition, onRevi
       if (latest === null) {
         onDefinition(
           adopted,
-          `U gaat verder met de bestaande beschrijving ${row.code}. Ze heeft nog geen versie: controleer de ` +
+          `U gaat verder met de bestaande importdefinitie ${row.code}. Ze heeft nog geen versie: controleer de ` +
             'velden hieronder en klik opnieuw op "Opslaan en verder".',
         );
         return;
@@ -222,7 +222,7 @@ export function DescriptionStep({ organisation, definition, onDefinition, onRevi
       onDefinition(adopted, null);
       onRevision(
         toWizardRevision(latest),
-        `U gaat verder met de bestaande beschrijving ${row.code} en haar versie ${latest.revisionNumber}. ` +
+        `U gaat verder met de bestaande importdefinitie ${row.code} en haar versie ${latest.revisionNumber}. ` +
           'De velden die u hier invulde, zijn niet verstuurd; bekijk de bestaande versie bij Inrichting.',
       );
     });
@@ -496,18 +496,18 @@ export function DescriptionStep({ organisation, definition, onDefinition, onRevi
       {candidate?.kind === 'definition' &&
         (candidate.row.usageType === 'OWN_DEFINITION' ? (
           <ExistingChoice disabled={submit.pending} onContinue={() => void adoptDefinition(candidate.row)}>
-            Deze leverancier heeft al een beschrijving met code <strong>{candidate.row.code}</strong>:{' '}
-            {candidate.row.name}. Kiest u deze, dan wordt er geen nieuwe beschrijving aangemaakt.
+            Deze leverancier heeft al een importdefinitie met code <strong>{candidate.row.code}</strong>:{' '}
+            {candidate.row.name}. Kiest u deze, dan wordt er geen nieuwe importdefinitie aangemaakt.
           </ExistingChoice>
         ) : (
           <p className={styles.validationError} role="alert">
-            De bestaande beschrijving met code {candidate.row.code} is een sjabloon en kan hier niet gebruikt
+            De bestaande importdefinitie met code {candidate.row.code} is een herbruikbare importdefinitie en kan hier niet gebruikt
             worden. Kies een andere code.
           </p>
         ))}
       {candidate?.kind === 'revision' && (
         <ExistingChoice disabled={submit.pending} onContinue={() => adoptRevision(candidate.row)}>
-          Deze beschrijving heeft al versie <strong>{candidate.row.revisionNumber}</strong> (
+          Deze importdefinitie heeft al versie <strong>{candidate.row.revisionNumber}</strong> (
           <Term domain="revisionStatus" code={candidate.row.status} />
           ). Kiest u deze, dan wordt er geen tweede versie aangemaakt.
         </ExistingChoice>

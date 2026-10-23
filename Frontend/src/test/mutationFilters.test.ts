@@ -24,7 +24,7 @@ function calledUrl(): string {
   return call?.[0]?.toString() ?? '';
 }
 
-describe('mutatielijst-filters in de API-laag', () => {
+describe('wijzigingenlijst-filters in de API-laag', () => {
   const originalFetch = global.fetch;
 
   beforeEach(() => {

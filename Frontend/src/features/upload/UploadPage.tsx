@@ -311,7 +311,7 @@ export function UploadPage() {
         )}
         {hasNotReadyTask && (
           <p className={styles.note} role="note" data-testid="not-ready-tasks">
-            Een taak met &laquo;nog niet klaar&raquo; kan nog geen levering aannemen: de versie van haar beschrijving
+            Een taak met &laquo;nog niet klaar&raquo; kan nog geen levering aannemen: de versie van haar importdefinitie
             is nog niet geactiveerd. Controleer en activeer die versie bij <Link to="/setup">Inrichting</Link>, of
             rechtstreeks:{' '}
             {notReadyLinks.map((task, index) => (
@@ -533,11 +533,11 @@ export function UploadPage() {
           {!outcome.created && (
             <p role="status">
               Deze referentie was al verwerkt met een identiek bestand. Er is niet opnieuw gecontroleerd en er is
-              geen nieuwe batch ontstaan.
+              geen nieuwe inlezing ontstaan.
             </p>
           )}
           <p>
-            Levering #{delivery.deliveryId} · Batch{' '}
+            Levering #{delivery.deliveryId} · Inlezing{' '}
             <Link to={`/batches/${delivery.batchId}`}>#{delivery.batchId}</Link> · status{' '}
             <strong>
               <StatusBadge status={delivery.status} domain="batchStatus" />

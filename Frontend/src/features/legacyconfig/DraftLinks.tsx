@@ -19,21 +19,21 @@ export function DraftLinks({ planned }: { planned: LegacyPlanned }) {
       key: 'definition',
       // Na loskoppelen is `planned.definition` de eigen beschrijving met de nieuwe conceptversie.
       label:
-        detach !== null ? `Eigen beschrijving ${definition.code}, nieuwe conceptversie` : `Gedeelde beschrijving ${definition.code}`,
+        detach !== null ? `Eigen importdefinitie ${definition.code}, nieuwe conceptversie` : `Gedeelde importdefinitie ${definition.code}`,
       href: revisionDetailHref(definition.id, definition.revisionId),
     });
   }
   if (detach !== null && definition !== null && definition.id !== null && detach.copiedRevisionId !== null) {
     entries.push({
       key: 'detached-copy',
-      label: `Eigen beschrijving ${definition.code}, overgenomen actieve versie`,
+      label: `Eigen importdefinitie ${definition.code}, overgenomen actieve versie`,
       href: revisionDetailHref(definition.id, detach.copiedRevisionId),
     });
   }
   if (template !== null && template.id !== null && template.revisionId !== null) {
     entries.push({
       key: 'template',
-      label: `Sjabloon ${template.code}`,
+      label: `Importdefinitie ${template.code}`,
       href: revisionDetailHref(template.id, template.revisionId),
     });
   }

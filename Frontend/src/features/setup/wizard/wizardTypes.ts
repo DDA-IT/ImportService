@@ -35,7 +35,7 @@ export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 export const STEP_TITLES: Record<WizardStep, string> = {
   1: 'Leverancier',
   2: 'Startpunt',
-  3: 'Beschrijving van het bestand',
+  3: 'Importdefinitie',
   4: 'Koppeling',
   5: 'Taak',
   6: 'Klaar',

@@ -55,7 +55,7 @@ function StatusTransition({ row }: { row: DecisionRow }) {
 
 function DecisionScopeLabel({ row }: { row: DecisionRow }) {
   if (row.decisionScope === 'MUTATION' && row.mutationId !== null) {
-    return <>Mutatie {row.mutationId}</>;
+    return <>Wijziging {row.mutationId}</>;
   }
   return <Term domain="decisionScope" code={row.decisionScope} unknownLabel="Ander bereik" />;
 }
@@ -147,7 +147,7 @@ export function BundleDecisionsTab() {
     <div className={styles.tab}>
       <WhatIsThis>
         <p>
-          Het beslissingsregister is het logboek van de bundel: wie wat goedgekeurd, afgekeurd, bevroren of geannuleerd
+          Het beslissingsregister is het logboek van de publicatie: wie wat goedgekeurd, afgekeurd, bevroren of geannuleerd
           heeft, en wanneer. Er wordt alleen bijgeschreven, nooit aangepast: een herziening staat als extra regel naast
           de beslissing die ze herziet.
         </p>
@@ -162,7 +162,7 @@ export function BundleDecisionsTab() {
             columns={columns}
             rows={data.content}
             rowKey={(row) => row.id}
-            emptyMessage="Deze bundel bevat geen beslissingen."
+            emptyMessage="Deze publicatie bevat geen beslissingen."
           />
           <Pager
             page={data.page}

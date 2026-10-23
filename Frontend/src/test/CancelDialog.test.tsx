@@ -139,7 +139,7 @@ function fillConfirmation(dialog: HTMLElement, typed: string = REFERENCE, reason
 }
 
 function confirmButton(dialog: HTMLElement): HTMLElement {
-  return within(dialog).getByRole('button', { name: 'Bundel annuleren' });
+  return within(dialog).getByRole('button', { name: 'Publicatie annuleren' });
 }
 
 describe('CancelDialog (F10, §10.6)', () => {
@@ -165,19 +165,19 @@ describe('CancelDialog (F10, §10.6)', () => {
     global.fetch = originalFetch;
   });
 
-  it('F10.C1: toont het aantal mutaties dat vervalt, per status uitgesplitst, vóór er iets verstuurd wordt', async () => {
+  it('F10.C1: toont het aantal wijzigingen dat vervalt, per status uitgesplitst, vóór er iets verstuurd wordt', async () => {
     renderOverview(bundle());
     const dialog = await openCancelDialog();
 
     const total = await waitForCount(dialog);
-    expect(total.textContent).toContain('10 mutaties');
+    expect(total.textContent).toContain('10 wijzigingen');
     expect(total.textContent).toContain('vervallen en');
     expect(total.textContent).not.toContain('EXPIRED');
     expect(total.textContent).toContain('nooit meer herleefd');
 
     // De letterlijke zin uit §10.6.
     expect(
-      within(dialog).getByText(/Dit maakt de beslissingen in deze bundel niet ongedaan in het register/),
+      within(dialog).getByText(/Dit maakt de beslissingen in deze publicatie niet ongedaan in het register/),
     ).toBeInTheDocument();
     expect(posts()).toHaveLength(0);
   });
@@ -191,12 +191,12 @@ describe('CancelDialog (F10, §10.6)', () => {
     expect(within(dialog).queryByRole('button', { name: 'Opnieuw tellen' })).not.toBeInTheDocument();
   });
 
-  it('F10.C3: enkelvoud bij precies één vervallende mutatie', async () => {
+  it('F10.C3: enkelvoud bij precies één vervallende wijziging', async () => {
     renderOverview(bundle({ expirableCount: 1 }));
     const dialog = await openCancelDialog();
 
     const total = await waitForCount(dialog);
-    expect(total.textContent).toContain('1 mutatie vervalt');
+    expect(total.textContent).toContain('1 wijziging vervalt');
   });
 
   it('F10.C4: ontbreekt het getal (null), dan geen getal getoond en geen annulering', async () => {
@@ -211,11 +211,11 @@ describe('CancelDialog (F10, §10.6)', () => {
     expect(posts()).toHaveLength(0);
   });
 
-  it('F10.C4b: 0 vervallende mutaties is een geldig getal (geen null): getoond en annuleren toegelaten', async () => {
+  it('F10.C4b: 0 vervallende wijzigingen is een geldig getal (geen null): getoond en annuleren toegelaten', async () => {
     renderOverview(bundle({ expirableCount: 0 }));
     const dialog = await openCancelDialog();
 
-    expect((await waitForCount(dialog)).textContent).toContain('0 mutaties vervallen');
+    expect((await waitForCount(dialog)).textContent).toContain('0 wijzigingen vervallen');
     fillConfirmation(dialog);
     expect(confirmButton(dialog)).toBeEnabled();
   });
@@ -263,7 +263,7 @@ describe('CancelDialog (F10, §10.6)', () => {
     fillConfirmation(dialog);
     fireEvent.click(confirmButton(dialog));
 
-    expect(await within(dialog).findByText('Bundel kan niet geannuleerd worden')).toBeInTheDocument();
+    expect(await within(dialog).findByText('Publicatie kan niet geannuleerd worden')).toBeInTheDocument();
     expect(within(dialog).getByText('BUNDLE_NOT_CANCELLABLE · HTTP 409 · /bundles/42/cancel')).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
@@ -286,7 +286,7 @@ describe('CancelDialog (F10, §10.6)', () => {
     expect(reloadBundle).not.toHaveBeenCalled();
   });
 
-  it('F10.C9: happy path — verstuurt actor en reden, meldt het resultaat van de server en herlaadt de bundel', async () => {
+  it('F10.C9: happy path — verstuurt actor en reden, meldt het resultaat van de server en herlaadt de publicatie', async () => {
     const { reloadBundle } = renderOverview(bundle());
     const dialog = await openCancelDialog();
     await waitForCount(dialog);
@@ -300,22 +300,22 @@ describe('CancelDialog (F10, §10.6)', () => {
     expect(JSON.parse(String(post.body))).toEqual({ cancelledBy: 'An Beslisser', reason: 'Verkeerde levering' });
 
     const notice = screen.getByRole('status').textContent ?? '';
-    expect(notice).toContain(`Bundel ${REFERENCE} is geannuleerd door An Beslisser`);
+    expect(notice).toContain(`Publicatie ${REFERENCE} is geannuleerd door An Beslisser`);
     expect(notice).toContain('zijn vervallen');
     expect(notice).not.toContain('EXPIRED');
     expect(reloadBundle).toHaveBeenCalledTimes(1);
   });
 
-  it('F10.C10: een bevroren bundel kan geannuleerd worden; de telling vindt de goedgekeurde mutaties', async () => {
+  it('F10.C10: een bevroren publicatie kan geannuleerd worden; de telling vindt de goedgekeurde wijzigingen', async () => {
     renderOverview(frozenBundle());
     const dialog = await openCancelDialog();
 
-    expect((await waitForCount(dialog)).textContent).toContain('12 mutaties');
+    expect((await waitForCount(dialog)).textContent).toContain('12 wijzigingen');
     fillConfirmation(dialog);
     expect(confirmButton(dialog)).toBeEnabled();
   });
 
-  it('F10.C11: een geannuleerde bundel biedt annuleren niet aan (uitgeschakeld mét reden), en telt niets', async () => {
+  it('F10.C11: een geannuleerde publicatie biedt annuleren niet aan (uitgeschakeld mét reden), en telt niets', async () => {
     renderOverview(cancelledBundle());
 
     const button = await screen.findByRole('button', { name: 'Annuleren' });

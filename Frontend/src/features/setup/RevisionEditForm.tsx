@@ -350,14 +350,14 @@ export function RevisionEditForm({ revision, sourceOrganisationCode, onUpdated }
         <legend className={styles.legend}>Herkenningsversie</legend>
         {numberRow(
           'canonicalisationVersion',
-          'Wijzigen wordt onvoorwaardelijk geweigerd zodra er voor deze beschrijving van het bestand al een ' +
+          'Wijzigen wordt onvoorwaardelijk geweigerd zodra er voor deze importdefinitie al een ' +
             'aanvaarde stand van de artikelen bestaat (bijvoorbeeld door een nulmeting) — ook een verlaging. ' +
             'Er is geen bevestiging die dat opheft.',
         )}
         {canonicalisationChanged && !canonicalisationBlockedByServer && (
           <p className={styles.warning} role="note" data-testid="canonicalisation-change-warning">
             U wijzigt de herkenningsversie van {revision.recordCanonicalisationVersion} naar{' '}
-            {form.canonicalisationVersion.trim()}. Bestaat er voor deze beschrijving van het bestand al een
+            {form.canonicalisationVersion.trim()}. Bestaat er voor deze importdefinitie al een
             aanvaarde stand van de artikelen, dan weigert de server dit onvoorwaardelijk en wordt er niets
             opgeslagen — ook niet de andere velden in dit formulier.
           </p>
@@ -462,7 +462,7 @@ export function RevisionEditForm({ revision, sourceOrganisationCode, onUpdated }
         <div className={styles.acknowledge} data-testid="identity-change-acknowledge">
           <p className={styles.warning} role="note">
             Deze wijziging raakt hoe een artikel herkend wordt. De herkenning verandert daardoor, waardoor
-            élk bestaand artikel van deze beschrijving van het bestand als nieuw artikel terugkomt (een
+            élk bestaand artikel van deze importdefinitie als nieuw artikel terugkomt (een
             massale aanmaak). Deze keuze heeft bewust geen standaardwaarde.
           </p>
           <div className={styles.checkboxRow}>

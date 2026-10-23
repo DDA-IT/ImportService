@@ -51,7 +51,7 @@ export function PreviewChoices({ draft, onDraftChange, libraryCandidates, detach
     >
       <div className={styles.choices}>
         <Field
-          label="Andere code voor de beschrijving"
+          label="Andere code voor de importdefinitie"
           htmlFor={overrideId}
           hint="Alleen nodig als de code van legacy al in gebruik is. Hoogstens 47 tekens."
         >
@@ -137,15 +137,15 @@ export function PreviewChoices({ draft, onDraftChange, libraryCandidates, detach
                 onApply(next);
               }}
             />{' '}
-            <label htmlFor={detachId}>Loskoppelen tot een eigen beschrijving</label>
+            <label htmlFor={detachId}>Loskoppelen tot een eigen importdefinitie</label>
             <p className={styles.muted}>
-              Deze interface wijkt af van de beschrijving die ze met andere interfaces deelt. Loskoppelen geeft ze een
-              eigen beschrijving; de andere interfaces blijven de gedeelde beschrijving volgen.
+              Deze interface wijkt af van de importdefinitie die ze met andere interfaces deelt. Loskoppelen geeft ze een
+              eigen importdefinitie; de andere interfaces blijven de gedeelde importdefinitie volgen.
             </p>
           </div>
           {draft.detachFromShared && (
             <Field
-              label="Code van de eigen beschrijving"
+              label="Code van de eigen importdefinitie"
               htmlFor={detachCodeId}
               hint="Leeg laten voor de standaardcode (LEGACY- gevolgd door de interface). Hoogstens 47 tekens."
             >

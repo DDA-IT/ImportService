@@ -180,12 +180,12 @@ export function BundlePublicationTab() {
   const whatIsThis = (
     <WhatIsThis>
       <p>
-        Een bevroren bundel kan hier gepubliceerd worden. Op dit moment kan dat alleen als proefpublicatie (simulatie): het
+        Een bevroren publicatie kan hier gepubliceerd worden. Op dit moment kan dat alleen als proefpublicatie (simulatie): het
         bestand dat naar Prodis zou gaan, wordt opgebouwd en bewaard, maar er wordt niets echt aangepast. Zo ziet u vooraf
         wat er zou gebeuren.
       </p>
       <p>
-        Bij een bundel voor de echte publicatie kunt u hier ook naar Prodis publiceren: de wijzigingen worden dan
+        Bij een publicatie met als doel de echte publicatie kunt u hier ook naar Prodis publiceren: de wijzigingen worden dan
         stap voor stap in Prodis aangebracht, en u ziet per artikel wat er gebeurd is.
       </p>
       <p>
@@ -202,8 +202,8 @@ export function BundlePublicationTab() {
       <div className={styles.tab}>
         {whatIsThis}
         <p className={styles.notice}>
-          Een publicatierun kan alleen gestart worden voor een bevroren bundel (status &quot;
-          {term('bundleStatus', 'FROZEN').label}&quot;). Deze bundel heeft status &quot;
+          Een publicatierun kan alleen gestart worden voor een bevroren publicatie (status &quot;
+          {term('bundleStatus', 'FROZEN').label}&quot;). Deze publicatie heeft status &quot;
           {term('bundleStatus', bundle.status).label}&quot;.
         </p>
       </div>
@@ -292,7 +292,7 @@ export function BundlePublicationTab() {
         body={
           <div className={prodisStyles.dialogBody}>
             <p>
-              Bundel {bundle.bundleReference}: de wijzigingen worden echt in Prodis aangebracht (modus:{' '}
+              Publicatie {bundle.bundleReference}: de wijzigingen worden echt in Prodis aangebracht (modus:{' '}
               {term('targetMode', 'PRODUCTION').label}). Dit kan in meerdere stappen verlopen; u kunt tussendoor
               pauzeren en later verdergaan.
             </p>
@@ -312,7 +312,7 @@ export function BundlePublicationTab() {
         {abortError !== null && <ErrorBanner error={abortError} />}
         {loading && runs === null && <p className={styles.loading}>Bezig met laden…</p>}
         {runs !== null && runs.length === 0 && (
-          <p className={styles.notice}>Deze bundel heeft nog geen publicatierun.</p>
+          <p className={styles.notice}>Deze publicatie heeft nog geen publicatierun.</p>
         )}
         {runs !== null && runs.length > 0 && (
           <ul className={styles.runList}>
@@ -366,7 +366,7 @@ export function BundlePublicationTab() {
 
                 {run.incompleteRowCount !== null && run.incompleteRowCount > 0 && (
                   <p className={styles.incompleteWarning}>
-                    {run.incompleteRowCount} regel(en) zijn onvolledig (er ontbreken gegevens van de mutatie of een
+                    {run.incompleteRowCount} regel(en) zijn onvolledig (er ontbreken gegevens van de wijziging of een
                     onderdeel van de prijs); zie het voorbeeld van het importbestand voor detail.
                   </p>
                 )}

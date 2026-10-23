@@ -69,7 +69,7 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
     reset();
 
     if (bundleReference.trim() === '') {
-      setValidationError('Vul een bundelreferentie in.');
+      setValidationError('Vul een publicatiereferentie in.');
       return;
     }
     if (targetMode === NO_TARGET_MODE) {
@@ -97,9 +97,9 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
 
   return (
     <form className={styles.form} onSubmit={handleSubmit}>
-      <h2 className={styles.title}>Nieuwe bundel</h2>
+      <h2 className={styles.title}>Nieuwe publicatie</h2>
 
-      <Field label="Bundelreferentie" htmlFor="create-bundle-reference" required>
+      <Field label="Publicatiereferentie" htmlFor="create-bundle-reference" required>
         <input
           id="create-bundle-reference"
           className={styles.input}
@@ -155,7 +155,7 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
 
       {targetMode === 'PRODUCTION' && (
         <p className={styles.warning} role="alert">
-          Let op: een latere publicatiestap behandelt deze bundel als een echte publicatie naar
+          Let op: een latere publicatiestap behandelt deze publicatie als een echte publicatie naar
           Prodis.
         </p>
       )}
@@ -164,7 +164,7 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
         label="Doelmoment"
         htmlFor="create-bundle-target-moment"
         hint="Optioneel."
-        help="Het moment waarop u de bundel gepubliceerd wilt zien; u mag dit leeg laten."
+        help="Het moment waarop u de publicatie gepubliceerd wilt zien; u mag dit leeg laten."
       >
         <input
           id="create-bundle-target-moment"
@@ -179,7 +179,7 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
         label="Publicatiebeleid"
         htmlFor="create-bundle-policy"
         hint="Optioneel."
-        help="Een vrije tekst die bij de bundel bewaard wordt, bijvoorbeeld een afspraak over hoe of wanneer er gepubliceerd wordt."
+        help="Een vrije tekst die bij de publicatie bewaard wordt, bijvoorbeeld een afspraak over hoe of wanneer er gepubliceerd wordt."
       >
         <input
           id="create-bundle-policy"
@@ -202,15 +202,15 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
       {error !== null && <ErrorBanner error={error} />}
       {outcome !== null && outcome.alreadyExisted && (
         <p className={`${styles.notice} ${styles.reused}`} role="status">
-          Deze bundelreferentie bestond al: <strong>{outcome.bundle.bundleReference}</strong>{' '}
+          Deze publicatiereferentie bestond al: <strong>{outcome.bundle.bundleReference}</strong>{' '}
           (aangemaakt door {outcome.bundle.createdBy} op{' '}
-          {formatDateTime(outcome.bundle.createdAt)}). Er is geen nieuwe bundel
+          {formatDateTime(outcome.bundle.createdAt)}). Er is geen nieuwe publicatie
           aangemaakt.
         </p>
       )}
       {outcome !== null && !outcome.alreadyExisted && (
         <p className={styles.notice} role="status">
-          Bundel <strong>{outcome.bundle.bundleReference}</strong> aangemaakt.
+          Publicatie <strong>{outcome.bundle.bundleReference}</strong> aangemaakt.
         </p>
       )}
 
@@ -226,7 +226,7 @@ export function CreateBundleForm({ onCreated }: CreateBundleFormProps) {
         title={manageGate.allowed ? undefined : manageGate.reason}
         aria-describedby={manageGate.allowed ? undefined : 'create-bundle-permission-reason'}
       >
-        {pending ? 'Bezig…' : 'Bundel aanmaken'}
+        {pending ? 'Bezig…' : 'Publicatie aanmaken'}
       </button>
     </form>
   );

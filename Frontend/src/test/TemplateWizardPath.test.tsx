@@ -31,9 +31,9 @@ const SUPPLIER = { id: 1, code: 'LEV-A', name: 'Leverancier A', type: 'SUPPLIER'
 const OTHER_SUPPLIER = { id: 2, code: 'LEV-B', name: 'Leverancier B', type: 'SUPPLIER', active: true };
 const ASSOCIATION = { id: 3, code: 'VRO', name: 'VROOAM', type: 'PURCHASING_ASSOCIATION', active: true };
 
-const TEMPLATE_A = { id: 50, code: 'TPL-A', name: 'Sjabloon van A', sourceOrganisationId: 1, sourceOrganisationCode: 'LEV-A' };
-const TEMPLATE_B = { id: 51, code: 'TPL-B', name: 'Sjabloon van B', sourceOrganisationId: 2, sourceOrganisationCode: 'LEV-B' };
-const TEMPLATE_VRO = { id: 60, code: 'TPL-VRO', name: 'Sjabloon van VROOAM', sourceOrganisationId: 3, sourceOrganisationCode: 'VRO' };
+const TEMPLATE_A = { id: 50, code: 'TPL-A', name: 'Importdefinitie van A', sourceOrganisationId: 1, sourceOrganisationCode: 'LEV-A' };
+const TEMPLATE_B = { id: 51, code: 'TPL-B', name: 'Importdefinitie van B', sourceOrganisationId: 2, sourceOrganisationCode: 'LEV-B' };
+const TEMPLATE_VRO = { id: 60, code: 'TPL-VRO', name: 'Importdefinitie van VROOAM', sourceOrganisationId: 3, sourceOrganisationCode: 'VRO' };
 
 const TEMPLATE_REVISIONS = [
   { id: 500, definitionId: 50, revisionNumber: 1, status: 'ACTIVE' },
@@ -90,7 +90,7 @@ function definitionRow(organisation: { id: number; code: string }) {
   return {
     id: 10,
     code: 'DEF-10',
-    name: 'Beschrijving uit sjabloon',
+    name: 'Importdefinitie uit importdefinitie',
     usageType: 'OWN_DEFINITION',
     sourceOrganisationId: organisation.id,
     sourceOrganisationCode: organisation.code,
@@ -222,20 +222,20 @@ function renderWizard(path: string) {
 }
 
 function pickTemplate(id: number) {
-  fireEvent.change(screen.getByLabelText(/^Sjabloon/), { target: { value: String(id) } });
+  fireEvent.change(screen.getByLabelText(/^Importdefinitie/), { target: { value: String(id) } });
 }
 
 async function fillMaterialiseForm() {
   await screen.findByTestId('materialise-form');
   fireEvent.change(screen.getByLabelText(/^Nieuw of hergebruik/), { target: { value: 'NEW_DEFINITION' } });
-  fireEvent.change(screen.getByLabelText(/^Code van de beschrijving/), { target: { value: 'DEF-10' } });
-  fireEvent.change(screen.getByLabelText(/^Naam van de beschrijving/), { target: { value: 'Beschrijving uit sjabloon' } });
+  fireEvent.change(screen.getByLabelText(/^Code van de importdefinitie/), { target: { value: 'DEF-10' } });
+  fireEvent.change(screen.getByLabelText(/^Naam van de importdefinitie/), { target: { value: 'Importdefinitie uit importdefinitie' } });
   fireEvent.change(screen.getByLabelText(/^Koppelingscode/), { target: { value: 'LNK-A' } });
   fireEvent.change(screen.getByLabelText(/^Koppelingsnaam/), { target: { value: 'Koppeling A' } });
   fireEvent.change(screen.getByLabelText(/^Bibliotheekcode/), { target: { value: 'LIB1' } });
 }
 
-describe('NewSupplierWizardPage — sjabloonpad (NT-7)', () => {
+describe('NewSupplierWizardPage — importdefinitiepad (NT-7)', () => {
   const originalFetch = global.fetch;
 
   afterEach(() => {
@@ -245,14 +245,14 @@ describe('NewSupplierWizardPage — sjabloonpad (NT-7)', () => {
     global.fetch = originalFetch;
   });
 
-  it('normaal: sjabloon van de eigen organisatie kiezen, materialiseren, door naar de taakstap en de taak maken', async () => {
+  it('normaal: importdefinitie van de eigen organisatie kiezen, materialiseren, door naar de taakstap en de taak maken', async () => {
     const state = baseState();
     state.definitionsByOrganisation[1] = [definitionRow(SUPPLIER)];
     state.missingRequiredNames = ['BESTANDS_PREFIX'];
     const mock = installServer(state);
     renderWizard('/setup/new?organisationId=1');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Vanuit een sjabloon van deze leverancier of aankoopvereniging' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Vanuit een importdefinitie van deze leverancier of aankoopvereniging' }));
 
     // V4 = a: enkel het sjabloon van dezelfde organisatie; dat van LEV-B ontbreekt.
     await screen.findByRole('option', { name: /TPL-A/ });
@@ -262,7 +262,7 @@ describe('NewSupplierWizardPage — sjabloonpad (NT-7)', () => {
     pickTemplate(50);
     // De actieve versie is voorgeselecteerd; het concept van het sjabloon is niet kiesbaar.
     await screen.findByRole('option', { name: /Versie 1/ });
-    expect((screen.getByLabelText(/^Versie van het sjabloon/) as HTMLSelectElement).value).toBe('500');
+    expect((screen.getByLabelText(/^Versie van de importdefinitie/) as HTMLSelectElement).value).toBe('500');
     expect(screen.queryByRole('option', { name: /Versie 2/ })).not.toBeInTheDocument();
 
     await fillMaterialiseForm();
@@ -304,26 +304,26 @@ describe('NewSupplierWizardPage — sjabloonpad (NT-7)', () => {
     expect(sent[1]!.body).toMatchObject({ linkId: 501 });
   });
 
-  it('geen sjabloon voor de organisatie: Nederlandse uitleg en de weg naar "Zelf beschrijven"', async () => {
+  it('geen importdefinitie voor de organisatie: Nederlandse uitleg en de weg naar "Zelf beschrijven"', async () => {
     const state = baseState();
     // Enkel sjablonen van andere organisaties.
     state.templates = [TEMPLATE_B];
     installServer(state);
     renderWizard('/setup/new?organisationId=1');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Vanuit een sjabloon van deze leverancier of aankoopvereniging' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Vanuit een importdefinitie van deze leverancier of aankoopvereniging' }));
 
     const explanation = await screen.findByTestId('wizard-no-templates');
-    expect(explanation).toHaveTextContent('Er is geen sjabloon voor LEV-A');
+    expect(explanation).toHaveTextContent('Er is geen importdefinitie voor LEV-A');
     expect(explanation).toHaveTextContent('Zelf beschrijven');
-    expect(screen.queryByLabelText(/^Sjabloon/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Importdefinitie/)).not.toBeInTheDocument();
     expect(screen.queryByTestId('materialise-form')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Zelf beschrijven' }));
     expect(await screen.findByRole('heading', { name: /Stap 3/ })).toBeInTheDocument();
   });
 
-  it('R2: met templateId opent stap 2 meteen op het sjabloonpad met die importdefinitie gekozen (geen klik op het startpunt)', async () => {
+  it('R2: met templateId opent stap 2 meteen op het importdefinitiepad met die importdefinitie gekozen (geen klik op het startpunt)', async () => {
     const state = baseState();
     state.definitionsByOrganisation[1] = [definitionRow(SUPPLIER)];
     const mock = installServer(state);
@@ -332,10 +332,10 @@ describe('NewSupplierWizardPage — sjabloonpad (NT-7)', () => {
     // Geen keuze "Zelf beschrijven of sjabloon": het sjabloonpad staat er al.
     expect(await screen.findByTestId('wizard-template-step')).toBeInTheDocument();
     await screen.findByRole('option', { name: /TPL-A/ });
-    expect((screen.getByLabelText(/^Sjabloon/) as HTMLSelectElement).value).toBe('50');
+    expect((screen.getByLabelText(/^Importdefinitie/) as HTMLSelectElement).value).toBe('50');
     // De actieve versie van de gekozen importdefinitie is voorgeselecteerd en het formulier staat klaar.
     await screen.findByRole('option', { name: /Versie 1/ });
-    expect((screen.getByLabelText(/^Versie van het sjabloon/) as HTMLSelectElement).value).toBe('500');
+    expect((screen.getByLabelText(/^Versie van de importdefinitie/) as HTMLSelectElement).value).toBe('500');
     await screen.findByTestId('materialise-form');
     expect(screen.queryByTestId('wizard-template-not-for-organisation')).not.toBeInTheDocument();
     // Niets geschreven door het openen alleen.
@@ -351,7 +351,7 @@ describe('NewSupplierWizardPage — sjabloonpad (NT-7)', () => {
     expect(await screen.findByTestId('wizard-template-not-for-organisation')).toHaveTextContent(
       'hoort niet bij LEV-A',
     );
-    expect((screen.getByLabelText(/^Sjabloon/) as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText(/^Importdefinitie/) as HTMLSelectElement).value).toBe('');
     expect(screen.queryByTestId('materialise-form')).not.toBeInTheDocument();
   });
 
@@ -361,7 +361,7 @@ describe('NewSupplierWizardPage — sjabloonpad (NT-7)', () => {
     const mock = installServer(state);
     renderWizard('/setup/new?organisationId=3');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Vanuit een sjabloon van deze leverancier of aankoopvereniging' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Vanuit een importdefinitie van deze leverancier of aankoopvereniging' }));
     await screen.findByRole('option', { name: /TPL-VRO/ });
     pickTemplate(60);
 
@@ -395,7 +395,7 @@ describe('NewSupplierWizardPage — sjabloonpad (NT-7)', () => {
     }) as unknown as typeof fetch;
     renderWizard('/setup/new?organisationId=1');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Vanuit een sjabloon van deze leverancier of aankoopvereniging' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Vanuit een importdefinitie van deze leverancier of aankoopvereniging' }));
     await screen.findByRole('option', { name: /TPL-A/ });
     pickTemplate(50);
     await fillMaterialiseForm();

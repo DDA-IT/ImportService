@@ -15,7 +15,7 @@ import type { ApiError } from '../../api/http.ts';
 export const SETUP_API_FLAG_NAME = 'catalogimport.setup-api.enabled';
 
 export const SETUP_API_DISABLED_MESSAGE =
-  'De sjabloon-/materialisatiewizard is niet actief op deze omgeving. Dit scherm is alleen bruikbaar op een ' +
+  'De wizard voor herbruikbare importdefinities is niet actief op deze omgeving. Dit scherm is alleen bruikbaar op een ' +
   'ontwikkelmachine waar de inrichtings-API is aangezet.';
 
 /** `true` voor een 404 zonder `code` — het patroon van een uitgeschakelde `@ConditionalOnProperty`-controller. */

@@ -144,17 +144,17 @@ describe('WorkQueuePage', () => {
     expect(within(notEstablishedTile as HTMLElement).getByText('2')).toBeInTheDocument();
   });
 
-  it('S2-F1: toont het telblok "open behandelgevallen" met doorlink naar /issue-cases', async () => {
+  it('S2-F1: toont het telblok "open afwijkingen" met doorlink naar /issue-cases', async () => {
     renderPage();
 
     const tiles = await screen.findByTestId('issue-case-summary-tiles');
-    const link = within(tiles).getByRole('link', { name: /Open behandelgevallen/ });
+    const link = within(tiles).getByRole('link', { name: /Open afwijkingen/ });
     expect(link).toHaveAttribute('href', '/issue-cases');
     // AWAITING_REVIEW-teller uit de summary (3), niet het totaal (4).
     expect(within(link).getByText('3')).toBeInTheDocument();
   });
 
-  it('A-F1: elke rij linkt door naar het batchdetail', async () => {
+  it('A-F1: elke rij linkt door naar het inlezingsdetail', async () => {
     renderPage();
     const link = await screen.findByRole('link', { name: '#101' });
     expect(link).toHaveAttribute('href', '/batches/101');

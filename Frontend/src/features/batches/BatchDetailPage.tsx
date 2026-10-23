@@ -67,7 +67,7 @@ type TabKey = 'overview' | 'problems' | 'mutations' | 'delivery';
 const TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
   { key: 'overview', label: 'Overzicht' },
   { key: 'problems', label: 'Problemen' },
-  { key: 'mutations', label: 'Mutaties' },
+  { key: 'mutations', label: 'Wijzigingen' },
   { key: 'delivery', label: 'Levering' },
 ];
 
@@ -92,7 +92,7 @@ function BatchHead({ batch }: { batch: BatchDetail }) {
         </div>
       </header>
       <div className={styles.detailHead}>
-        <Link to="/" className={styles.backButton} aria-label="Terug naar de werkvoorraad">
+        <Link to="/" className={styles.backButton} aria-label="Terug naar de inlezingen">
           <BackIcon />
         </Link>
         <span className={styles.avatar} aria-hidden="true">
@@ -136,7 +136,7 @@ function BatchOverview({ batch, onChanged }: { batch: BatchDetail; onChanged: ()
     <>
       <WhatIsThis>
         <p>
-          Een batch is de controle van één aangeleverde levering. De status zegt hoe ver die controle staat; het
+          Een inlezing is de controle van één aangeleverde levering. De status zegt hoe ver die controle staat; het
           eindoordeel zegt wat de controle vond. Een woord met een stippellijn heeft een uitleg: ga er met de muis
           over.
         </p>
@@ -215,7 +215,7 @@ function BatchOverview({ batch, onChanged }: { batch: BatchDetail; onChanged: ()
             {batch.stagingPurgedAt != null && (
               <p className={styles.note} data-testid="batch-staging-purged">
                 De tussentijdse gegevens van deze controle zijn op {formatDateTime(batch.stagingPurgedAt)}{' '}
-                opgeruimd. De tellers, meldingen en mutaties blijven bewaard.
+                opgeruimd. De tellers, meldingen en wijzigingen blijven bewaard.
               </p>
             )}
             {batch.baselineAcceptedAt !== null && (
@@ -268,7 +268,7 @@ function BatchTabs({ selected, onSelect }: { selected: TabKey; onSelect: (key: T
   }
 
   return (
-    <div className={pageCss.tabs} role="tablist" aria-label="Onderdelen van de batch">
+    <div className={pageCss.tabs} role="tablist" aria-label="Onderdelen van de inlezing">
       {TABS.map((tab, index) => (
         <button
           key={tab.key}
@@ -331,7 +331,7 @@ export function BatchDetailPage() {
 
       {!validId && (
         <p role="alert" className={styles.alert}>
-          Ongeldig batchnummer: “{params.batchId}”.
+          Ongeldig inlezingsnummer: “{params.batchId}”.
         </p>
       )}
       {validId && error !== null && <ErrorBanner error={error} />}
@@ -359,24 +359,24 @@ export function BatchDetailPage() {
 
           {tab === 'mutations' && (
             <Panel tab="mutations" selected={tab}>
-              <section className={pageCss.card} aria-label="Mutaties">
+              <section className={pageCss.card} aria-label="Wijzigingen">
                 <div className={pageCss.cardHead}>
                   <div>
-                    <h2 className={pageCss.subtitle}>Mutaties</h2>
+                    <h2 className={pageCss.subtitle}>Wijzigingen</h2>
                     <p className={styles.secondary}>
-                      Voorgestelde wijzigingen aan artikelen. Beslissen (goedkeuren of afkeuren) gebeurt in een bundel.
+                      Voorgestelde wijzigingen aan artikelen. Beslissen (goedkeuren of afkeuren) gebeurt in een publicatie.
                     </p>
                   </div>
                 </div>
                 <div className={pageCss.cardPad}>
                   <WhatIsThis>
                     <p>
-                      Een mutatie is één voorgestelde wijziging aan een artikel: een nieuw artikel, een gewijzigd
+                      Een wijziging is één voorgestelde wijziging aan een artikel: een nieuw artikel, een gewijzigd
                       artikel, een herkenningsprobleem of de vastlegging dat de controle klaar is. Hier kunt u ze
-                      bekijken; beslissen (goedkeuren of afkeuren) gebeurt in een bundel.
+                      bekijken; beslissen (goedkeuren of afkeuren) gebeurt in een publicatie.
                     </p>
                   </WhatIsThis>
-                  <MutationList source={mutationSource} emptyMessage="Deze batch heeft (met deze filter) geen mutaties." />
+                  <MutationList source={mutationSource} emptyMessage="Deze inlezing heeft (met deze filter) geen wijzigingen." />
                 </div>
               </section>
             </Panel>

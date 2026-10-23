@@ -37,7 +37,7 @@ const FASE5_STATUSES: readonly PublicationBundleStatus[] = [
 ];
 
 describe('bundleActionGate — §9.1 statusmatrix', () => {
-  it('T2.1: "alles lezen" is altijd toegestaan, voor elke status en elke bundelstatus', () => {
+  it('T2.1: "alles lezen" is altijd toegestaan, voor elke status en elke publicatiestatus', () => {
     for (const status of PUBLICATION_BUNDLE_STATUSES) {
       expect(bundleActionGate(status, 'READ')).toEqual({ allowed: true });
     }
@@ -86,7 +86,7 @@ describe('bundleActionGate — §9.1 statusmatrix', () => {
     }
   });
 
-  it('T2.6: elke bundelstatus × elke actie levert een gate op (geen crash, geen undefined)', () => {
+  it('T2.6: elke publicatiestatus × elke actie levert een gate op (geen crash, geen undefined)', () => {
     for (const status of PUBLICATION_BUNDLE_STATUSES) {
       for (const action of BUNDLE_ACTIONS) {
         const gate = bundleActionGate(status, action);
@@ -99,8 +99,8 @@ describe('bundleActionGate — §9.1 statusmatrix', () => {
   });
 });
 
-describe('mutationDecisionGate — §9.2 beslisbaarheid per mutatie', () => {
-  it('T2.7: bundel niet ASSEMBLING => nooit beslisbaar, voor elke status/actionType/scope', () => {
+describe('mutationDecisionGate — §9.2 beslisbaarheid per wijziging', () => {
+  it('T2.7: publicatie niet ASSEMBLING => nooit beslisbaar, voor elke status/actionType/scope', () => {
     const nonAssembling = PUBLICATION_BUNDLE_STATUSES.filter((s) => s !== 'ASSEMBLING');
     for (const bundleStatus of nonAssembling) {
       for (const actionType of MUTATION_ACTION_TYPES) {
@@ -200,7 +200,7 @@ describe('mutationDecisionGate — §9.2 beslisbaarheid per mutatie', () => {
     }
   });
 
-  it('T2.14: elke combinatie van 7 bundelstatussen × 11 mutatiestatussen × 4 actietypes × 2 scopes levert een gate op', () => {
+  it('T2.14: elke combinatie van 7 publicatiestatussen × 11 wijzigingstatussen × 4 actietypes × 2 scopes levert een gate op', () => {
     let count = 0;
     for (const bundleStatus of PUBLICATION_BUNDLE_STATUSES) {
       for (const status of MUTATION_STATUSES) {
@@ -263,10 +263,10 @@ describe('freezeBlockerReason / freezeBlockers — §10.5 blokkades vooraf', () 
 
   it('F10.P2: de AWAITING_APPROVAL-blokkade noemt het aantal, enkelvoud en meervoud', () => {
     expect(freezeBlockerReason('BUNDLE_HAS_UNDECIDED_MUTATIONS', preflight({ awaitingApprovalCount: 3 }))).toContain(
-      '3 mutaties',
+      '3 wijzigingen',
     );
     expect(freezeBlockerReason('BUNDLE_HAS_UNDECIDED_MUTATIONS', preflight({ awaitingApprovalCount: 1 }))).toContain(
-      '1 mutatie ',
+      '1 wijziging ',
     );
   });
 
@@ -288,9 +288,9 @@ describe('freezeBlockerReason / freezeBlockers — §10.5 blokkades vooraf', () 
       }),
     );
     expect(reasons).toHaveLength(3);
-    expect(reasons[0]).toContain('2 mutaties');
-    expect(reasons[1]).toContain('4 mutaties');
-    expect(reasons[2]).toContain('meer dan één batch');
+    expect(reasons[0]).toContain('2 wijzigingen');
+    expect(reasons[1]).toContain('4 wijzigingen');
+    expect(reasons[2]).toContain('meer dan één inlezing');
   });
 
   it('F10.P5: een tegenstrijdig antwoord (niet bevriesbaar, zonder code) is nooit "geen blokkade"', () => {
@@ -319,7 +319,7 @@ describe('freezeGate — §10.5 spiegel van de voorvlucht', () => {
     expect(gate.allowed).toBe(false);
     expect(reasonOf(gate)).toContain('uitdrukkelijke beslissing');
     expect(reasonOf(gate)).not.toContain('BUNDLE_HAS_UNDECIDED_MUTATIONS');
-    expect(reasonOf(gate)).toContain('3 mutaties');
+    expect(reasonOf(gate)).toContain('3 wijzigingen');
   });
 
   it('F10.P9: elke blokkadecode blokkeert, ook een onbekende', () => {
@@ -397,11 +397,11 @@ function run(overrides: Partial<PublicationRunView> = {}): PublicationRunView {
 }
 
 describe('publicationRunGate — 5-PUB-a "Simulatierun starten"', () => {
-  it('P1: niet-FROZEN => denied (alleen een bevroren bundel), ongeacht de runs', () => {
+  it('P1: niet-FROZEN => denied (alleen een bevroren publicatie), ongeacht de runs', () => {
     for (const status of PUBLICATION_BUNDLE_STATUSES.filter((s) => s !== 'FROZEN')) {
       const gate = publicationRunGate(status, []);
       expect(gate.allowed).toBe(false);
-      expect(gate.allowed ? '' : gate.reason).toContain('alleen een bevroren bundel');
+      expect(gate.allowed ? '' : gate.reason).toContain('alleen een bevroren publicatie');
     }
   });
 

@@ -64,14 +64,14 @@ const LABELS: Record<GroupDecisionKind, { verb: string; past: string }> = {
 };
 
 function mutationsWord(count: number): string {
-  return count === 1 ? 'mutatie' : 'mutaties';
+  return count === 1 ? 'wijziging' : 'wijzigingen';
 }
 
 /** De filter, veld per veld, zoals hij verstuurd wordt. */
 function FilterSummary({ filter }: { filter: DecisionFilter }) {
   const entries: Array<[string, ReactNode]> = [];
   if (filter.batchId !== undefined) {
-    entries.push(['Batch', filter.batchId]);
+    entries.push(['Inlezing', filter.batchId]);
   }
   if (filter.status !== undefined) {
     entries.push(['Status', <Term key="status" domain="mutationStatus" code={filter.status} />]);
@@ -175,14 +175,14 @@ export function GroupDecisionDialog({ bundleId, bundleStatus, filter, listedCoun
       <div className={styles.header}>
         <h3 className={styles.title}>Groepsactie op de gefilterde lijst</h3>
         <p className={styles.explanation}>
-          Beslist over <strong>alle</strong> mutaties die aan de filter hieronder voldoen — niet alleen over
+          Beslist over <strong>alle</strong> wijzigingen die aan de filter hieronder voldoen — niet alleen over
           de zichtbare pagina. De filter is die van de lijst; pas hem daar aan.
         </p>
         <WhatIsThis>
           <p>
-            Een groepsactie keurt in één keer alle mutaties goed of af die aan de filter van de lijst voldoen, in plaats
+            Een groepsactie keurt in één keer alle wijzigingen goed of af die aan de filter van de lijst voldoen, in plaats
             van één voor één. Zet daarom eerst een filter in de lijst en controleer het aantal dat bij de knop staat.
-            Zolang de bundel in opbouw is, kunt u een mutatie nadien nog afzonderlijk herzien.
+            Zolang de publicatie in opbouw is, kunt u een wijziging nadien nog afzonderlijk herzien.
           </p>
         </WhatIsThis>
       </div>
@@ -228,12 +228,12 @@ export function GroupDecisionDialog({ bundleId, bundleStatus, filter, listedCoun
               </p>
               <FilterSummary filter={pending.filter} />
               <p>
-                Deze actie raakt nooit een tegengehouden mutatie, een herkenningsprobleem, de afgeronde controle of
-                een mutatie die al een beslissing draagt.
+                Deze actie raakt nooit een tegengehouden wijziging, een herkenningsprobleem, de afgeronde controle of
+                een wijziging die al een beslissing draagt.
               </p>
               <p className={styles.warning}>
-                Eén bevestiging beslist over al deze mutaties tegelijk, op uw naam en zonder tweede
-                goedkeurder. Zolang de bundel in opbouw is, kan elke mutatie nadien nog individueel herzien
+                Eén bevestiging beslist over al deze wijzigingen tegelijk, op uw naam en zonder tweede
+                goedkeurder. Zolang de publicatie in opbouw is, kan elke wijziging nadien nog individueel herzien
                 worden.
               </p>
             </div>

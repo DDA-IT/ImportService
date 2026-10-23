@@ -87,10 +87,10 @@ async function resumeFrom(organisationId: number, definitionId: number | null, l
 
   const definition = (await loadDefinitionsOf(organisation.id)).find((row) => row.id === definitionId);
   if (definition === undefined) {
-    throw new ResumeProblem('De beschrijving van het bestand uit de link hoort niet bij deze organisatie of bestaat niet (meer).');
+    throw new ResumeProblem('De importdefinitie uit de link hoort niet bij deze organisatie of bestaat niet (meer).');
   }
   if (definition.usageType === 'REUSABLE_TEMPLATE') {
-    throw new ResumeProblem('Dit is een sjabloon; een sjabloon richt u in via de pagina Sjablonen.');
+    throw new ResumeProblem('Dit is een herbruikbare importdefinitie; die richt u in via de pagina Importdefinities.');
   }
   next.startChosen = true;
   next.definition = { id: definition.id, code: definition.code, name: definition.name };
@@ -102,7 +102,7 @@ async function resumeFrom(organisationId: number, definitionId: number | null, l
 
   const link = (await loadLinksOf(definition.id)).find((row) => row.id === linkId);
   if (link === undefined) {
-    throw new ResumeProblem('De koppeling uit de link hoort niet bij deze beschrijving of bestaat niet (meer).');
+    throw new ResumeProblem('De koppeling uit de link hoort niet bij deze importdefinitie of bestaat niet (meer).');
   }
   next.link = toWizardLink(link);
   const [firstTask] = await loadTasksOf(link.id);
@@ -187,12 +187,12 @@ function warningText(warning: { code: string; message: string }): string {
  */
 function MaterialisedSummary({ result }: { result: MaterialisationView }) {
   return (
-    <section className={styles.form} aria-label="Uit het sjabloon aangemaakt" data-testid="wizard-materialised">
-      <h2 className={styles.stepTitle}>Uit het sjabloon aangemaakt</h2>
+    <section className={styles.form} aria-label="Uit de importdefinitie aangemaakt" data-testid="wizard-materialised">
+      <h2 className={styles.stepTitle}>Uit de importdefinitie aangemaakt</h2>
       <p className={styles.note}>
-        {result.definitionCreated ? 'Een nieuwe beschrijving van het bestand' : 'Een bestaande beschrijving'}{' '}
+        {result.definitionCreated ? 'Een nieuwe importdefinitie' : 'Een bestaande importdefinitie'}{' '}
         <strong>{result.definitionCode}</strong> en de koppeling <strong>{result.importLinkCode}</strong> zijn
-        klaar, op basis van versie {result.templateRevisionNumber} van het sjabloon. De versie van de beschrijving
+        klaar, op basis van versie {result.templateRevisionNumber} van de importdefinitie. De versie van de importdefinitie
         is <Term domain="revisionStatus" code={result.definitionRevisionStatus} />. Er is nog geen taak: die maakt
         u hieronder.
       </p>
@@ -227,13 +227,13 @@ function StartStep({ onOwnDescription, onTemplate }: { onOwnDescription: () => v
           </button>
         </div>
         <div className={styles.card}>
-          <h3 className={styles.stepTitle}>Vanuit een sjabloon van deze leverancier of aankoopvereniging</h3>
+          <h3 className={styles.stepTitle}>Vanuit een importdefinitie van deze leverancier of aankoopvereniging</h3>
           <p className={styles.note}>
-            Vertrek van een bestaande, herbruikbare beschrijving van deze organisatie, bijvoorbeeld van een
-            aankoopvereniging. De beschrijving, een conceptversie en de koppeling worden in één keer aangemaakt.
+            Vertrek van een bestaande, herbruikbare importdefinitie van deze organisatie, bijvoorbeeld van een
+            aankoopvereniging. De importdefinitie, een conceptversie en de koppeling worden in één keer aangemaakt.
           </p>
           <button type="button" className={button.primary} onClick={onTemplate}>
-            Vanuit een sjabloon van deze leverancier of aankoopvereniging
+            Vanuit een importdefinitie van deze leverancier of aankoopvereniging
           </button>
         </div>
       </div>

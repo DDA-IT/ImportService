@@ -69,7 +69,7 @@ export function BundleDetailPage() {
             </div>
           </header>
           <div className={styles.detailHead}>
-            <Link to="/bundles" className={styles.backButton} aria-label="Terug naar de publicatiebundels">
+            <Link to="/bundles" className={styles.backButton} aria-label="Terug naar de publicaties">
               <BackIcon />
             </Link>
             <div className={styles.detailId}>
@@ -81,7 +81,7 @@ export function BundleDetailPage() {
             </div>
           </div>
 
-          <nav className={pageCss.tabs} aria-label="Onderdelen van de bundel">
+          <nav className={pageCss.tabs} aria-label="Onderdelen van de publicatie">
             <NavLink to={`/bundles/${bundleId}`} end className={pageCss.tab}>
               Overzicht
             </NavLink>

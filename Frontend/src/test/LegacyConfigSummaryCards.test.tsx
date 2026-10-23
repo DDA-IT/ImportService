@@ -206,7 +206,7 @@ describe('kaartenrooster — één paneel tegelijk', () => {
   it('klapt de keuzes open zolang er iets blokkeert en dicht als niets blokkeert', async () => {
     serve(reportWith(FOUR_BLOCKING));
     const { unmount } = renderDetail();
-    expect(await screen.findByLabelText('Andere code voor de beschrijving')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Andere code voor de importdefinitie')).toBeInTheDocument();
     unmount();
     cleanup();
 
@@ -214,9 +214,9 @@ describe('kaartenrooster — één paneel tegelijk', () => {
     renderDetail();
     const toggle = await screen.findByRole('button', { name: /^Tonen Keuzes voor de controle$/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByLabelText('Andere code voor de beschrijving')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Andere code voor de importdefinitie')).not.toBeInTheDocument();
     fireEvent.click(toggle);
-    expect(screen.getByLabelText('Andere code voor de beschrijving')).toBeInTheDocument();
+    expect(screen.getByLabelText('Andere code voor de importdefinitie')).toBeInTheDocument();
   });
 });
 
@@ -324,7 +324,7 @@ describe('rapportbron per status', () => {
     expect(screen.getByTestId('legacy-card-count-migrated')).toHaveTextContent('1');
     expect(within(screen.getByTestId('legacy-card-blocking')).getByRole('button')).toBeDisabled();
     expect(screen.getByTestId('legacy-origin-facts')).toHaveTextContent('An Beslisser');
-    expect(screen.queryByLabelText('Andere code voor de beschrijving')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Andere code voor de importdefinitie')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Overnemen…' })).not.toBeInTheDocument();
     expect(api.reads('/preview')).toHaveLength(0);
   });

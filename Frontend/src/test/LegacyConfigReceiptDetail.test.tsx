@@ -56,8 +56,8 @@ configure({ asyncUtilTimeout: 10000 });
 
 afterEach(() => cleanup());
 
-describe('LegacyReceiptDetailPage — bundel', () => {
-  it('toont herkomst, instellingen en importsoort van de bundel', async () => {
+describe('LegacyReceiptDetailPage — publicatie', () => {
+  it('toont herkomst, instellingen en importsoort van de publicatie', async () => {
     mockApi(defaultHandler);
     renderDetail();
 
@@ -181,10 +181,10 @@ describe('LegacyReceiptDetailPage — controle vooraf', () => {
     const row = (label: string) => within(planned).getByText(label).closest('div')!;
     expect(row('Leverancier')).toHaveTextContent('Wordt hergebruikt');
     expect(row('Leverancier')).toHaveTextContent('1042 — Kramp NV');
-    expect(row('Sjabloon')).toHaveTextContent('Wordt aangemaakt');
-    expect(row('Sjabloon')).toHaveTextContent('VROOAM2-SJ');
-    expect(row('Gedeelde beschrijving van het bestand')).toHaveTextContent('Wordt aangemaakt');
-    expect(row('Gedeelde beschrijving van het bestand')).toHaveTextContent('Versie: Wordt aangemaakt');
+    expect(row('Importdefinitie')).toHaveTextContent('Wordt aangemaakt');
+    expect(row('Importdefinitie')).toHaveTextContent('VROOAM2-SJ');
+    expect(row('Gedeelde importdefinitie')).toHaveTextContent('Wordt aangemaakt');
+    expect(row('Gedeelde importdefinitie')).toHaveTextContent('Versie: Wordt aangemaakt');
     expect(row('Koppeling')).toHaveTextContent('LEGACY-KRAMP_ART');
     expect(row('Koppeling')).toHaveTextContent('Bibliotheek: nog niet bepaald');
     expect(row('Taak')).toHaveTextContent('Legacy KRAMP_ART');
@@ -221,7 +221,7 @@ describe('LegacyReceiptDetailPage — controle vooraf', () => {
     renderDetail();
     await screen.findByTestId('legacy-report');
 
-    fireEvent.change(screen.getByLabelText('Andere code voor de beschrijving'), { target: { value: 'VROOAM2B' } });
+    fireEvent.change(screen.getByLabelText('Andere code voor de importdefinitie'), { target: { value: 'VROOAM2B' } });
     fireEvent.change(screen.getByLabelText('Tekenset als de interface er geen opgeeft (optioneel)'), { target: { value: 'UTF-8' } });
     // Nog niets verstuurd: de controle rekent pas na de knop opnieuw.
     expect(api.reads('/preview')).toHaveLength(1);

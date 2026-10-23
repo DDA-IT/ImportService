@@ -214,7 +214,7 @@ describe('BatchDetailPage', () => {
     renderAt('/batches/101');
     const note = await screen.findByTestId('batch-staging-purged');
     expect(note).toHaveTextContent(/De tussentijdse gegevens van deze controle zijn op .+ opgeruimd\./);
-    expect(note).toHaveTextContent('De tellers, meldingen en mutaties blijven bewaard.');
+    expect(note).toHaveTextContent('De tellers, meldingen en wijzigingen blijven bewaard.');
     cleanup();
 
     stubFetch({ batch: json({ ...BATCH, stagingPurgedAt: null }) });
@@ -236,29 +236,29 @@ describe('BatchDetailPage', () => {
     expect(screen.queryByTestId('batch-baseline')).toBeNull();
   });
 
-  it('A-F1.4: de mutatielijst is een leeslijst en vraagt /batches/{id}/mutations op', async () => {
+  it('A-F1.4: de wijzigingenlijst is een leeslijst en vraagt /batches/{id}/mutations op', async () => {
     renderAt('/batches/101');
     await screen.findByRole('heading', { name: 'Inlezing 101' });
-    openTab('Mutaties');
-    expect(await screen.findByText('Deze batch heeft (met deze filter) geen mutaties.')).toBeInTheDocument();
+    openTab('Wijzigingen');
+    expect(await screen.findByText('Deze inlezing heeft (met deze filter) geen wijzigingen.')).toBeInTheDocument();
     const calls = vi.mocked(global.fetch).mock.calls.map((c) => c[0]?.toString() ?? '');
     expect(calls.some((u) => u.includes('/batches/101/mutations'))).toBe(true);
     expect(screen.queryByRole('button', { name: 'Goedkeuren' })).toBeNull();
   });
 
-  it('A-F1.5: onbekende batch toont BATCH_NOT_FOUND leesbaar, zonder de andere secties', async () => {
-    stubFetch({ batch: json({ code: 'BATCH_NOT_FOUND', error: 'Batch 5 not found' }, 404) });
+  it('A-F1.5: onbekende inlezing toont BATCH_NOT_FOUND leesbaar, zonder de andere secties', async () => {
+    stubFetch({ batch: json({ code: 'BATCH_NOT_FOUND', error: 'Inlezing 5 not found' }, 404) });
     renderAt('/batches/5');
 
-    expect(await screen.findByText('Batch niet gevonden')).toBeInTheDocument();
+    expect(await screen.findByText('Inlezing niet gevonden')).toBeInTheDocument();
     expect(screen.getByText(/BATCH_NOT_FOUND · HTTP 404/)).toBeInTheDocument();
     expect(screen.queryByTestId('batch-delivery')).toBeNull();
     expect(screen.queryByTestId('batch-issues')).toBeNull();
   });
 
-  it('A-F1.6: een ongeldig batchnummer doet geen verzoek', async () => {
+  it('A-F1.6: een ongeldig inlezingsnummer doet geen verzoek', async () => {
     renderAt('/batches/abc');
-    expect(await screen.findByText(/Ongeldig batchnummer/)).toBeInTheDocument();
+    expect(await screen.findByText(/Ongeldig inlezingsnummer/)).toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
@@ -296,7 +296,7 @@ describe('BatchDetailPage', () => {
     renderAt('/batches/101');
     await screen.findByRole('heading', { name: 'Inlezing 101' });
     openTab('Problemen');
-    expect(await screen.findByText('Deze batch heeft geen foutgroepen.')).toBeInTheDocument();
+    expect(await screen.findByText('Deze inlezing heeft geen foutgroepen.')).toBeInTheDocument();
     expect(await screen.findByText('Geen problemen vastgesteld.')).toBeInTheDocument();
   });
 
@@ -326,7 +326,7 @@ describe('BatchDetailPage', () => {
     await screen.findByRole('heading', { name: 'Inlezing 101' });
 
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((t) => t.textContent)).toEqual(['Overzicht', 'Problemen', 'Mutaties', 'Levering']);
+    expect(tabs.map((t) => t.textContent)).toEqual(['Overzicht', 'Problemen', 'Wijzigingen', 'Levering']);
     expect(screen.getByRole('tab', { name: 'Overzicht' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('batch-counters')).toBeVisible();
     const urls = () => vi.mocked(global.fetch).mock.calls.map((c) => c[0]?.toString() ?? '');
