@@ -18,7 +18,7 @@ import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
 import { term } from '../../terms/index.ts';
 import { EDITOR_TEXT as TEXT } from '../../terms/setupEditor.ts';
-import type { CoreRowKey } from './fieldsGridModel.ts';
+import { coreRowCriticality, coreRowFieldKey, type CatalogueCriticality, type CoreRowKey, type FieldCatalogue } from './fieldsGridModel.ts';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
 import { PanelShell } from './PanelShell.tsx';
 import { ProdisCombobox } from './ProdisCombobox.tsx';
@@ -35,6 +35,8 @@ import {
 import { isSetupApiDisabledError, SETUP_WRITE_API_DISABLED_MESSAGE } from './setupWriteFlag.ts';
 import styles from './FieldsEditor.module.css';
 
+type CriticalityStep = { kind: 'none' } | { kind: 'set'; value: CatalogueCriticality } | { kind: 'restore' };
+
 const CANONICALISATION_CODE = 'REVISION_CANONICALISATION_CHANGE_BLOCKED';
 
 export type PanelTarget = { kind: 'row'; key: CoreRowKey } | { kind: 'uppercase' };
@@ -42,13 +44,15 @@ export type PanelTarget = { kind: 'row'; key: CoreRowKey } | { kind: 'uppercase'
 export type FieldPanelProps = {
   revision: RevisionDetail;
   target: PanelTarget;
+  /** EF2: de veldcatalogus (standaard kritiek en of die te wijzigen is); zonder catalogus blijft de kritiek ongewijzigd. */
+  catalogue?: FieldCatalogue | null;
   /** De bronorganisatie van de definitie (= Prodis-leveranciersnummer) voor de groepen van een vaste groep. */
   sourceOrganisationCode?: string;
   /** De knop die het paneel opende; de focus keert er na het sluiten naartoe terug. */
   opener: HTMLElement | null;
   onClose: () => void;
-  /** Na een geslaagde PATCH: de aanroeper toont de melding, herlaadt het detail en sluit het paneel. */
-  onSaved: (result: RevisionView) => void;
+  /** Na het bewaren: de aanroeper toont de melding, herlaadt het detail en sluit het paneel. `null` = enkel de kritiek is gewijzigd. */
+  onSaved: (result: RevisionView | null) => void;
 };
 
 function titleOf(target: PanelTarget, label: string): string {
@@ -69,7 +73,7 @@ function sameForm(a: FormState, b: FormState): boolean {
   return (Object.keys(a) as (keyof FormState)[]).every((name) => a[name] === b[name]);
 }
 
-export function FieldPanel({ revision, target, sourceOrganisationCode, opener, onClose, onSaved }: FieldPanelProps) {
+export function FieldPanel({ revision, target, catalogue = null, sourceOrganisationCode, opener, onClose, onSaved }: FieldPanelProps) {
   const { actor } = useActor();
   const baseline = useRef<FormState>(initialForm(revision));
   const [form, setForm] = useState<FormState>(baseline.current);
@@ -77,13 +81,41 @@ export function FieldPanel({ revision, target, sourceOrganisationCode, opener, o
   const [problem, setProblem] = useState<string | null>(null);
   // Kortingscode: "Niet gebruikt" of een kolom; de keuze is formulierstaat, de server kent enkel het veld.
   const [discountUsed, setDiscountUsed] = useState(baseline.current.discountCodeField.trim() !== '');
-  const runner = useAction((body: Parameters<typeof setupRevisionsApi.updateRevision>[1]) =>
-    setupRevisionsApi.updateRevision(revision.id, body),
+  // EF2: de kritiek van Basisprijs, Valuta en Omschrijving (eigen endpoints, `PUT`/`DELETE field-criticality`).
+  const rowFieldKey = target.kind === 'row' ? coreRowFieldKey(target.key) : null;
+  const catalogueEntry = rowFieldKey === null ? undefined : catalogue?.revisionFields[rowFieldKey];
+  const hasOverride = rowFieldKey !== null && revision.fieldCriticalities.some((row) => row.fieldKey === rowFieldKey);
+  const criticalityEditable = catalogueEntry !== undefined && catalogueEntry.criticalityChangeable;
+  const initialCriticality = useRef<CatalogueCriticality | null>(
+    target.kind === 'row' ? coreRowCriticality(target.key, revision, catalogue) : null,
   );
+  const [criticality, setCriticality] = useState<CatalogueCriticality | null>(initialCriticality.current);
+  const [restore, setRestore] = useState(false);
+  // Een gelukte PATCH van een eerdere poging waarvan de kritiek mislukte: niet opnieuw sturen zolang het formulier gelijk bleef.
+  const scalarDone = useRef<{ form: FormState; result: RevisionView } | null>(null);
+  const runner = useAction(async (job: { body: Parameters<typeof setupRevisionsApi.updateRevision>[1] | null; criticality: CriticalityStep }) => {
+    let result: RevisionView | null = scalarDone.current?.result ?? null;
+    if (job.body !== null) {
+      result = await setupRevisionsApi.updateRevision(revision.id, job.body);
+      scalarDone.current = { form, result };
+    }
+    if (rowFieldKey !== null) {
+      if (job.criticality.kind === 'set') {
+        await setupRevisionsApi.setFieldCriticality(revision.id, rowFieldKey, {
+          criticality: job.criticality.value,
+          createdBy: actor,
+        });
+      } else if (job.criticality.kind === 'restore') {
+        await setupRevisionsApi.deleteFieldCriticality(revision.id, rowFieldKey);
+      }
+    }
+    return { result };
+  });
 
   const label = target.kind === 'row' ? ROW_LABEL[target.key] : '';
 
-  const dirty = !sameForm(form, baseline.current);
+  const criticalityDirty = restore || (criticality !== initialCriticality.current);
+  const dirty = !sameForm(form, baseline.current) || criticalityDirty;
 
   function touched() {
     setProblem(null);
@@ -109,22 +141,37 @@ export function FieldPanel({ revision, target, sourceOrganisationCode, opener, o
   const canonicalisationBlocked = runner.error?.code === CANONICALISATION_CODE;
   const needsAcknowledge = identityChangedNow && !canonicalisationBlocked;
 
+  function criticalityStep(): CriticalityStep {
+    if (!criticalityEditable) {
+      return { kind: 'none' };
+    }
+    if (restore) {
+      return hasOverride ? { kind: 'restore' } : { kind: 'none' };
+    }
+    return criticality !== null && criticality !== initialCriticality.current
+      ? { kind: 'set', value: criticality }
+      : { kind: 'none' };
+  }
+
   async function apply() {
+    const skipScalar = scalarDone.current !== null && sameForm(form, scalarDone.current.form);
     const built = buildRequest(form, revision, acknowledge, actor);
     if ('problem' in built) {
       setProblem(built.problem);
       return;
     }
-    if (!hasChanges(built.body)) {
+    const step = criticalityStep();
+    const scalarChanged = !skipScalar && hasChanges(built.body);
+    if (!scalarChanged && step.kind === 'none' && !skipScalar) {
       setProblem(TEXT.nothingChanged);
       return;
     }
     setProblem(null);
-    const result = await runner.execute(built.body);
-    if (result === undefined) {
+    const done = await runner.execute({ body: scalarChanged ? built.body : null, criticality: step });
+    if (done === undefined) {
       return;
     }
-    onSaved(result);
+    onSaved(done.result);
   }
 
   // --- de velden van het paneel ---
@@ -215,6 +262,70 @@ export function FieldPanel({ revision, target, sourceOrganisationCode, opener, o
           columnInput(columnKey, TEXT.columnLabel, TEXT.columnHint)
         )}
       </>
+    );
+  }
+
+  /** EF2: Kritiek / Niet kritiek met "Standaard herstellen"; een herkenningsrij toont enkel "Kritiek (altijd)". */
+  function criticalityBlock(): ReactNode {
+    if (target.kind !== 'row') {
+      return null;
+    }
+    const CRIT = TEXT.criticality;
+    const identityRow = ['supplier', 'group', 'reference', 'discount'].includes(target.key);
+    if (identityRow) {
+      return (
+        <div className={styles.pf} data-testid="panel-criticality-locked">
+          <span className={styles.pfLabel}>{CRIT.label}</span>
+          <p>{CRIT.locked}</p>
+          <p className={styles.pfHint}>{CRIT.lockedHint}</p>
+        </div>
+      );
+    }
+    if (!criticalityEditable) {
+      return null;
+    }
+    const standard = catalogueEntry.defaultCriticality;
+    const standardLabel = standard === 'CRITICAL' ? CRIT.critical : CRIT.notCritical;
+    return (
+      <div data-testid="panel-criticality">
+        {radios(
+          'panel-criticality',
+          CRIT.label,
+          [
+            { value: 'CRITICAL', label: CRIT.critical },
+            { value: 'NON_CRITICAL', label: CRIT.notCritical },
+          ],
+          criticality ?? standard,
+          (value) => {
+            setCriticality(value === 'NON_CRITICAL' ? 'NON_CRITICAL' : 'CRITICAL');
+            setRestore(false);
+            touched();
+          },
+        )}
+        {target.key === 'basePrice' && (criticality ?? standard) === 'NON_CRITICAL' && (
+          <p className={styles.warning} role="note" data-testid="panel-criticality-warning">
+            {CRIT.basePriceWarning}
+          </p>
+        )}
+        {hasOverride && (
+          <div className={styles.pf}>
+            <p className={styles.pfHint}>{restore ? CRIT.restoreNote(standardLabel) : CRIT.customNote}</p>
+            <button
+              type="button"
+              className={`${button.secondary} ${button.small}`}
+              disabled={restore}
+              data-testid="panel-criticality-restore"
+              onClick={() => {
+                setCriticality(standard);
+                setRestore(true);
+                touched();
+              }}
+            >
+              {CRIT.restore}
+            </button>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -332,6 +443,7 @@ export function FieldPanel({ revision, target, sourceOrganisationCode, opener, o
       )}
     >
       {body()}
+      {criticalityBlock()}
       {needsAcknowledge && (
         <div data-testid="identity-change-acknowledge">
           <p className={styles.warning} role="note">

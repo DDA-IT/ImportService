@@ -268,12 +268,17 @@ const CORE_ROW_FIELD_KEY: Record<CoreRowKey, string> = {
  * De geldende kritiek van een kernrij: de overrule van deze versie als die er is, anders de standaard van de catalogus.
  * `null` zolang beide onbekend zijn (geen catalogus en geen overrule): het scherm toont dan "onbekend", geen verzonnen waarde.
  */
+/** Het `fieldKey` van een kernrij (voor de kritiek-overrule en de standaard van de catalogus). */
+export function coreRowFieldKey(key: CoreRowKey): string {
+  return CORE_ROW_FIELD_KEY[key];
+}
+
 export function coreRowCriticality(
   key: CoreRowKey,
   revision: RevisionDetail,
   catalogue: FieldCatalogue | null,
 ): CatalogueCriticality | null {
-  const fieldKey = CORE_ROW_FIELD_KEY[key];
+  const fieldKey = coreRowFieldKey(key);
   const override = revision.fieldCriticalities.find((row) => row.fieldKey === fieldKey);
   if (override !== undefined) {
     return asCriticality(override.criticality);

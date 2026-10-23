@@ -913,8 +913,7 @@ export type FilterView = {
 };
 
 // be.dda.catalogimport.service.SetupService.FieldCriticalityView — één kritiek-overrule. Heeft geen
-// eigen id: de sleutel is (revisionId, fieldKey). Er is bewust geen verwijderendpoint voor (§6: E4
-// dekt enkel mappings en filters).
+// eigen id: de sleutel is (revisionId, fieldKey). Wijzigen en terugzetten: PUT/DELETE field-criticality (EB2).
 export type FieldCriticalityView = {
   revisionId: number;
   fieldKey: string;

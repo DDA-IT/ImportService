@@ -769,6 +769,16 @@ export const CODE_MESSAGES: Record<string, CodeEntry> = {
     explanation: 'Een referentieveld is altijd kritiek en kan niet op "Niet kritiek" gezet worden. Er is niets gewijzigd.',
     whatNow: 'Kies "Kritiek" voor dit veld.',
   },
+  REVISION_EDIT_CONFLICT: {
+    title: 'Gelijktijdige wijziging',
+    explanation: 'Iemand anders wijzigde dit tegelijk. Herlaad en probeer opnieuw. Er is niets opgeslagen.',
+    whatNow: 'Herlaad de pagina en breng de wijziging opnieuw aan.',
+  },
+  FIELD_CRITICALITY_NOT_FOUND: {
+    title: 'Aangepaste kritiek niet gevonden',
+    explanation: 'Dit veld heeft in deze versie geen aangepaste kritiek (meer).',
+    whatNow: 'Laad de versie opnieuw.',
+  },
   FILTER_NOT_FOUND: {
     title: 'Recordfilter niet gevonden',
     explanation: 'Dit recordfilter bestaat niet (meer) op deze versie.',

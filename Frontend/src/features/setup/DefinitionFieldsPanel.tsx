@@ -26,7 +26,6 @@ import { term } from '../../terms/index.ts';
 import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { EDITOR_TEXT } from '../../terms/setupEditor.ts';
 import { type ColumnLinkRequest } from './ColumnPreview.tsx';
-import { COLUMN_PREVIEW_TEXT } from '../../terms/columnPreview.ts';
 import { ConceptBar, SharedDefinitionNotice } from './ConceptBar.tsx';
 import { CreateSuccessorAction } from './CreateSuccessorAction.tsx';
 import { FieldPanel, type PanelTarget } from './FieldPanel.tsx';
@@ -166,7 +165,7 @@ function RevisionFields({
   // E5b: het kolomvoorbeeld van de laatste proefinlezing blijft staan na een wijziging (het wordt tegen de actuele versie
   // gerekend en toont zelf of de bestandsopbouw sindsdien veranderde); alleen in de toestand van de pagina.
   const [columnPreview, setColumnPreview] = useState<ColumnPreview | null>(null);
-  // E5b: de kolom waarvoor "Koppelen aan veld…" de Veld toevoegen-stroom opende (enkel een hint boven het paneel).
+  // E5b: de kolom waarvoor "Koppelen aan veld…" de Veld toevoegen-stroom opende; haar bron vult het paneel vooraf in.
   const [linkColumn, setLinkColumn] = useState<ColumnLinkRequest | null>(null);
 
   // EF1: de veldcatalogus (lijst "Veld toevoegen", standaard kritiek, kritiek van de kernrijen); `null` zolang ze laadt.
@@ -296,11 +295,6 @@ function RevisionFields({
           onActivated={afterChange}
         />
       )}
-      {mappingPanel !== null && linkColumn !== null && editingNow && (
-        <div className={styles.banner} role="status" data-testid="link-column-hint">
-          <p>{COLUMN_PREVIEW_TEXT.linkHint(linkColumn.position, linkColumn.header, linkColumn.source)}</p>
-        </div>
-      )}
       {detailData !== null && (
         <RevisionReadView
           revision={detailData}
@@ -338,6 +332,7 @@ function RevisionFields({
             setSaved(null);
             setPanel(null);
             setFilterPanel(null);
+            setLinkColumn(null);
             setMappingPanel({ mode: { kind: 'add', code }, opener });
           }}
           onAddFilter={(opener) => {
@@ -379,12 +374,13 @@ function RevisionFields({
           key={panel.target.kind === 'row' ? panel.target.key : panel.target.kind}
           revision={detailData}
           target={panel.target}
+          catalogue={catalogue}
           sourceOrganisationCode={definition.sourceOrganisationCode}
           opener={panel.opener}
           onClose={() => setPanel(null)}
           onSaved={(result) => {
             setPanel(null);
-            setSaved((result.warnings ?? []).map((warning) => warning.message));
+            setSaved((result?.warnings ?? []).map((warning) => warning.message));
             afterChange();
           }}
         />
@@ -392,10 +388,11 @@ function RevisionFields({
 
       {mappingPanel !== null && detailData !== null && catalogue !== null && editingNow && (
         <MappingPanel
-          key={`${mappingPanel.mode.kind}:${mappingPanel.mode.code ?? ''}`}
+          key={`${mappingPanel.mode.kind}:${mappingPanel.mode.code ?? ''}:${linkColumn?.position ?? ''}`}
           revision={detailData}
           catalogue={catalogue}
           mode={mappingPanel.mode}
+          initialSource={mappingPanel.mode.kind === 'add' ? linkColumn?.source : undefined}
           opener={mappingPanel.opener}
           onClose={() => {
             setMappingPanel(null);
@@ -422,7 +419,6 @@ function RevisionFields({
             setSaved([]);
             afterChange();
           }}
-          onChanged={afterChange}
         />
       )}
     </>

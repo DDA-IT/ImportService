@@ -26,8 +26,6 @@ export const COLUMN_PREVIEW_TEXT = {
   notUsed: 'Niet gebruikt',
   link: 'Koppelen aan veld…',
   linkLabel: (position: number) => `Koppelen aan veld: kolom ${position}`,
-  linkHint: (position: number, name: string | null, source: string) =>
-    `Kolom ${position}${name === null ? '' : ` (${name})`} koppelen aan een veld: kies hierna het veld. Als bron geldt: ${source}.`,
   filterLabel: (n: number) => `Filter ${n}`,
   groupLabel: (n: number) => `Uitsluitingsgroep ${n}`,
 

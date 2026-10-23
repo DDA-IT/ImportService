@@ -7,9 +7,10 @@
  * (`null`): geen verschillen. Er wordt nooit iets gecorrigeerd of verborgen; een waarde die niet leesbaar is, staat als
  * "niet ingevuld" of "niet gebruikt".
  *
- * Een filter heeft geen vaste sleutel over versies heen (wijzigen = nieuw toevoegen en het oude verwijderen, E3). Een filter
- * dat in de basisversie niet meer voorkomt en in het concept een gelijke kolom heeft die er nog niet was, telt daarom als
- * "gewijzigd"; de rest is "nieuw" of "niet meer in deze versie".
+ * Een filter wordt eerst op volgnummer gekoppeld (EB3: wijzigen behoudt het volgnummer, ook al krijgt de rij een nieuw id):
+ * gelijk volgnummer en gelijke inhoud is ongewijzigd, gelijk volgnummer met andere inhoud is "gewijzigd". Wat zo geen paar vormt
+ * (bv. een concept dat nog via toevoegen en verwijderen werd gewijzigd) valt terug op de oude regel: gelijke inhoud, of een
+ * gelijke kolom die er nog niet was, telt als "gewijzigd"; de rest is "nieuw" of "niet meer in deze versie".
  */
 
 import type { FilterView, MappingView, RevisionDetail } from '../../api/types.ts';
@@ -159,7 +160,30 @@ function filterSignature(filter: FilterView): string {
 function diffFilters(current: RevisionDetail, base: RevisionDetail, out: DiffEntry[], result: RevisionDiff) {
   const unmatchedBase = [...base.filters];
   const unmatchedCurrent: FilterView[] = [];
+  const sentenceOfCurrent = (filter: FilterView) => sentenceText(filterSentence(filter, current.structureFieldReferenceKind));
+  const sentenceOfBase = (filter: FilterView) => sentenceText(filterSentence(filter, base.structureFieldReferenceKind));
+  // Eerst op volgnummer: een opvolger behoudt de volgnummers van de basisversie.
+  const leftover: FilterView[] = [];
   for (const filter of current.filters) {
+    const index = unmatchedBase.findIndex((candidate) => candidate.sequenceNumber === filter.sequenceNumber);
+    if (index < 0) {
+      leftover.push(filter);
+      continue;
+    }
+    const [before] = unmatchedBase.splice(index, 1);
+    if (filterSignature(before!) !== filterSignature(filter)) {
+      out.push({
+        key: `filter:${filter.id}`,
+        section: 'filter',
+        label: TEXT.filterLabel,
+        kind: 'changed',
+        from: sentenceOfBase(before!),
+        to: sentenceOfCurrent(filter),
+      });
+      result.filterKinds[filter.id] = 'changed';
+    }
+  }
+  for (const filter of leftover) {
     const signature = filterSignature(filter);
     const index = unmatchedBase.findIndex((candidate) => filterSignature(candidate) === signature);
     if (index >= 0) {
@@ -168,8 +192,6 @@ function diffFilters(current: RevisionDetail, base: RevisionDetail, out: DiffEnt
       unmatchedCurrent.push(filter);
     }
   }
-  const sentenceOfCurrent = (filter: FilterView) => sentenceText(filterSentence(filter, current.structureFieldReferenceKind));
-  const sentenceOfBase = (filter: FilterView) => sentenceText(filterSentence(filter, base.structureFieldReferenceKind));
   for (const filter of unmatchedCurrent) {
     const pairIndex = unmatchedBase.findIndex((candidate) => candidate.sourceReference === filter.sourceReference);
     if (pairIndex >= 0) {

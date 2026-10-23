@@ -56,6 +56,8 @@ export type MappingPanelProps = {
   /** EF1: de veldcatalogus (van `GET /field-catalog`, of de terugval uit het woordenboek). */
   catalogue: FieldCatalogue;
   mode: MappingPanelMode;
+  /** Alleen bij toevoegen: de kolom (naam of nummer) die als bron vooraf ingevuld wordt, bv. vanuit "Koppelen aan veld…". */
+  initialSource?: string;
   opener: HTMLElement | null;
   onClose: () => void;
   /** Na een geslaagde toevoeging, wijziging of verwijdering: de aanroeper toont de melding, herlaadt en sluit het paneel. */
@@ -88,14 +90,25 @@ function criticalityLocked(catalogue: FieldCatalogue, code: string): boolean {
   return catalogueField(catalogue, code)?.criticalityChangeable === false;
 }
 
-function startSession(revision: RevisionDetail, catalogue: FieldCatalogue, mode: MappingPanelMode, code: string): Session | null {
+function startSession(
+  revision: RevisionDetail,
+  catalogue: FieldCatalogue,
+  mode: MappingPanelMode,
+  code: string,
+  initialSource?: string,
+): Session | null {
   const existing = mode.kind === 'edit' ? revision.mappings.find((mapping) => mapping.targetFieldCode === code) : undefined;
   if (mode.kind === 'edit' && existing === undefined) {
     return null;
   }
   // EF1: een nieuwe koppeling start met de standaard kritiek van het veld (niet langer altijd "Niet kritiek").
   const mapping = existing ?? newMappingTemplate(revision.id, code, catalogueField(catalogue, code)?.defaultCriticality);
-  const initial = initialMappingForm(mapping);
+  // Een nieuwe koppeling vanuit "Koppelen aan veld…" (kolomweergave) start met de kolom als bron.
+  const prefilled =
+    existing === undefined && initialSource !== undefined && initialSource.trim() !== ''
+      ? { ...mapping, sourceReference: initialSource }
+      : mapping;
+  const initial = initialMappingForm(prefilled);
   // Een vergrendeld veld is altijd kritiek: het formulier start daarop, zodat het niet als gewijzigd telt.
   const form = criticalityLocked(catalogue, code) ? { ...initial.form, criticality: 'CRITICAL' } : initial.form;
   return { code, mapping, form, baseline: JSON.stringify(form), unsupported: initial.unsupported };
@@ -138,12 +151,12 @@ function Radios({
   );
 }
 
-export function MappingPanel({ revision, catalogue, mode, opener, onClose, onSaved }: MappingPanelProps) {
+export function MappingPanel({ revision, catalogue, mode, initialSource, opener, onClose, onSaved }: MappingPanelProps) {
   const { actor } = useActor();
   const uid = useId();
   const contentRef = useRef<HTMLDivElement>(null);
   const [session, setSession] = useState<Session | null>(() =>
-    mode.code === null ? null : startSession(revision, catalogue, mode, mode.code),
+    mode.code === null ? null : startSession(revision, catalogue, mode, mode.code, initialSource),
   );
   const [query, setQuery] = useState('');
   const [problems, setProblems] = useState<string[]>([]);
@@ -188,7 +201,7 @@ export function MappingPanel({ revision, catalogue, mode, opener, onClose, onSav
   }
 
   function pick(code: string) {
-    setSession(startSession(revision, catalogue, mode, code));
+    setSession(startSession(revision, catalogue, mode, code, initialSource));
     setQuery('');
     touched();
     // Stap 2: de focus naar het eerste veld van het paneel.

@@ -101,6 +101,51 @@ describe('computeRevisionDiff', () => {
     expect(diff.count).toBe(3);
   });
 
+  describe('filters op volgnummer (EB3)', () => {
+    it('hetzelfde volgnummer met andere inhoud is gewijzigd, ook als de kolom verandert (nieuw id, zelfde volgnummer)', () => {
+      const base = detail(1, { filters: [filter(11, { sequenceNumber: 1 }), filter(12, { sequenceNumber: 2, sourceReference: '5' })] });
+      const current = detail(2, {
+        filters: [
+          filter(31, { sequenceNumber: 1, sourceReference: '9', compareValue: 'NLBE' }),
+          filter(32, { sequenceNumber: 2, sourceReference: '5' }),
+        ],
+      });
+      const diff = computeRevisionDiff(current, base);
+      expect(diff.filterKinds).toEqual({ 31: 'changed' });
+      expect(diff.removedFilters).toEqual([]);
+      expect(diff.count).toBe(1);
+      const entry = diff.entries.find((candidate) => candidate.key === 'filter:31');
+      expect(entry?.kind).toBe('changed');
+      expect(entry?.from).toContain('kolom 3');
+      expect(entry?.to).toContain('kolom 9');
+    });
+
+    it('hetzelfde volgnummer met gelijke inhoud is ongewijzigd, ook met een ander id', () => {
+      const base = detail(1, { filters: [filter(11, { sequenceNumber: 4 })] });
+      const current = detail(2, { filters: [filter(31, { sequenceNumber: 4 })] });
+      const diff = computeRevisionDiff(current, base);
+      expect(diff.count).toBe(0);
+      expect(diff.filterKinds).toEqual({});
+    });
+
+    it('een volgnummer dat in de basisversie ontbreekt is nieuw; een volgnummer dat verdween is weg', () => {
+      const base = detail(1, { filters: [filter(11, { sequenceNumber: 1 }), filter(12, { sequenceNumber: 2, sourceReference: '8' })] });
+      const current = detail(2, { filters: [filter(31, { sequenceNumber: 1 }), filter(33, { sequenceNumber: 3, sourceReference: '40' })] });
+      const diff = computeRevisionDiff(current, base);
+      expect(diff.filterKinds).toEqual({ 33: 'added' });
+      expect(diff.removedFilters).toHaveLength(1);
+      expect(diff.removedFilters[0]!.from).toContain('kolom 8');
+    });
+
+    it('zonder volgnummerpaar valt het terug op de oude regel (gelijke kolom, andere waarde = gewijzigd)', () => {
+      const base = detail(1, { filters: [filter(11, { sequenceNumber: 1, sourceReference: '5', compareValue: 'X' })] });
+      const current = detail(2, { filters: [filter(31, { sequenceNumber: 7, sourceReference: '5', compareValue: 'Y' })] });
+      const diff = computeRevisionDiff(current, base);
+      expect(diff.filterKinds).toEqual({ 31: 'changed' });
+      expect(diff.removedFilters).toEqual([]);
+    });
+  });
+
   it('losse instellingen: herkenning, basis, bestandsopbouw en drempels', () => {
     const base = detail(1, { identitySupplierField: 'LEV', recordDescriptionField: null, structureDelimiter: ';', maxRejectedSharePercent: null });
     const current = detail(2, {

@@ -1,8 +1,8 @@
 /**
  * E3 — Filters als zinnen in "Bestand en velden" (beslissingslog 2026-10-23 "Nieuwe bewerkervaring"): de zinnen per
  * uitkomst/vergelijking/groep met gedempte achtervoegsels, de ankerchips (tellingen en scrollen), Filter toevoegen
- * (`POST .../filters`), Verwijderen met bevestiging, Wijzigen = toevoegen en dan verwijderen (gap G2, met het foutpad "beide
- * bestaan"), Uitsluitingsgroep toevoegen (bestaande dialoog) en alleen-lezen op een actieve versie.
+ * (`POST .../filters`), Verwijderen met bevestiging, Wijzigen = één `PUT .../filters/{id}` (EB3: nieuw id, zelfde volgnummer, geen
+ * "beide bestaan" meer; 409 `REVISION_EDIT_CONFLICT`), Uitsluitingsgroep toevoegen (bestaande dialoog) en alleen-lezen op een actieve versie.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -191,7 +191,7 @@ function state(filters: FilterView[], detail: Record<string, unknown> = {}): Set
 }
 
 type Call = { method: string; url: string; body: Record<string, unknown> | null };
-type Options = { post?: () => Response; del?: (url: string) => Response };
+type Options = { post?: () => Response; put?: () => Response; del?: (url: string) => Response };
 
 function serve(s: SetupState, options: Options = {}): Call[] {
   const calls: Call[] = [];
@@ -204,6 +204,9 @@ function serve(s: SetupState, options: Options = {}): Call[] {
     calls.push({ method, url, body });
     if (method === 'POST') {
       return options.post?.() ?? jsonResponse({ ...(body ?? {}), id: 8001, revisionId: 100, sequenceNumber: 9 }, 201);
+    }
+    if (method === 'PUT') {
+      return options.put?.() ?? jsonResponse({ ...(body ?? {}), id: 8002, revisionId: 100, sequenceNumber: 1 });
     }
     return options.del?.(url) ?? new Response(null, { status: 204 });
   });
@@ -416,7 +419,7 @@ describe('Verwijderen', () => {
   });
 });
 
-describe('Wijzigen = toevoegen en dan verwijderen', () => {
+describe('Wijzigen = één PUT (EB3)', () => {
   async function openChange(options: Options = {}) {
     const calls = await openEditor(state([SINGLE]), options);
     fireEvent.click(screen.getByRole('button', { name: 'Wijzigen: filter 1' }));
@@ -434,42 +437,52 @@ describe('Wijzigen = toevoegen en dan verwijderen', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('stuurt eerst de POST en pas daarna de DELETE van het oude filter', async () => {
+  it('stuurt precies één PUT op het id van het oude filter; geen POST en geen DELETE', async () => {
     const { calls, panel } = await openChange();
     fireEvent.change(within(panel).getByLabelText('Waarde'), { target: { value: 'FRNL' } });
     fireEvent.click(within(panel).getByTestId('panel-apply'));
-    await waitFor(() => expect(calls).toHaveLength(2));
-    expect(calls.map((call) => call.method)).toEqual(['POST', 'DELETE']);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.method).toBe('PUT');
+    expect(calls[0]!.url).toMatch(/\/setup\/revisions\/100\/filters\/7001$/);
     expect(calls[0]!.body).toMatchObject({ sourceReference: '3', compareValue: 'FRNL', trimBeforeCompare: true, createdBy: 'An Beslisser' });
-    expect(calls[1]!.url).toMatch(/\/setup\/revisions\/100\/filters\/7001$/);
     expect(await screen.findByTestId('save-toast')).toHaveTextContent('Bewaard in het concept');
     await waitFor(() => expect(screen.queryByTestId('field-panel')).not.toBeInTheDocument());
+    // Later nog steeds één verzoek: er volgt geen verwijdering van het oude filter.
+    expect(calls).toHaveLength(1);
   });
 
-  it('mislukt de POST, dan wordt er niets verwijderd', async () => {
-    const { calls, panel } = await openChange({ post: () => jsonResponse({ error: 'bezet', code: 'FILTER_SEQUENCE_IN_USE' }, 409) });
+  it('een mislukte PUT laat het paneel staan; er is niets gewijzigd en er staat geen "beide bestaan"-melding', async () => {
+    const { calls, panel } = await openChange({ put: () => jsonResponse({ error: 'bookmark', code: 'CONFIG_BOOKMARK_PLACE_UNRESOLVED' }, 409) });
     fireEvent.change(within(panel).getByLabelText('Waarde'), { target: { value: 'FRNL' } });
     fireEvent.click(within(panel).getByTestId('panel-apply'));
     await waitFor(() => expect(calls).toHaveLength(1));
     await waitFor(() => expect(within(panel).getByTestId('panel-apply')).not.toBeDisabled());
-    expect(calls.map((call) => call.method)).toEqual(['POST']);
+    expect(calls.map((call) => call.method)).toEqual(['PUT']);
     expect(screen.queryByTestId('filter-both-exist')).not.toBeInTheDocument();
+    expect(screen.getByTestId('field-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('save-toast')).not.toBeInTheDocument();
+    // Opnieuw proberen kan: het paneel biedt gewoon weer Toepassen aan (geen derde filter mogelijk).
+    expect(within(panel).getByTestId('panel-apply')).toBeInTheDocument();
+  });
+
+  it('REVISION_EDIT_CONFLICT toont de melding over een gelijktijdige wijziging', async () => {
+    const { calls, panel } = await openChange({ put: () => jsonResponse({ error: 'Gelijktijdig', code: 'REVISION_EDIT_CONFLICT' }, 409) });
+    fireEvent.change(within(panel).getByLabelText('Waarde'), { target: { value: 'FRNL' } });
+    fireEvent.click(within(panel).getByTestId('panel-apply'));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(await within(panel).findByText(/Iemand anders wijzigde dit tegelijk\. Herlaad en probeer opnieuw\./)).toBeInTheDocument();
     expect(screen.getByTestId('field-panel')).toBeInTheDocument();
   });
 
-  it('mislukt de DELETE na een geslaagde POST, dan zegt het paneel dat beide filters nu bestaan', async () => {
-    const { calls, panel } = await openChange({
-      del: () => jsonResponse({ error: 'bookmark', code: 'CONFIG_BOOKMARK_PLACE_UNRESOLVED' }, 409),
-    });
-    fireEvent.change(within(panel).getByLabelText('Waarde'), { target: { value: 'FRNL' } });
+  it('Filter toevoegen blijft een POST', async () => {
+    const calls = await openEditor(state([SINGLE]));
+    fireEvent.click(screen.getByTestId('filter-add'));
+    const panel = await screen.findByRole('dialog', { name: 'Filter toevoegen' });
+    fireEvent.change(within(panel).getByLabelText('Kolomnummer'), { target: { value: '5' } });
+    fireEvent.change(within(panel).getByLabelText('Waarde'), { target: { value: 'X' } });
     fireEvent.click(within(panel).getByTestId('panel-apply'));
-    await waitFor(() => expect(calls).toHaveLength(2));
-    const both = await within(panel).findByTestId('filter-both-exist');
-    expect(both).toHaveTextContent('Beide filters staan nu in het concept');
-    // Geen tweede Toepassen (geen derde filter), wel Sluiten.
-    expect(within(panel).queryByTestId('panel-apply')).not.toBeInTheDocument();
-    expect(within(panel).getByRole('button', { name: 'Sluiten' })).toBeInTheDocument();
-    expect(screen.queryByTestId('save-toast')).not.toBeInTheDocument();
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.method).toBe('POST');
   });
 });
 

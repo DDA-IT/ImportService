@@ -4,10 +4,8 @@
  * worden), vergelijking, waarde en onder "Meer" hoofdlettergevoelig, gedrag bij een lege cel en bij een ontbrekende kolom.
  * Boven het formulier staat de zin zoals hij na het bewaren gelezen wordt.
  *
- * [Toepassen] = `POST /setup/revisions/{id}/filters`. Wijzigen heeft geen eigen endpoint (gap G2): het nieuwe filter wordt
- * eerst toegevoegd en pas daarna wordt het oude verwijderd (add-before-delete: een fout laat nooit minder filters achter dan
- * er waren). Lukt het verwijderen niet, dan bestaan beide en zegt het paneel dat uitdrukkelijk; het paneel biedt dan geen
- * [Toepassen] meer aan, zodat niemand per ongeluk een derde filter maakt.
+ * [Toepassen] = `POST /setup/revisions/{id}/filters` (toevoegen) of `PUT /setup/revisions/{id}/filters/{filterId}` (wijzigen, EB3: de server
+ * vervangt de rij in één transactie, nieuw id, hetzelfde volgnummer; bij een fout is er niets gewijzigd).
  */
 
 import { useId, useState } from 'react';
@@ -39,7 +37,7 @@ import { PanelShell } from './PanelShell.tsx';
 import { isSetupApiDisabledError, SETUP_WRITE_API_DISABLED_MESSAGE } from './setupWriteFlag.ts';
 import styles from './FieldsEditor.module.css';
 
-/** Een nieuw filter toevoegen, of een bestaand los filter wijzigen (nieuw toevoegen + oude verwijderen). */
+/** Een nieuw filter toevoegen, of een bestaand los filter wijzigen. */
 export type FilterPanelMode = { kind: 'add' } | { kind: 'edit'; filter: FilterView };
 
 export type FilterPanelProps = {
@@ -49,13 +47,9 @@ export type FilterPanelProps = {
   onClose: () => void;
   /** Geslaagd: de aanroeper toont de melding, herlaadt en sluit het paneel. */
   onSaved: () => void;
-  /** Het nieuwe filter staat er, het oude kon niet weg: de aanroeper herlaadt, het paneel blijft met de melding staan. */
-  onChanged: () => void;
 };
 
-type SaveResult = { bothExist: boolean };
-
-export function FilterPanel({ revision, mode, opener, onClose, onSaved, onChanged }: FilterPanelProps) {
+export function FilterPanel({ revision, mode, opener, onClose, onSaved }: FilterPanelProps) {
   const { actor } = useActor();
   const uid = useId();
   const original = mode.kind === 'edit' ? mode.filter : null;
@@ -64,24 +58,16 @@ export function FilterPanel({ revision, mode, opener, onClose, onSaved, onChange
   const [moreOpen, setMoreOpen] = useState(() => hasNonDefaultMore(baseline));
   const [problems, setProblems] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
-  const [bothExist, setBothExist] = useState(false);
   const referenceKind = revision.structureFieldReferenceKind;
   const byIndex = referenceKind === 'COLUMN_INDEX';
 
-  const save = useAction(async (body: ReturnType<typeof buildFilterRequest>): Promise<SaveResult> => {
-    await setupRevisionsApi.addFilter(revision.id, body);
-    if (original === null) {
-      return { bothExist: false };
-    }
-    try {
-      await setupRevisionsApi.deleteFilter(revision.id, original.id);
-    } catch {
-      return { bothExist: true };
-    }
-    return { bothExist: false };
-  });
+  const save = useAction(async (body: ReturnType<typeof buildFilterRequest>) =>
+    original === null
+      ? setupRevisionsApi.addFilter(revision.id, body)
+      : setupRevisionsApi.replaceFilter(revision.id, original.id, body),
+  );
 
-  const dirty = !sameForm(form, baseline) && !bothExist;
+  const dirty = !sameForm(form, baseline);
 
   function patch(change: Partial<FilterForm>) {
     setProblems([]);
@@ -103,11 +89,6 @@ export function FilterPanel({ revision, mode, opener, onClose, onSaved, onChange
     if (result === undefined) {
       return;
     }
-    if (result.bothExist) {
-      setBothExist(true);
-      onChanged();
-      return;
-    }
     onSaved();
   }
 
@@ -124,11 +105,6 @@ export function FilterPanel({ revision, mode, opener, onClose, onSaved, onChange
       onClose={onClose}
       foot={(requestClose) => (
         <>
-          {bothExist && (
-            <p className={styles.panelMessage} role="alert" data-testid="filter-both-exist">
-              {TEXT.bothExist}
-            </p>
-          )}
           {message !== null && (
             <p className={styles.panelMessage} role="alert" data-testid="panel-problem">
               {message}
@@ -147,19 +123,17 @@ export function FilterPanel({ revision, mode, opener, onClose, onSaved, onChange
           {save.error !== null &&
             (flagOff ? <FlagOffNotice message={SETUP_WRITE_API_DISABLED_MESSAGE} /> : <ErrorBanner error={save.error} />)}
           <div className={styles.panelActions}>
-            {!bothExist && (
-              <button
-                type="button"
-                className={button.primary}
-                disabled={save.pending}
-                data-testid="panel-apply"
-                onClick={() => void apply()}
-              >
-                {save.pending ? EDITOR_TEXT.applying : EDITOR_TEXT.apply}
-              </button>
-            )}
+            <button
+              type="button"
+              className={button.primary}
+              disabled={save.pending}
+              data-testid="panel-apply"
+              onClick={() => void apply()}
+            >
+              {save.pending ? EDITOR_TEXT.applying : EDITOR_TEXT.apply}
+            </button>
             <button type="button" className={button.secondary} onClick={requestClose}>
-              {bothExist ? TEXT.close : EDITOR_TEXT.cancel}
+              {EDITOR_TEXT.cancel}
             </button>
           </div>
         </>
@@ -178,7 +152,6 @@ export function FilterPanel({ revision, mode, opener, onClose, onSaved, onChange
           className={styles.textInput}
           data-testid="filter-outcome"
           value={form.outcome}
-          disabled={bothExist}
           onChange={(event) => patch({ outcome: event.target.value })}
         >
           {FILTER_OUTCOMES.map((code) => (
@@ -201,7 +174,6 @@ export function FilterPanel({ revision, mode, opener, onClose, onSaved, onChange
           autoComplete="off"
           data-testid="filter-column"
           value={form.column}
-          disabled={bothExist}
           onChange={(event) => patch({ column: event.target.value })}
         />
         <p className={styles.pfHint}>{byIndex ? TEXT.columnNumberHint : TEXT.columnNameHint}</p>
@@ -216,7 +188,6 @@ export function FilterPanel({ revision, mode, opener, onClose, onSaved, onChange
           className={styles.textInput}
           data-testid="filter-operator"
           value={form.operator}
-          disabled={bothExist}
           onChange={(event) => patch({ operator: event.target.value })}
         >
           {FILTER_OPERATORS.map((code) => (
@@ -238,7 +209,6 @@ export function FilterPanel({ revision, mode, opener, onClose, onSaved, onChange
           autoComplete="off"
           data-testid="filter-value"
           value={form.value}
-          disabled={bothExist}
           onChange={(event) => patch({ value: event.target.value })}
         />
         <p className={styles.pfHint}>{TEXT.valueHint}</p>
@@ -259,7 +229,6 @@ export function FilterPanel({ revision, mode, opener, onClose, onSaved, onChange
           <input
             type="checkbox"
             checked={form.caseSensitive}
-            disabled={bothExist}
             data-testid="filter-case"
             onChange={(event) => patch({ caseSensitive: event.target.checked })}
           />
@@ -274,7 +243,6 @@ export function FilterPanel({ revision, mode, opener, onClose, onSaved, onChange
             className={styles.textInput}
             data-testid="filter-null"
             value={form.nullBehaviour}
-            disabled={bothExist}
             onChange={(event) => patch({ nullBehaviour: event.target.value })}
           >
             {NULL_BEHAVIOURS.map((code) => (
@@ -293,7 +261,6 @@ export function FilterPanel({ revision, mode, opener, onClose, onSaved, onChange
             className={styles.textInput}
             data-testid="filter-missing"
             value={form.missingColumnBehaviour}
-            disabled={bothExist}
             onChange={(event) => patch({ missingColumnBehaviour: event.target.value })}
           >
             {MISSING_COLUMN_BEHAVIOURS.map((code) => (

@@ -252,6 +252,32 @@ export function installSetupServer(state: SetupState, extra?: (url: string, init
         );
       }
     }
+    // EF2 (EB2): de kritiek-overrule van een kernrij zetten of terugzetten; het detail volgt de wijziging, zoals de server.
+    // (Een PUT is hierboven al in `requests` genoteerd.)
+    const criticalityPath = /\/setup\/revisions\/(\d+)\/field-criticality\/([A-Z_]+)$/.exec(path!);
+    if (criticalityPath !== null && (init?.method === 'PUT' || init?.method === 'DELETE')) {
+      const revisionId = Number(criticalityPath[1]);
+      const fieldKey = criticalityPath[2]!;
+      const detailRow = state.details[revisionId] as
+        | { fieldCriticalities: { revisionId: number; fieldKey: string; criticality: string }[] }
+        | undefined;
+      if (init.method === 'DELETE') {
+        calls.requests.push({ method: 'DELETE', url, body: null });
+        if (!(detailRow?.fieldCriticalities.some((row) => row.fieldKey === fieldKey) ?? false)) {
+          return Promise.resolve(jsonResponse({ error: 'nope', code: 'FIELD_CRITICALITY_NOT_FOUND' }, 404));
+        }
+        detailRow!.fieldCriticalities = detailRow!.fieldCriticalities.filter((row) => row.fieldKey !== fieldKey);
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      const putBody = typeof init.body === 'string' ? (JSON.parse(init.body) as { criticality: string }) : { criticality: '' };
+      if (detailRow !== undefined) {
+        detailRow.fieldCriticalities = [
+          ...detailRow.fieldCriticalities.filter((row) => row.fieldKey !== fieldKey),
+          { revisionId, fieldKey, criticality: putBody.criticality },
+        ];
+      }
+      return Promise.resolve(jsonResponse({ revisionId, fieldKey, criticality: putBody.criticality }));
+    }
     if (path!.endsWith('/field-catalog')) {
       return Promise.resolve(
         state.fieldCatalog === null

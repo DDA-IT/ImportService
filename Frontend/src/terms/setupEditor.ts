@@ -77,6 +77,20 @@ export const EDITOR_TEXT = {
   identityAcknowledge: 'Ja, ik weet dat elk bestaand artikel hierna als nieuw artikel terugkomt',
   uppercaseSwitch: 'Hoofdletters negeren bij het herkennen van een artikel',
   required: 'Dit veld is verplicht en mag niet leeg zijn.',
+
+  // EF2: de kritiek van een kernrij (Basisprijs, Valuta, Omschrijving) in het zijpaneel
+  criticality: {
+    label: 'Kritiek',
+    critical: 'Kritiek',
+    notCritical: 'Niet kritiek',
+    locked: 'Kritiek (altijd)',
+    lockedHint: 'De herkenning van een artikel is altijd kritiek. Dat kan niet gewijzigd worden.',
+    restore: 'Standaard herstellen',
+    restoreNote: (standard: string) => `Standaard voor dit veld: ${standard}. Bij Toepassen wordt de aanpassing van deze versie verwijderd.`,
+    customNote: 'De kritiek van dit veld is in deze versie aangepast.',
+    basePriceWarning:
+      'Prijsfouten vragen dan geen beoordeling meer; ongeldige regels worden nog steeds verworpen.',
+  },
 } as const;
 
 /** Teksten van de zoekende keuzelijst voor Prodis-waarden (leverancier en groep). */
@@ -279,10 +293,6 @@ export const FILTER_TEXT = {
   problemColumnLong: 'De kolom is te lang (hoogstens 50 tekens).',
   problemValue: 'Vul de waarde in.',
   problemValueLong: 'De waarde is te lang (hoogstens 500 tekens).',
-  bothExist:
-    'Het nieuwe filter is toegevoegd, maar het oude kon niet verwijderd worden. Beide filters staan nu in het concept: ' +
-    'verwijder het oude filter zelf, anders gelden ze allebei.',
-  close: 'Sluiten',
 } as const;
 
 /** E3 — de ankerchips en de kleine secties onder het grid. */
@@ -319,7 +329,7 @@ export const ADVANCED_TEXT = {
   criticalityHeading: (n: number) => `Kritiek per veld aangepast (${n})`,
   criticalityNone: 'Voor deze versie is de kritiek van geen enkel veld apart aangepast.',
   criticalityNote:
-    'Hier bekijkt u alleen welke velden een eigen kritiek hebben; de kritiek van een extra veld wijzigt u in het paneel van dat veld.',
+    'Hier bekijkt u alleen welke velden een eigen kritiek hebben; de kritiek van een veld wijzigt u in het paneel van dat veld.',
   originHeading: 'Herkomst en goedkeuring',
   createdAt: 'Aangemaakt op',
   createdBy: 'Aangemaakt door',

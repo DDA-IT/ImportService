@@ -160,7 +160,7 @@ export function FieldsGrid({
       </td>
     );
 
-  /** EF1: de geldende kritiek van een kernrij (overrule van deze versie, anders de standaard); alleen-lezen tot EF2. */
+  /** EF1: de geldende kritiek van een kernrij (overrule van deze versie, anders de standaard); wijzigen in het zijpaneel (EF2). */
   const coreCriticality = (row: CoreRow): ReactNode => {
     const value = coreRowCriticality(row.key, revision, catalogue);
     return value === null ? COMMON.unknown : <Term domain="criticality" code={value} unknownLabel="Andere kritiek" />;

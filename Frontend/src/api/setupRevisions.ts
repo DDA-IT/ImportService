@@ -23,6 +23,7 @@ import type {
   ActivateRevisionRequest,
   CreateMappingRequest,
   CreateSuccessorRequest,
+  FieldCriticalityView,
   FilterView,
   MappingView,
   RevisionView,
@@ -206,6 +207,69 @@ export function addFilter(revisionId: number, body: CreateFilterRequest, signal?
   return request<FilterView>(`/setup/revisions/${revisionId}/filters`, {
     method: 'POST',
     body: JSON.stringify(body),
+    signal,
+  });
+}
+
+/**
+ * PUT /setup/revisions/{revisionId}/filters/{filterId} — CatalogImportSetupController.replaceFilter (200, EB3).
+ *
+ * Vervangt één filterrij van een `DRAFT` door de nieuwe configuratie in één transactie: nieuw id, **hetzelfde volgnummer**.
+ * Bij een fout is er niets gewijzigd (geen "beide bestaan"-toestand meer).
+ *
+ * @throws {import('./http.ts').ApiError} 400 `MATCH_GROUP_INVALID`, `CONFIG_FILTER_INVALID`, `COMPARE_VALUE_REQUIRED`;
+ *   404 `REVISION_NOT_FOUND`, `FILTER_NOT_FOUND`; 409 `REVISION_NOT_EDITABLE`, `REVISION_EDIT_CONFLICT` of een `CONFIG_BOOKMARK_*`-code
+ */
+export function replaceFilter(
+  revisionId: number,
+  filterId: number,
+  body: CreateFilterRequest,
+  signal?: AbortSignal,
+): Promise<FilterView> {
+  return request<FilterView>(`/setup/revisions/${revisionId}/filters/${filterId}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
+/** Body van `PUT /setup/revisions/{rid}/field-criticality/{fieldKey}` (`SetFieldCriticalityCommand`). */
+export type SetFieldCriticalityRequest = {
+  criticality: 'CRITICAL' | 'NON_CRITICAL';
+  createdBy?: string | null;
+};
+
+/**
+ * PUT /setup/revisions/{revisionId}/field-criticality/{fieldKey} — CatalogImportSetupController.setFieldCriticality (200, EB2).
+ *
+ * Zet of wijzigt de kritiek-overrule van een revisie-eigen veld (BASE_PRICE, CURRENCY, DESCRIPTION) van een `DRAFT`.
+ *
+ * @throws {import('./http.ts').ApiError} 400 `CRITICALITY_INVALID`, `CRITICALITY_REQUIRED`, `FIELD_KEY_INVALID`;
+ *   404 `REVISION_NOT_FOUND`; 409 `REVISION_NOT_EDITABLE`, `REVISION_EDIT_CONFLICT`
+ */
+export function setFieldCriticality(
+  revisionId: number,
+  fieldKey: string,
+  body: SetFieldCriticalityRequest,
+  signal?: AbortSignal,
+): Promise<FieldCriticalityView> {
+  return request<FieldCriticalityView>(`/setup/revisions/${revisionId}/field-criticality/${encodeURIComponent(fieldKey)}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
+/**
+ * DELETE /setup/revisions/{revisionId}/field-criticality/{fieldKey} — CatalogImportSetupController.deleteFieldCriticality (204, EB2).
+ * Herstelt de standaard van het veld.
+ *
+ * @throws {import('./http.ts').ApiError} 404 `REVISION_NOT_FOUND`, `FIELD_CRITICALITY_NOT_FOUND`; 409 `REVISION_NOT_EDITABLE`,
+ *   `REVISION_EDIT_CONFLICT`
+ */
+export function deleteFieldCriticality(revisionId: number, fieldKey: string, signal?: AbortSignal): Promise<void> {
+  return request<void>(`/setup/revisions/${revisionId}/field-criticality/${encodeURIComponent(fieldKey)}`, {
+    method: 'DELETE',
     signal,
   });
 }

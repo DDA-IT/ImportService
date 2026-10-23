@@ -7,9 +7,15 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { emptyMappingForm } from './mappingFixtures';
+import { ActorProvider } from '../actor/ActorContext';
+import type { FieldCatalogResponse, RevisionDetail } from '../api/types';
+import { TEST_IDENTITY } from './testIdentity';
+import { catalogueFromResponse } from '../features/setup/fieldsGridModel';
+import { MappingPanel, type MappingPanelMode } from '../features/setup/MappingPanel';
 import {
+  defaultFieldCatalog,
   definition,
   emptySetupState,
   installSetupServer,
@@ -544,5 +550,45 @@ describe('mappingPanelModel', () => {
     const { form } = initialMappingForm(emptyMappingForm({ transformKind: 'SPLIT', transformConfig: 'separator=-;index=2' }));
     expect(unsupportedKinds(form)).toEqual(['SPLIT']);
     expect(setOp(form, 'upper', true)).toBe(form);
+  });
+});
+
+describe('Koppelen aan veld vanuit de kolomweergave (initialSource)', () => {
+  function renderPanel(mode: MappingPanelMode, initialSource?: string) {
+    return render(
+      <ActorProvider identity={TEST_IDENTITY}>
+        <MappingPanel
+          revision={revisionDetail(100, 10, { status: 'DRAFT', mappings: [EAN] }) as unknown as RevisionDetail}
+          catalogue={catalogueFromResponse(defaultFieldCatalog() as unknown as FieldCatalogResponse)}
+          mode={mode}
+          initialSource={initialSource}
+          opener={null}
+          onClose={() => {}}
+          onSaved={() => {}}
+        />
+      </ActorProvider>,
+    );
+  }
+
+  it('vult na het kiezen van het veld de kolom van het kolomvoorbeeld vooraf in als bron', async () => {
+    renderPanel({ kind: 'add', code: null }, 'Merk');
+    fireEvent.click(await screen.findByTestId('add-pick-CAB_ID'));
+    expect(await screen.findByLabelText('Kolomnaam')).toHaveValue('Merk');
+  });
+
+  it('vult ook vooraf in als het veld al vaststaat (Koppelen in "Nog niet gekoppeld")', async () => {
+    renderPanel({ kind: 'add', code: 'PIM_ID' }, '7');
+    expect(await screen.findByLabelText('Kolomnaam')).toHaveValue('7');
+  });
+
+  it('zonder initialSource start de bron leeg', async () => {
+    renderPanel({ kind: 'add', code: null });
+    fireEvent.click(await screen.findByTestId('add-pick-CAB_ID'));
+    expect(await screen.findByLabelText('Kolomnaam')).toHaveValue('');
+  });
+
+  it('bij wijzigen van een bestaand veld blijft de bestaande bron staan', async () => {
+    renderPanel({ kind: 'edit', code: 'EAN' }, 'Merk');
+    expect(await screen.findByLabelText('Kolomnaam')).toHaveValue(EAN.sourceReference as string);
   });
 });
