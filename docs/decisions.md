@@ -3162,3 +3162,19 @@ kolom 9 wordt via de kaart vertaald en moet gelijk zijn aan die leverancier. (2)
 staat of naar een andere leverancier wijst, wordt zichtbaar verworpen met een expliciete code (nooit de ruwe code, nooit
 stil overgeslagen). Uitwerking (waar de kaart leeft, hash/identiteitswijziging, drempels) via denker-zwaar.
 **Bron:** mens / denker-zwaar (ontwerp leverancierskaart) / telling PRODISWEB en Prodis
+
+## 2026-10-23 — Leverancierskaart als controle: uitwerking (SC)
+**Vraag:** Uitwerking van "één leverancier per bestand, kaart = controle" (blok hierboven). Telling PRODISWEB: van de 48
+interfaces hebben 36 precies één kaartsleutel naar hun INDET `Supplier`, 12 geen (vooral `…_VRD` op VROOAMBAND), geen >1.
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** Geen schemawijziging. De identiteitsleverancier is de vaste
+waarde INDET `Supplier` (S6, `identity_uppercase`); de kaart wordt één bestaande REJECT-filterrij op kolom van regel 9 als
+laatste filterrij (`trim`, null = REJECT, ontbrekende kolom = BLOCK): 1 sleutel k -> `NOT_EQUALS k` hoofdlettergevoelig
+(k = Supplier: hoofdletterongevoelig); 0 sleutels (ook importsoort zonder kaartrijen) -> `NOT_EQUALS <Supplier>`
+hoofdletterongevoelig + WARNING `SUPPLIER_CHECK_SOURCE_IS_SUPPLIER` (Magic-misspad: bronwaarde blijft); Supplier als sleutel
+naar een ander doel -> BLOCKING `SUPPLIER_CHECK_SUPPLIER_IS_FOREIGN_KEY`. Verworpen lijnen = `FILTER_RECORD_REJECTED`
+(zichtbaar, geen kritieke lijn, nooit gestaged). Een 1-sleutelinterface verwerpt een lijn met de Supplier zelf als code
+(strenger dan legacy, filtermechanisme laat "≠k EN ≠S" niet toe). Met een controlerij wordt een enkele include omgezet naar
+EXCLUDE `NOT_*` (De Morgan, zoals S8e) zodat uitsluiten vóór verwerpen gaat. De kaart valt buiten de revisiehash en
+R-REV-X3 (geen identiteit); wel in `LegacyRevisionContent`. CALC 7 met prefix/suffix/positie op 9 en CALC 7 op 10/11
+blijven blokkeren. Punt (4) van het blok "2026-10-23 — … LevGrp=N …" (kaartwijziging = identiteitswijziging) vervalt.
+**Bron:** denker-zwaar (herontwerp leverancierskaart) / telling PRODISWEB
