@@ -157,6 +157,27 @@ class LegacyConfigProdisReferenceTest extends LegacyConfigProdisTestBase {
                 .containsExactly("PRODIS_SUPPLIER_AMBIGUOUS", "LIBRARY_CODE_NOT_RESOLVED");
     }
 
+    /** SC (beslissing 2026-10-23): de vaste leverancier van de leverancierskaart gaat door de bestaande S5/S6-controle. */
+    @Test
+    void aSupplierCardChecksTheFixedSupplierAgainstProdis() throws Exception {
+        var unknown = applicable();
+        line(unknown, 9).put("calculation", "7");
+        String body = previewBody(receive(unknown), "libraryCode", "LIB");
+        assertThat(blockingCodes(body)).contains("PRODIS_SUPPLIER_NOT_FOUND").doesNotContain("PRODIS_SUPPLIER_AMBIGUOUS");
+        assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.code == 'PRODIS_SUPPLIER_NOT_FOUND')]"
+                + ".element")).contains("PSIMPDEF#9", "INDET:Supplier");
+        assertThat(codes(body, "WARNING")).doesNotContain("PRODIS_REFERENCE_NOT_VERIFIED");
+
+        Fixture known = withProdisSupplier("Kaartleverancier");
+        line(known.bundle(), 9).put("calculation", "7");
+        catalog(known, "SC1", LEGACY_LIBRARY, "CAT SC", "ACTIVE");
+        String verified = previewBody(receive(known.bundle()));
+        assertThat(blockingCodes(verified)).isEmpty();
+        assertThat((List<String>) JsonPath.read(verified, "$.report.items[?(@.element == 'PSIMPDEF#9')].code"))
+                .containsExactly("SUPPLIER_CHECK_SOURCE_IS_SUPPLIER", "IDENTITY_FIXED_VALUE", "SUPPLIER_CHECK_FILTER",
+                        "PRODIS_SUPPLIER");
+    }
+
     @Test
     void anExistingOrganisationIsNeverRenamed() throws Exception {
         Fixture fixture = withProdisSupplier("Naam in Prodis");

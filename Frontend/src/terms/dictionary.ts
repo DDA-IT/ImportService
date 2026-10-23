@@ -1858,6 +1858,14 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       label: 'Bewerking op de herkenning niet ondersteund',
       uitleg: 'Een kolom voor de herkenning wordt in legacy bewerkt; dat wordt niet overgenomen.',
     },
+    SUPPLIER_CHECK_SUPPLIER_IS_FOREIGN_KEY: {
+      label: 'Leverancier staat zelf als code voor een andere leverancier',
+      uitleg: 'Het leveranciersnummer van de interface staat in de leverancierskaart als code voor een andere leverancier; een controle kan niet beide aanvaarden. Pas de kaart aan.',
+    },
+    SUPPLIER_CHECK_MULTIPLE_KEYS: {
+      label: 'Meerdere codes voor dezelfde leverancier',
+      uitleg: 'De leverancierskaart bevat meer dan een code voor deze leverancier; de controle ondersteunt een code.',
+    },
     BASE_PRICE_FIELD_MISSING: {
       label: 'Kolom basisprijs ontbreekt',
       uitleg: 'De basisprijs heeft in de importsoort geen kolom.',
@@ -2026,6 +2034,10 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       label: 'Omzettingstabel is leeg',
       uitleg: 'Er zijn geen bruikbare omzettingen; het veld wordt niet aangemaakt.',
     },
+    SUPPLIER_CHECK_SOURCE_IS_SUPPLIER: {
+      label: 'Kaart bevat geen code voor deze leverancier',
+      uitleg: 'De kolom met de leverancier moet het leveranciersnummer zelf bevatten, zoals het misspad in legacy; regels met een andere code worden verworpen.',
+    },
     LEGACY_FILTER_PADDING_UNVERIFIED: {
       label: 'Opvulling bij een filter niet nagekeken',
       uitleg: 'Of legacy bij dit filter opvulspaties meetelt, is niet bevestigd; controleer het resultaat.',
@@ -2122,6 +2134,10 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       label: 'Omzettingstabel niet gebruikt',
       uitleg: 'De tabel hoort bij een veld dat niet omgezet wordt, en wordt dus niet overgenomen.',
     },
+    SUPPLIER_MAP_ROWS_OTHER_SUPPLIERS: {
+      label: 'Kaartrijen van andere leveranciers niet overgenomen',
+      uitleg: 'Een bestand bevat een leverancier; de rijen van de leverancierskaart voor andere leveranciers worden niet overgenomen.',
+    },
     LEGACY_FILL_NOT_MIGRATED: {
       label: 'Opvulling niet overgenomen',
       uitleg: 'De opvulling van een veld wordt niet overgenomen.',
@@ -2209,6 +2225,10 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     RECORD_FILTER_GROUP: {
       label: 'Uitsluiting wordt overgenomen',
       uitleg: 'Een uitsluitingsrij wordt een groep filters waarvan alle voorwaarden samen moeten kloppen.',
+    },
+    SUPPLIER_CHECK_FILTER: {
+      label: 'Leverancierscontrole wordt overgenomen',
+      uitleg: 'De leverancierskaart wordt een controle op de regels: een regel met een andere code dan die van deze leverancier wordt zichtbaar verworpen.',
     },
     PRODIS_SUPPLIER: {
       label: 'Leverancier gevonden in Prodis',

@@ -227,6 +227,32 @@ class LegacyConfigSharedDefinitionTest extends LegacyConfigS2TestBase {
                 .isEqualTo(2);
     }
 
+    /** SC (beslissing 2026-10-23): elke leverancier heeft zijn eigen definitie, elk met de eigen controlerij. */
+    @Test
+    void twoSupplierCardInterfacesOfOneImportTypeGetTheirOwnGroupAndFilter() throws Exception {
+        ObjectNode a = applicable();
+        ObjectNode b = applicable();
+        for (ObjectNode bundle : List.of(a, b)) {
+            line(bundle, 9).put("calculation", "7");
+            ((com.fasterxml.jackson.databind.node.ArrayNode) bundle.get("definition").get("maps")).addObject()
+                    .put("number", 0).put("key", "K-" + supplier(bundle)).put("value", supplier(bundle))
+                    .put("reserveAlpha", "");
+        }
+        previewAndApply(receive(a), "libraryCode", "LIB-A").andExpect(status().isOk());
+        previewAndApply(receive(b), "libraryCode", "LIB-B").andExpect(status().isOk());
+
+        long definitionA = definitionId(supplier(a), "VROOAM2");
+        long definitionB = definitionId(supplier(b), "VROOAM2");
+        assertThat(definitionA).isNotEqualTo(definitionB);
+        String sql = "select r.identity_supplier_fixed_value || ':' || f.compare_value from import_record_filter f "
+                + "join import_definition_revision r on r.id = f.definition_revision_id "
+                + "where r.import_definition_id = ? and f.outcome = 'REJECT'";
+        assertThat(jdbc.queryForList(sql, String.class, definitionA))
+                .containsExactly(supplier(a) + ":K-" + supplier(a));
+        assertThat(jdbc.queryForList(sql, String.class, definitionB))
+                .containsExactly(supplier(b) + ":K-" + supplier(b));
+    }
+
     @Test
     void theSameLibraryTwiceInOneGroupIsBlockedInThePreview() throws Exception {
         ObjectNode a = applicable();

@@ -1317,6 +1317,8 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 | `IDENTITY_FIXED_VALUE_TOO_LONG` | Vaste waarde is te lang | De vaste leverancier of groep is langer dan wat CatalogImport bewaart. |
 | `IDENTITY_FIXED_VALUE_UNSUPPORTED` | Vaste waarde niet ondersteund | Enkel voor leverancier en groep kan een vaste waarde de herkenning bepalen. |
 | `IDENTITY_TRANSFORM_UNSUPPORTED` | Bewerking op de herkenning niet ondersteund | Een kolom voor de herkenning wordt in legacy bewerkt; dat wordt niet overgenomen. |
+| `SUPPLIER_CHECK_SUPPLIER_IS_FOREIGN_KEY` | Leverancier staat zelf als code voor een andere leverancier | Het leveranciersnummer van de interface staat in de leverancierskaart als code voor een andere leverancier; een controle kan niet beide aanvaarden. Pas de kaart aan. |
+| `SUPPLIER_CHECK_MULTIPLE_KEYS` | Meerdere codes voor dezelfde leverancier | De leverancierskaart bevat meer dan een code voor deze leverancier; de controle ondersteunt een code. |
 | `BASE_PRICE_FIELD_MISSING` | Kolom basisprijs ontbreekt | De basisprijs heeft in de importsoort geen kolom. |
 | `BASE_PRICE_TRANSFORM_UNSUPPORTED` | Bewerking op de basisprijs niet ondersteund | De basisprijs wordt in legacy bewerkt of vast ingesteld; een prijs wordt nooit stilzwijgend aangepast. |
 | `LEGACY_EXCLUDE_EXCLUDES_ALL` | Uitsluiting sluit alles uit | Een uitsluitingsrij blijkt elke regel uit te sluiten; dat zou de hele levering wegfilteren. |
@@ -1359,6 +1361,7 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 | `MAP_ENTRY_TOO_LONG` | Omzetting te lang | Een sleutel of waarde in de omzettingstabel is te lang en wordt nooit afgekapt; het veld wordt niet aangemaakt. |
 | `MAP_KEY_AMBIGUOUS` | Sleutel in de omzettingstabel komt meerdere keren voor | Dezelfde sleutel heeft meerdere waarden; de waarde met het laagste nummer wint. |
 | `MAP_EMPTY` | Omzettingstabel is leeg | Er zijn geen bruikbare omzettingen; het veld wordt niet aangemaakt. |
+| `SUPPLIER_CHECK_SOURCE_IS_SUPPLIER` | Kaart bevat geen code voor deze leverancier | De kolom met de leverancier moet het leveranciersnummer zelf bevatten, zoals het misspad in legacy; regels met een andere code worden verworpen. |
 | `LEGACY_FILTER_PADDING_UNVERIFIED` | Opvulling bij een filter niet nagekeken | Of legacy bij dit filter opvulspaties meetelt, is niet bevestigd; controleer het resultaat. |
 | `INCLUDE_FILTER_WITHOUT_COLUMN` | Filter zonder kolom | Een insluit- of uitsluitregel heeft geen kolom om op te filteren; er komt geen filter. |
 | `INCLUDE_EXCLUDE_SUBSTRING_NOT_MIGRATED` | Filter op een deel van de waarde | Een filter op positie en lengte wordt niet overgenomen; er komt geen filter. |
@@ -1383,6 +1386,7 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 | `LEGACY_LINE_WITHOUT_SOURCE` | Regel zonder kolom | De legacy-regel heeft geen kolom en geen vaste waarde; er is niets om over te nemen. |
 | `MAP_CONTAINS_ROW_NOT_MIGRATED` | Rij van de omzettingstabel overgeslagen | Een rij met een lege sleutel of een lege waarde wordt niet overgenomen. |
 | `LEGACY_MAP_UNUSED` | Omzettingstabel niet gebruikt | De tabel hoort bij een veld dat niet omgezet wordt, en wordt dus niet overgenomen. |
+| `SUPPLIER_MAP_ROWS_OTHER_SUPPLIERS` | Kaartrijen van andere leveranciers niet overgenomen | Een bestand bevat een leverancier; de rijen van de leverancierskaart voor andere leveranciers worden niet overgenomen. |
 | `LEGACY_FILL_NOT_MIGRATED` | Opvulling niet overgenomen | De opvulling van een veld wordt niet overgenomen. |
 | `LEGACY_XML_PATH_NOT_MIGRATED` | XML-pad niet overgenomen | Enkel CSV-bestanden worden overgenomen, dus een XML-pad niet. |
 | `LEGACY_EXCLUDES_SKIPPED` | Uitsluitingen worden niet toegepast | De interface zegt de uitsluitingen over te slaan, dus ze worden niet overgenomen. |
@@ -1405,6 +1409,7 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 | `MAP_MISS_KEEPS_SOURCE` | Onbekende waarden blijven ongewijzigd | Zoals in legacy gaat een waarde die niet in de omzettingstabel staat ongewijzigd door; elke keer wordt het gemeld. |
 | `RECORD_FILTER` | Filter op de regels wordt overgenomen | Een insluit- of uitsluitregel van de legacy-definitie wordt een filter op de regels. |
 | `RECORD_FILTER_GROUP` | Uitsluiting wordt overgenomen | Een uitsluitingsrij wordt een groep filters waarvan alle voorwaarden samen moeten kloppen. |
+| `SUPPLIER_CHECK_FILTER` | Leverancierscontrole wordt overgenomen | De leverancierskaart wordt een controle op de regels: een regel met een andere code dan die van deze leverancier wordt zichtbaar verworpen. |
 | `PRODIS_SUPPLIER` | Leverancier gevonden in Prodis | Het leveranciersnummer bestaat precies één keer in Prodis. |
 | `PRODIS_SUPPLIER_GROUP` | Groep gevonden in Prodis | De vaste groep bestaat bij de leverancier in Prodis. |
 | `LIBRARY_CODE` | Bibliotheek wordt overgenomen | De bibliotheek van de leverancier waarin de koppeling komt, is bepaald. |

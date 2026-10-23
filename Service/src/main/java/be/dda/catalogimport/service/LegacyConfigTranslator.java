@@ -173,6 +173,16 @@ final class LegacyConfigTranslator {
     static final String LEGACY_EXCLUDE_EXCLUDES_ALL = "LEGACY_EXCLUDE_EXCLUDES_ALL";
     /** S8f: een PSIMPEXCL-rij die in legacy nooit een record treft (dode rij); niet gemigreerd. */
     static final String LEGACY_EXCLUDE_NEVER_MATCHES = "LEGACY_EXCLUDE_NEVER_MATCHES";
+    /** 2026-10-23 (SC): de leverancierskaart (CALC 7 op regel 9) is één REJECT-filterrij op de kolom van regel 9. */
+    static final String SUPPLIER_CHECK_FILTER = "SUPPLIER_CHECK_FILTER";
+    /** SC: de kaart heeft geen sleutel voor deze leverancier; kolom 9 moet het leveranciersnummer zelf bevatten. */
+    static final String SUPPLIER_CHECK_SOURCE_IS_SUPPLIER = "SUPPLIER_CHECK_SOURCE_IS_SUPPLIER";
+    /** SC (BLOCKING): de leverancier zelf is een kaartsleutel naar een ander doel; één filterrij kan dat niet uitdrukken. */
+    static final String SUPPLIER_CHECK_SUPPLIER_IS_FOREIGN_KEY = "SUPPLIER_CHECK_SUPPLIER_IS_FOREIGN_KEY";
+    /** SC (BLOCKING, defensief): meer dan één sleutel voor deze leverancier. */
+    static final String SUPPLIER_CHECK_MULTIPLE_KEYS = "SUPPLIER_CHECK_MULTIPLE_KEYS";
+    /** SC: kaartrijen voor andere leveranciers worden niet overgenomen (informatief). */
+    static final String SUPPLIER_MAP_ROWS_OTHER_SUPPLIERS = "SUPPLIER_MAP_ROWS_OTHER_SUPPLIERS";
     /** S8f: de rij vergelijkt de kortingscode, maar regel 23 heeft geen bronkolom of een transformatie (WARNING). */
     static final String LEGACY_EXCLUDE_NOT_EXPRESSIBLE = "LEGACY_EXCLUDE_NOT_EXPRESSIBLE";
 
@@ -330,6 +340,10 @@ final class LegacyConfigTranslator {
     private boolean revisionBlocked;
     /** S6: de vaste waarde van PSIMPDEF 9/10 zoals vertaald (ook als de revisie elders blokkeert), of null. */
     private String supplierFixedValue;
+    /** SC: de geldige INDET {@code Supplier} (getrimd), of null; gezet door {@link #supplier}. */
+    private String declaredSupplier;
+    /** SC: de geplande leverancierskaartcontrole (laatste filterrij), of null. */
+    private SupplierCheck supplierCheck;
     private String groupFixedValue;
 
     private LegacyConfigTranslator(JsonNode bundle, String charsetWhenUndeclared, UUID credentialRef) {
@@ -466,6 +480,7 @@ final class LegacyConfigTranslator {
                     "Supplier is longer than " + MAX_SUPPLIER_CODE + " characters");
             return null;
         }
+        declaredSupplier = value.trim();
         add("INDET:" + LABEL_SUPPLIER, MIGRATED, "SOURCE_ORGANISATION", "source_organisation.code=" + value, null);
         // S5: LegacyConfigApplyService vervangt dit item door de uitkomst van de Prodis-controle als die geconfigureerd is.
         add("INDET:" + LABEL_SUPPLIER, WARNING, PRODIS_REFERENCE_NOT_VERIFIED, null,
@@ -761,8 +776,9 @@ final class LegacyConfigTranslator {
             }
         }
 
-        IdentitySource supplier = identitySource(byNumber, LINE_SUPPLIER, "identitySupplierField",
-                "identitySupplierFixedValue");
+        IdentitySource supplier = isSupplierCard(byNumber)
+                ? supplierCard(byNumber.get(LINE_SUPPLIER).get(0), definition)
+                : identitySource(byNumber, LINE_SUPPLIER, "identitySupplierField", "identitySupplierFixedValue");
         IdentitySource group = identitySource(byNumber, LINE_GROUP, "identitySupplierGroupField",
                 "identitySupplierGroupFixedValue");
         String reference = identityColumn(byNumber, LINE_REFERENCE, "identitySupplierReferenceField", true);
@@ -822,6 +838,12 @@ final class LegacyConfigTranslator {
         filters.addAll(includeExcludeFilters(filterLines));
         filters.addAll(excludeGroups(definition, byNumber, supplier, group, reference, skipExcludes,
                 filters.size()));
+        if (supplierCheck != null) {
+            // SC: de controlerij is de laatste filterrij (uitsluiten vóór verwerpen).
+            filters.add(new PlannedFilter(filters.size() + 1, supplierCheck.column(), FilterOperator.NOT_EQUALS,
+                    supplierCheck.value(), FilterOutcome.REJECT, supplierCheck.caseSensitive(),
+                    FilterNullBehaviour.REJECT));
+        }
         mapsUsage(definition, mappings);
 
         if (delimiter == null || charset == null || skipHeader == null || profile == null || supplier == null
@@ -881,6 +903,120 @@ final class LegacyConfigTranslator {
         // Vervangen door LegacyConfigApplyService als de Prodis-bron geconfigureerd is (zoals INDET:Supplier, S5).
         add(element, WARNING, PRODIS_REFERENCE_NOT_VERIFIED, null, "fixed value " + fixed + " of field " + number
                 + " is not verified: the Prodis database is not configured");
+        return new IdentitySource(null, fixed);
+    }
+
+    /** SC: de geplande controlerij: kolom van regel 9, vergelijkwaarde en hoofdlettergevoeligheid. */
+    private record SupplierCheck(String column, String value, boolean caseSensitive) {
+    }
+
+    /**
+     * Beslissing 2026-10-23 (SC): PSIMPDEF 9 is de leverancierskaart als de regel een bronkolom heeft, geen vaste
+     * waarde, geen Positie/Lengte, geen prefix/suffix en CALC 7. Elke andere combinatie (ook CALC 7 op 10/11) blijft
+     * {@value #IDENTITY_TRANSFORM_UNSUPPORTED}.
+     */
+    private static boolean isSupplierCard(Map<Integer, List<JsonNode>> byNumber) {
+        List<JsonNode> rows = byNumber.get(LINE_SUPPLIER);
+        if (rows == null || rows.size() != 1) {
+            return false;
+        }
+        JsonNode line = rows.get(0);
+        return line.path("column").asInt() > 0 && line.path("value").asText("").isEmpty() && !hasSubstring(line)
+                && line.path("prefix").asText("").isEmpty() && line.path("suffix").asText("").isEmpty()
+                && "7".equals(calculationOf(line));
+    }
+
+    /**
+     * SC (beslissing 2026-10-23, een leverancier per bestand): de identiteitsleverancier is de vaste waarde INDET
+     * {@code Supplier} (zoals S6); de kaart (PSIMPDEFMAP, alle NUMMERs samen, sleutel en waarde getrimd, laagste NUMMER
+     * wint bij een dubbele sleutel) wordt een controle per lijn: de sleutels waarvan {@code Upper(VALUE)} gelijk is aan
+     * {@code Upper(Supplier)} bepalen de REJECT-filterrij ({@link #supplierCheck}). Eén sleutel k: {@code NOT_EQUALS k};
+     * geen sleutel: {@code NOT_EQUALS <Supplier>} hoofdletterongevoelig met een WARNING (het misspad van legacy: de
+     * bronwaarde blijft); de leverancier zelf als sleutel naar een ander doel of meer dan één sleutel: blokkerend.
+     *
+     * @return {@code null} als de regel niet te vertalen is (er is dan een blokkerend item)
+     */
+    private IdentitySource supplierCard(JsonNode line, JsonNode definition) {
+        String element = "PSIMPDEF#" + LINE_SUPPLIER;
+        if (declaredSupplier == null) {
+            return null; // SUPPLIER_NOT_DECLARED / SUPPLIER_CODE_TOO_LONG / INTERFACE_SETTING_DUPLICATED blokkeert al
+        }
+        String fixed = declaredSupplier;
+        if (fixed.isEmpty()) {
+            add(element, BLOCKING, IDENTITY_FIELD_MISSING, null, "field " + LINE_SUPPLIER + " is a supplier card but "
+                    + "INDET Supplier is blank");
+            return null;
+        }
+        String column = String.valueOf(line.path("column").asInt());
+        List<JsonNode> maps = new ArrayList<>();
+        definition.path("maps").forEach(maps::add);
+        maps.sort(Comparator.comparingInt((JsonNode m) -> m.path("number").asInt())
+                .thenComparing(m -> m.path("key").asText()));
+        Map<String, String> table = new LinkedHashMap<>();
+        for (JsonNode map : maps) {
+            String key = map.path("key").asText("").trim();
+            String value = map.path("value").asText("").trim();
+            if (key.isEmpty()) {
+                continue;
+            }
+            String previous = table.putIfAbsent(key, value);
+            if (previous != null && !previous.equals(value)) {
+                add(element, WARNING, MAP_KEY_AMBIGUOUS, null, "PSIMPDEFMAP key '" + key + "' occurs with "
+                        + "different values; like legacy, the one with the lowest NUMMER ('" + previous + "') is used");
+            }
+        }
+        List<String> keys = new ArrayList<>();
+        int otherRows = 0;
+        for (Map.Entry<String, String> entry : table.entrySet()) {
+            if (entry.getValue().equalsIgnoreCase(fixed)) {
+                keys.add(entry.getKey());
+            } else {
+                otherRows++;
+            }
+        }
+        String foreignTarget = table.get(fixed);
+        if (foreignTarget != null && !foreignTarget.equalsIgnoreCase(fixed)) {
+            add(element, BLOCKING, SUPPLIER_CHECK_SUPPLIER_IS_FOREIGN_KEY, null, "supplier " + fixed + " is itself a "
+                    + "PSIMPDEFMAP key for '" + foreignTarget + "'; one check row cannot accept both codes");
+            return null;
+        }
+        if (keys.size() > 1) {
+            add(element, BLOCKING, SUPPLIER_CHECK_MULTIPLE_KEYS, null, "the PSIMPDEFMAP has " + keys.size()
+                    + " keys for supplier " + fixed + " (" + String.join(", ", keys) + "); the supplier check "
+                    + "supports one key");
+            return null;
+        }
+        String compare;
+        boolean caseSensitive;
+        if (keys.size() == 1) {
+            compare = keys.get(0);
+            caseSensitive = !compare.equalsIgnoreCase(fixed);
+        } else {
+            compare = fixed;
+            caseSensitive = false;
+            add(element, WARNING, SUPPLIER_CHECK_SOURCE_IS_SUPPLIER, null, "the map has no key for this supplier; "
+                    + "column " + column + " must contain the supplier number itself, like the miss path in legacy");
+        }
+        if (compare.length() > MAX_COMPARE_VALUE) {
+            add(element, BLOCKING, IDENTITY_FIXED_VALUE_TOO_LONG, null, "the supplier check value is longer than "
+                    + MAX_COMPARE_VALUE + " characters");
+            return null;
+        }
+        supplierCheck = new SupplierCheck(column, compare, caseSensitive);
+        supplierFixedValue = fixed;
+        add(element, MIGRATED, IDENTITY_FIXED_VALUE, "revision.identitySupplierFixedValue=" + fixed,
+                "source INDET:Supplier: one supplier per file; the card of field " + LINE_SUPPLIER + " is a check");
+        add(element, MIGRATED, SUPPLIER_CHECK_FILTER, "import_record_filter REJECT NOT_EQUALS column " + column,
+                "a line is rejected (FILTER_RECORD_REJECTED) when column " + column + " is not '" + compare + "'"
+                        + (caseSensitive ? "" : " (case-insensitive)") + ", the code that stands for supplier "
+                        + fixed);
+        if (otherRows > 0) {
+            add("PSIMPDEFMAP", NOT_MIGRATED, SUPPLIER_MAP_ROWS_OTHER_SUPPLIERS, null, otherRows + " PSIMPDEFMAP "
+                    + "row(s) are for other suppliers; they are not migrated (one supplier per file)");
+        }
+        // Vervangen door LegacyConfigApplyService als de Prodis-bron geconfigureerd is (zoals bij een vaste waarde, S6).
+        add(element, WARNING, PRODIS_REFERENCE_NOT_VERIFIED, null, "fixed value " + fixed + " of field "
+                + LINE_SUPPLIER + " is not verified: the Prodis database is not configured");
         return new IdentitySource(null, fixed);
     }
 
@@ -1236,6 +1372,9 @@ final class LegacyConfigTranslator {
         }
         boolean used = mappings.stream().anyMatch(mapping -> isTable(mapping.transformKind())
                 || mapping.steps().stream().anyMatch(step -> isTable(step.kind())));
+        if (!used && supplierCheck != null) {
+            return; // SC: de kaart wordt gebruikt voor de leverancierscontrole (SUPPLIER_CHECK_*), niet als vertaaltabel
+        }
         if (!used) {
             add("PSIMPDEFMAP", NOT_MIGRATED, LEGACY_MAP_UNUSED, null,
                     "PSIMPDEFMAP has entries but no migrated mapping uses CALC 7 or CALC 14");
@@ -1269,7 +1408,10 @@ final class LegacyConfigTranslator {
                 drafts.add(draft);
             }
         }
-        boolean combined = drafts.stream().filter(FilterDraft::include).count() > 1;
+        // SC: met een controlerij (REJECT, laatste rij) wordt ook een enkele include een EXCLUDE NOT_*, zodat een record
+        // dat buiten de include valt wordt uitgesloten in plaats van verworpen door de controlerij.
+        boolean combined = drafts.stream().filter(FilterDraft::include).count() > 1
+                || (supplierCheck != null && drafts.stream().anyMatch(FilterDraft::include));
         List<PlannedFilter> planned = new ArrayList<>();
         for (FilterDraft draft : drafts) {
             String element = "PSIMPDEF#" + draft.number();
@@ -1297,8 +1439,9 @@ final class LegacyConfigTranslator {
             };
             add(element, MIGRATED, "RECORD_FILTER", "import_record_filter " + filter.outcome() + " "
                     + filter.operator() + " column " + column, combined && draft.include()
-                            ? "Include/Exclude " + draft.code() + " with several include lines: every line must "
-                                    + "match (AND), so each is stored as the negated EXCLUDE"
+                            ? "Include/Exclude " + draft.code() + " with several include lines or a supplier check "
+                                    + "row: every include must match (AND) and records outside it are excluded "
+                                    + "before the check rejects, so each is stored as the negated EXCLUDE"
                             : null);
             if ("3".equals(draft.code()) || "4".equals(draft.code())) {
                 add(element, WARNING, LEGACY_FILTER_PADDING_UNVERIFIED, null, "Include/Exclude " + draft.code()

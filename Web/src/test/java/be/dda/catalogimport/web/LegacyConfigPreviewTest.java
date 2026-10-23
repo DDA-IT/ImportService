@@ -169,10 +169,14 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
         assertThat(blockingCodes(previewBody(receive(withSubstring), "libraryCode", "LIB-UP")))
                 .containsExactly("IDENTITY_TRANSFORM_UNSUPPORTED");
 
-        // De leverancierskaart (CALC 7) op regel 9 blijft blokkeren (beslissing 2026-10-23, punt 4 nog open).
+        // De leverancierskaart (CALC 7) op een gewone regel 9 blokkeert niet meer (beslissing 2026-10-23, SC:
+        // LegacyConfigSupplierCardTest); met prefix of op 10/11 blijft ze blokkeren.
         ObjectNode card = applicable();
         line(card, 9).put("calculation", "7");
-        assertThat(blockingCodes(previewBody(receive(card), "libraryCode", "LIB-UP")))
+        assertThat(blockingCodes(previewBody(receive(card), "libraryCode", "LIB-UP"))).isEmpty();
+        ObjectNode cardWithPrefix = applicable();
+        line(cardWithPrefix, 9).put("calculation", "7").put("prefix", "X");
+        assertThat(blockingCodes(previewBody(receive(cardWithPrefix), "libraryCode", "LIB-UP")))
                 .containsExactly("IDENTITY_TRANSFORM_UNSUPPORTED");
 
         ObjectNode other = applicable();
