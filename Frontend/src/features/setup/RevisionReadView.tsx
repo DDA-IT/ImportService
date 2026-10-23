@@ -7,7 +7,7 @@
  */
 
 import { useState, type ReactNode } from 'react';
-import type { FilterView, RevisionDetail, RevisionLegacyOrigin, RevisionView } from '../../api/types.ts';
+import type { ColumnPreview, FilterView, RevisionDetail, RevisionLegacyOrigin, RevisionView } from '../../api/types.ts';
 import button from '../../components/Button.module.css';
 import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { INLINE_EDIT_TEXT } from '../../terms/setupEditor.ts';
@@ -18,8 +18,9 @@ import { DiffChip } from './DiffParts.tsx';
 import { FileEditForm } from './InlineSectionEditors.tsx';
 import type { RevisionDiff } from './revisionDiffModel.ts';
 import editor from './FieldsEditor.module.css';
+import { ColumnPreviewView, FieldsViewToggle, type ColumnLinkRequest, type FieldsView } from './ColumnPreview.tsx';
 import { FieldsGrid } from './FieldsGrid.tsx';
-import type { CoreRowKey } from './fieldsGridModel.ts';
+import type { CoreRowKey, FieldCatalogue } from './fieldsGridModel.ts';
 import styles from './SetupScreens.module.css';
 
 const TEXT = SUPPLIER_TEXT;
@@ -119,6 +120,8 @@ export type RevisionReadViewProps = {
   legacyFailed?: boolean;
   /** Versienummer van de herkomstversie (voor "geërfd van versie n"). */
   legacyOriginVersionNumber?: number | null;
+  /** EF1: de veldcatalogus (kritiek van de kernrijen, "Nog niet gekoppeld"); `null` of afwezig zolang ze laadt. */
+  catalogue?: FieldCatalogue | null;
   /** E1: Bewerken (alleen op een concept): potloden in het grid en de schakelaar in de groepskop. */
   editing?: boolean;
   onEditRow?: (key: CoreRowKey, opener: HTMLElement) => void;
@@ -138,6 +141,10 @@ export type RevisionReadViewProps = {
   diff?: RevisionDiff | null;
   /** E4: Bestandsopbouw of Drempels is bewaard (de melding); de aanroeper herlaadt. */
   onSectionSaved?: (result: RevisionView, message: string) => void;
+  /** E5b: het kolomvoorbeeld van de laatste proefinlezing. `undefined` = geen schakelaar (geen concept); `null` = schakelaar uitgeschakeld tot er een testbestand gelezen is. */
+  columnPreview?: ColumnPreview | null;
+  /** E5b: "Koppelen aan veld…" bij een niet-gebruikte kolom (Bewerken); opent de bestaande "Veld toevoegen"-stroom. */
+  onLinkColumn?: (request: ColumnLinkRequest, opener: HTMLElement) => void;
 };
 
 export function RevisionReadView({
@@ -145,6 +152,7 @@ export function RevisionReadView({
   legacyOrigin = null,
   legacyFailed = false,
   legacyOriginVersionNumber = null,
+  catalogue = null,
   editing = false,
   onEditRow,
   onEditUppercase,
@@ -157,16 +165,27 @@ export function RevisionReadView({
   onReload,
   diff = null,
   onSectionSaved,
+  columnPreview,
+  onLinkColumn,
 }: RevisionReadViewProps) {
   const legacy = usableLegacyOrigin(legacyOrigin);
+  const [fieldsView, setFieldsView] = useState<FieldsView>('field');
+  const showColumns = fieldsView === 'column' && columnPreview != null;
   return (
     <div data-testid="revision-read-view">
       <LegacyOriginNotice origin={legacyOrigin} failed={legacyFailed} originVersionNumber={legacyOriginVersionNumber} />
       <AnchorChips revision={revision} />
       <div id={SECTION_IDS.fields}>
+        {columnPreview !== undefined && (
+          <FieldsViewToggle value={showColumns ? 'column' : 'field'} columnAvailable={columnPreview !== null} onChange={setFieldsView} />
+        )}
+        {showColumns ? (
+          <ColumnPreviewView preview={columnPreview} revision={revision} editing={editing} onLinkColumn={onLinkColumn} />
+        ) : (
         <FieldsGrid
           revision={revision}
           legacy={legacy}
+          catalogue={catalogue}
           editing={editing}
           onEditRow={onEditRow}
           onEditUppercase={onEditUppercase}
@@ -175,6 +194,7 @@ export function RevisionReadView({
           onMapField={onMapField}
           diff={diff}
         />
+        )}
       </div>
       <FiltersSection
         revision={revision}

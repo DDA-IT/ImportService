@@ -20,7 +20,7 @@ import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
 import { termLabel } from '../../terms/index.ts';
 import { EDITOR_TEXT, MAPPING_TEXT as TEXT } from '../../terms/setupEditor.ts';
-import { catalogueFields, type CatalogueGroup } from './fieldsGridModel.ts';
+import { visibleFields, type CatalogueField, type CatalogueGroup, type FieldCatalogue } from './fieldsGridModel.ts';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
 import { TableEditor } from './TableEditor.tsx';
 import {
@@ -53,6 +53,8 @@ export type MappingPanelMode = { kind: 'edit'; code: string } | { kind: 'add'; c
 
 export type MappingPanelProps = {
   revision: RevisionDetail;
+  /** EF1: de veldcatalogus (van `GET /field-catalog`, of de terugval uit het woordenboek). */
+  catalogue: FieldCatalogue;
   mode: MappingPanelMode;
   opener: HTMLElement | null;
   onClose: () => void;
@@ -77,14 +79,26 @@ function fieldLabel(code: string): string {
   return termLabel('fieldKey', code, 'een ander veld');
 }
 
-function startSession(revision: RevisionDetail, mode: MappingPanelMode, code: string): Session | null {
+function catalogueField(catalogue: FieldCatalogue, code: string): CatalogueField | undefined {
+  return catalogue.fields.find((field) => field.code === code);
+}
+
+/** Een veld waarvan de kritiek vergrendeld is (een referentieveld is altijd kritiek, par. 15.1). */
+function criticalityLocked(catalogue: FieldCatalogue, code: string): boolean {
+  return catalogueField(catalogue, code)?.criticalityChangeable === false;
+}
+
+function startSession(revision: RevisionDetail, catalogue: FieldCatalogue, mode: MappingPanelMode, code: string): Session | null {
   const existing = mode.kind === 'edit' ? revision.mappings.find((mapping) => mapping.targetFieldCode === code) : undefined;
   if (mode.kind === 'edit' && existing === undefined) {
     return null;
   }
-  const mapping = existing ?? newMappingTemplate(revision.id, code);
-  const { form, unsupported } = initialMappingForm(mapping);
-  return { code, mapping, form, baseline: JSON.stringify(form), unsupported };
+  // EF1: een nieuwe koppeling start met de standaard kritiek van het veld (niet langer altijd "Niet kritiek").
+  const mapping = existing ?? newMappingTemplate(revision.id, code, catalogueField(catalogue, code)?.defaultCriticality);
+  const initial = initialMappingForm(mapping);
+  // Een vergrendeld veld is altijd kritiek: het formulier start daarop, zodat het niet als gewijzigd telt.
+  const form = criticalityLocked(catalogue, code) ? { ...initial.form, criticality: 'CRITICAL' } : initial.form;
+  return { code, mapping, form, baseline: JSON.stringify(form), unsupported: initial.unsupported };
 }
 
 function Radios({
@@ -93,12 +107,14 @@ function Radios({
   options,
   current,
   onPick,
+  disabled = false,
 }: {
   legend: string;
   name: string;
   options: { value: string; label: string }[];
   current: string;
   onPick: (value: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className={styles.pf} role="radiogroup" aria-label={legend}>
@@ -111,6 +127,7 @@ function Radios({
               name={name}
               value={option.value}
               checked={current === option.value}
+              disabled={disabled}
               onChange={() => onPick(option.value)}
             />
             {option.label}
@@ -121,12 +138,12 @@ function Radios({
   );
 }
 
-export function MappingPanel({ revision, mode, opener, onClose, onSaved }: MappingPanelProps) {
+export function MappingPanel({ revision, catalogue, mode, opener, onClose, onSaved }: MappingPanelProps) {
   const { actor } = useActor();
   const uid = useId();
   const contentRef = useRef<HTMLDivElement>(null);
   const [session, setSession] = useState<Session | null>(() =>
-    mode.code === null ? null : startSession(revision, mode, mode.code),
+    mode.code === null ? null : startSession(revision, catalogue, mode, mode.code),
   );
   const [query, setQuery] = useState('');
   const [problems, setProblems] = useState<string[]>([]);
@@ -171,7 +188,7 @@ export function MappingPanel({ revision, mode, opener, onClose, onSaved }: Mappi
   }
 
   function pick(code: string) {
-    setSession(startSession(revision, mode, code));
+    setSession(startSession(revision, catalogue, mode, code));
     setQuery('');
     touched();
     // Stap 2: de focus naar het eerste veld van het paneel.
@@ -231,7 +248,7 @@ export function MappingPanel({ revision, mode, opener, onClose, onSaved }: Mappi
   function pickList(): ReactNode {
     const mapped = new Set(revision.mappings.map((mapping) => mapping.targetFieldCode));
     const needle = query.trim().toLowerCase();
-    const fields = catalogueFields().filter(
+    const fields = visibleFields(catalogue, revision).filter(
       (field) => needle === '' || field.label.toLowerCase().includes(needle) || field.code.toLowerCase().includes(needle),
     );
     const groups: [CatalogueGroup, string][] = [
@@ -255,6 +272,11 @@ export function MappingPanel({ revision, mode, opener, onClose, onSaved }: Mappi
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
+        {catalogue.source === 'fallback' && (
+          <p className={styles.warning} role="note" data-testid="catalogue-fallback">
+            {TEXT.catalogueFallback}
+          </p>
+        )}
         {fields.length === 0 && <p className={styles.pfHint}>{TEXT.noResults}</p>}
         {groups.map(([group, title]) => {
           const inGroup = fields.filter((field) => field.group === group);
@@ -272,6 +294,7 @@ export function MappingPanel({ revision, mode, opener, onClose, onSaved }: Mappi
                       <div className={done ? styles.addItemDone : undefined}>
                         <strong>{field.label}</strong>
                         {field.note !== null && !done && <span className={styles.pfHint}>{field.note}</span>}
+                        {!field.active && <span className={styles.pfHint}> ({TEXT.inactiveField})</span>}
                       </div>
                       {done ? (
                         <span className={styles.status}>{TEXT.alreadyMapped}</span>
@@ -430,7 +453,8 @@ export function MappingPanel({ revision, mode, opener, onClose, onSaved }: Mappi
     const ops = activeOps(current);
     const odd = unsupportedKinds(current);
     const standardSource = current.valueKind === 'SOURCE_FIELD' || current.valueKind === 'FIXED_VALUE';
-    const note = catalogueFields().find((field) => field.code === mapping.targetFieldCode)?.note ?? null;
+    const note = catalogueField(catalogue, mapping.targetFieldCode)?.note ?? null;
+    const locked = criticalityLocked(catalogue, mapping.targetFieldCode);
     const sourceChoice = unused ? 'none' : current.valueKind === 'FIXED_VALUE' ? 'fixed' : 'column';
     const options = [
       { value: 'column', label: TEXT.sourceColumn },
@@ -519,16 +543,32 @@ export function MappingPanel({ revision, mode, opener, onClose, onSaved }: Mappi
               <div key={op.id}>{opInputs(current, op)}</div>
             ))}
 
-            <Radios
-              legend={TEXT.criticalLabel}
-              name={`${uid}-critical`}
-              options={[
-                { value: 'CRITICAL', label: TEXT.critical },
-                { value: 'NON_CRITICAL', label: TEXT.notCritical },
-              ]}
-              current={current.criticality}
-              onPick={(value) => patch({ criticality: value })}
-            />
+            {locked ? (
+              <>
+                <Radios
+                  legend={TEXT.criticalLabel}
+                  name={`${uid}-critical`}
+                  options={[{ value: 'CRITICAL', label: TEXT.criticalLocked }]}
+                  current="CRITICAL"
+                  disabled
+                  onPick={() => undefined}
+                />
+                <p className={styles.pfHint} data-testid="critical-locked-hint">
+                  {TEXT.criticalLockedHint}
+                </p>
+              </>
+            ) : (
+              <Radios
+                legend={TEXT.criticalLabel}
+                name={`${uid}-critical`}
+                options={[
+                  { value: 'CRITICAL', label: TEXT.critical },
+                  { value: 'NON_CRITICAL', label: TEXT.notCritical },
+                ]}
+                current={current.criticality}
+                onPick={(value) => patch({ criticality: value })}
+              />
+            )}
             <Radios
               legend={TEXT.requiredLabel}
               name={`${uid}-required`}

@@ -58,6 +58,8 @@ function mapping(id: number, code: string, over: Record<string, unknown> = {}) {
 }
 
 const EAN = mapping(5001, 'EAN', {
+  // Een referentieveld is altijd kritiek (par. 15.1).
+  criticality: 'CRITICAL',
   sourceReference: 'BARCODE',
   transformKind: 'CHAIN',
   steps: [{ kind: 'PREFIX', config: 'prefix=0' }],
@@ -183,7 +185,7 @@ describe('extra veld wijzigen', () => {
       sourceReference: 'EAN_KOLOM',
       valueKind: 'SOURCE_FIELD',
       transformKind: 'CHAIN',
-      criticality: 'NON_CRITICAL',
+      criticality: 'CRITICAL',
       required: false,
       createdBy: 'An Beslisser',
       steps: [
@@ -324,8 +326,9 @@ describe('extra veld wijzigen', () => {
     const panel = await openMappingPanel('EAN-barcode');
     expect(within(panel).getByTestId('mapping-odd-ops')).toHaveTextContent('Splitsen');
     expect(within(panel).getByTestId('op-upper')).toBeDisabled();
-    fireEvent.click(within(panel).getByRole('radio', { name: 'Niet kritiek' }));
-    fireEvent.click(within(panel).getByRole('radio', { name: 'Kritiek' }));
+    // Een referentieveld is altijd kritiek: de keuze is vergrendeld (EF1).
+    expect(within(panel).queryByRole('radio', { name: 'Niet kritiek' })).not.toBeInTheDocument();
+    expect(within(panel).getByRole('radio', { name: 'Kritiek (altijd)' })).toBeDisabled();
     fireEvent.click(within(panel).getByRole('radio', { name: 'Ja' }));
     apply(panel);
     await waitFor(() => expect(calls).toHaveLength(1));
@@ -429,7 +432,7 @@ describe('Veld toevoegen en Nog niet gekoppeld', () => {
       sequenceNumber: null,
       valueKind: 'SOURCE_FIELD',
       transformKind: 'NONE',
-      criticality: 'NON_CRITICAL',
+      criticality: 'CRITICAL',
       required: false,
       createdBy: 'An Beslisser',
       valueMap: [],

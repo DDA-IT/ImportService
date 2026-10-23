@@ -27,10 +27,12 @@ import {
   mappingChips,
   mappingMissing,
   type CoreRow,
+  coreRowCriticality,
   unmappedFields,
   vkpGroup,
   VKP_CODES,
   type CoreRowKey,
+  type FieldCatalogue,
   type GridSource,
 } from './fieldsGridModel.ts';
 import { FieldKeyTerm } from './revisionDetailParts.tsx';
@@ -43,6 +45,8 @@ const COMMON = SUPPLIER_TEXT;
 export type FieldsGridProps = {
   revision: RevisionDetail;
   legacy: RevisionLegacyOrigin | null;
+  /** EF1: de veldcatalogus; `null` zolang ze laadt (dan geen "Nog niet gekoppeld" en een streepje bij onbekende kritiek). */
+  catalogue?: FieldCatalogue | null;
   /** `true` = Bewerken: de rijen van Herkenning en Basis krijgen een potlood, de groepskop een schakelaar. */
   editing?: boolean;
   /** Het potlood van een rij is aangeklikt; `opener` is de knop waar de focus na het sluiten naartoe terugkeert. */
@@ -113,6 +117,7 @@ function StatusBadgeCell({ missing }: { missing: boolean }) {
 export function FieldsGrid({
   revision,
   legacy,
+  catalogue = null,
   editing = false,
   onEditRow,
   onEditUppercase,
@@ -155,6 +160,12 @@ export function FieldsGrid({
       </td>
     );
 
+  /** EF1: de geldende kritiek van een kernrij (overrule van deze versie, anders de standaard); alleen-lezen tot EF2. */
+  const coreCriticality = (row: CoreRow): ReactNode => {
+    const value = coreRowCriticality(row.key, revision, catalogue);
+    return value === null ? COMMON.unknown : <Term domain="criticality" code={value} unknownLabel="Andere kritiek" />;
+  };
+
   const coreRow = (row: CoreRow) => (
     <tr key={row.key} className={coreRowMissing(row) ? editor.rowWarn : undefined} data-testid={`grid-row-${row.key}`}>
       <td data-label={head.field}>
@@ -165,7 +176,9 @@ export function FieldsGrid({
         <SourceCell source={row.source} />
       </td>
       <td data-label={head.operation}>{COMMON.unknown}</td>
-      <td data-label={head.critical}>{COMMON.unknown}</td>
+      <td data-label={head.critical} data-testid={`critical-${row.key}`}>
+        {coreCriticality(row)}
+      </td>
       <td data-label={head.required}>{row.required ? COMMON.yes : COMMON.no}</td>
       <td data-label={head.status}>
         <StatusBadgeCell missing={coreRowMissing(row)} />
@@ -305,7 +318,7 @@ export function FieldsGrid({
     return rows;
   };
 
-  const unmapped = editing ? unmappedFields(revision) : [];
+  const unmapped = editing && catalogue !== null ? unmappedFields(revision, catalogue) : [];
 
   const uppercase = revision.identityUppercase;
   const uppercaseText = uppercase === undefined ? '' : TEXT.uppercaseLabel(uppercase);
@@ -341,6 +354,11 @@ export function FieldsGrid({
           >
             {MAPPING_TEXT.addButton}
           </button>
+          {catalogue?.source === 'fallback' && (
+            <span className={styles.rowMeta} role="note" data-testid="grid-catalogue-fallback">
+              {MAPPING_TEXT.catalogueFallback}
+            </span>
+          )}
         </div>
       )}
       <div className={styles.tableWrap}>

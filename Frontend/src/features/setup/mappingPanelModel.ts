@@ -124,8 +124,12 @@ export function setOp(form: MappingForm, id: OpId, on: boolean): MappingForm {
   };
 }
 
-/** Een leeg extra veld voor "Veld toevoegen": een kolom, niet kritiek, niet verplicht, zonder bewerking. */
-export function newMappingTemplate(revisionId: number, targetFieldCode: string): MappingView {
+/** Een leeg extra veld voor "Veld toevoegen": een kolom, met de standaard kritiek van het veld (EF1), niet verplicht, zonder bewerking. */
+export function newMappingTemplate(
+  revisionId: number,
+  targetFieldCode: string,
+  criticality: 'CRITICAL' | 'NON_CRITICAL' = 'NON_CRITICAL',
+): MappingView {
   return {
     id: 0,
     revisionId,
@@ -133,7 +137,7 @@ export function newMappingTemplate(revisionId: number, targetFieldCode: string):
     targetFieldCode,
     sourceReference: '',
     valueKind: 'SOURCE_FIELD',
-    criticality: 'NON_CRITICAL',
+    criticality,
     expectedPosition: null,
     fixedValue: null,
     defaultValue: null,

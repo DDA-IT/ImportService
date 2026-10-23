@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { usePermissionGate } from '../../actor/permissions.ts';
 import * as importLinksApi from '../../api/importLinks.ts';
 import * as setupApi from '../../api/setup.ts';
-import { PERMISSION_MANAGE, type DefinitionRow, type RevisionDetail, type RevisionRow, type TrialReadResult } from '../../api/types.ts';
+import { PERMISSION_MANAGE, type ColumnPreview, type DefinitionRow, type RevisionDetail, type RevisionRow, type TrialReadResult } from '../../api/types.ts';
 import button from '../../components/Button.module.css';
 import pageCss from '../../components/Page.module.css';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
@@ -25,11 +25,14 @@ import { useQuery } from '../../hooks/useQuery.ts';
 import { term } from '../../terms/index.ts';
 import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { EDITOR_TEXT } from '../../terms/setupEditor.ts';
+import { type ColumnLinkRequest } from './ColumnPreview.tsx';
+import { COLUMN_PREVIEW_TEXT } from '../../terms/columnPreview.ts';
 import { ConceptBar, SharedDefinitionNotice } from './ConceptBar.tsx';
 import { CreateSuccessorAction } from './CreateSuccessorAction.tsx';
 import { FieldPanel, type PanelTarget } from './FieldPanel.tsx';
 import { FilterPanel, type FilterPanelMode } from './FilterPanel.tsx';
 import { MappingPanel, type MappingPanelMode } from './MappingPanel.tsx';
+import { useFieldCatalogue } from './useFieldCatalogue.ts';
 import { computeRevisionDiff, EMPTY_DIFF } from './revisionDiffModel.ts';
 import { RevisionReadView } from './RevisionReadView.tsx';
 import { defaultRevisionOf } from './setupDashboardModel.ts';
@@ -160,7 +163,14 @@ function RevisionFields({
   const [saved, setSaved] = useState<string[] | null>(null);
   // E4: de laatste proefinlezing met dit concept; ze vervalt zodra de inhoud van het concept wijzigt.
   const [trialResult, setTrialResult] = useState<TrialReadResult | null>(null);
+  // E5b: het kolomvoorbeeld van de laatste proefinlezing blijft staan na een wijziging (het wordt tegen de actuele versie
+  // gerekend en toont zelf of de bestandsopbouw sindsdien veranderde); alleen in de toestand van de pagina.
+  const [columnPreview, setColumnPreview] = useState<ColumnPreview | null>(null);
+  // E5b: de kolom waarvoor "Koppelen aan veld…" de Veld toevoegen-stroom opende (enkel een hint boven het paneel).
+  const [linkColumn, setLinkColumn] = useState<ColumnLinkRequest | null>(null);
 
+  // EF1: de veldcatalogus (lijst "Veld toevoegen", standaard kritiek, kritiek van de kernrijen); `null` zolang ze laadt.
+  const catalogue = useFieldCatalogue();
   const detail = useQuery(`supplier-revision-read:${definition.id}:${revision.id}`, (signal) =>
     setupApi.getRevisionDetail(definition.id, revision.id, signal),
   );
@@ -275,7 +285,10 @@ function RevisionFields({
           editing={editingNow}
           links={links.data?.content ?? []}
           trialResult={trialResult}
-          onTrialResult={setTrialResult}
+          onTrialResult={(result) => {
+            setTrialResult(result);
+            setColumnPreview(result.columnPreview ?? null);
+          }}
           onReasonSaved={() => {
             detail.reload();
             onChanged();
@@ -283,11 +296,17 @@ function RevisionFields({
           onActivated={afterChange}
         />
       )}
+      {mappingPanel !== null && linkColumn !== null && editingNow && (
+        <div className={styles.banner} role="status" data-testid="link-column-hint">
+          <p>{COLUMN_PREVIEW_TEXT.linkHint(linkColumn.position, linkColumn.header, linkColumn.source)}</p>
+        </div>
+      )}
       {detailData !== null && (
         <RevisionReadView
           revision={detailData}
           legacyOrigin={origin.data}
           legacyFailed={origin.error !== null}
+          catalogue={catalogue}
           legacyOriginVersionNumber={originVersionNumber}
           editing={editingNow}
           onEditRow={(key, opener) => {
@@ -312,6 +331,7 @@ function RevisionFields({
             setSaved(null);
             setPanel(null);
             setFilterPanel(null);
+            setLinkColumn(null);
             setMappingPanel({ mode: { kind: 'add', code: null }, opener });
           }}
           onMapField={(code, opener) => {
@@ -337,6 +357,14 @@ function RevisionFields({
             afterChange();
           }}
           onReload={afterChange}
+          columnPreview={isDraft ? columnPreview : undefined}
+          onLinkColumn={(request, opener) => {
+            setSaved(null);
+            setPanel(null);
+            setFilterPanel(null);
+            setLinkColumn(request);
+            setMappingPanel({ mode: { kind: 'add', code: null }, opener });
+          }}
           diff={isDraft ? diff : null}
           onSectionSaved={(_result, message) => {
             setSaved([message]);
@@ -362,15 +390,20 @@ function RevisionFields({
         />
       )}
 
-      {mappingPanel !== null && detailData !== null && editingNow && (
+      {mappingPanel !== null && detailData !== null && catalogue !== null && editingNow && (
         <MappingPanel
           key={`${mappingPanel.mode.kind}:${mappingPanel.mode.code ?? ''}`}
           revision={detailData}
+          catalogue={catalogue}
           mode={mappingPanel.mode}
           opener={mappingPanel.opener}
-          onClose={() => setMappingPanel(null)}
+          onClose={() => {
+            setMappingPanel(null);
+            setLinkColumn(null);
+          }}
           onSaved={() => {
             setMappingPanel(null);
+            setLinkColumn(null);
             setSaved([]);
             afterChange();
           }}

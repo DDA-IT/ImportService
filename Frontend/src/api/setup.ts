@@ -8,6 +8,7 @@ import { request, toQueryString } from './http.ts';
 import type {
   DefinitionRow,
   DefinitionUsageType,
+  FieldCatalogResponse,
   PageResult,
   RevisionDetail,
   RevisionLegacyOrigin,
@@ -85,4 +86,13 @@ export function getRevisionLegacyOrigin(
   signal?: AbortSignal,
 ): Promise<RevisionLegacyOrigin> {
   return request<RevisionLegacyOrigin>(`/definitions/${definitionId}/revisions/${revisionId}/legacy-origin`, { signal });
+}
+
+/**
+ * GET /field-catalog — CatalogImportSetupQueryController (EB1; recht `READ`, geen vlag). De veldcatalogus met per veld de
+ * standaard kritiek van een nieuwe koppeling en of die instelbaar is, plus de zeven revisie-eigen velden van Herkenning en
+ * Basis. Eén gedeelde standaardregel met de server (par. 15.1), zodat de client ze niet zelf hoeft af te leiden.
+ */
+export function getFieldCatalog(signal?: AbortSignal): Promise<FieldCatalogResponse> {
+  return request<FieldCatalogResponse>('/field-catalog', { signal });
 }

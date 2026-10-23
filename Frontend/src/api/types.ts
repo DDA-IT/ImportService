@@ -1980,6 +1980,44 @@ export type TrialReadResult = {
   /** Codes van grondoorzaken waardoor afhankelijke configuratiecontroles niet beoordeeld werden (NT-14-3). */
   configChecksSkippedBecause?: string[];
   notEvaluated: TrialNotEvaluated[];
+  /** EB5 (additief): wat er in het begin van het bestand staat; afwezig bij een oudere server. */
+  columnPreview?: ColumnPreview | null;
+};
+
+// --- EB5: kolomvoorbeeld in de proefinlezing (`TrialReadResult.columnPreview`, proefinlezing-design §2) ---------------
+// be.dda.catalogimport.service.support.ColumnPreview. Onafhankelijk van het verdict: ook bij een configuratiefout of
+// headerblokkade aanwezig. Alleen in de toestand van de pagina; nooit bewaard.
+
+export const COLUMN_PREVIEW_STATUSES = ['AVAILABLE', 'LAYOUT_INVALID', 'FILE_EMPTY', 'HEADER_BEYOND_PREVIEW'] as const;
+export type ColumnPreviewStatus = (typeof COLUMN_PREVIEW_STATUSES)[number];
+
+/** De bestandsopbouw waarmee het voorbeeld gelezen is; een ongeldig onderdeel is `null`. */
+export type ColumnPreviewLayout = {
+  charset: string | null;
+  delimiter: string | null;
+  quoteChar: string | null;
+  hasHeader: boolean;
+  /** De geconfigureerde headerregel. */
+  headerLineNumber: number | null;
+  /** `HEADER_NAME`, `COLUMN_INDEX` of `null` bij een onbekende waarde. */
+  referenceKind: string | null;
+};
+
+/** `header` is `null` zonder kopregel (of een onleesbare kopregel). */
+export type ColumnPreviewColumn = { position: number; header: string | null };
+
+/** `cells` is `null` bij een onleesbare regel (`unreadable`). */
+export type ColumnPreviewRow = { lineNumber: number; cells: string[] | null; unreadable: boolean };
+
+export type ColumnPreview = {
+  status: ColumnPreviewStatus;
+  layout: ColumnPreviewLayout;
+  /** De gebruikte headerregel, `null` zonder kopregel. */
+  headerLineNumber: number | null;
+  columns: ColumnPreviewColumn[];
+  rows: ColumnPreviewRow[];
+  columnsTruncated: boolean;
+  rowsTruncated: boolean;
 };
 
 // --- S9: overname van de legacy-configuratie (`docs/design/legacy-config-bundle-design.md` §2 en §5) ---
@@ -2215,4 +2253,38 @@ export type RevisionLegacyOrigin = {
   appliedAt: string | null;
   linesAvailable: boolean;
   lines: LegacyOriginLine[];
+};
+
+/** be.dda.catalogimport.service.SetupQueryService.FieldCatalogEntryView — EB1: één veld van de veldcatalogus. */
+export type FieldCatalogEntry = {
+  code: string;
+  name: string;
+  dataType: string;
+  defaultOwner: string;
+  identityClass: string;
+  /** Gevuld bij een prijscomponent. */
+  priceComponentCode: string | null;
+  /** Gevuld bij een referentieveld (altijd kritiek). */
+  referenceType: string | null;
+  ownerChangeable: boolean;
+  /** Een niet (meer) actief veld is niet kiesbaar voor een nieuwe koppeling. */
+  active: boolean;
+  sortOrder: number;
+  /** De kritiek die een nieuwe koppeling op dit veld krijgt (`CRITICAL` of `NON_CRITICAL`). */
+  defaultCriticality: string;
+  criticalityChangeable: boolean;
+};
+
+/** be.dda.catalogimport.service.SetupQueryService.RevisionFieldView — EB1: een revisie-eigen veld (Herkenning/Basis). */
+export type FieldCatalogRevisionField = {
+  fieldKey: string;
+  identity: boolean;
+  defaultCriticality: string;
+  criticalityChangeable: boolean;
+};
+
+/** `GET /field-catalog` (EB1). */
+export type FieldCatalogResponse = {
+  fields: FieldCatalogEntry[];
+  revisionFields: FieldCatalogRevisionField[];
 };

@@ -37,6 +37,11 @@ export type SetupState = {
   prodisUnits?: unknown[];
   /** CD-F: de waarschuwingen die `PUT /setup/links/{id}/creation-defaults` teruggeeft (standaard geen). */
   creationDefaultsWarnings?: unknown[];
+  /**
+   * EF1: het antwoord van `GET /field-catalog`. Zonder invoer: `defaultFieldCatalog()` (de velden van het woordenboek);
+   * `null`: de server geeft 500, zodat de editor op de terugval uit het woordenboek valt.
+   */
+  fieldCatalog?: unknown | null;
 };
 
 /** De herkomst van een versie die niet uit legacy komt (zoals de server ze levert). */
@@ -115,6 +120,69 @@ function pageOf(all: unknown[], params: URLSearchParams): unknown {
   };
 }
 
+/** Een veld van `GET /field-catalog` (EB1) met de standaardregel van de server: referentie vergrendeld kritiek, prijs kritiek, rest niet. */
+export function catalogEntry(code: string, over: Record<string, unknown> = {}) {
+  const reference = typeof over.referenceType === 'string';
+  const price = typeof over.priceComponentCode === 'string';
+  return {
+    code,
+    name: code,
+    dataType: 'TEXT',
+    defaultOwner: 'CATALOG_SOURCE',
+    identityClass: 'NONE',
+    priceComponentCode: null,
+    referenceType: null,
+    ownerChangeable: true,
+    active: true,
+    sortOrder: 100,
+    defaultCriticality: reference || price ? 'CRITICAL' : 'NON_CRITICAL',
+    criticalityChangeable: !reference,
+    ...over,
+  };
+}
+
+/** De zeven revisie-eigen velden van `GET /field-catalog` (zoals `RevisionCriticalityField`). */
+export function defaultRevisionFields() {
+  return [
+    { fieldKey: 'SUPPLIER', identity: true, defaultCriticality: 'CRITICAL', criticalityChangeable: false },
+    { fieldKey: 'SUPPLIER_GROUP', identity: true, defaultCriticality: 'CRITICAL', criticalityChangeable: false },
+    { fieldKey: 'SUPPLIER_REFERENCE', identity: true, defaultCriticality: 'CRITICAL', criticalityChangeable: false },
+    { fieldKey: 'DISCOUNT_CODE', identity: true, defaultCriticality: 'CRITICAL', criticalityChangeable: false },
+    { fieldKey: 'BASE_PRICE', identity: false, defaultCriticality: 'CRITICAL', criticalityChangeable: true },
+    { fieldKey: 'CURRENCY', identity: false, defaultCriticality: 'CRITICAL', criticalityChangeable: true },
+    { fieldKey: 'DESCRIPTION', identity: false, defaultCriticality: 'NON_CRITICAL', criticalityChangeable: true },
+  ];
+}
+
+/**
+ * Het standaardantwoord van `GET /field-catalog` in tests: dezelfde velden als het woordenboek `fieldKey` (zodat de lijsten
+ * van de bestaande tests gelijk blijven), ingedeeld zoals de server: prijscomponenten, referentievelden en Prodis-velden.
+ */
+export function defaultFieldCatalog() {
+  const prices = ['AKP_PCT', 'VKP1_PCT', 'VKP2_PCT', 'VKP3_PCT', 'VKP4_PCT', 'VKP5_PCT', 'VKP_GROSS_PCT'];
+  const references = ['EAN', 'PIM_ID', 'CAB_ID', 'E_MARK_ARTICLE_REFERENCE', 'E_SUPPLIER', 'SUPPLIER_BARCODE'];
+  return {
+    fields: [
+      catalogEntry('SUPPLIER', { identityClass: 'IDENTITY', sortOrder: 1 }),
+      catalogEntry('SUPPLIER_GROUP', { identityClass: 'IDENTITY', sortOrder: 2 }),
+      catalogEntry('SUPPLIER_REFERENCE', { identityClass: 'IDENTITY', sortOrder: 3 }),
+      catalogEntry('DISCOUNT_CODE', { identityClass: 'IDENTITY', sortOrder: 4 }),
+      catalogEntry('BASE_PRICE', { priceComponentCode: 'BASE', defaultOwner: 'PRICE_CONTROL', sortOrder: 5 }),
+      catalogEntry('DESCRIPTION', { sortOrder: 6 }),
+      catalogEntry('CURRENCY', { sortOrder: 7 }),
+      ...prices.map((code, index) =>
+        catalogEntry(code, { priceComponentCode: code.replace('_PCT', ''), defaultOwner: 'PRICE_CONTROL', sortOrder: 10 + index }),
+      ),
+      ...references.map((code, index) =>
+        catalogEntry(code, { referenceType: code, defaultOwner: 'CRITICAL_REFERENCE', ownerChangeable: false, sortOrder: 30 + index }),
+      ),
+      catalogEntry('BRAND', { defaultOwner: 'PRODIS_USER', sortOrder: 60 }),
+      catalogEntry('UNIT', { defaultOwner: 'PRODIS_USER', sortOrder: 61 }),
+    ],
+    revisionFields: defaultRevisionFields(),
+  };
+}
+
 export function emptySetupState(): SetupState {
   return { organisations: [], definitions: [], links: [], tasks: [], revisions: {}, details: {}, receipts: [] };
 }
@@ -183,6 +251,13 @@ export function installSetupServer(state: SetupState, extra?: (url: string, init
           }),
         );
       }
+    }
+    if (path!.endsWith('/field-catalog')) {
+      return Promise.resolve(
+        state.fieldCatalog === null
+          ? jsonResponse({ error: 'kapot', code: 'INTERNAL_ERROR' }, 500)
+          : jsonResponse(state.fieldCatalog ?? defaultFieldCatalog()),
+      );
     }
     if (path!.endsWith('/prodis-reference/vat-codes')) {
       return Promise.resolve(
