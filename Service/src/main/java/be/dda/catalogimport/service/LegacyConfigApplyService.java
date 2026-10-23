@@ -32,9 +32,12 @@ import be.dda.catalogimport.dao.ProdisReferenceDao;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierCatalogRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierGroupRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierRow;
+import be.dda.catalogimport.dao.ProdisReferenceDao.UnitOfMeasureRow;
+import be.dda.catalogimport.dao.ProdisReferenceDao.VatCodeRow;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import be.dda.catalogimport.dao.TaskRunRepository;
 import be.dda.catalogimport.domain.CatalogImportTask;
+import be.dda.catalogimport.domain.CreationDefaultsOrigin;
 import be.dda.catalogimport.domain.Criticality;
 import be.dda.catalogimport.domain.DefinitionUsageType;
 import be.dda.catalogimport.domain.ExternalCredential;
@@ -64,11 +67,14 @@ import be.dda.catalogimport.service.LegacyConfigReport.PlannedLink;
 import be.dda.catalogimport.service.LegacyConfigReport.PlannedOrganisation;
 import be.dda.catalogimport.service.LegacyConfigReport.PlannedTask;
 import be.dda.catalogimport.service.LegacyConfigReport.PlannedTemplate;
+import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedCreationDefaults;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedFilter;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedMapping;
 import be.dda.catalogimport.service.LegacyConfigTranslator.PlannedRevision;
 import be.dda.catalogimport.service.LegacyConfigTranslator.Translation;
 import be.dda.catalogimport.service.ProdisReferenceService.Availability;
+import be.dda.catalogimport.service.ProdisReferenceService.CodeMatch;
+import be.dda.catalogimport.service.ProdisReferenceService.CreationDefaultsLookup;
 import be.dda.catalogimport.service.ProdisReferenceService.LegacyLookup;
 import be.dda.catalogimport.service.support.ConfigFinding;
 import be.dda.catalogimport.service.support.RevisionCopier;
@@ -209,6 +215,36 @@ import org.springframework.transaction.annotation.Transactional;
  *       ({@link #verifyFixedValues}). Elke gemigreerde revisie krijgt {@code identity_uppercase=true}; beide tellen
  *       mee in de inhoudshash ({@link LegacyRevisionContent}) en zo ook in de fingerprint. Niet geconfigureerd of
  *       onbereikbaar: zoals de leverancier hierboven ({@code PRODIS_REFERENCE_NOT_VERIFIED}, "unverified").</li>
+ * </ul>
+ * <h2>Aanmaakstandaard van de koppeling (slice CD-B3)</h2>
+ * Beslissingslog 2026-10-23 "Btw-code en eenheid: aanmaakstandaard per koppeling", "Aanmaakstandaard per koppeling:
+ * uitwerking (CD)" en "Vlag 'standaarden overschrijven' op de importdefinitie"; codes in {@link LegacyConfigReport}.
+ * <ul>
+ *   <li><b>Prodis-controle</b> (PREVIEW en APPLY gelijk, {@link ProdisReferenceService#lookupCreationDefaults}): de
+ *       vaste btw-code (PSIMPDEF 51) en eenheid (45) moeten een actieve Prodis-rij zijn. Niet gevonden →
+ *       {@value LegacyConfigReport#PRODIS_VAT_CODE_NOT_FOUND} / {@value LegacyConfigReport#PRODIS_UNIT_NOT_FOUND}
+ *       (WARNING) en niet gezet (V2); meer dan één rij → wel gezet met
+ *       {@value LegacyConfigReport#PRODIS_REFERENCE_AMBIGUOUS}; niet geconfigureerd of onbereikbaar → wel gezet met
+ *       {@code PRODIS_REFERENCE_NOT_VERIFIED} (onbereikbaar: "unverified" fingerprint, zoals S5/S6). De gelezen rijen
+ *       tellen mee in de fingerprint.</li>
+ *   <li><b>Nieuwe koppeling</b> (eerste interface van een groep, volgende interface op een gedeelde definitie (S7), een
+ *       nieuwe interface die loskoppelt): de geverifieerde waarden, herkomst {@code LEGACY}, de actor van APPLY.</li>
+ *   <li><b>Bestaande koppeling</b> (ook de verlegde koppeling bij G2a), per veld: leeg → invullen; gelijk → niets;
+ *       anders en vlag {@code overwrite_creation_defaults} van de definitie van de koppeling uit →
+ *       {@value LegacyConfigReport#CREATION_DEFAULT_DIFFERS_NOT_CHANGED}; anders en vlag aan → overschrijven met
+ *       {@value LegacyConfigReport#CREATION_DEFAULT_OVERWRITTEN} of, als de vorige herkomst {@code MANUAL} was,
+ *       {@value LegacyConfigReport#CREATION_DEFAULT_MANUAL_OVERWRITTEN}. De vlag wordt gelezen op de definitie waarop de
+ *       koppeling nu staat; bij G2a is dat de gedeelde definitie, waarvan de kopie de vlag erft (CD-B2). Waarden,
+ *       herkomst, audit en de vlag zitten in de fingerprint, net als {@code import_link.updated_at}: een PUT tussen
+ *       PREVIEW en APPLY maakt de preview verouderd ({@value #CODE_STALE}). APPLY houdt een rijslot op de koppeling
+ *       vanaf het plannen, zodat een gelijktijdige PUT niet tussen plan en schrijven valt.</li>
+ *   <li><b>Herkomst bij een gedeeltelijke wijziging:</b> de koppeling heeft één herkomst voor beide velden. Blijft een
+ *       manueel gezette waarde staan (gelijk, of anders met de vlag uit) terwijl het andere veld uit legacy komt, dan
+ *       blijft de herkomst {@code MANUAL} (aanname CD-B3: een manuele waarde mag nooit als legacy gaan gelden, anders
+ *       zou ze bij een latere APPLY zonder {@value LegacyConfigReport#CREATION_DEFAULT_MANUAL_OVERWRITTEN}
+ *       overschreven worden); anders {@code LEGACY}.</li>
+ *   <li>Geen legacy-waarde (regel ontbreekt, bronkolom, onbekend in Prodis): de koppeling blijft zoals ze is, ook een
+ *       bestaande standaard wordt nooit gewist.</li>
  * </ul>
  * Schrijven gaat via de bestaande services ({@link SetupService}, {@link RevisionSuccessorService}), die hun eigen regels
  * bewaken; enkel een TAB-scheidingsteken wordt rechtstreeks op de revisie gezet, omdat {@code SetupInput.requireText}
@@ -485,6 +521,8 @@ public class LegacyConfigApplyService {
             // Eerst de sloten, dan pas het plan: de guards (open batch, lopende run) worden zo onder slot opnieuw
             // geëvalueerd, en een verandering sinds de preview geeft een andere fingerprint (409 STALE).
             lockLinkForDetach(receipt);
+        } else {
+            lockLinkForCreationDefaults(receipt, options);
         }
         Plan plan = plan(receipt, options);
         if (command.previewFingerprint() == null || !command.previewFingerprint().equals(plan.fingerprint())) {
@@ -517,6 +555,25 @@ public class LegacyConfigApplyService {
             return;
         }
         tasks.findByImportLinkIdForUpdate(linkId);
+        links.findByIdForUpdate(linkId);
+    }
+
+    /**
+     * CD-B3: een rijslot op de bestaande koppeling vóór het plannen, enkel als de ontvangst een aanmaakstandaard
+     * (PSIMPDEF 51/45) plant. Zo leest het plan de huidige standaard onder slot en kan een gelijktijdige
+     * {@code PUT /setup/links/{id}/creation-defaults} niet tussen plan en schrijven vallen (die wacht tot APPLY klaar is
+     * en wint dan als latere handeling). Enkel de koppeling, geen taken: APPLY neemt geen taakslot na dit slot, dus geen
+     * omgekeerde slotvolgorde tegenover de intake (taken, dan koppeling). Loskoppelen neemt zijn eigen sloten
+     * ({@link #lockLinkForDetach}).
+     */
+    private void lockLinkForCreationDefaults(LegacyConfigReceipt receipt, ApplyOptions options) {
+        Long linkId = origins.findByOriginEnvironmentAndOriginDossierAndInterfaceCode(receipt.getOriginEnvironment(),
+                receipt.getOriginDossier(), receipt.getInterfaceCode()).map(LegacyConfigOrigin::getImportLinkId)
+                .orElse(null);
+        if (linkId == null || LegacyConfigTranslator.translate(readBundle(receipt), options.charsetWhenUndeclared())
+                .creationDefaults().isEmpty()) {
+            return;
+        }
         links.findByIdForUpdate(linkId);
     }
 
@@ -565,7 +622,7 @@ public class LegacyConfigApplyService {
                         ImportLink link, String linkCode, String libraryCode, Long taskId, String taskName,
                         LegacyConfigOrigin origin, LegacyConfigDefinitionOrigin definitionOrigin,
                         String plannedContentHash, String templateCode, String legacyDefinitionCodes,
-                        DetachDecision detach) {
+                        DetachDecision detach, CreationDefaultsPlan creationDefaults) {
     }
 
     /**
@@ -609,6 +666,13 @@ public class LegacyConfigApplyService {
         // S6: vaste leverancier/groep (PSIMPDEF 9/10) tegen dezelfde Prodis-bron; samen met de leverancier bepalen ze
         // of de preview geverifieerd is.
         Availability availability = verifyFixedValues(items, rows, translation, supplierCode, lookup.availability());
+        // CD-B3: de aanmaakstandaard (PSIMPDEF 51/45) tegen dezelfde Prodis-bron; onbereikbaar maakt de preview
+        // "unverified" zoals S5/S6.
+        VerifiedCreationDefaults creationDefaults = verifyCreationDefaults(items, rows,
+                translation.creationDefaults());
+        if (creationDefaults.availability() == Availability.UNAVAILABLE) {
+            availability = Availability.UNAVAILABLE;
+        }
 
         rows.add("origin:" + (origin == null ? "none" : origin.getId() + ":" + origin.getUpdatedAt()));
         ImportLink link = origin == null || origin.getImportLinkId() == null ? null
@@ -863,6 +927,8 @@ public class LegacyConfigApplyService {
                         : "detachFromShared is ignored: this interface does not diverge from a shared definition"));
             }
         }
+        // CD-B3: nieuwe koppeling → zetten; bestaande (ook verlegd bij G2a) → de matrix per veld.
+        CreationDefaultsPlan creationDefaultsPlan = planCreationDefaults(items, rows, creationDefaults, link);
         if (link == null && detach == null && definition != null && organisation != null && libraryCode != null) {
             // S7: uk_import_link_scope (definitie, leverancier, bibliotheek) - al in de preview, niet pas bij APPLY.
             // Bij loskoppelen komt de nieuwe koppeling op de (nog lege) kopie: geen botsing mogelijk.
@@ -930,7 +996,7 @@ public class LegacyConfigApplyService {
         return new Plan(report, fingerprint, translation, options, organisation, supplierCode, organisationName,
                 definition,
                 definitionCode, revisionAction, basedOn, link, linkCode, libraryCode, taskId, taskName, origin,
-                definitionOrigin, plannedHash, templateCode, legacyCodes, detach);
+                definitionOrigin, plannedHash, templateCode, legacyCodes, detach, creationDefaultsPlan);
     }
 
     // --- Loskoppelen (G2a) ----------------------------------------------------------------------------------------
@@ -1404,6 +1470,218 @@ public class LegacyConfigApplyService {
         items.add(replacement);
     }
 
+    /** Verwijdert het eerste item met dit element en deze code (als het er is). */
+    private static void removeItem(List<Item> items, String element, String code) {
+        for (int i = 0; i < items.size(); i++) {
+            if (items.get(i).element().equals(element) && items.get(i).code().equals(code)) {
+                items.remove(i);
+                return;
+            }
+        }
+    }
+
+    // --- Aanmaakstandaard van de koppeling (CD-B3) ----------------------------------------------------------------
+
+    /**
+     * De geplande aanmaakstandaard na de Prodis-controle: {@code null} = dat veld wordt niet gezet.
+     *
+     * @param availability {@code null} als er niets te controleren was (geen 51/45 met een vaste waarde)
+     */
+    private record VerifiedCreationDefaults(Availability availability, String vatCode, String unitCode) {
+
+        boolean isEmpty() {
+            return vatCode == null && unitCode == null;
+        }
+    }
+
+    /**
+     * Of APPLY de aanmaakstandaard van de koppeling schrijft, met welke waarden (beide velden: de setter vervangt beide)
+     * en welke herkomst. {@link #NONE}: niets schrijven (ook geen audit).
+     */
+    private record CreationDefaultsPlan(boolean write, String vatCode, String unitCode, CreationDefaultsOrigin origin) {
+
+        static final CreationDefaultsPlan NONE = new CreationDefaultsPlan(false, null, null, null);
+    }
+
+    /**
+     * CD-B3: de vaste btw-code en eenheid tegen de actieve Prodis-rijen ({@link ProdisReferenceService#lookupCreationDefaults},
+     * nooit een exceptie). Vervangt het item {@code PRODIS_REFERENCE_NOT_VERIFIED} van de vertaler op zijn plaats (zoals
+     * {@link #verifyFixedValues}) en neemt de gelezen rijen op in de fingerprint:
+     * <ul>
+     *   <li>niet geconfigureerd: de vertaleritems blijven, de waarden worden gezet;</li>
+     *   <li>onbereikbaar: idem met de reden; de preview is "unverified";</li>
+     *   <li>gevonden: {@value LegacyConfigReport#PRODIS_VAT_CODE} / {@value LegacyConfigReport#PRODIS_UNIT};</li>
+     *   <li>meer dan één rij: {@value LegacyConfigReport#PRODIS_REFERENCE_AMBIGUOUS} (WARNING), wel gezet;</li>
+     *   <li>niet gevonden: {@value LegacyConfigReport#PRODIS_VAT_CODE_NOT_FOUND} /
+     *       {@value LegacyConfigReport#PRODIS_UNIT_NOT_FOUND} (WARNING) in de plaats van het
+     *       {@code CREATION_DEFAULT_*}-item, niet gezet (V2).</li>
+     * </ul>
+     */
+    private VerifiedCreationDefaults verifyCreationDefaults(List<Item> items, List<String> rows,
+                                                            PlannedCreationDefaults planned) {
+        if (planned == null || planned.isEmpty()) {
+            return new VerifiedCreationDefaults(null, null, null);
+        }
+        CreationDefaultsLookup lookup = prodis.lookupCreationDefaults(planned.vatCode(), planned.unitCode());
+        if (lookup.availability() == Availability.NOT_CONFIGURED) {
+            return new VerifiedCreationDefaults(Availability.NOT_CONFIGURED, planned.vatCode(), planned.unitCode());
+        }
+        String notVerified = LegacyConfigTranslator.PRODIS_REFERENCE_NOT_VERIFIED;
+        String vatElement = "PSIMPDEF#" + LegacyConfigTranslator.LINE_VAT;
+        String unitElement = "PSIMPDEF#" + LegacyConfigTranslator.LINE_UNIT;
+        if (lookup.availability() == Availability.UNAVAILABLE) {
+            if (planned.vatCode() != null) {
+                replaceItem(items, vatElement, notVerified, new Item(vatElement, WARNING, notVerified, null,
+                        "VAT code " + planned.vatCode() + " is not verified: the Prodis database is not available "
+                                + "right now; it is set as the creation default anyway"));
+            }
+            if (planned.unitCode() != null) {
+                replaceItem(items, unitElement, notVerified, new Item(unitElement, WARNING, notVerified, null,
+                        "unit " + planned.unitCode() + " is not verified: the Prodis database is not available right "
+                                + "now; it is set as the creation default anyway"));
+            }
+            return new VerifiedCreationDefaults(Availability.UNAVAILABLE, planned.vatCode(), planned.unitCode());
+        }
+        if (planned.vatCode() != null) {
+            for (VatCodeRow row : lookup.vatRows()) {
+                rows.add("prodisVatCode:" + row.code() + "|" + row.description() + "|" + row.percentage() + "|"
+                        + row.occurrences());
+            }
+            if (lookup.vatRows().isEmpty()) {
+                rows.add("prodisVatCode:" + planned.vatCode() + "|none");
+            }
+        }
+        if (planned.unitCode() != null) {
+            for (UnitOfMeasureRow row : lookup.unitRows()) {
+                rows.add("prodisUnit:" + row.code() + "|" + row.singular() + "|" + row.abbreviation() + "|"
+                        + row.occurrences());
+            }
+            if (lookup.unitRows().isEmpty()) {
+                rows.add("prodisUnit:" + planned.unitCode() + "|none");
+            }
+        }
+        String vatDescription = lookup.vatRows().isEmpty() ? null : lookup.vatRows().get(0).description()
+                + (lookup.vatRows().get(0).percentage() == null ? "" : " (" + lookup.vatRows().get(0).percentage()
+                + "%)");
+        String unitDescription = lookup.unitRows().isEmpty() ? null : lookup.unitRows().get(0).singular();
+        String vat = verifiedCode(items, vatElement, LegacyConfigReport.CREATION_DEFAULT_VAT, planned.vatCode(),
+                lookup.vat(), "VAT code", LegacyConfigReport.PRODIS_VAT_CODE,
+                LegacyConfigReport.PRODIS_VAT_CODE_NOT_FOUND, "vat_code.code", vatDescription);
+        String unit = verifiedCode(items, unitElement, LegacyConfigReport.CREATION_DEFAULT_UNIT, planned.unitCode(),
+                lookup.unit(), "unit", LegacyConfigReport.PRODIS_UNIT, LegacyConfigReport.PRODIS_UNIT_NOT_FOUND,
+                "unit_of_measure.code", unitDescription);
+        return new VerifiedCreationDefaults(Availability.VERIFIED, vat, unit);
+    }
+
+    /** @return de code als ze gezet mag worden, anders {@code null} (niet gevonden, V2) */
+    private static String verifiedCode(List<Item> items, String element, String migratedCode, String code,
+                                       CodeMatch match, String what, String foundCode, String notFoundCode,
+                                       String prodisColumn, String description) {
+        if (code == null) {
+            return null;
+        }
+        String notVerified = LegacyConfigTranslator.PRODIS_REFERENCE_NOT_VERIFIED;
+        String target = "prodis." + prodisColumn + "=" + code;
+        if (match == CodeMatch.FOUND) {
+            replaceItem(items, element, notVerified, new Item(element, MIGRATED, foundCode, target,
+                    "verified in Prodis" + (description == null || description.isBlank() ? "" : ": " + description)));
+            return code;
+        }
+        if (match == CodeMatch.AMBIGUOUS) {
+            replaceItem(items, element, notVerified, new Item(element, WARNING,
+                    LegacyConfigReport.PRODIS_REFERENCE_AMBIGUOUS, target, what + " " + code + " occurs more than once "
+                    + "among the active rows in Prodis (" + prodisColumn + " is not unique); it is set as the "
+                    + "creation default, which row is used when an article is created is never decided silently"));
+            return code;
+        }
+        // NOT_FOUND (V2): waarschuwen en niet zetten; het CREATION_DEFAULT_*-item zou anders "gemigreerd" beweren.
+        removeItem(items, element, migratedCode);
+        replaceItem(items, element, notVerified, new Item(element, WARNING, notFoundCode, null, what + " " + code
+                + " is not an active " + prodisColumn + " in Prodis; the link does not get it as its creation default"));
+        return null;
+    }
+
+    /**
+     * CD-B3: wat APPLY met de aanmaakstandaard van de koppeling doet (zie de klassebeschrijving). Een nieuwe koppeling
+     * (geen {@code link}) krijgt de geverifieerde waarden met herkomst {@code LEGACY}. Voor een bestaande koppeling: de
+     * matrix per veld ({@link #fieldOutcome}) met de vlag van de definitie waarop de koppeling nu staat
+     * ({@code link.getImportDefinition()}; bij G2a de gedeelde definitie, die de kopie erft). De huidige waarden,
+     * herkomst, audit en vlag gaan in de fingerprint.
+     */
+    private static CreationDefaultsPlan planCreationDefaults(List<Item> items, List<String> rows,
+                                                             VerifiedCreationDefaults verified, ImportLink link) {
+        if (verified.isEmpty()) {
+            return CreationDefaultsPlan.NONE;
+        }
+        if (link == null) {
+            return new CreationDefaultsPlan(true, verified.vatCode(), verified.unitCode(),
+                    CreationDefaultsOrigin.LEGACY);
+        }
+        ImportDefinition definition = link.getImportDefinition();
+        boolean overwrite = definition.isOverwriteCreationDefaults();
+        CreationDefaultsOrigin previous = link.getCreationDefaultsOrigin();
+        rows.add("linkCreationDefaults:" + link.getId() + ":" + link.getDefaultVatCode() + "|"
+                + link.getDefaultUnitCode() + "|" + previous + "|" + link.getCreationDefaultsUpdatedAt());
+        rows.add("overwriteCreationDefaults:" + definition.getId() + ":" + overwrite);
+        FieldOutcome vat = fieldOutcome(items, "PSIMPDEF#" + LegacyConfigTranslator.LINE_VAT,
+                LegacyConfigReport.CREATION_DEFAULT_VAT, "VAT code", "link.defaultVatCode", link.getDefaultVatCode(),
+                verified.vatCode(), overwrite, previous, definition.getCode());
+        FieldOutcome unit = fieldOutcome(items, "PSIMPDEF#" + LegacyConfigTranslator.LINE_UNIT,
+                LegacyConfigReport.CREATION_DEFAULT_UNIT, "unit", "link.defaultUnitCode", link.getDefaultUnitCode(),
+                verified.unitCode(), overwrite, previous, definition.getCode());
+        if (!vat.changed() && !unit.changed()) {
+            return CreationDefaultsPlan.NONE;
+        }
+        // Eén herkomst voor beide velden: een manuele waarde die blijft staan, mag nooit als LEGACY gaan gelden.
+        boolean keepsManual = previous == CreationDefaultsOrigin.MANUAL && (vat.keptExisting() || unit.keptExisting());
+        return new CreationDefaultsPlan(true, vat.value(), unit.value(),
+                keepsManual ? CreationDefaultsOrigin.MANUAL : CreationDefaultsOrigin.LEGACY);
+    }
+
+    /**
+     * @param value        de waarde na APPLY
+     * @param changed      APPLY wijzigt dit veld
+     * @param keptExisting een bestaande (niet-lege) waarde blijft ongewijzigd staan
+     */
+    private record FieldOutcome(String value, boolean changed, boolean keptExisting) {
+    }
+
+    /**
+     * De matrix van beslissing 2026-10-23 "Vlag 'standaarden overschrijven'" voor één veld van een bestaande koppeling.
+     * Past het {@code CREATION_DEFAULT_*}-item van de vertaler aan zodat het rapport zegt wat APPLY doet.
+     */
+    private static FieldOutcome fieldOutcome(List<Item> items, String element, String migratedCode, String what,
+                                             String target, String existing, String planned, boolean overwrite,
+                                             CreationDefaultsOrigin previous, String definitionCode) {
+        if (planned == null) {
+            return new FieldOutcome(existing, false, existing != null);
+        }
+        if (existing == null) {
+            replaceItem(items, element, migratedCode, new Item(element, MIGRATED, migratedCode, target + "=" + planned,
+                    "the link has no default " + what + " yet; it gets " + planned + " from legacy (used only when "
+                            + "CatalogImport creates an article)"));
+            return new FieldOutcome(planned, true, false);
+        }
+        if (existing.equals(planned)) {
+            replaceItem(items, element, migratedCode, new Item(element, MIGRATED, migratedCode, target + "=" + planned,
+                    "the link already has default " + what + " " + planned + "; unchanged"));
+            return new FieldOutcome(existing, false, true);
+        }
+        if (!overwrite) {
+            replaceItem(items, element, migratedCode, new Item(element, WARNING,
+                    LegacyConfigReport.CREATION_DEFAULT_DIFFERS_NOT_CHANGED, target + "=" + existing, "the link has "
+                    + "default " + what + " " + existing + " (origin " + previous + "), legacy has " + planned + "; it is not changed because definition "
+                    + definitionCode + " does not overwrite creation defaults"));
+            return new FieldOutcome(existing, false, true);
+        }
+        boolean manual = previous == CreationDefaultsOrigin.MANUAL;
+        items.add(new Item(element, WARNING, manual ? LegacyConfigReport.CREATION_DEFAULT_MANUAL_OVERWRITTEN
+                : LegacyConfigReport.CREATION_DEFAULT_OVERWRITTEN, target + "=" + planned, "default " + what + " "
+                + existing + " of the link is overwritten by " + planned + " from legacy: definition " + definitionCode
+                + " overwrites creation defaults" + (manual ? "; the old value " + existing + " was set manually" : "")));
+        return new FieldOutcome(planned, true, false);
+    }
+
     private record RevisionDecision(String action, ImportDefinitionRevision basedOn) {
     }
 
@@ -1762,6 +2040,14 @@ public class LegacyConfigApplyService {
                 link.setImportDefinition(definitions.findById(definitionId).orElseThrow());
                 links.saveAndFlush(link);
             }
+        }
+        CreationDefaultsPlan creationDefaults = plan.creationDefaults();
+        if (creationDefaults.write()) {
+            // CD-B3: de aanmaakstandaard zoals gepland (de koppeling staat sinds het plannen onder rijslot, of is nieuw).
+            ImportLink target = links.findById(linkId).orElseThrow();
+            target.setCreationDefaults(creationDefaults.vatCode(), creationDefaults.unitCode(),
+                    creationDefaults.origin(), actor.username(), actor.subject(), now);
+            links.saveAndFlush(target);
         }
         long taskId = plan.taskId() != null ? plan.taskId()
                 : setup.createTask(new SetupService.CreateTaskCommand(linkId, plan.taskName(), null)).id();

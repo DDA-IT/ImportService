@@ -3450,3 +3450,13 @@ Alleen-lezen overgenomen: invulpuntdeclaraties met type/bereik/verplicht en inge
 ingeklapte sectie "Geavanceerd" (kritiek per veld, herkomst en goedkeuring, technische details). Kritiek toevoegen voor
 kernrijen kwam niet uit het oude blok; dat volgt via EB2/EF2. Verwijderen van een concept bestond niet en komt er niet bij.
 **Bron:** bouwer-gemiddeld (E6-rapport)
+
+## 2026-10-23 — CD-B3: keuzes aanmaakstandaard bij legacy-overname
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** Eén herkomstkolom voor beide velden: blijft een manuele
+waarde staan (gelijk, of verschillend met vlag uit), dan blijft de herkomst MANUAL ook als legacy het andere veld invult
+(liever een valse "was manueel"-melding dan een gemiste). Prodis-controle in PREVIEW/APPLY via een niet-gooiende
+`lookupCreationDefaults`; bij APPLY met 51/45 wordt de bekende koppeling vergrendeld (FOR UPDATE). DIFFERS vervangt het
+MIGRATED-item, NOT_FOUND verwijdert het; OVERWRITTEN en MANUAL_OVERWRITTEN zijn WARNING. Vingerafdruk bevat enkel de
+Prodis-rijen van de geplande codes. Bewust wissen (beide leeg, MANUAL) wordt bij een volgende overname opnieuw gevuld
+(matrix "leeg → invullen"). `targetOfLine(51/45)` = LINK_CREATION_DEFAULT (frontend volgt).
+**Bron:** bouwer-zwaar (CD-B3-rapport)

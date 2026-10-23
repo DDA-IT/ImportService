@@ -17,6 +17,32 @@ import java.util.UUID;
  * Een rapport met minstens één {@value #BLOCKING}-item heeft {@code outcome} {@value #OUTCOME_BLOCKED}. Het rapport
  * bevat nooit een secret (de bundel in {@code bundle_json} heeft er geen).
  *
+ * <h2>Aanmaakstandaard van de koppeling (slice CD-B3)</h2>
+ * Beslissingslog 2026-10-23 "Btw-code en eenheid: aanmaakstandaard per koppeling", "Aanmaakstandaard per koppeling:
+ * uitwerking (CD)" en "Vlag 'standaarden overschrijven' op de importdefinitie". De vaste legacy-waarde van PSIMPDEF 51
+ * (btw-code) en 45 (eenheid) wordt de aanmaakstandaard van de koppeling ({@code import_link.default_vat_code} /
+ * {@code default_unit_code}); nooit een veld per regel. Codes (element {@code PSIMPDEF#51} of {@code PSIMPDEF#45}):
+ * <ul>
+ *   <li>{@value #CREATION_DEFAULT_VAT} / {@value #CREATION_DEFAULT_UNIT} ({@value #MIGRATED}): de vaste waarde wordt
+ *       (of is al) de standaard van de koppeling; target {@code link.defaultVatCode=<code>} /
+ *       {@code link.defaultUnitCode=<code>};</li>
+ *   <li>{@value #CREATION_DEFAULT_FROM_COLUMN_NOT_MIGRATED} ({@value #WARNING}): de regel leest een bronkolom in plaats
+ *       van een vaste waarde; een standaard per koppeling kan geen waarde per lijn zijn, er wordt niets gezet;</li>
+ *   <li>{@value #CREATION_DEFAULT_DUPLICATED}, {@value #CREATION_DEFAULT_VALUE_EMPTY},
+ *       {@value #CREATION_DEFAULT_VALUE_TOO_LONG} ({@value #WARNING}): dubbele regel, lege waarde of langer dan 50
+ *       tekens; er wordt niets gezet (nooit afgekapt);</li>
+ *   <li>{@value #CREATION_DEFAULT_NOT_YET_SUPPORTED} ({@value #NOT_MIGRATED}): PSIMPDEF 50/59 (rekeningen) of 1
+ *       (artikelgroep) met een vaste waarde; later (V3), de waarde staat in de boodschap;</li>
+ *   <li>Prodis-controle: {@value #PRODIS_VAT_CODE} / {@value #PRODIS_UNIT} ({@value #MIGRATED}, gevonden),
+ *       {@value #PRODIS_VAT_CODE_NOT_FOUND} / {@value #PRODIS_UNIT_NOT_FOUND} ({@value #WARNING}, niet gezet, V2),
+ *       {@value #PRODIS_REFERENCE_AMBIGUOUS} ({@value #WARNING}, meer dan één actieve rij, wel gezet), of
+ *       {@code PRODIS_REFERENCE_NOT_VERIFIED} ({@value #WARNING}, niet geconfigureerd of onbereikbaar, wel gezet);</li>
+ *   <li>bestaande koppeling, per veld: {@value #CREATION_DEFAULT_DIFFERS_NOT_CHANGED} ({@value #WARNING}, vlag uit,
+ *       beide waarden; vervangt het {@value #MIGRATED}-item), {@value #CREATION_DEFAULT_OVERWRITTEN} ({@value #WARNING},
+ *       vlag aan, de vorige waarde kwam uit legacy) of {@value #CREATION_DEFAULT_MANUAL_OVERWRITTEN} ({@value #WARNING},
+ *       vlag aan, de vorige waarde was manueel gezet); beide met de oude en de nieuwe waarde.</li>
+ * </ul>
+ *
  * @param receiptId     de ontvangst
  * @param contentHash   de {@code contentHash} van die ontvangst
  * @param receiptStatus de huidige status van de ontvangst (APPLY kan enkel op {@code RECEIVED})
@@ -60,6 +86,39 @@ public record LegacyConfigReport(long receiptId, String contentHash, String rece
      * preview faalt met {@code LEGACY_PREVIEW_STALE} zodra Prodis weer bereikbaar is, en omgekeerd.
      */
     public static final String FINGERPRINT_UNVERIFIED_PREFIX = "unverified:";
+
+    // --- Aanmaakstandaard van de koppeling (CD-B3; zie de klassebeschrijving) -------------------------------------
+
+    /** PSIMPDEF 51 met een vaste waarde: de btw-code wordt de aanmaakstandaard van de koppeling. */
+    public static final String CREATION_DEFAULT_VAT = "CREATION_DEFAULT_VAT";
+    /** PSIMPDEF 45 met een vaste waarde: de eenheid wordt de aanmaakstandaard van de koppeling. */
+    public static final String CREATION_DEFAULT_UNIT = "CREATION_DEFAULT_UNIT";
+    /** PSIMPDEF 51/45 leest een bronkolom in plaats van een vaste waarde: niets gezet. */
+    public static final String CREATION_DEFAULT_FROM_COLUMN_NOT_MIGRATED = "CREATION_DEFAULT_FROM_COLUMN_NOT_MIGRATED";
+    /** PSIMPDEF 51/45 komt meer dan eens voor: welke legacy toepast is niet bepaald, niets gezet. */
+    public static final String CREATION_DEFAULT_DUPLICATED = "CREATION_DEFAULT_DUPLICATED";
+    /** PSIMPDEF 51/45 zonder (niet-blanco) vaste waarde en zonder bronkolom: niets gezet. */
+    public static final String CREATION_DEFAULT_VALUE_EMPTY = "CREATION_DEFAULT_VALUE_EMPTY";
+    /** De vaste waarde van PSIMPDEF 51/45 is langer dan 50 tekens ({@code import_link}): niets gezet, nooit afgekapt. */
+    public static final String CREATION_DEFAULT_VALUE_TOO_LONG = "CREATION_DEFAULT_VALUE_TOO_LONG";
+    /** PSIMPDEF 50/59 (rekeningen) of 1 (artikelgroep) met een vaste waarde: als aanmaakstandaard nog niet (V3). */
+    public static final String CREATION_DEFAULT_NOT_YET_SUPPORTED = "CREATION_DEFAULT_NOT_YET_SUPPORTED";
+    /** De btw-code bestaat precies één keer onder de actieve Prodis-rijen. */
+    public static final String PRODIS_VAT_CODE = "PRODIS_VAT_CODE";
+    /** De eenheid bestaat precies één keer onder de actieve Prodis-rijen. */
+    public static final String PRODIS_UNIT = "PRODIS_UNIT";
+    /** De btw-code is geen actieve Prodis-rij: niet gezet (V2); zelfde code als de setup-API (400 daar). */
+    public static final String PRODIS_VAT_CODE_NOT_FOUND = SetupService.CODE_PRODIS_VAT_CODE_NOT_FOUND;
+    /** De eenheid is geen actieve Prodis-rij: niet gezet (V2); zelfde code als de setup-API (400 daar). */
+    public static final String PRODIS_UNIT_NOT_FOUND = SetupService.CODE_PRODIS_UNIT_NOT_FOUND;
+    /** Meer dan één actieve Prodis-rij met die code: wel gezet; zelfde code als de setup-API. */
+    public static final String PRODIS_REFERENCE_AMBIGUOUS = SetupService.WARNING_PRODIS_REFERENCE_AMBIGUOUS;
+    /** Bestaande koppeling, vlag "standaarden overschrijven" uit: de waarde verschilt en blijft (beide waarden). */
+    public static final String CREATION_DEFAULT_DIFFERS_NOT_CHANGED = "CREATION_DEFAULT_DIFFERS_NOT_CHANGED";
+    /** Bestaande koppeling, vlag aan: een waarde uit een vorige overname wordt overschreven (oud en nieuw). */
+    public static final String CREATION_DEFAULT_OVERWRITTEN = "CREATION_DEFAULT_OVERWRITTEN";
+    /** Bestaande koppeling, vlag aan: een manueel gezette waarde wordt overschreven (oud en nieuw, oud was manueel). */
+    public static final String CREATION_DEFAULT_MANUAL_OVERWRITTEN = "CREATION_DEFAULT_MANUAL_OVERWRITTEN";
 
     public LegacyConfigReport {
         sharedWith = List.copyOf(sharedWith);

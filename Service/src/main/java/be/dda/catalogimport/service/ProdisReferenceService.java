@@ -226,6 +226,55 @@ public class ProdisReferenceService {
         return occurrences == 0 ? CodeMatch.NOT_FOUND : occurrences == 1 ? CodeMatch.FOUND : CodeMatch.AMBIGUOUS;
     }
 
+    /**
+     * Wat PREVIEW/APPLY van de legacy-config-overname (CD-B3) over de geplande aanmaakstandaard weet.
+     *
+     * @param vat      uitkomst voor de btw-code, zoals {@link CreationDefaultsCheck}; {@code NOT_CONFIGURED} ook bij
+     *                 {@code UNAVAILABLE} (niets geverifieerd)
+     * @param vatRows  de gelezen actieve Prodis-rij(en) met exact die code (0 of 1 rij, met {@code occurrences}); leeg
+     *                 tenzij {@code VERIFIED}. Voor de {@code previewFingerprint}.
+     * @param unitRows idem voor de eenheid
+     */
+    public record CreationDefaultsLookup(Availability availability, CodeMatch vat, CodeMatch unit,
+                                         List<VatCodeRow> vatRows, List<UnitOfMeasureRow> unitRows) {
+
+        public CreationDefaultsLookup {
+            vatRows = List.copyOf(vatRows);
+            unitRows = List.copyOf(unitRows);
+        }
+    }
+
+    /**
+     * Voor PREVIEW/APPLY van de migratie (CD-B3): dezelfde controle als {@link #verifyCreationDefaults}, maar nooit een
+     * exceptie voor "uit" of "onbereikbaar" (zelfde regels als {@link #lookup} en {@link #lookupFixedIdentity}): de
+     * aanroeper zet de waarde dan toch, met {@code PRODIS_REFERENCE_NOT_VERIFIED} en (onbereikbaar) een "unverified"
+     * fingerprint.
+     */
+    public CreationDefaultsLookup lookupCreationDefaults(String vatCode, String unitCode) {
+        CodeMatch vatRequested = vatCode == null ? CodeMatch.NOT_REQUESTED : CodeMatch.NOT_CONFIGURED;
+        CodeMatch unitRequested = unitCode == null ? CodeMatch.NOT_REQUESTED : CodeMatch.NOT_CONFIGURED;
+        if (!dao.isConfigured()) {
+            return new CreationDefaultsLookup(Availability.NOT_CONFIGURED, vatRequested, unitRequested, List.of(),
+                    List.of());
+        }
+        try {
+            List<VatCodeRow> vatRows = vatCode == null ? List.of() : dao.findVatCodes().stream()
+                    .filter(row -> row.code().equals(vatCode.trim())).toList();
+            List<UnitOfMeasureRow> unitRows = unitCode == null ? List.of() : dao.findUnitsOfMeasure().stream()
+                    .filter(row -> row.code().equals(unitCode.trim())).toList();
+            return new CreationDefaultsLookup(Availability.VERIFIED,
+                    vatCode == null ? CodeMatch.NOT_REQUESTED
+                            : match(vatRows.stream().mapToInt(VatCodeRow::occurrences).sum()),
+                    unitCode == null ? CodeMatch.NOT_REQUESTED
+                            : match(unitRows.stream().mapToInt(UnitOfMeasureRow::occurrences).sum()),
+                    vatRows, unitRows);
+        } catch (DataAccessException failure) {
+            logUnavailable(failure);
+            return new CreationDefaultsLookup(Availability.UNAVAILABLE, vatRequested, unitRequested, List.of(),
+                    List.of());
+        }
+    }
+
     // --- PREVIEW/APPLY (nooit een exceptie voor "uit" of "onbereikbaar") ------------------------------------------
 
     /** De leverancier en al haar bibliotheekrijen; {@code supplierNumber == null} = niets op te zoeken. */

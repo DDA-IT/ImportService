@@ -79,6 +79,12 @@ import java.util.UUID;
  *       r.1194); {@code FILE_ENCODING} leeg → UTF-8 met waarschuwing {@value #CHARSET_DEFAULTED_UTF8}, of {@code charsetWhenUndeclared} (waarschuwing {@value #CHARSET_NOT_DECLARED});
  *       {@code SkipHeaderLines} n ≥ 1 → header op regel n; {@code DecimalComma=Y} → {@code decimalSeparator=,} op de
  *       numerieke mappings.</li>
+ *   <li><b>Aanmaakstandaard 51/45 (CD-B3, beslissingslog 2026-10-23 "Aanmaakstandaard per koppeling: uitwerking
+ *       (CD)"):</b> een vaste "Waarde" op 51 (btw-code) of 45 (eenheid) wordt een geplande aanmaakstandaard van de
+ *       koppeling ({@link PlannedCreationDefaults}), nooit een veld per regel; de Prodis-controle en de matrix per
+ *       koppeling doet {@code LegacyConfigApplyService}. Een bronkolom, een dubbele regel, een lege of te lange waarde
+ *       zet niets (WARNING). Een vaste waarde op 50/59 (rekeningen) of 1 (artikelgroep) is
+ *       {@value LegacyConfigReport#CREATION_DEFAULT_NOT_YET_SUPPORTED} (V3).</li>
  * </ul>
  * Financiële velden worden nooit stil aangepast: rekenkundige CALC-bewerkingen krijgen altijd
  * {@value #CALC_ROUNDING_MAY_DIFFER} (legacy rekent met {@code Val(..,'8.2')} en {@code Str(..,'8.3')}).
@@ -222,6 +228,16 @@ final class LegacyConfigTranslator {
     static final int LINE_DISCOUNT = 23;
     static final int LINE_BASE_PRICE = 26;
     static final int LINE_DESCRIPTION = 4;
+    /** CD-B3: PSIMPDEF 51 (btw-code) en 45 (eenheid) zijn een aanmaakstandaard van de koppeling. */
+    static final int LINE_VAT = 51;
+    static final int LINE_UNIT = 45;
+    /** CD-B3 (V3): rekeningen (50/59) en artikelgroep (1) als aanmaakstandaard komen later; nu enkel een melding. */
+    private static final Set<Integer> CREATION_DEFAULT_LATER_LINES = Set.of(50, 59, 1);
+    /** {@code import_link.default_vat_code} / {@code default_unit_code} zijn varchar(50) (030-1). */
+    private static final int MAX_CREATION_DEFAULT_CODE = 50;
+    /** CD-B3: legacy-veldnummer → het veld van de koppeling (target van het rapportitem). */
+    private static final Map<Integer, String> LINK_CREATION_DEFAULT_LINES =
+            Map.of(LINE_VAT, "defaultVatCode", LINE_UNIT, "defaultUnitCode");
 
     /**
      * Identiteits- en recordregels: legacy-veldnummer → het revisieveld dat de bronkolom krijgt (B-rijen, design par. 5).
@@ -239,9 +255,12 @@ final class LegacyConfigTranslator {
             Map.entry(36, "VKP4_PCT"), Map.entry(37, "VKP5_PCT"), Map.entry(40, "AKP_PCT"),
             Map.entry(43, "VKP_GROSS_PCT"), Map.entry(12, "SUPPLIER_BARCODE"), Map.entry(219, "PIM_ID"),
             Map.entry(221, "E_SUPPLIER"));
-    /** Waar een PSIMPDEF-regel naartoe gaat: een mapping, een revisieveld of (nog) nergens. */
+    /**
+     * Waar een PSIMPDEF-regel naartoe gaat: een mapping, een revisieveld, (CD-B3, additief) de aanmaakstandaard van de
+     * koppeling, of (nog) nergens.
+     */
     enum LineTargetKind {
-        MAPPING, REVISION_FIELD, NONE
+        MAPPING, REVISION_FIELD, LINK_CREATION_DEFAULT, NONE
     }
 
     /**
@@ -258,7 +277,8 @@ final class LegacyConfigTranslator {
      * Het vaste doel van een legacy-veldnummer, enkel op basis van het nummer (zelfde tabellen als de vertaling): een
      * identiteits-/recordregel ({@link #REVISION_FIELD_LINES}), een mapping ({@link #MAPPING_TARGETS}) of
      * {@link LineTargetKind#NONE}. Zegt niets over of déze regel ook effectief gemigreerd werd (vaste waarde, CALC,
-     * sleutelprofiel): dat staat in het rapport van de ontvangst.
+     * sleutelprofiel): dat staat in het rapport van de ontvangst. CD-B3: 51/45 zijn
+     * {@link LineTargetKind#LINK_CREATION_DEFAULT} (geen catalogcode, geen revisieveld: het doel is de koppeling).
      */
     static LineTarget targetOfLine(int number) {
         String revisionField = REVISION_FIELD_LINES.get(number);
@@ -268,6 +288,9 @@ final class LegacyConfigTranslator {
         String targetFieldCode = MAPPING_TARGETS.get(number);
         if (targetFieldCode != null) {
             return new LineTarget(LineTargetKind.MAPPING, targetFieldCode, null);
+        }
+        if (LINK_CREATION_DEFAULT_LINES.containsKey(number)) {
+            return new LineTarget(LineTargetKind.LINK_CREATION_DEFAULT, null, null);
         }
         return new LineTarget(LineTargetKind.NONE, null, null);
     }
@@ -358,6 +381,23 @@ final class LegacyConfigTranslator {
     }
 
     /**
+     * CD-B3: de geplande aanmaakstandaard van de koppeling uit de vaste legacy-waarden (getrimd, hoogstens 50 tekens);
+     * {@code null} = niets te zetten voor dat veld. Of en hoe ze gezet wordt (Prodis-controle, bestaande koppeling,
+     * vlag "standaarden overschrijven"), beslist {@code LegacyConfigApplyService}.
+     *
+     * @param vatCode  de vaste waarde van PSIMPDEF 51, of null
+     * @param unitCode de vaste waarde van PSIMPDEF 45, of null
+     */
+    record PlannedCreationDefaults(String vatCode, String unitCode) {
+
+        static final PlannedCreationDefaults NONE = new PlannedCreationDefaults(null, null);
+
+        boolean isEmpty() {
+            return vatCode == null && unitCode == null;
+        }
+    }
+
+    /**
      * @param supplierCode       INDET {@code Supplier} (de code van de bronorganisatie), of {@code null}
      * @param libraryNumber      INDET {@code ArtImp_BibNr} (enkel in het rapport; nooit de library_code), of null
      * @param definitionCode     {@code definition.code}, of {@code null} als de definitie ontbreekt
@@ -366,10 +406,11 @@ final class LegacyConfigTranslator {
      *                           blokkerend item)
      * @param supplierFixedValue de vaste waarde van PSIMPDEF 9 (S6), ook als de revisie elders blokkeert; of null
      * @param groupFixedValue    idem voor PSIMPDEF 10
+     * @param creationDefaults   (CD-B3) de geplande aanmaakstandaard van de koppeling (PSIMPDEF 51/45), nooit null
      */
     record Translation(List<Item> items, String supplierCode, String libraryNumber, String definitionCode,
                        String definitionName, String definitionContentHash, PlannedRevision revision,
-                       String supplierFixedValue, String groupFixedValue) {
+                       String supplierFixedValue, String groupFixedValue, PlannedCreationDefaults creationDefaults) {
 
         boolean blocking() {
             return items.stream().anyMatch(item -> BLOCKING.equals(item.status()));
@@ -388,6 +429,9 @@ final class LegacyConfigTranslator {
     /** SC: de geplande leverancierskaartcontrole (laatste filterrij), of null. */
     private SupplierCheck supplierCheck;
     private String groupFixedValue;
+    /** CD-B3: de vaste waarde van PSIMPDEF 51/45 zoals vertaald, of null. */
+    private String plannedVatCode;
+    private String plannedUnitCode;
 
     private LegacyConfigTranslator(JsonNode bundle, String charsetWhenUndeclared, UUID credentialRef) {
         this.bundle = bundle;
@@ -477,7 +521,8 @@ final class LegacyConfigTranslator {
         }
         return new Translation(List.copyOf(items), supplierCode, libraryNumber, definitionCode, definitionName,
                 present ? bundle.path("definitionContentHash").asText(null) : null, revision, supplierFixedValue,
-                groupFixedValue);
+                groupFixedValue, plannedVatCode == null && plannedUnitCode == null ? PlannedCreationDefaults.NONE
+                        : new PlannedCreationDefaults(plannedVatCode, plannedUnitCode));
     }
 
     // --- INDET ----------------------------------------------------------------------------------------------------
@@ -865,6 +910,19 @@ final class LegacyConfigTranslator {
                 if (identityOrRecordLine(number)) {
                     continue;
                 }
+                if (LINK_CREATION_DEFAULT_LINES.containsKey(number)) {
+                    if (line == entry.getValue().get(0)) {
+                        creationDefault(number, entry.getValue()); // één keer per veldnummer, ook bij een dubbele regel
+                    }
+                    continue;
+                }
+                if (CREATION_DEFAULT_LATER_LINES.contains(number) && !line.path("value").asText("").isBlank()) {
+                    add("PSIMPDEF#" + number, NOT_MIGRATED, LegacyConfigReport.CREATION_DEFAULT_NOT_YET_SUPPORTED, null,
+                            "legacy field " + number + " (" + line.path("field").asText() + ") has the fixed value '"
+                                    + line.path("value").asText("").trim() + "'; as a creation default of the link "
+                                    + "this is not supported yet (decisions 2026-10-23, V3)");
+                    continue;
+                }
                 String target = targetOfLine(number).targetFieldCode();
                 if (target == null) {
                     add("PSIMPDEF#" + number, NOT_MIGRATED, LEGACY_FIELD_NOT_MIGRATED, null,
@@ -1065,8 +1123,77 @@ final class LegacyConfigTranslator {
         return new IdentitySource(null, fixed);
     }
 
+    /**
+     * Een regel waarvan een dubbel voorkomen blokkeert: een mapping of een revisieveld. CD-B3: een dubbele 51/45 blokkeert
+     * niet (de koppeling krijgt dan geen standaard, {@value LegacyConfigReport#CREATION_DEFAULT_DUPLICATED}).
+     */
     private static boolean governed(int number) {
-        return targetOfLine(number).kind() != LineTargetKind.NONE;
+        LineTargetKind kind = targetOfLine(number).kind();
+        return kind == LineTargetKind.MAPPING || kind == LineTargetKind.REVISION_FIELD;
+    }
+
+    /**
+     * CD-B3 (beslissingslog 2026-10-23 "Btw-code en eenheid: aanmaakstandaard per koppeling" en "Aanmaakstandaard per
+     * koppeling: uitwerking (CD)"): PSIMPDEF 51 (btw-code) of 45 (eenheid). Legacy ({@code Prg_1179}) schreef de vaste
+     * "Waarde" bij elke wegschrijving; CatalogImport bewaart ze als standaard van de koppeling, enkel gebruikt bij het
+     * aanmaken van een artikel (P8). Een vaste waarde negeert kolom, prefix/suffix, Positie/Lengte en CALC zoals elke
+     * vaste waarde ({@value #LEGACY_IGNORED_WITH_FIXED_VALUE}). Niets gezet (WARNING): een bronkolom zonder vaste waarde
+     * ({@value LegacyConfigReport#CREATION_DEFAULT_FROM_COLUMN_NOT_MIGRATED}), een dubbele regel
+     * ({@value LegacyConfigReport#CREATION_DEFAULT_DUPLICATED}), geen of een blanco waarde
+     * ({@value LegacyConfigReport#CREATION_DEFAULT_VALUE_EMPTY}) of langer dan {@value #MAX_CREATION_DEFAULT_CODE}
+     * tekens ({@value LegacyConfigReport#CREATION_DEFAULT_VALUE_TOO_LONG}, nooit afgekapt). Zoals S6 staat er een
+     * {@value #PRODIS_REFERENCE_NOT_VERIFIED} bij, dat {@code LegacyConfigApplyService} vervangt door de uitkomst van de
+     * Prodis-controle als die geconfigureerd is.
+     */
+    private void creationDefault(int number, List<JsonNode> rows) {
+        String element = "PSIMPDEF#" + number;
+        boolean vat = number == LINE_VAT;
+        String what = vat ? "VAT code" : "unit";
+        if (rows.size() > 1) {
+            add(element, WARNING, LegacyConfigReport.CREATION_DEFAULT_DUPLICATED, null, "field " + number + " occurs "
+                    + rows.size() + " times; which one legacy applies is not defined, so the link gets no default "
+                    + what);
+            return;
+        }
+        JsonNode line = rows.get(0);
+        String value = line.path("value").asText("");
+        int column = line.path("column").asInt();
+        if (value.isEmpty() && column > 0) {
+            add(element, WARNING, LegacyConfigReport.CREATION_DEFAULT_FROM_COLUMN_NOT_MIGRATED, null, "field " + number
+                    + " reads source column " + column + " instead of a fixed value; a default " + what
+                    + " of the link cannot differ per line, so nothing is set");
+            return;
+        }
+        String code = value.trim();
+        if (code.isEmpty()) {
+            add(element, WARNING, LegacyConfigReport.CREATION_DEFAULT_VALUE_EMPTY, null, "field " + number
+                    + " has no fixed value and no source column; the link gets no default " + what);
+            return;
+        }
+        if (code.length() > MAX_CREATION_DEFAULT_CODE) {
+            add(element, WARNING, LegacyConfigReport.CREATION_DEFAULT_VALUE_TOO_LONG, null, "the fixed value of field "
+                    + number + " is longer than " + MAX_CREATION_DEFAULT_CODE + " characters; it is never truncated, "
+                    + "the link gets no default " + what);
+            return;
+        }
+        if (column > 0 || hasTransform(line) || hasSubstring(line)) {
+            String ignored = transformDescription(line).replace("fixed value + ", "").replace("fixed value", "");
+            add(element, NOT_MIGRATED, LEGACY_IGNORED_WITH_FIXED_VALUE, null, "field " + number + " has a fixed "
+                    + "value; legacy ignores its " + (column > 0 ? "column " + column + (ignored.isEmpty() ? "" : " + ")
+                    : "") + ignored + " then, and so does CatalogImport");
+        }
+        add(element, MIGRATED, vat ? LegacyConfigReport.CREATION_DEFAULT_VAT : LegacyConfigReport.CREATION_DEFAULT_UNIT,
+                "link." + LINK_CREATION_DEFAULT_LINES.get(number) + "=" + code, "the fixed legacy " + what + " becomes "
+                        + "the creation default of the link: used only when CatalogImport creates an article, never to "
+                        + "change an existing article");
+        // Vervangen door LegacyConfigApplyService als de Prodis-bron geconfigureerd is (zoals S6).
+        add(element, WARNING, PRODIS_REFERENCE_NOT_VERIFIED, null, what + " " + code + " of field " + number
+                + " is not verified: the Prodis database is not configured");
+        if (vat) {
+            plannedVatCode = code;
+        } else {
+            plannedUnitCode = code;
+        }
     }
 
     private static boolean identityOrRecordLine(int number) {
