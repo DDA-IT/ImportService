@@ -65,6 +65,8 @@ class PermissionReadEndpointsHttpTest {
         return List.of(API + "/batches", API + "/batches/summary", API + "/bundles", API + "/bundles/candidates",
                 API + "/import-links", API + "/tasks", API + "/templates",
                 API + "/source-organisations", API + "/definitions", API + "/issue-cases",
+                // EB1: veldcatalogus van de bewerker (READ).
+                API + "/field-catalog",
                 API + "/issue-cases/summary");
     }
 

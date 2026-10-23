@@ -142,6 +142,31 @@ class FieldCriticalityTest {
         assertThat(RevisionCriticalityField.byKey(null)).isEmpty();
     }
 
+    /**
+     * EB1: de standaard die {@code GET /field-catalog} toont ({@link Criticality#defaultForMapping}) is dezelfde als
+     * wat een mapping zonder uitdrukkelijke vlag zelf afleidt, voor elke rij van de catalogus.
+     */
+    @Test
+    void theSharedDefaultFunctionEqualsTheMappingDefaultForEverySeededCatalogRow() {
+        List<ImportFieldCatalogEntry> rows = fieldCatalog.findAll();
+        assertThat(rows).hasSizeGreaterThanOrEqualTo(17);
+        ImportDefinitionRevision revision = inMemoryRevision(IdentityProfileKind.THREE_PART);
+        int sequence = 0;
+        for (ImportFieldCatalogEntry row : rows) {
+            ImportFieldMapping mapping = mapping(revision, ++sequence, row, "X");
+            mapping.setPriceComponentCode(row.getPriceComponentCode());
+            mapping.setReferenceType(row.getReferenceType());
+            assertThat(mapping.getCriticality()).as(row.getCode())
+                    .isEqualTo(Criticality.defaultForMapping(row.getReferenceType(), row.getPriceComponentCode()));
+            // Een referentieveld is nooit instelbaar; al het andere wel.
+            assertThat(Criticality.changeableForMapping(row.getReferenceType())).as(row.getCode())
+                    .isEqualTo(row.getReferenceType() == null);
+        }
+        assertThat(Criticality.defaultForMapping("EAN", null)).isEqualTo(Criticality.CRITICAL);
+        assertThat(Criticality.defaultForMapping(null, "AKP")).isEqualTo(Criticality.CRITICAL);
+        assertThat(Criticality.defaultForMapping(null, null)).isEqualTo(Criticality.NON_CRITICAL);
+    }
+
     // --- Overrule ------------------------------------------------------------------------------
 
     @Test

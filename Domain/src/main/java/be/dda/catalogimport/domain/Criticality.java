@@ -18,6 +18,22 @@ public enum Criticality {
      * De strengste van twee vlaggen: {@link #CRITICAL} wint altijd. Wanneer twee kolomnamen botsen,
      * mag de minder strenge nooit de strengere overschrijven (fail-safe).
      */
+    public static Criticality defaultForMapping(String referenceType, String priceComponentCode) {
+        return referenceType != null || priceComponentCode != null ? CRITICAL : NON_CRITICAL;
+    }
+
+    /**
+     * Mag de kritiek-vlag van een mapping met dit referentietype {@link #NON_CRITICAL} zijn? Een
+     * referentieveld is altijd kritiek ({@code ck_import_field_mapping_reference_critical}; par. 15.1).
+     */
+    public static boolean changeableForMapping(String referenceType) {
+        return referenceType == null;
+    }
+
+    /**
+     * De strengste van twee vlaggen: {@link #CRITICAL} wint altijd. Wanneer twee kolomnamen botsen,
+     * mag de minder strenge nooit de strengere overschrijven (fail-safe).
+     */
     public static Criticality strictest(Criticality first, Criticality second) {
         return first == CRITICAL || second == CRITICAL ? CRITICAL : NON_CRITICAL;
     }

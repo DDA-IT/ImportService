@@ -80,6 +80,10 @@
 >
 > Legacy CALC 14 (`MapInstr`, `Prg_1170` r.1128-1167) zoekt enkel in de map-rijen van de eigen regel (NUMMER), hoofdletterongevoelig "bevat", eerste treffer in KEY-volgorde met een niet-lege waarde; een miss geeft `''`. CALC 7 daarentegen zoekt over alle map-rijen van de definitie (laagste NUMMER wint bij een dubbele sleutel) en laat bij een miss de bronwaarde door. In CatalogImport is dat doorlaten enkel expliciet per mapping (`onMiss=KEEP_SOURCE`, beslissing 2026-10-21), nooit stil. Bron: `docs/design/legacy-config-s8-design.md` §2a, §2d.
 
+## Standaard kritiekheid per veld
+
+Een fout op een kritiek veld maakt van de bronregel een kritieke lijn en vraagt een review; een fout op een niet-kritiek veld verwerpt de regel zonder review (`docs/design/fase3-rules-design.md` §15.1). De standaard hangt af van de soort veld, uit één gedeelde regel (`Criticality.defaultForMapping`, ook zichtbaar via `GET /field-catalog`): een referentieveld (EAN, PIM_ID, ...) is altijd kritiek en niet instelbaar (een expliciete `NON_CRITICAL` geeft 400 `CRITICALITY_INVALID`, er wordt niets bewaard); een prijscomponent is standaard kritiek en instelbaar; elk ander gemapt veld is standaard niet kritiek en instelbaar. Voor de revisie-eigen velden zijn leverancier, leveranciersgroep, leveranciersreferentie en kortingscode kritiek en niet instelbaar, basisprijs en munt kritiek en instelbaar, omschrijving niet kritiek en instelbaar. Een niet uitdrukkelijk gezette vlag (`null`) betekent de standaard.
+
 ## Open uitzonderingen die nog een businesskeuze vragen
 
 - De proefversie bewaart enkel een issueaantal; zij bewaart reden en bronregel niet voor ongeldige regels. Support kan de originele CSV raadplegen, maar geen foutdetail opvragen.

@@ -1142,6 +1142,7 @@ public class SetupService {
             throw new ConflictException("MAPPING_SEQUENCE_IN_USE", "Sequence number " + sequenceNumber
                     + " is already used in revision " + revisionId);
         }
+        requireCriticalityAllowed(target, command.criticality());
         // Type, eigenaar, identiteitsklasse, prijscomponent en referentietype komen uit de catalogus.
         ImportFieldMapping mapping = new ImportFieldMapping(revision, sequenceNumber, target,
                 SetupInput.orDefault(command.valueKind(), FieldValueKind.SOURCE_FIELD), target.getDataType(),
@@ -1196,6 +1197,19 @@ public class SetupService {
                 valueMap, steps, stored.getExpectedPosition(), stored.getFixedValue(), stored.getDefaultValue(),
                 stored.isRequired(), stored.getMaxLength(), stored.getDecimalScale(), stored.isZeroAllowed(),
                 stored.isNegativeAllowed(), stored.getTransformKind().name(), stored.getTransformConfig());
+    }
+
+    /**
+     * EB1: een referentieveld is altijd kritiek (par. 15.1). Een uitdrukkelijke {@code NON_CRITICAL} wordt vóór het
+     * flushen geweigerd (400 {@code CRITICALITY_INVALID}) in plaats van op {@code
+     * ck_import_field_mapping_reference_critical} te stranden (500); {@code null} betekent de standaard.
+     */
+    private static void requireCriticalityAllowed(ImportFieldCatalogEntry target, Criticality criticality) {
+        if (criticality == Criticality.NON_CRITICAL && !Criticality.changeableForMapping(target.getReferenceType())) {
+            throw new BadRequestException(SetupInput.fieldCode("criticality", "INVALID"), "Target field '"
+                    + target.getCode() + "' is a reference field (" + target.getReferenceType() + ") and is always "
+                    + Criticality.CRITICAL + "; it can never be " + Criticality.NON_CRITICAL);
+        }
     }
 
     /**
@@ -1439,6 +1453,9 @@ public class SetupService {
                 .filter(row -> row.getDefinitionRevision().getId().equals(revision.getId()))
                 .orElseThrow(() -> new NotFoundException("MAPPING_NOT_FOUND", "Field mapping " + mappingId
                         + " does not exist in revision " + revisionId));
+        // Vóór het verwijderen: een ongeldige kritiek laat de bestaande mapping ongemoeid.
+        fieldCatalog.findById(command.targetFieldCode() == null ? "" : command.targetFieldCode().trim())
+                .ifPresent(target -> requireCriticalityAllowed(target, command.criticality()));
         int sequenceNumber = mapping.getSequenceNumber();
         valueMaps.deleteAll(valueMaps.findByMappingIdOrderBySequenceNumberAsc(mapping.getId()));
         transformSteps.deleteAll(transformSteps.findByMappingIdOrderByStepNumberAsc(mapping.getId()));

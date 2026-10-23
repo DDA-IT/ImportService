@@ -356,8 +356,7 @@ public class ImportFieldMapping {
         if (criticality != null) {
             return criticality;
         }
-        return referenceType != null || priceComponentCode != null
-                ? Criticality.CRITICAL : Criticality.NON_CRITICAL;
+        return Criticality.defaultForMapping(referenceType, priceComponentCode);
     }
 
     public void setCriticality(Criticality criticality) {

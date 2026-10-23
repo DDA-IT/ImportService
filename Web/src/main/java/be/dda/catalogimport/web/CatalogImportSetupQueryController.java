@@ -6,6 +6,7 @@ import be.dda.catalogimport.service.RevisionLegacyOriginService;
 import be.dda.catalogimport.service.RevisionLegacyOriginService.RevisionLegacyOriginView;
 import be.dda.catalogimport.service.SetupQueryService;
 import be.dda.catalogimport.service.SetupQueryService.DefinitionRow;
+import be.dda.catalogimport.service.SetupQueryService.FieldCatalogView;
 import be.dda.catalogimport.service.SetupQueryService.RevisionDetail;
 import be.dda.catalogimport.service.SetupQueryService.RevisionRow;
 import be.dda.catalogimport.service.SetupQueryService.SourceOrganisationRow;
@@ -36,6 +37,17 @@ public class CatalogImportSetupQueryController {
     public CatalogImportSetupQueryController(SetupQueryService queries, RevisionLegacyOriginService legacyOrigins) {
         this.queries = queries;
         this.legacyOrigins = legacyOrigins;
+    }
+
+    /**
+     * De veldcatalogus voor de bewerker (EB1): alle doelvelden (ook inactieve) met standaardkritiek en of die
+     * instelbaar is, plus de revisie-eigen velden. Alleen-lezen, zoals de overige inrichtingsleesendpoints niet
+     * achter de setup-vlag.
+     */
+    @RequiresPermission(Permission.READ)
+    @GetMapping("/field-catalog")
+    FieldCatalogView fieldCatalog() {
+        return queries.fieldCatalog();
     }
 
     /** Alle bronorganisaties, oplopend op {@code code}, optioneel gefilterd op {@code active}. */

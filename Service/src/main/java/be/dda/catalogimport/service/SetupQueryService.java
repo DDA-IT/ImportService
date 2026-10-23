@@ -5,6 +5,7 @@ import be.dda.catalogimport.dao.ImportDefinitionBookmarkUsageRepository;
 import be.dda.catalogimport.dao.ImportDefinitionBookmarkValueRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRepository;
 import be.dda.catalogimport.dao.ImportDefinitionRevisionRepository;
+import be.dda.catalogimport.dao.ImportFieldCatalogRepository;
 import be.dda.catalogimport.dao.ImportFieldMappingRepository;
 import be.dda.catalogimport.dao.ImportFieldTransformStepRepository;
 import be.dda.catalogimport.dao.ImportFieldValueMapRepository;
@@ -13,13 +14,16 @@ import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
 import be.dda.catalogimport.dao.LegacyConfigDefinitionOriginRepository;
 import be.dda.catalogimport.dao.LegacyConfigRevisionOriginRepository;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
+import be.dda.catalogimport.domain.Criticality;
 import be.dda.catalogimport.domain.DefinitionUsageType;
 import be.dda.catalogimport.domain.ImportDefinition;
 import be.dda.catalogimport.domain.ImportDefinitionBookmark;
 import be.dda.catalogimport.domain.ImportDefinitionBookmarkUsage;
 import be.dda.catalogimport.domain.ImportDefinitionBookmarkValue;
 import be.dda.catalogimport.domain.ImportDefinitionRevision;
+import be.dda.catalogimport.domain.ImportFieldCatalogEntry;
 import be.dda.catalogimport.domain.LegacyConfigDefinitionOrigin;
+import be.dda.catalogimport.domain.RevisionCriticalityField;
 import be.dda.catalogimport.domain.RevisionStatus;
 import be.dda.catalogimport.domain.SourceOrganisation;
 import be.dda.catalogimport.service.SetupService.FieldCriticalityView;
@@ -60,6 +64,24 @@ public class SetupQueryService {
 
     public static final int DEFAULT_PAGE_SIZE = 50;
     public static final int MAX_PAGE_SIZE = 200;
+
+    /**
+     * EB1: één veld van de veldcatalogus, met de standaard kritiek-vlag die een nieuwe mapping erop krijgt
+     * ({@link Criticality#defaultForMapping}) en of die instelbaar is (niet bij een referentieveld).
+     */
+    public record FieldCatalogEntryView(String code, String name, String dataType, String defaultOwner,
+                                        String identityClass, String priceComponentCode, String referenceType,
+                                        boolean ownerChangeable, boolean active, int sortOrder,
+                                        String defaultCriticality, boolean criticalityChangeable) {
+    }
+
+    /** EB1: een revisie-eigen veld ({@link RevisionCriticalityField}) met zijn standaard kritiek-vlag. */
+    public record RevisionFieldView(String fieldKey, boolean identity, String defaultCriticality,
+                                    boolean criticalityChangeable) {
+    }
+
+    public record FieldCatalogView(List<FieldCatalogEntryView> fields, List<RevisionFieldView> revisionFields) {
+    }
 
     public record SourceOrganisationRow(long id, String code, String name, String type, boolean active) {
 
@@ -198,6 +220,7 @@ public class SetupQueryService {
     private final ImportFieldTransformStepRepository transformSteps;
     private final LegacyConfigDefinitionOriginRepository definitionOrigins;
     private final LegacyConfigRevisionOriginRepository revisionOrigins;
+    private final ImportFieldCatalogRepository fieldCatalog;
 
     public SetupQueryService(SourceOrganisationRepository organisations, ImportDefinitionRepository definitions,
                              ImportDefinitionRevisionRepository revisions,
@@ -209,7 +232,9 @@ public class SetupQueryService {
                              ImportFieldValueMapRepository valueMaps,
                              ImportFieldTransformStepRepository transformSteps,
                              LegacyConfigDefinitionOriginRepository definitionOrigins,
-                             LegacyConfigRevisionOriginRepository revisionOrigins) {
+                             LegacyConfigRevisionOriginRepository revisionOrigins,
+                             ImportFieldCatalogRepository fieldCatalog) {
+        this.fieldCatalog = fieldCatalog;
         this.definitionOrigins = definitionOrigins;
         this.revisionOrigins = revisionOrigins;
         this.valueMaps = valueMaps;
@@ -223,6 +248,30 @@ public class SetupQueryService {
         this.bookmarks = bookmarks;
         this.bookmarkUsages = bookmarkUsages;
         this.bookmarkValues = bookmarkValues;
+    }
+
+    /**
+     * EB1: de volledige veldcatalogus (ook inactieve velden, met {@code active=false}), oplopend op
+     * {@code sortOrder} en dan {@code code}, plus de zeven revisie-eigen velden. De standaardkritiek komt uit
+     * dezelfde functie als {@code ImportFieldMapping.getCriticality()} (par. 15.1); een revisieveld van de
+     * identiteit is niet instelbaar.
+     */
+    public FieldCatalogView fieldCatalog() {
+        List<FieldCatalogEntryView> fields = fieldCatalog.findAll(Sort.by("sortOrder", "code")).stream()
+                .map(SetupQueryService::toView).toList();
+        List<RevisionFieldView> revisionFields = java.util.Arrays.stream(RevisionCriticalityField.values())
+                .map(field -> new RevisionFieldView(field.name(), field.isIdentity(),
+                        field.defaultCriticality().name(), !field.isIdentity()))
+                .toList();
+        return new FieldCatalogView(fields, revisionFields);
+    }
+
+    private static FieldCatalogEntryView toView(ImportFieldCatalogEntry entry) {
+        return new FieldCatalogEntryView(entry.getCode(), entry.getName(), entry.getDataType().name(),
+                entry.getDefaultOwner().name(), entry.getIdentityClass().name(), entry.getPriceComponentCode(),
+                entry.getReferenceType(), entry.isOwnerChangeable(), entry.isActive(), entry.getSortOrder(),
+                Criticality.defaultForMapping(entry.getReferenceType(), entry.getPriceComponentCode()).name(),
+                Criticality.changeableForMapping(entry.getReferenceType()));
     }
 
     /**
