@@ -73,7 +73,10 @@ public class ProdisReferenceDao {
 
     private static final String FIND_CATALOGS_BY_LEGACY_NUMBER =
             "select c.scope_key, c.legacy_number, c.catalog_name, c.status from supplier_catalog c "
-                    + "join supplier s on s.id = c.supplier_id where s.number = ? and c.legacy_number = ? "
+                    + "join supplier s on s.id = c.supplier_id where s.number = ? and "
+                    + "(case when trim(c.legacy_number) ~ '^[0-9]+$' "
+                    + "then coalesce(nullif(ltrim(trim(c.legacy_number), '0'), ''), '0') "
+                    + "else trim(c.legacy_number) end) = ? "
                     + "order by c.scope_key, c.id desc";
 
     private static final String LEGACY_MASTER = "select m.legacy_master from system_settings m order by m.id limit 1";
@@ -202,7 +205,26 @@ public class ProdisReferenceDao {
             return jdbc().query(FIND_CATALOGS, ProdisReferenceDao::catalog, supplierNumber);
         }
         return jdbc().query(FIND_CATALOGS_BY_LEGACY_NUMBER, ProdisReferenceDao::catalog, supplierNumber,
-                legacyNumber);
+                normalizeLegacyNumber(legacyNumber));
+    }
+
+    /**
+     * Vergelijkingssleutel van een bibliotheeknummer ({@code supplier_catalog.legacy_number} en INDET
+     * {@code ArtImp_BibNr}; beslissing 2026-10-23 in {@code docs/decisions.md}). Na strip: een waarde die enkel uit
+     * cijfers bestaat, verliest haar voorloopnullen ({@code 00181} = {@code 181}; {@code 0} en {@code 000} = {@code 0});
+     * alle andere waarden blijven exact. {@code null} blijft {@code null}. Dezelfde regel staat in SQL in
+     * {@link #FIND_CATALOGS_BY_LEGACY_NUMBER}.
+     */
+    public static String normalizeLegacyNumber(String value) {
+        if (value == null) {
+            return null;
+        }
+        String stripped = value.strip();
+        if (!stripped.isEmpty() && stripped.chars().allMatch(c -> c >= '0' && c <= '9')) {
+            String digits = stripped.replaceFirst("^0+", "");
+            return digits.isEmpty() ? "0" : digits;
+        }
+        return stripped;
     }
 
     /**

@@ -139,6 +139,37 @@ class ProdisReferenceDaoTest {
     }
 
     @Test
+    void aLegacyNumberMatchesWhenAllDigitsIgnoringLeadingZerosAndOtherwiseExactly() {
+        long leg = PRODIS.insertSupplier("LEG01", "Library Test");
+        PRODIS.insertCatalog(leg, "181", "181", "DELICOLOR", "ACTIVE");
+        PRODIS.insertCatalog(leg, "1810", "1810", "TEN EIGHTY", "ACTIVE");
+        PRODIS.insertCatalog(leg, "0", "0", "ZERO", "ACTIVE");
+        PRODIS.insertCatalog(leg, "0181", "0181", "PADDED", "ACTIVE");
+        PRODIS.insertCatalog(leg, "AB12", "AB12", "TEXT", "ACTIVE");
+
+        assertThat(scopesOf("LEG01", "181")).containsExactlyInAnyOrder("181", "0181");
+        assertThat(scopesOf("LEG01", "00181")).containsExactlyInAnyOrder("181", "0181");
+        assertThat(scopesOf("LEG01", "0181")).containsExactlyInAnyOrder("181", "0181");
+        assertThat(scopesOf("LEG01", "0")).containsExactly("0");
+        assertThat(scopesOf("LEG01", "000")).containsExactly("0");
+        assertThat(scopesOf("LEG01", "AB12")).containsExactly("AB12");
+        assertThat(scopesOf("LEG01", "ab12")).isEmpty();
+        assertThat(scopesOf("LEG01", "0AB12")).isEmpty();
+        assertThat(scopesOf("LEG01", "1810")).containsExactly("1810");
+        assertThat(scopesOf("LEG01", "18100")).isEmpty();
+        assertThat(scopesOf("LEG01", "")).isEmpty();
+        assertThat(ProdisReferenceDao.normalizeLegacyNumber("00181")).isEqualTo("181");
+        assertThat(ProdisReferenceDao.normalizeLegacyNumber("000")).isEqualTo("0");
+        assertThat(ProdisReferenceDao.normalizeLegacyNumber("AB12")).isEqualTo("AB12");
+        assertThat(ProdisReferenceDao.normalizeLegacyNumber(null)).isNull();
+    }
+
+    private List<String> scopesOf(String supplierNumber, String legacyNumber) {
+        return dao.findSupplierCatalogs(supplierNumber, legacyNumber).stream()
+                .map(SupplierCatalogRow::scopeKey).toList();
+    }
+
+    @Test
     void aLibraryIsOneScopeKeyPreferringItsActiveRow() {
         List<SupplierCatalogRow> libraries = ProdisReferenceService.libraries(List.of(
                 new SupplierCatalogRow("106", "106", "NEWEST", "IMPORTED"),

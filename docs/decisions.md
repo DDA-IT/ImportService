@@ -3178,3 +3178,12 @@ EXCLUDE `NOT_*` (De Morgan, zoals S8e) zodat uitsluiten vóór verwerpen gaat. D
 R-REV-X3 (geen identiteit); wel in `LegacyRevisionContent`. CALC 7 met prefix/suffix/positie op 9 en CALC 7 op 10/11
 blijven blokkeren. Punt (4) van het blok "2026-10-23 — … LevGrp=N …" (kaartwijziging = identiteitswijziging) vervalt.
 **Bron:** denker-zwaar (herontwerp leverancierskaart) / telling PRODISWEB
+
+## 2026-10-23 — Bibliotheeknummer legacy vs. Prodis: voorloopnullen negeren
+**Vraag:** PREVIEW gaf `LIBRARY_CODE_NOT_RESOLVED` voor INDET `ArtImp_BibNr` = `00181` terwijl Prodis `supplier_catalog`
+voor leverancier 06310 `legacy_number` = `181` (DELICOLOR) heeft. Alle 193 rijen in de lokale Prodis staan zonder
+voorloopnullen (de datasync schrijft het numerieke legacy-bibliotheeknummer).
+**Beslissing:** Het bibliotheeknummer wordt numeriek vergeleken: bij de opzoeking worden voorloopnullen aan beide kanten
+genegeerd wanneer de waarde enkel uit cijfers bestaat (`00181` = `181`; `0`/`000` = `0`). Niet-numerieke waarden blijven
+exact vergeleken. Technische correctie zonder architectuurimpact.
+**Bron:** hoofdsessie (bevinding lokale Prodis) / legacy-config-bundle-design.md par. 6 (S5/A3)

@@ -28,6 +28,7 @@ import be.dda.catalogimport.dao.LegacyConfigDetachmentRepository;
 import be.dda.catalogimport.dao.LegacyConfigOriginRepository;
 import be.dda.catalogimport.dao.LegacyConfigReceiptRepository;
 import be.dda.catalogimport.dao.LegacyConfigRevisionOriginRepository;
+import be.dda.catalogimport.dao.ProdisReferenceDao;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierCatalogRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierGroupRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierRow;
@@ -1319,9 +1320,11 @@ public class LegacyConfigApplyService {
             return new LibraryDecision(given, List.of());
         }
         String number = libraryNumber.strip();
+        String numberKey = ProdisReferenceDao.normalizeLegacyNumber(number);
         Set<String> matchingScopes = new LinkedHashSet<>();
         for (SupplierCatalogRow row : lookup.catalogs()) {
-            if (row.legacyNumber() != null && row.legacyNumber().strip().equals(number)) {
+            if (row.legacyNumber() != null
+                    && numberKey.equals(ProdisReferenceDao.normalizeLegacyNumber(row.legacyNumber()))) {
                 matchingScopes.add(row.scopeKey());
             }
         }
