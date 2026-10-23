@@ -83,6 +83,8 @@ class PermissionReadEndpointsHttpTest {
                 API + "/import-links/" + UNKNOWN + "/readiness",
                 API + "/definitions/" + UNKNOWN + "/revisions",
                 API + "/definitions/" + UNKNOWN + "/revisions/" + UNKNOWN,
+                // Legacy-herkomst van een revisie (beslissingslog 2026-10-23, punt 1): READ.
+                API + "/definitions/" + UNKNOWN + "/revisions/" + UNKNOWN + "/legacy-origin",
                 API + "/issue-cases/" + UNKNOWN, API + "/issue-cases/" + UNKNOWN + "/observations",
                 API + "/issue-cases/" + UNKNOWN + "/events",
                 // K-4b (design leveringsconfiguratie par. 6, L7b): runlijst en rundetail vragen READ.

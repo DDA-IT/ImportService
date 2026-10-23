@@ -2,6 +2,8 @@ package be.dda.catalogimport.web;
 
 import be.dda.catalogimport.domain.DefinitionUsageType;
 import be.dda.catalogimport.service.PageResult;
+import be.dda.catalogimport.service.RevisionLegacyOriginService;
+import be.dda.catalogimport.service.RevisionLegacyOriginService.RevisionLegacyOriginView;
 import be.dda.catalogimport.service.SetupQueryService;
 import be.dda.catalogimport.service.SetupQueryService.DefinitionRow;
 import be.dda.catalogimport.service.SetupQueryService.RevisionDetail;
@@ -29,9 +31,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class CatalogImportSetupQueryController {
 
     private final SetupQueryService queries;
+    private final RevisionLegacyOriginService legacyOrigins;
 
-    public CatalogImportSetupQueryController(SetupQueryService queries) {
+    public CatalogImportSetupQueryController(SetupQueryService queries, RevisionLegacyOriginService legacyOrigins) {
         this.queries = queries;
+        this.legacyOrigins = legacyOrigins;
     }
 
     /** Alle bronorganisaties, oplopend op {@code code}, optioneel gefilterd op {@code active}. */
@@ -84,5 +88,22 @@ public class CatalogImportSetupQueryController {
     RevisionDetail revision(@PathVariable("definitionId") long definitionId,
                             @PathVariable("revisionId") long revisionId) {
         return queries.getRevisionDetail(definitionId, revisionId);
+    }
+
+    /**
+     * De legacy-herkomst van één revisie (beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen",
+     * punt 1): MIGRATED, INHERITED of TEMPLATE_SOURCE, {@code changedSinceMigration} en de PSIMPDEF-regels uit de
+     * ontvangst. {@code READ} volstaat (B1): enkel {@code definition.lines} van de bundel, nooit bestemming, login of
+     * secret - de ontvangst zelf blijft {@code MANAGE}. Een revisie zonder herkomst geeft 200 met
+     * {@code fromLegacy=false}.
+     *
+     * @throws be.dda.catalogimport.service.NotFoundException 404 {@code DEFINITION_NOT_FOUND} of
+     *                                                        {@code REVISION_NOT_FOUND}
+     */
+    @RequiresPermission(Permission.READ)
+    @GetMapping("/definitions/{definitionId}/revisions/{revisionId}/legacy-origin")
+    RevisionLegacyOriginView revisionLegacyOrigin(@PathVariable("definitionId") long definitionId,
+                                                  @PathVariable("revisionId") long revisionId) {
+        return legacyOrigins.getLegacyOrigin(definitionId, revisionId);
     }
 }

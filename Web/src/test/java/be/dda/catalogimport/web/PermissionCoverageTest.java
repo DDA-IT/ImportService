@@ -146,6 +146,9 @@ class PermissionCoverageTest {
         // Revisiedetail: endpoint E1 van docs/design/revision-successor-design.md §6 (bouwstap S1-X-3),
         // buiten de setup-API-vlag zoals de andere S1-B1-leesendpoints hierboven.
         m.put("GET /api/catalog-import/definitions/{}/revisions/{}", "READ");
+        // Legacy-herkomst van een revisie (beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen",
+        // punt 1, B1): READ - enkel de PSIMPDEF-regels, nooit bestemming/login/secret (de ontvangst blijft MANAGE).
+        m.put("GET /api/catalog-import/definitions/{}/revisions/{}/legacy-origin", "READ");
         // "/revisions/{}/successor" is endpoint E2 van docs/design/revision-successor-design.md §6
         // (bouwstap S1-X-2): de opvolgrevisie is een schrijfpad en volgt dezelfde regel als de rest van
         // de setup-API — MANAGE (sinds NT-3 niet meer achter catalogimport.setup-api.enabled).

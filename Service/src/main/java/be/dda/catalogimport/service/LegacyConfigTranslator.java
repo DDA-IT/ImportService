@@ -223,12 +223,55 @@ final class LegacyConfigTranslator {
     static final int LINE_BASE_PRICE = 26;
     static final int LINE_DESCRIPTION = 4;
 
+    /**
+     * Identiteits- en recordregels: legacy-veldnummer → het revisieveld dat de bronkolom krijgt (B-rijen, design par. 5).
+     * Een vaste waarde op 9/10 gaat naar {@code identity*FixedValue} (S6); 23 telt enkel mee bij
+     * {@code FOUR_PART_WITH_DISCOUNT_CODE}. Eén bron voor de vertaling hieronder en voor {@link #targetOfLine(int)}.
+     */
+    private static final Map<Integer, String> REVISION_FIELD_LINES = Map.of(
+            LINE_SUPPLIER, "identitySupplierField", LINE_GROUP, "identitySupplierGroupField",
+            LINE_REFERENCE, "identitySupplierReferenceField", LINE_DISCOUNT, "identityDiscountCodeField",
+            LINE_BASE_PRICE, "recordBasePriceField", LINE_DESCRIPTION, "recordDescriptionField");
+
     /** {@code legacy-config-migratie-design.md} par. 1: legacy-veldnummer → catalogcode (B-rijen). */
     static final Map<Integer, String> MAPPING_TARGETS = Map.ofEntries(
             Map.entry(33, "VKP1_PCT"), Map.entry(34, "VKP2_PCT"), Map.entry(35, "VKP3_PCT"),
             Map.entry(36, "VKP4_PCT"), Map.entry(37, "VKP5_PCT"), Map.entry(40, "AKP_PCT"),
             Map.entry(43, "VKP_GROSS_PCT"), Map.entry(12, "SUPPLIER_BARCODE"), Map.entry(219, "PIM_ID"),
             Map.entry(221, "E_SUPPLIER"));
+    /** Waar een PSIMPDEF-regel naartoe gaat: een mapping, een revisieveld of (nog) nergens. */
+    enum LineTargetKind {
+        MAPPING, REVISION_FIELD, NONE
+    }
+
+    /**
+     * Het doel van een legacy-veldnummer (beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen", punt
+     * 1).
+     *
+     * @param targetFieldCode de catalogcode bij {@link LineTargetKind#MAPPING}, anders {@code null}
+     * @param revisionField   de naam van het revisieveld bij {@link LineTargetKind#REVISION_FIELD}, anders {@code null}
+     */
+    record LineTarget(LineTargetKind kind, String targetFieldCode, String revisionField) {
+    }
+
+    /**
+     * Het vaste doel van een legacy-veldnummer, enkel op basis van het nummer (zelfde tabellen als de vertaling): een
+     * identiteits-/recordregel ({@link #REVISION_FIELD_LINES}), een mapping ({@link #MAPPING_TARGETS}) of
+     * {@link LineTargetKind#NONE}. Zegt niets over of déze regel ook effectief gemigreerd werd (vaste waarde, CALC,
+     * sleutelprofiel): dat staat in het rapport van de ontvangst.
+     */
+    static LineTarget targetOfLine(int number) {
+        String revisionField = REVISION_FIELD_LINES.get(number);
+        if (revisionField != null) {
+            return new LineTarget(LineTargetKind.REVISION_FIELD, null, revisionField);
+        }
+        String targetFieldCode = MAPPING_TARGETS.get(number);
+        if (targetFieldCode != null) {
+            return new LineTarget(LineTargetKind.MAPPING, targetFieldCode, null);
+        }
+        return new LineTarget(LineTargetKind.NONE, null, null);
+    }
+
     /** De numerieke doelvelden (data_type DECIMAL in de veldcatalogus, changeset 004-1b). */
     private static final Set<String> DECIMAL_TARGETS =
             Set.of("VKP1_PCT", "VKP2_PCT", "VKP3_PCT", "VKP4_PCT", "VKP5_PCT", "AKP_PCT", "VKP_GROSS_PCT");
@@ -778,13 +821,15 @@ final class LegacyConfigTranslator {
 
         IdentitySource supplier = isSupplierCard(byNumber)
                 ? supplierCard(byNumber.get(LINE_SUPPLIER).get(0), definition)
-                : identitySource(byNumber, LINE_SUPPLIER, "identitySupplierField", "identitySupplierFixedValue");
-        IdentitySource group = identitySource(byNumber, LINE_GROUP, "identitySupplierGroupField",
+                : identitySource(byNumber, LINE_SUPPLIER, REVISION_FIELD_LINES.get(LINE_SUPPLIER),
+                        "identitySupplierFixedValue");
+        IdentitySource group = identitySource(byNumber, LINE_GROUP, REVISION_FIELD_LINES.get(LINE_GROUP),
                 "identitySupplierGroupFixedValue");
-        String reference = identityColumn(byNumber, LINE_REFERENCE, "identitySupplierReferenceField", true);
+        String reference = identityColumn(byNumber, LINE_REFERENCE, REVISION_FIELD_LINES.get(LINE_REFERENCE),
+                true);
         String discount = null;
         if (profile == IdentityProfileKind.FOUR_PART_WITH_DISCOUNT_CODE) {
-            discount = identityColumn(byNumber, LINE_DISCOUNT, "identityDiscountCodeField", true);
+            discount = identityColumn(byNumber, LINE_DISCOUNT, REVISION_FIELD_LINES.get(LINE_DISCOUNT), true);
         } else if (byNumber.containsKey(LINE_DISCOUNT)) {
             add("PSIMPDEF#" + LINE_DISCOUNT, NOT_MIGRATED, DISCOUNT_CODE_NOT_IN_KEY, null,
                     "ArtImp_Key_Korting is not Y, so the discount code is not part of the identity");
@@ -820,7 +865,7 @@ final class LegacyConfigTranslator {
                 if (identityOrRecordLine(number)) {
                     continue;
                 }
-                String target = MAPPING_TARGETS.get(number);
+                String target = targetOfLine(number).targetFieldCode();
                 if (target == null) {
                     add("PSIMPDEF#" + number, NOT_MIGRATED, LEGACY_FIELD_NOT_MIGRATED, null,
                             "legacy field " + number + " (" + line.path("field").asText() + ") has no target here");
@@ -1021,12 +1066,11 @@ final class LegacyConfigTranslator {
     }
 
     private static boolean governed(int number) {
-        return identityOrRecordLine(number) || MAPPING_TARGETS.containsKey(number);
+        return targetOfLine(number).kind() != LineTargetKind.NONE;
     }
 
     private static boolean identityOrRecordLine(int number) {
-        return number == LINE_SUPPLIER || number == LINE_GROUP || number == LINE_REFERENCE
-                || number == LINE_DISCOUNT || number == LINE_BASE_PRICE || number == LINE_DESCRIPTION;
+        return targetOfLine(number).kind() == LineTargetKind.REVISION_FIELD;
     }
 
     /** Een identiteitsregel: enkel een bronkolom, anders blokkerend. */
@@ -1089,7 +1133,8 @@ final class LegacyConfigTranslator {
             add(element, BLOCKING, BASE_PRICE_FIELD_MISSING, null, "field 26 (base price) has no source column");
             return null;
         }
-        add(element, MIGRATED, "BASE_PRICE", "revision.recordBasePriceField=" + column, null);
+        add(element, MIGRATED, "BASE_PRICE", "revision." + REVISION_FIELD_LINES.get(LINE_BASE_PRICE) + "=" + column,
+                null);
         return String.valueOf(column);
     }
 
@@ -1110,7 +1155,8 @@ final class LegacyConfigTranslator {
             add(element, NOT_MIGRATED, LEGACY_LINE_WITHOUT_SOURCE, null, "field 4 has no source column");
             return null;
         }
-        add(element, MIGRATED, "DESCRIPTION", "revision.recordDescriptionField=" + column, null);
+        add(element, MIGRATED, "DESCRIPTION", "revision." + REVISION_FIELD_LINES.get(LINE_DESCRIPTION) + "=" + column,
+                null);
         return String.valueOf(column);
     }
 

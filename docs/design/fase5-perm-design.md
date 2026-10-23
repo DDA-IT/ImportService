@@ -29,6 +29,8 @@ leidt het effectieve recht af (één plek: `CurrentActor`/`PermissionService`). 
 | `POST /tasks/{taskId}/deliveries/local-source` (tweede ontvangstweg, inlezen uit servermap) | MANAGE |
 | `GET /deliveries/{id}`, `GET /import-links`, `GET /tasks` | READ |
 | `GET /import-links/{id}/readiness` (NT-8; gereedheidscontrole zonder bestand, schrijft niets, niet achter de setup-vlag) | READ |
+| `GET /source-organisations`, `GET /definitions`, `GET /definitions/{id}/revisions`, `GET /definitions/{id}/revisions/{rid}` (S1-B1 en E1 van `revision-successor-design.md` §6; inrichting lezen, niet achter de setup-vlag) | READ |
+| `GET /definitions/{id}/revisions/{rid}/legacy-origin` (beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen" punt 1, B1: enkel de PSIMPDEF-regels uit `bundle_json.definition.lines`, nooit bestemming/login/secret; de ontvangst zelf blijft MANAGE) | READ |
 | `GET /setup/overview` (enige setup-pad dat nog achter de setup-vlag staat, §5) | READ |
 | `GET /templates`, `/…/bookmarks`, `/…/materialisations`, `GET /links/{id}/bookmark-values` (sinds NT-3 niet meer achter de setup-vlag, §5) | READ |
 | `POST /setup/**`, `PATCH /setup/revisions/{id}`, `DELETE /setup/revisions/{id}/mappings/{m}` en `/filters/{f}`, `POST /templates/{id}/materialisations`, `PUT /links/{id}/bookmark-values/{name}` (sinds NT-3 niet meer achter de setup-vlag, §5) | MANAGE |

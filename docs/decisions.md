@@ -3296,3 +3296,21 @@ kernrijen alleen-lezen tot G5 (O9). Oude componenten (RevisionDetailSection/Revi
 slice (O10). API-gaps G1 veldcatalogus lezen, G2 filter vervangen (PUT), G3 voorbeeldcellen proefinlezing, G4 droge
 configuratiecontrole, G5 kritiek wijzigen/verwijderen: later via denker-zwaar.
 **Bron:** denker-gemiddeld (ontwerp bewerkervaring) / mens (feedback)
+
+## 2026-10-23 — Bewerkervaring: mock goedgekeurd; keuzelijsten met zoeken; extra velden (btw-code, …) te onderzoeken
+**Vraag:** De mens vond de mock van de bewerkervaring goed en vroeg: vaste leverancier als autocomplete uit de
+Prodis-leveranciers, vaste groep idem, en velden zoals btw-code.
+**Beslissing (mens):** Mock goedgekeurd als basis voor de bouw. Vaste leverancier en vaste groep krijgen in de editor een
+zoekende keuzelijst (combobox) op de bestaande Prodis-referentie (`/prodis-reference/suppliers`,
+`/suppliers/{n}/groups`), vrije tekst blijft mogelijk met serverbevestiging (G2c-2 blijft). Welke extra doelvelden (btw-
+code e.a.) een import mag vullen, wordt eerst onderzocht (denker-zwaar): het raakt de veldencatalogus, de publicatie naar
+Prodis en de eigenaarsregels. Bouwvolgorde editor na B2/F2.
+**Bron:** mens
+
+## 2026-10-23 — B2: keuzes bij het legacy-herkomst-endpoint
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** `targetOfLine` kijkt enkel naar het veldnummer; het
+scherm toont het als "bedoeld doel in legacy", niet als "wat gemigreerd is" (vaste waarde, ongebruikte kortingscode of
+weggevallen berekening blijven zichtbaar via fixedValue/calculation; het ontvangstrapport (MANAGE) blijft de bron).
+TEMPLATE_SOURCE enkel voor de sjabloonrevisie die APPLY kopieerde; een handmatige opvolger binnen het sjabloon toont
+fromLegacy=false. fase5-perm-design kreeg een READ-rij voor de bestaande setup-leesendpoints en één voor legacy-origin.
+**Bron:** bouwer-zwaar (B2-rapport)

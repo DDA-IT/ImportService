@@ -32,6 +32,16 @@ public interface ImportDefinitionRevisionRepository extends JpaRepository<Import
                                                                          Collection<RevisionStatus> statuses);
 
     /**
+     * De revisies van deze definities die rechtstreeks op {@code basedOnRevisionId} gebaseerd zijn, oplopend op id —
+     * voor {@code GET /definitions/{id}/revisions/{rid}/legacy-origin} (beslissingslog 2026-10-23 "API-uitbreiding voor
+     * de inrichtingsschermen", punt 1): welke revisie van een gedeelde definitie een kopie is van een sjabloonrevisie.
+     * Bewust beperkt tot de gegeven definities: {@code based_on_revision_id} heeft geen eigen index,
+     * {@code import_definition_id} wel.
+     */
+    List<ImportDefinitionRevision> findByImportDefinitionIdInAndBasedOnRevisionIdOrderByIdAsc(
+            Collection<Long> importDefinitionIds, Long basedOnRevisionId);
+
+    /**
      * De revisies van meerdere definities in één keer, met hun herkomstrevisie meegeladen — voor de
      * keuzelijst {@code GET /templates/{id}/materialisations} (bouwstap 5d). Zonder de
      * {@code left join fetch} zou elke rij van die lijst een extra query kosten om de sjabloonversie te
