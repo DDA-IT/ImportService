@@ -2,7 +2,7 @@
  * NT-6 stap 6 — overzicht en de duidelijke volgende stap. De taak is pas bruikbaar nadat de conceptversie
  * gecontroleerd en geactiveerd is. Sinds NT-10 opent "Controleer en activeer de conceptversie" het scherm
  * "Controleren" van deze koppeling (checklist, proefinlezing, activeren); een niet-conceptversie verwijst nog naar
- * het revisiedetail bij Inrichting.
+ * het leveranciersdetail (Bestand en velden).
  *
  * De drempels hier komen uit de server (het revisiedetail), niet uit het stappenplan: zo ziet de gebruiker
  * de werkelijk bewaarde waarden.
@@ -15,7 +15,8 @@ import { useQuery } from '../../../hooks/useQuery.ts';
 import { Term } from '../../../terms/Term.tsx';
 import { term } from '../../../terms/index.ts';
 import { linkCheckHref } from '../check/linkCheck.ts';
-import { revisionDetailHref, type WizardData } from './wizardTypes.ts';
+import { supplierHref } from '../supplierRoutes.ts';
+import type { WizardData } from './wizardTypes.ts';
 import button from '../../../components/Button.module.css';
 import styles from './Wizard.module.css';
 import { SCREEN } from '../../../terms/navigation.ts';
@@ -124,8 +125,8 @@ export function SummaryStep({ data }: { data: WizardData }) {
             Versie {revision.revisionNumber} is <Term domain="revisionStatus" code={revision.status} />.
           </p>
           <div className={styles.actions}>
-            <Link className={button.primary} to={revisionDetailHref(definition.id, revision.id)} data-testid="wizard-next-step">
-              Bekijk de versie bij Inrichting
+            <Link className={button.primary} to={supplierHref(organisation.id, 'fields', { definitionId: definition.id, revisionId: revision.id })} data-testid="wizard-next-step">
+              Bekijk de versie bij de leverancier
             </Link>
             {revision.status === 'ACTIVE' && <Link to="/upload">Naar {SCREEN.bestandUploaden}</Link>}
           </div>

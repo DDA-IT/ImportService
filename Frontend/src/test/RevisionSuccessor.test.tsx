@@ -22,12 +22,12 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
 import { TEST_IDENTITY, testIdentityWith } from './testIdentity';
 import { PERMISSION_READ } from '../api/types';
 import type { RevisionDetail, RevisionRow } from '../api/types';
-import { SetupOverviewPage } from '../features/setup/SetupOverviewPage';
+import { routes } from '../routes';
 import { RevisionDetailSection } from '../features/setup/RevisionDetailSection';
 import { RevisionEditForm } from '../features/setup/RevisionEditForm';
 import { CreateSuccessorAction } from '../features/setup/CreateSuccessorAction';
@@ -381,7 +381,7 @@ describe('S1-F4 — schrijfdeel van scherm 1a (opvolgrevisie / DRAFT bewerken / 
     expect(button).toHaveAttribute('title', "U heeft het recht 'Beheren' (catalogImport.manage) niet.");
   });
 
-  it('S1-F4.6: na een geslaagde kloon opent scherm 1a de nieuwe DRAFT', async () => {
+  it('S1-F4.6: na een geslaagde kloon opent het leveranciersdetail de nieuwe DRAFT (Bestand en velden, bewerkblok open)', async () => {
     // De revisielijst levert de nieuwe DRAFT pas ná de kloon; de UI opent haar rechtstreeks uit het
     // antwoord van E2 en wacht dus niet op die herlaadde lijst.
     let cloned = false;
@@ -408,17 +408,12 @@ describe('S1-F4 — schrijfdeel van scherm 1a (opvolgrevisie / DRAFT bewerken / 
       throw new Error(`Onverwachte URL in test: ${url}`);
     });
 
+    const router = createMemoryRouter(routes, { initialEntries: ['/setup/suppliers/1/versions'] });
     render(
       <ActorProvider identity={TEST_IDENTITY}>
-        <MemoryRouter initialEntries={['/setup']}>
-          <SetupOverviewPage />
-        </MemoryRouter>
+        <RouterProvider router={router} />
       </ActorProvider>,
     );
-
-    fireEvent.click((await screen.findAllByRole('button', { name: /Uitklappen/ }))[0]!);
-    const definitionRow = await screen.findByText('DEF-10');
-    fireEvent.click(within(definitionRow.closest('li')!).getByRole('button', { name: /Uitklappen/ }));
 
     await screen.findByText('Versie 1');
     fireEvent.click(screen.getByTestId('create-successor-99'));
@@ -428,6 +423,8 @@ describe('S1-F4 — schrijfdeel van scherm 1a (opvolgrevisie / DRAFT bewerken / 
     // De nieuwe DRAFT wordt rechtstreeks geopend: het revisiedetail van #100 verschijnt.
     expect(await screen.findByTestId('revision-detail')).toBeInTheDocument();
     expect(await screen.findByTestId('revision-edit-form')).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/setup/suppliers/1/fields');
+    expect(router.state.location.search).toContain('versie=100');
     // Eén schrijfverzoek, geen automatische herhaling.
     expect(writeCalls(fetchMock)).toHaveLength(1);
   });

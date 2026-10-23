@@ -9,7 +9,7 @@ import { term, termTooltip, type TermDomain } from '../terms/index.ts';
 import termStyles from '../terms/Term.module.css';
 import styles from './StatusBadge.module.css';
 
-type StatusFamily = 'planned' | 'awaiting' | 'ready' | 'rejected' | 'blocked' | 'expired' | 'neutral';
+export type StatusFamily = 'planned' | 'awaiting' | 'ready' | 'rejected' | 'blocked' | 'expired' | 'neutral';
 
 // Dekt MutationStatus, PublicationBundleStatus en ImportBatchStatus uit `api/types.ts`. Een status die
 // hier niet in staat, valt terug op 'neutral' — nooit een crash, nooit een lege badge.
@@ -84,6 +84,16 @@ const STATUS_FAMILY: Record<string, StatusFamily> = {
  * technische code staan in de tooltip (NT-5, V7). Een onbekende code wordt als code getoond.
  */
 export type StatusBadgeProps = { status: string; domain: TermDomain };
+
+/**
+ * Een label met een toon voor een afgeleide uitkomst die geen code uit het woordenboek is (bv. de gereedheid van een
+ * leverancier). De tekst staat altijd in het label; de toon is nooit de enige drager van betekenis.
+ */
+export type ToneBadgeProps = { label: string; tone: StatusFamily };
+
+export function ToneBadge({ label, tone }: ToneBadgeProps) {
+  return <span className={`${styles.badge} ${styles[tone]}`}>{label}</span>;
+}
 
 export function StatusBadge({ status, domain }: StatusBadgeProps) {
   const descriptionId = useId();

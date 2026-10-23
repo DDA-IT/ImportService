@@ -1,0 +1,115 @@
+/* Kaartenrooster met teller en toplijn */
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.summaryCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--divider);
+  border-top-width: 4px;
+  border-radius: var(--radius-card);
+  background: var(--bg-paper);
+  box-shadow: var(--shadow-card);
+  overflow-wrap: anywhere;
+}
+
+.summaryCardOpen {
+  outline: 2px solid var(--color-accent);
+}
+
+.cardDanger {
+  border-top-color: var(--color-danger);
+}
+
+.cardWarning {
+  border-top-color: var(--color-warning);
+}
+
+.cardSuccess {
+  border-top-color: var(--color-success);
+}
+
+.cardNeutral {
+  border-top-color: var(--divider);
+}
+
+.summaryTitle {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.summaryCount {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.summaryTop {
+  margin: 0;
+  font-weight: 600;
+}
+
+.summarySub {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.summaryButton {
+  align-self: flex-start;
+  margin-top: auto;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.summaryButton:hover:not(:disabled) {
+  background: var(--action-hover);
+}
+
+.summaryButton:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+/* Detailpaneel onder het rooster (patroon van de ontvangst en van het leveranciersdashboard) */
+.detailPanel {
+  margin-top: 16px;
+  padding: 24px;
+  border-radius: var(--radius-card);
+  background: var(--bg-paper);
+  box-shadow: var(--shadow-card);
+  overflow-wrap: anywhere;
+}
+
+.detailTitle {
+  margin: 0 0 16px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+@media (max-width: 599px) {
+  .cardGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Kleine kaart zonder knop (leveranciersdetail) */
+.miniCount {
+  font-size: 1.5rem;
+}

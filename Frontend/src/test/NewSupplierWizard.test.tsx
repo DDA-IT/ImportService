@@ -17,6 +17,7 @@ import { ActorProvider, type ActorIdentity } from '../actor/ActorContext';
 import { TEST_IDENTITY, testIdentityWith } from './testIdentity';
 import { NewSupplierWizardPage } from '../features/setup/wizard/NewSupplierWizardPage';
 import { SetupOverviewPage } from '../features/setup/SetupOverviewPage';
+import { SummaryStep } from '../features/setup/wizard/SummaryStep';
 import { CODE_MESSAGES } from '../errors/codes';
 import { expectNoOldWording } from './oldWording';
 
@@ -659,6 +660,32 @@ describe('NewSupplierWizardPage (NT-6)', () => {
     expect(button).toBeDisabled();
     fireEvent.click(button);
     await waitFor(() => expect(posts(mock)).toHaveLength(0));
+  });
+});
+
+describe('slotstap: een niet-conceptversie verwijst naar het leveranciersdetail', () => {
+  it('"Bekijk de versie" opent Bestand en velden van de leverancier met die versie (R1)', async () => {
+    global.fetch = vi.fn(() => Promise.resolve(json({ creationThresholdSharePercent: null, maxCriticalSharePercent: null, maxRejectedSharePercent: null, bulkIncidentSharePercent: null }))) as unknown as typeof fetch;
+    render(
+      <ActorProvider identity={TEST_IDENTITY}>
+        <MemoryRouter>
+          <SummaryStep
+            data={{
+              organisation: { id: 1, code: 'ORG-1', name: 'Leverancier A', type: 'SUPPLIER' },
+              startChosen: true,
+              definition: { id: 10, code: 'DEF-10', name: 'Definitie' },
+              revision: { id: 99, definitionId: 10, revisionNumber: 3, status: 'ACTIVE' },
+              link: { id: 501, code: 'LNK', name: 'Koppeling', supplierCode: 'LEV-A', libraryCode: 'LIB' },
+              task: { id: 7, name: 'Taak' },
+            }}
+          />
+        </MemoryRouter>
+      </ActorProvider>,
+    );
+    expect(await screen.findByTestId('wizard-next-step')).toHaveAttribute(
+      'href',
+      '/setup/suppliers/1/fields?definitie=10&versie=99',
+    );
   });
 });
 

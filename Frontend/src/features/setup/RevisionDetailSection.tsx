@@ -25,10 +25,10 @@
  * support)", de code van een waarde in de tooltip. NT-11d: het begrip heet in alle tekst "invulpunt" (`terms/wording.ts`).
  */
 
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import * as setupApi from '../../api/setup.ts';
 import * as setupRevisionsApi from '../../api/setupRevisions.ts';
-import { PERMISSION_MANAGE, type FilterView, type MappingView, type RevisionDetail } from '../../api/types.ts';
+import { PERMISSION_MANAGE, type FilterView, type RevisionDetail } from '../../api/types.ts';
 import { usePermissionGate, withPermission } from '../../actor/permissions.ts';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { StatusBadge } from '../../components/StatusBadge.tsx';
@@ -36,7 +36,7 @@ import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { gateTitle } from '../../actor/gate.ts';
-import { term, termLabel } from '../../terms/index.ts';
+import { termLabel } from '../../terms/index.ts';
 import { INVULPUNT, INVULPUNT_CAP, INVULPUNTEN } from '../../terms/wording.ts';
 import { TechnicalDetails } from '../../terms/TechnicalDetails.tsx';
 import { Term } from '../../terms/Term.tsx';
@@ -44,6 +44,7 @@ import { ActivateRevisionAction } from './ActivateRevisionAction.tsx';
 import { AddFilterGroupAction } from './FilterGroupDialog.tsx';
 import { groupFilters } from './filterGroupModel.ts';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
+import { bool, FieldKeyTerm, FieldRow, FilterSummary, MappingExtras, Row, show } from './revisionDetailParts.tsx';
 import { ReplaceMappingAction } from './MappingReplaceDialog.tsx';
 import { RevisionEditForm } from './RevisionEditForm.tsx';
 import { editGate } from './revisionPolicy.ts';
@@ -56,36 +57,6 @@ const BOOKMARK_BOUNDARY_TEXT =
   `Gedeclareerde ${INVULPUNTEN} zijn hier bewust alleen-lezen: dit scherm voegt er geen toe, wijzigt en ` +
   `verwijdert er geen. Zo kan een opvolger nooit een bestaande waarde van een ${INVULPUNT} van een koppeling ` +
   'zonder bijhorende declaratie achterlaten. Declaraties horen bij het sjabloonbeheer.';
-
-/** "—" voor een waarde die niet vastgesteld is; nooit 0 en nooit een lege plek. */
-function show(value: string | number | null): string {
-  if (value === null) {
-    return '—';
-  }
-  if (value === '') {
-    return '(uitdrukkelijk leeg)';
-  }
-  return String(value);
-}
-
-function bool(value: boolean): string {
-  return value ? 'ja' : 'nee';
-}
-
-/** Eén regel van het overzicht: het Nederlandse woord (met uitleg in de tooltip) en de waarde. */
-function Row({ label, value }: { label: ReactNode; value: ReactNode }) {
-  return (
-    <div className={styles.figure}>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </div>
-  );
-}
-
-/** Een regel met een veld uit het woordenboek `revisionField` als label. */
-function FieldRow({ name, value }: { name: string; value: ReactNode }) {
-  return <Row label={<Term domain="revisionField" code={name} />} value={value} />;
-}
 
 type ChildKind = 'mapping' | 'filter';
 
@@ -393,35 +364,6 @@ function RevisionSummary({ revision }: { revision: RevisionDetail }) {
   );
 }
 
-/**
- * Het woord bij een doelveld van een extra veld of een veld met aangepaste kritiek. Een code die niet in de
- * veldcatalogus van het woordenboek staat, toont "Ander veld"; de code zelf blijft in de tooltip.
- */
-function FieldKeyTerm({ code }: { code: string }) {
-  return <Term domain="fieldKey" code={code} unknownLabel="Ander veld" />;
-}
-
-/**
- * Legacy-config S8 (alleen-lezen): het aantal omzettingen (`valueMap`), de bewerkingen van een keten (`steps`) en of een
- * onbekende waarde ongewijzigd doorgaat (`onMiss=KEEP_SOURCE` in de configuratie van een stap). Bewerken valt buiten S9.
- */
-function MappingExtras({ mapping }: { mapping: MappingView }) {
-  const valueMapCount = mapping.valueMap?.length ?? 0;
-  const steps = mapping.steps ?? [];
-  const keepsSource = steps.some((step) => (step.config ?? '').split(';').includes('onMiss=KEEP_SOURCE'));
-  return (
-    <>
-      {valueMapCount > 0 && <span>Omzettingen: {valueMapCount}</span>}
-      {steps.length > 0 && (
-        <span>
-          Bewerkingen: {steps.map((step) => termLabel('transformKind', step.kind, 'andere bewerking')).join(' → ')}
-        </span>
-      )}
-      {keepsSource && <span>{term('legacyReportCode', 'MAP_MISS_KEEPS_SOURCE').label}</span>}
-    </>
-  );
-}
-
 /** Eén filterrij (los of binnen een uitsluitingsgroep). */
 function FilterRow({
   revision,
@@ -434,15 +376,7 @@ function FilterRow({
 }) {
   return (
     <li className={styles.listItem}>
-      <span className={styles.sequence}>#{filter.sequenceNumber}</span>
-      <span className={styles.code}>{filter.sourceReference}</span>
-      <span>
-        <Term domain="filterOperator" code={filter.operator} unknownLabel="andere vergelijking" />
-      </span>
-      <span>{filter.matchGroup != null && filter.compareValue === '' ? 'leeg veld' : show(filter.compareValue)}</span>
-      <span>
-        <Term domain="filterOutcome" code={filter.outcome} unknownLabel="Andere uitkomst" />
-      </span>
+      <FilterSummary filter={filter} />
       {revision.status === 'DRAFT' && (
         <DeleteChildRowAction
           revisionId={revision.id}

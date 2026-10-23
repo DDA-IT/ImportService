@@ -1,0 +1,524 @@
+/*
+ * R1 — dashboard Leveranciers en leveranciersdetail (mock docs/mock/setup-redesign-mock.html). Enkel tokens, geen vaste
+ * kleuren. Op <= 768px staat alles op één kolom en worden tabelrijen onder elkaar gezet (label per waarde).
+ */
+
+.page {
+  padding: var(--spacing-4) 0 var(--spacing-8) 0;
+}
+
+.intro {
+  margin: 0 0 var(--spacing-4) 0;
+  color: var(--text-secondary);
+}
+
+.loading {
+  color: var(--text-secondary);
+}
+
+.empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* Paginakop-actie: de knop (en bij een ontbrekend recht de reden ernaast). */
+.headActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.blockedReason {
+  max-width: 28rem;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.alert {
+  margin: 0;
+  padding: var(--spacing-3) var(--spacing-4);
+  border-radius: var(--radius);
+  background: var(--status-rejected-bg);
+  color: var(--soft-error-text);
+  font-size: 0.875rem;
+}
+
+.section {
+  margin-top: 40px;
+}
+
+.sectionTitle {
+  margin: 0 0 16px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.titleBadges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+/* Rijenlijst in een detailpaneel */
+.rowList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rowList > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 12px 0;
+  border-top: 1px dashed var(--divider);
+}
+
+.rowList > li:first-child {
+  border-top: 0;
+}
+
+.rowMain {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.rowMeta {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.code {
+  font-family: monospace;
+  font-weight: 600;
+}
+
+.btnRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.moreNote {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.cardFooter {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+}
+
+/* Lijst met zoek en filters */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 20px;
+}
+
+.toolbarField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.toolbarField input,
+.toolbarField select {
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.toolbarSearch {
+  flex: 1 1 240px;
+}
+
+.toolbarSearch input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.table th,
+.table td {
+  padding: 14px 16px;
+  border-bottom: 1px dashed var(--divider);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.table th {
+  background: var(--bg-neutral);
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.table th:first-child,
+.table td:first-child {
+  padding-left: 20px;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Prodis-stijl label/waarde-groep */
+.fieldGroup {
+  margin-top: 24px;
+}
+
+.overline {
+  margin: 0 0 16px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.dl {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) 1fr;
+  gap: 12px 24px;
+  margin: 0;
+}
+
+.dl dt {
+  color: var(--text-secondary);
+}
+
+.dl dd {
+  margin: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.unset {
+  color: var(--text-disabled);
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* Stappenbalk */
+.chain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 24px;
+  padding: 0;
+  list-style: none;
+}
+
+.chain li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-label);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.chain li + li::before {
+  content: '→';
+  color: var(--text-disabled);
+}
+
+.chain li[aria-current='step'] {
+  border-color: var(--primary-main);
+  background: rgb(var(--primary-ch) / 0.08);
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+/* Kleine kaarten */
+.mini {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+/* "Volgende stap" */
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-top: 24px;
+  padding: 16px 20px;
+  border-radius: var(--radius);
+  background: var(--alert-info-bg);
+  color: var(--text-primary);
+}
+
+.banner p {
+  flex: 1 1 280px;
+  margin: 0;
+}
+
+/* Bestand en velden */
+.vdHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 12px;
+}
+
+.selectLabel {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.selectLabel select {
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.vdSection {
+  margin-top: 24px;
+}
+
+.vdSection > h3 {
+  margin: 0 0 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.mapCard {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+}
+
+.mapCard h4 {
+  margin: 0 0 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.filterGroup {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.editBlock {
+  margin-top: 24px;
+}
+
+/* Versies */
+.versionRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 12px 24px;
+  border-top: 1px dashed var(--divider);
+}
+
+.versionName {
+  font-weight: 600;
+}
+
+.versionRow .btnRow {
+  margin-left: auto;
+}
+
+.cardClip {
+  overflow: hidden;
+}
+
+.cardIntro {
+  padding: 24px 24px 12px;
+}
+
+.cardIntro h2 {
+  margin: 0;
+}
+
+.cardIntro p {
+  margin: 4px 0 0;
+}
+
+/* Koppelingen en taken */
+.linkGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.linkCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.linkCardTop h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.taskList {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.taskList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 8px 0;
+  border-top: 1px dashed var(--divider);
+  font-size: 0.8125rem;
+}
+
+.grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.linkActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.spaced {
+  margin-bottom: 24px;
+}
+
+.cardBody {
+  margin-top: 16px;
+}
+
+.cardBodyEmpty {
+  padding: 0 24px 24px;
+}
+
+.overlineTight {
+  margin: 16px 0 0;
+}
+
+.techBox {
+  margin-top: 24px;
+}
+
+@media (max-width: 768px) {
+  .dl {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .dl dd {
+    margin-bottom: 10px;
+  }
+
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .versionRow .btnRow {
+    margin-left: 0;
+  }
+
+  .linkGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .mini {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Tabelrijen onder elkaar: elk veld krijgt zijn label (data-label) ervoor. */
+  .stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .stack tr {
+    display: block;
+    padding: 12px 20px;
+    border-bottom: 1px dashed var(--divider);
+  }
+
+  .stack td {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 0;
+    border: 0;
+  }
+
+  .stack td:first-child {
+    padding-left: 0;
+  }
+
+  .stack td[data-label]::before {
+    content: attr(data-label);
+    color: var(--text-secondary);
+  }
+}

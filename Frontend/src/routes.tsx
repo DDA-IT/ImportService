@@ -13,6 +13,11 @@ import { BatchDetailPage } from './features/batches/BatchDetailPage.tsx';
 import { UploadPage } from './features/upload/UploadPage.tsx';
 import { WorkQueuePage } from './features/workqueue/WorkQueuePage.tsx';
 import { SetupOverviewPage } from './features/setup/SetupOverviewPage.tsx';
+import { SupplierDetailPage } from './features/setup/SupplierDetailPage.tsx';
+import { SupplierOverviewTab } from './features/setup/SupplierOverviewTab.tsx';
+import { SupplierFieldsTab } from './features/setup/SupplierFieldsTab.tsx';
+import { SupplierVersionsTab } from './features/setup/SupplierVersionsTab.tsx';
+import { SupplierLinksTab } from './features/setup/SupplierLinksTab.tsx';
 import { NewSupplierWizardPage } from './features/setup/wizard/NewSupplierWizardPage.tsx';
 import { LinkCheckPage } from './features/setup/check/LinkCheckPage.tsx';
 import { LegacyReceiptListPage } from './features/legacyconfig/LegacyReceiptListPage.tsx';
@@ -72,6 +77,16 @@ export const routes: RouteObject[] = [
   {
     path: '/setup',
     element: <SetupOverviewPage />,
+  },
+  {
+    path: '/setup/suppliers/:organisationId',
+    element: <SupplierDetailPage />,
+    children: [
+      { index: true, element: <SupplierOverviewTab /> },
+      { path: 'fields', element: <SupplierFieldsTab /> },
+      { path: 'versions', element: <SupplierVersionsTab /> },
+      { path: 'links', element: <SupplierLinksTab /> },
+    ],
   },
   {
     path: '/setup/new',

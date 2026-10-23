@@ -3243,3 +3243,12 @@ Bouwvolgorde (sequentieel, één commit per slice): N1 navigatie/titels/crumbs/k
 leveranciersdetail; R2 Importdefinities-overzicht + detail (+ wizard `templateId`); N2 alle gebruikerstekst, begrippen.md
 en oldWording-guard.
 **Bron:** mens / denker-gemiddeld (naamgeving, ontwerp /setup) / mock
+
+## 2026-10-23 — R1: keuzes bij de bouw van dashboard Leveranciers en leveranciersdetail
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** "Nog niet klaar" telt redenen (ook bij een leverancier die
+al "Klaar" is, zoals VROOAM2 in de mock); "Klaar voor levering" telt klare taken. Extra reden `NO_ACTIVE_TASK` (alle taken
+van een koppeling uitgeschakeld). Herbruikbare definities tellen niet mee voor gereedheid maar worden wel getoond.
+Paneelrijen begrensd met "Toont x van y". De oude query `/setup?definitionId=&revisionId=` leidt door naar
+`/setup/suppliers/{org}/fields?definitie&versie&bewerken=1`. Mockgegevens zonder API-bron (legacy-herkomst per veld,
+bibliotheek/tekenset/wachtwoord in Gegevens, datum/auteur per versie, decimaalteken) worden niet getoond.
+**Bron:** bouwer-gemiddeld (R1-rapport)

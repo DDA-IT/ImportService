@@ -14,8 +14,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, RouterProvider, Routes, createMemoryRouter } from 'react-router-dom';
 import { ActorProvider } from '../actor/ActorContext';
 import { ApiError } from '../api/http';
 import {
@@ -44,7 +44,7 @@ import { BundlePublicationTab } from '../features/bundles/BundlePublicationTab';
 import { IssueCaseDetailPage } from '../features/issuecases/IssueCaseDetailPage';
 import { IssueCaseListPage } from '../features/issuecases/IssueCaseListPage';
 import { RevisionEditForm } from '../features/setup/RevisionEditForm';
-import { SetupOverviewPage } from '../features/setup/SetupOverviewPage';
+import { routes } from '../routes';
 import { TemplateDetailPage } from '../features/templates/TemplateDetailPage';
 import { TemplateListPage } from '../features/templates/TemplateListPage';
 import { UploadPage } from '../features/upload/UploadPage';
@@ -1335,31 +1335,57 @@ describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes 
       if (detail !== null) return Promise.resolve(json(setupRevisionDetail(Number(detail[1]))));
       if (url.includes('/definitions/10/revisions')) return Promise.resolve(json(page(SETUP_REVISIONS)));
       if (url.includes('/tasks')) return Promise.resolve(json(page(tasks)));
+      if (url.includes('/legacy-config/receipts')) return Promise.resolve(json(page([])));
       if (url.includes('/import-links')) return Promise.resolve(json(page(links)));
       if (url.includes('/definitions')) return Promise.resolve(json(page(definitions)));
       if (url.includes('/source-organisations')) return Promise.resolve(json(page(organisations)));
       return Promise.reject(new Error(`Onverwachte URL in test: ${url}`));
     }) as unknown as typeof fetch;
 
+    const router = createMemoryRouter(routes, { initialEntries: ['/setup'] });
     render(
       <ActorProvider identity={TEST_IDENTITY}>
-        <MemoryRouter initialEntries={['/setup']}>
-          <SetupOverviewPage />
-        </MemoryRouter>
+        <RouterProvider router={router} />
       </ActorProvider>,
     );
 
-    fireEvent.click((await screen.findAllByRole('button', { name: /Uitklappen/ }))[0]!);
-    const definitionRow = await screen.findByText('DEF-10');
-    fireEvent.click(within(definitionRow.closest('li')!).getByRole('button', { name: /Uitklappen/ }));
-    await screen.findByText('Versie 4');
+    // Dashboard Leveranciers: kaarten, paneel "Nog niet klaar" en de leverancierslijst.
+    await screen.findByTestId('setup-cards');
+    await screen.findByTestId('supplier-row-1');
+    expectNoRawCodes(document.body, 'dashboard Leveranciers');
+
+    // Leveranciersdetail: overzicht, bestand en velden, versies en koppelingen met taken.
+    await act(async () => {
+      await router.navigate('/setup/suppliers/1');
+    });
+    await screen.findByTestId('supplier-overview');
+    expectNoRawCodes(document.body, 'leveranciersdetail: overzicht');
+
+    await act(async () => {
+      await router.navigate('/setup/suppliers/1/links');
+    });
     await screen.findByTestId('task-7');
-    expectNoRawCodes(document.body, 'inrichtingsboom');
+    expectNoRawCodes(document.body, 'leveranciersdetail: koppelingen en taken');
+
+    await act(async () => {
+      await router.navigate('/setup/suppliers/1/versions');
+    });
+    await screen.findByText('Versie 4');
+    expectNoRawCodes(document.body, 'leveranciersdetail: versies in elke status');
+
+    await act(async () => {
+      await router.navigate('/setup/suppliers/1/fields?definitie=10&versie=99');
+    });
+    await screen.findByTestId('revision-read-view');
+    expectNoRawCodes(document.body, 'leveranciersdetail: bestand en velden van een actieve versie');
 
     // Het concept: bewerkformulier, verwijderdialoog en de activeerdialoog met de verplichte waarschuwing.
-    fireEvent.click(screen.getByTestId('open-revision-100'));
+    await act(async () => {
+      await router.navigate('/setup/suppliers/1/fields?definitie=10&versie=100&bewerken=1');
+    });
     await screen.findByTestId('revision-edit-form');
     await screen.findByTestId('revision-bookmarks');
+    await screen.findByTestId('revision-read-view');
     expectNoRawCodes(document.body, 'conceptdetail met bewerkformulier');
 
     fireEvent.click(screen.getByTestId('delete-mapping-5001'));
@@ -1373,15 +1399,20 @@ describe('NT-11c — behandelgevallen, inrichting en sjablonen: geen ruwe codes 
     expectNoRawCodes(document.body, 'activeerdialoog');
     fireEvent.click(screen.getByRole('button', { name: 'Sluiten zonder activeren' }));
 
-    // Een actieve versie: geen bewerkformulier maar de reden, en de dialoog van "Opvolger maken".
-    fireEvent.click(screen.getByTestId('create-successor-99'));
+    // Een actieve versie: geen bewerkformulier maar de reden, en de dialoog van "Opvolger maken" bij Versies.
+    await act(async () => {
+      await router.navigate('/setup/suppliers/1/fields?definitie=10&versie=99&bewerken=1');
+    });
+    await screen.findByTestId('revision-not-editable-reason');
+    expectNoRawCodes(document.body, 'detail van een actieve versie');
+
+    await act(async () => {
+      await router.navigate('/setup/suppliers/1/versions');
+    });
+    fireEvent.click(await screen.findByTestId('create-successor-99'));
     await screen.findByRole('dialog');
     expectNoRawCodes(document.body, 'dialoog opvolger maken');
     fireEvent.click(screen.getByRole('button', { name: 'Sluiten zonder aanmaken' }));
-
-    fireEvent.click(screen.getByTestId('open-revision-99'));
-    await screen.findByTestId('revision-not-editable-reason');
-    expectNoRawCodes(document.body, 'detail van een actieve versie');
   });
 
   it('bewerkformulier: identiteitswijziging, waarschuwing bij de herkenningsversie, blokkade en validatiefout', async () => {
