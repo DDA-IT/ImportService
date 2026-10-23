@@ -2177,7 +2177,8 @@ export type LegacyApplyResult = {
 export type RevisionLegacyOriginKind = 'MIGRATED' | 'INHERITED' | 'TEMPLATE_SOURCE';
 
 /** Waar een legacy-regel naartoe gaat: een mapping, een revisieveld of nergens. */
-export type LegacyLineTargetKind = 'MAPPING' | 'REVISION_FIELD' | 'NONE';
+/** Doel van een legacy-regel. LINK_CREATION_DEFAULT: de regel is de btw-code of eenheid bij aanmaak van de koppeling (geen rij van het leesbeeld). */
+export type LegacyLineTargetKind = 'MAPPING' | 'REVISION_FIELD' | 'LINK_CREATION_DEFAULT' | 'NONE';
 
 /** be.dda.catalogimport.service.RevisionLegacyOriginService.LegacyLineView */
 export type LegacyOriginLine = {

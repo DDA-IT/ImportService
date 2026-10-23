@@ -142,6 +142,15 @@ export function uncoveredLines(lines: readonly LegacyOriginLine[], revision: Rev
   return result;
 }
 
+/**
+ * Legacy-regels die naar de koppeling gaan als standaard bij aanmaak (btw-code of eenheid, LINK_CREATION_DEFAULT).
+ * Ze staan geen rij in het leesbeeld, maar zijn wel overgenomen: ze komen in de lijst "Naar de koppeling", niet in
+ * "Niet overgenomen uit legacy".
+ */
+export function linkCreationDefaultLines(lines: readonly LegacyOriginLine[]): LegacyOriginLine[] {
+  return lines.filter((line) => line.targetKind === 'LINK_CREATION_DEFAULT');
+}
+
 /** De ruwe waarden van een regel, voor "Technische details (voor support)". */
 export function technicalLine(line: LegacyOriginLine): string {
   const entries: [string, string | number][] = [

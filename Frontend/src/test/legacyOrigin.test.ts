@@ -8,6 +8,7 @@ import type { LegacyOriginLine, RevisionDetail } from '../api/types';
 import {
   describeCalculation,
   describeLine,
+  linkCreationDefaultLines,
   lineForRow,
   technicalLine,
   uncoveredLines,
@@ -99,6 +100,34 @@ describe('lineForRow en uncoveredLines', () => {
       [26, 'geen doelveld'],
       [8, 'niet aanwezig in deze versie'],
     ]);
+  });
+});
+
+describe('LINK_CREATION_DEFAULT: standaard bij aanmaak van de koppeling', () => {
+  const revision = revisionDetail(1, 1, {
+    recordDescriptionField: null,
+    mappings: [],
+  }) as unknown as RevisionDetail;
+  const vatLine = line(51, { targetKind: 'LINK_CREATION_DEFAULT', fixedValue: '21', column: 0 });
+  const unitLine = line(45, { targetKind: 'LINK_CREATION_DEFAULT', fixedValue: 'ST' });
+  const lines = [vatLine, unitLine, line(9, { targetKind: 'REVISION_FIELD', revisionField: 'identitySupplierField', column: 1 })];
+
+  it('komt niet in "Niet overgenomen uit legacy", ook niet zonder rij in het leesbeeld', () => {
+    expect(uncoveredLines(lines, revision).map((entry) => entry.line.number)).toEqual([]);
+  });
+
+  it('wordt herkend als naar de koppeling, in volgorde van de regels', () => {
+    expect(linkCreationDefaultLines(lines).map((entry) => entry.number)).toEqual([51, 45]);
+    expect(linkCreationDefaultLines([])).toEqual([]);
+  });
+
+  it('beschrijving toont de bron zonder ruwe code', () => {
+    expect(describeLine(vatLine)).toBe('regel 51 · vaste waarde 21');
+    expect(describeLine(unitLine)).toBe('regel 45 · vaste waarde ST');
+  });
+
+  it('technische details bevatten het doeltype als ruwe waarde', () => {
+    expect(technicalLine(vatLine)).toBe('field=VELD51; target=LINK_CREATION_DEFAULT; fixedValue=21');
   });
 });
 

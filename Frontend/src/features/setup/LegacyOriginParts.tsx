@@ -11,7 +11,7 @@ import { PERMISSION_MANAGE } from '../../api/types.ts';
 import { formatDateTime } from '../../format.ts';
 import { LEGACY_ORIGIN_TEXT as TEXT } from '../../terms/legacyOrigin.ts';
 import { TechnicalDetails, type TechnicalDetailItem } from '../../terms/TechnicalDetails.tsx';
-import { describeLine, technicalLine, uncoveredLines } from './legacyOrigin.ts';
+import { describeLine, linkCreationDefaultLines, technicalLine, uncoveredLines } from './legacyOrigin.ts';
 import styles from './SetupScreens.module.css';
 
 /** De herkomst die het leesbeeld gebruikt: enkel als de versie uit legacy komt en de regels leesbaar zijn. */
@@ -78,25 +78,47 @@ export function LegacyHint({ line }: { line: LegacyOriginLine | null }) {
   return <span className={styles.rowMeta}>{describeLine(line)}</span>;
 }
 
-/** "Niet overgenomen uit legacy": regels zonder rij in het leesbeeld. */
+/**
+ * "Naar de koppeling (standaard bij aanmaak)" en "Niet overgenomen uit legacy": regels zonder rij in het leesbeeld.
+ * De ruwe legacy-veldnaam staat hier niet; die blijft bij de technische details.
+ */
 export function UncoveredLegacyLines({ origin, revision }: { origin: RevisionLegacyOrigin; revision: RevisionDetail }) {
+  const toLink = linkCreationDefaultLines(origin.lines);
   const uncovered = uncoveredLines(origin.lines, revision);
-  if (uncovered.length === 0) {
+  if (toLink.length === 0 && uncovered.length === 0) {
     return null;
   }
   return (
-    <div data-testid="legacy-uncovered">
-      <h4>{TEXT.notTakenOverTitle}</h4>
-      <ul className={styles.rowList}>
-        {uncovered.map(({ line, reason }) => (
-          <li key={line.number}>
-            <span className={styles.rowMeta}>
-              {TEXT.lineNumber(line.number)} · {line.legacyFieldName} · {reason}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <>
+      {toLink.length > 0 && (
+        <div data-testid="legacy-to-link">
+          <h4>{TEXT.toLinkTitle}</h4>
+          <ul className={styles.rowList}>
+            {toLink.map((line) => (
+              <li key={line.number}>
+                <span className={styles.rowMeta}>
+                  {describeLine(line)} · {TEXT.toLinkReason}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {uncovered.length > 0 && (
+        <div data-testid="legacy-uncovered">
+          <h4>{TEXT.notTakenOverTitle}</h4>
+          <ul className={styles.rowList}>
+            {uncovered.map(({ line, reason }) => (
+              <li key={line.number}>
+                <span className={styles.rowMeta}>
+                  {TEXT.lineNumber(line.number)} · {line.legacyFieldName} · {reason}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
   );
 }
 

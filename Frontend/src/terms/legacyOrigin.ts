@@ -26,6 +26,8 @@ export const LEGACY_ORIGIN_TEXT = {
   loadFailed: 'De herkomst uit legacy kon niet geladen worden; de versie zelf is wel volledig te zien.',
   linesUnavailable: 'De legacy-regels van deze versie zijn niet meer beschikbaar.',
   notTakenOverTitle: 'Niet overgenomen uit legacy',
+  toLinkTitle: 'Naar de koppeling (standaard bij aanmaak)',
+  toLinkReason: 'standaard bij aanmaak van de koppeling (btw-code / eenheid)',
   noTarget: 'geen doelveld',
   notInThisVersion: 'niet aanwezig in deze versie',
   receiptLink: (id: number) => `Ontvangst #${id}`,

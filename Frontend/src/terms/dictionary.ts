@@ -2014,6 +2014,26 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
       label: 'Handmatig ingestelde standaard overschreven',
       uitleg: 'De waarde van de koppeling was handmatig ingesteld en is toch vervangen door die van de interface, omdat de importdefinitie de standaarden laat overschrijven.',
     },
+    CREATION_DEFAULT_DUPLICATED: {
+      label: 'Standaard bij aanmaak komt meerdere keren voor',
+      uitleg: 'De interface vult de btw-code of eenheid meerdere keren in; legacy bepaalt niet welke geldt. De koppeling krijgt daarom geen standaard; stel die zelf in bij de koppeling.',
+    },
+    CREATION_DEFAULT_VALUE_EMPTY: {
+      label: 'Standaard bij aanmaak is leeg',
+      uitleg: 'De interface geeft geen vaste waarde op voor de btw-code of eenheid. De koppeling krijgt geen standaard; stel die zelf in bij de koppeling.',
+    },
+    CREATION_DEFAULT_VALUE_TOO_LONG: {
+      label: 'Standaard bij aanmaak is te lang',
+      uitleg: 'De vaste waarde in de interface is langer dan 50 tekens. Ze wordt nooit afgekapt; de koppeling krijgt geen standaard. Stel zelf een korte code in bij de koppeling.',
+    },
+    PRODIS_VAT_CODE: {
+      label: 'Btw-code gevonden in Prodis',
+      uitleg: 'Deze btw-code bestaat bij de actieve btw-codes in Prodis en is als standaard bij aanmaak overgenomen.',
+    },
+    PRODIS_UNIT: {
+      label: 'Eenheid gevonden in Prodis',
+      uitleg: 'Deze eenheid bestaat bij de actieve eenheden in Prodis en is als standaard bij aanmaak overgenomen.',
+    },
     PRODIS_VAT_CODE_NOT_FOUND: {
       label: 'Btw-code niet gevonden in Prodis',
       uitleg: 'Deze btw-code bestaat niet bij de actieve btw-codes in Prodis.',

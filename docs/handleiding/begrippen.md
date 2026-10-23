@@ -1361,6 +1361,11 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 | `CREATION_DEFAULT_DIFFERS_NOT_CHANGED` | Standaard verschilt van legacy, niet gewijzigd | De koppeling heeft al een andere waarde dan de interface; die blijft staan. Zet bij de importdefinitie "standaarden overschrijven" aan om ze toch te vervangen. |
 | `CREATION_DEFAULT_OVERWRITTEN` | Standaard overschreven | De waarde van de koppeling is vervangen door die van de interface, omdat de importdefinitie de standaarden laat overschrijven. |
 | `CREATION_DEFAULT_MANUAL_OVERWRITTEN` | Handmatig ingestelde standaard overschreven | De waarde van de koppeling was handmatig ingesteld en is toch vervangen door die van de interface, omdat de importdefinitie de standaarden laat overschrijven. |
+| `CREATION_DEFAULT_DUPLICATED` | Standaard bij aanmaak komt meerdere keer voor | De interface vult de btw-code of eenheid meerdere keren in; legacy bepaalt niet welke geldt. De koppeling krijgt daarom geen standaard; stel die zelf in bij de koppeling. |
+| `CREATION_DEFAULT_VALUE_EMPTY` | Standaard bij aanmaak is leeg | De interface geeft geen vaste waarde op voor de btw-code of eenheid. De koppeling krijgt geen standaard; stel die zelf in bij de koppeling. |
+| `CREATION_DEFAULT_VALUE_TOO_LONG` | Standaard bij aanmaak is te lang | De vaste waarde in de interface is langer dan 50 tekens. Ze wordt nooit afgekapt; de koppeling krijgt geen standaard. Stel zelf een korte code in bij de koppeling. |
+| `PRODIS_VAT_CODE` | Btw-code gevonden in Prodis | Deze btw-code bestaat bij de actieve btw-codes in Prodis en is als standaard bij aanmaak overgenomen. |
+| `PRODIS_UNIT` | Eenheid gevonden in Prodis | Deze eenheid bestaat bij de actieve eenheden in Prodis en is als standaard bij aanmaak overgenomen. |
 | `PRODIS_VAT_CODE_NOT_FOUND` | Btw-code niet gevonden in Prodis | Deze btw-code bestaat niet bij de actieve btw-codes in Prodis. |
 | `PRODIS_UNIT_NOT_FOUND` | Eenheid niet gevonden in Prodis | Deze eenheid bestaat niet bij de actieve eenheden in Prodis. |
 | `SEPARATOR_NOT_DECLARED` | Scheidingsteken niet opgegeven | De interface noemt geen scheidingsteken; zoals legacy wordt de puntkomma gebruikt. |
