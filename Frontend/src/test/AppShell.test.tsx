@@ -32,28 +32,28 @@ describe('app-shell (UI-3)', () => {
   });
   afterEach(() => cleanup());
 
-  it('toont de drie groepen met hun items en markeert het actieve item', () => {
+  it('toont de vier groepen met hun items en markeert het actieve item', () => {
     renderShell();
-    expect(screen.getByRole('button', { name: 'Werk' })).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByRole('link', { name: 'Werkvoorraad' })).toHaveAttribute('aria-current', 'page');
-    for (const name of ['Behandelgevallen', 'Levering uploaden', 'Publicatiebundels', 'Overzicht', 'Nieuwe leverancier', 'Sjablonen']) {
+    expect(screen.getByRole('button', { name: 'Inlezen' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('link', { name: 'Inlezingen' })).toHaveAttribute('aria-current', 'page');
+    for (const name of ['Afwijkingen', 'Bestand uploaden', 'Publicaties', 'Leveranciers', 'Leverancier toevoegen', 'Importdefinities']) {
       expect(screen.getByRole('link', { name })).toBeInTheDocument();
     }
   });
 
   it('klapt een groep in en uit via de subkop (aria-expanded)', () => {
     renderShell();
-    const sub = screen.getByRole('button', { name: 'Leveringen' });
+    const sub = screen.getByRole('button', { name: 'Publiceren' });
     fireEvent.click(sub);
     expect(sub).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(sub);
     expect(sub).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('verbergt "Nieuwe leverancier" zonder recht Beheren', () => {
+  it('verbergt "Leverancier toevoegen" zonder recht Beheren', () => {
     renderShell(testIdentityWith('catalogImport.read'));
-    expect(screen.queryByRole('link', { name: 'Nieuwe leverancier' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Sjablonen' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Leverancier toevoegen' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Importdefinities' })).toBeInTheDocument();
   });
 
   it('wisselt de mini-modus en onthoudt de keuze', () => {
@@ -79,7 +79,7 @@ describe('app-shell (UI-3)', () => {
     expect(burger).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(burger);
-    fireEvent.click(screen.getByRole('link', { name: 'Levering uploaden' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Bestand uploaden' }));
     expect(burger).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByTestId('upload')).toBeInTheDocument();
   });

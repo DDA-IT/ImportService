@@ -59,6 +59,7 @@ import { wizardHref } from './wizard/wizardTypes.ts';
 import button from '../../components/Button.module.css';
 import pageCss from '../../components/Page.module.css';
 import styles from './SetupOverviewPage.module.css';
+import { GROUP, PRODUCT, SCREEN } from '../../terms/navigation.ts';
 
 /** Het servermaximum per pagina voor de takenlijst van één koppeling (een koppeling heeft er maar enkele). */
 const TASKS_PAGE_SIZE = 200;
@@ -479,7 +480,7 @@ function NewSupplierButton() {
           aria-describedby="new-supplier-blocked"
           data-testid="new-supplier-button"
         >
-          Nieuwe leverancier en taak
+          {SCREEN.leverancierToevoegen}
         </button>
         <span id="new-supplier-blocked" className={styles.blockedReason} data-testid="new-supplier-blocked">
           {manageGate.reason}
@@ -490,7 +491,7 @@ function NewSupplierButton() {
   return (
     <div className={styles.headActions}>
       <Link className={button.primary} to="/setup/new" data-testid="new-supplier-button">
-        Nieuwe leverancier en taak
+        {SCREEN.leverancierToevoegen}
       </Link>
     </div>
   );
@@ -560,13 +561,16 @@ export function SetupOverviewPage() {
     <div className={styles.page}>
       <header className={pageCss.pageHead}>
         <div className={pageCss.pageHeadText}>
-          <h1 className={pageCss.title}>Inrichting</h1>
+          <h1 className={pageCss.title}>{SCREEN.leveranciers}</h1>
           <ol className={pageCss.crumbs}>
             <li>
-              <span>CatalogImport</span>
+              <span>{PRODUCT}</span>
             </li>
             <li>
-              <span aria-current="page">Inrichting</span>
+              <span>{GROUP.inrichting}</span>
+            </li>
+            <li>
+              <span aria-current="page">{SCREEN.leveranciers}</span>
             </li>
           </ol>
         </div>

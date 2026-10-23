@@ -21,8 +21,9 @@ import { TemplateListPage } from './features/templates/TemplateListPage.tsx';
 import { TemplateDetailPage } from './features/templates/TemplateDetailPage.tsx';
 import { IssueCaseListPage } from './features/issuecases/IssueCaseListPage.tsx';
 import { IssueCaseDetailPage } from './features/issuecases/IssueCaseDetailPage.tsx';
+import { NOT_FOUND_BACK } from './terms/navigation.ts';
 
-/** Lege staat (mock .empty) met een weg terug naar de werkvoorraad. */
+/** Lege staat (mock .empty) met een weg terug naar Inlezingen. */
 export function NotFoundPage() {
   return (
     <div className={pageCss.card}>
@@ -32,7 +33,7 @@ export function NotFoundPage() {
         <p>De pagina die u zoekt, bestaat niet.</p>
         <p>
           <Link to="/" className={button.primary}>
-            Naar de werkvoorraad
+            {NOT_FOUND_BACK}
           </Link>
         </p>
       </div>

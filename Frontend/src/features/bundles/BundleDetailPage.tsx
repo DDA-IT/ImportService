@@ -16,6 +16,7 @@ import { StatusBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import pageCss from '../../components/Page.module.css';
 import styles from './BundleDetailPage.module.css';
+import { GROUP, PRODUCT, SCREEN, TAB_PUBLICATIE } from '../../terms/navigation.ts';
 
 export type BundleDetailContext = {
   bundle: BundleDetail;
@@ -40,7 +41,7 @@ export function BundleDetailPage() {
     <div className={styles.page}>
       {data === null && (
         <p className={styles.breadcrumb}>
-          <NavLink to="/bundles">Publicatiebundels</NavLink>
+          <NavLink to="/bundles">{SCREEN.publicaties}</NavLink>
         </p>
       )}
 
@@ -53,10 +54,16 @@ export function BundleDetailPage() {
             <div className={pageCss.pageHeadText}>
               <ol className={pageCss.crumbs}>
                 <li>
-                  <Link to="/bundles">Publicatiebundels</Link>
+                  <span>{PRODUCT}</span>
                 </li>
                 <li>
-                  <span aria-current="page">{data.bundleReference}</span>
+                  <span>{GROUP.publiceren}</span>
+                </li>
+                <li>
+                  <Link to="/bundles">{SCREEN.publicaties}</Link>
+                </li>
+                <li>
+                  <span aria-current="page">Publicatie #{bundleId}</span>
                 </li>
               </ol>
             </div>
@@ -66,8 +73,9 @@ export function BundleDetailPage() {
               <BackIcon />
             </Link>
             <div className={styles.detailId}>
-              <h1 className={pageCss.title}>{data.bundleReference}</h1>
+              <h1 className={pageCss.title}>Publicatie #{bundleId}</h1>
               <div className={styles.chips}>
+                <span data-testid="bundle-reference">{data.bundleReference}</span>
                 <StatusBadge status={data.status} domain="bundleStatus" />
               </div>
             </div>
@@ -78,10 +86,10 @@ export function BundleDetailPage() {
               Overzicht
             </NavLink>
             <NavLink to={`/bundles/${bundleId}/batches`} className={pageCss.tab}>
-              Leden
+              {TAB_PUBLICATIE.inlezingen}
             </NavLink>
             <NavLink to={`/bundles/${bundleId}/mutations`} className={pageCss.tab}>
-              Mutaties
+              {TAB_PUBLICATIE.wijzigingen}
             </NavLink>
             <NavLink to={`/bundles/${bundleId}/decisions`} className={pageCss.tab}>
               Beslissingen

@@ -31,6 +31,7 @@ import { CounterLabel, Count } from './format.tsx';
 import pageCss from '../../components/Page.module.css';
 import styles from './BatchDetailPage.module.css';
 import { formatDateTime } from '../../format.ts';
+import { SCREEN } from '../../terms/navigation.ts';
 
 function Fact({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
@@ -82,10 +83,10 @@ function BatchHead({ batch }: { batch: BatchDetail }) {
         <div className={pageCss.pageHeadText}>
           <ol className={pageCss.crumbs}>
             <li>
-              <Link to="/">Werkvoorraad</Link>
+              <Link to="/">{SCREEN.inlezingen}</Link>
             </li>
             <li>
-              <span aria-current="page">Batch {batch.batchId}</span>
+              <span aria-current="page">Inlezing {batch.batchId}</span>
             </li>
           </ol>
         </div>
@@ -98,7 +99,7 @@ function BatchHead({ batch }: { batch: BatchDetail }) {
           {supplierInitials(batch.supplierCode)}
         </span>
         <div className={styles.detailId}>
-          <h1 className={pageCss.title}>Batch {batch.batchId}</h1>
+          <h1 className={pageCss.title}>Inlezing {batch.batchId}</h1>
           <div className={styles.meta}>
             <span>
               <LinkIcon />
@@ -324,7 +325,7 @@ export function BatchDetailPage() {
     <div className={styles.page}>
       {showCrumb && (
         <p className={styles.breadcrumb}>
-          <Link to="/">Werkvoorraad</Link>
+          <Link to="/">{SCREEN.inlezingen}</Link>
         </p>
       )}
 

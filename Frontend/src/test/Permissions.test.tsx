@@ -300,7 +300,7 @@ describe('rechten in de UI (5B-5)', () => {
     it('toont één vlak, houdt het menu zichtbaar en mount de pagina niet (geen fetches)', () => {
       renderShell({ ...TEST_IDENTITY, permissions: [] });
       expect(screen.getByTestId('no-permissions')).toHaveTextContent('U heeft geen rechten voor CatalogImport.');
-      expect(screen.getByRole('link', { name: 'Levering uploaden' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Bestand uploaden' })).toBeInTheDocument();
       expect(screen.queryByTestId('page')).not.toBeInTheDocument();
       expect(vi.mocked(global.fetch)).not.toHaveBeenCalled();
     });

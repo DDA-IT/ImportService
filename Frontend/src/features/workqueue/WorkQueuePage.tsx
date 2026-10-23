@@ -31,6 +31,7 @@ import button from '../../components/Button.module.css';
 import pageCss from '../../components/Page.module.css';
 import styles from './WorkQueuePage.module.css';
 import { formatDateTime } from '../../format.ts';
+import { GROUP, PRODUCT, SCREEN } from '../../terms/navigation.ts';
 
 const NO_STATUS_FILTER = '';
 const NO_VALIDATION_FILTER = '';
@@ -180,20 +181,23 @@ export function WorkQueuePage() {
     <div className={styles.page}>
       <header className={pageCss.pageHead}>
         <div className={pageCss.pageHeadText}>
-          <h1 className={pageCss.title}>Werkvoorraad</h1>
+          <h1 className={pageCss.title}>{SCREEN.inlezingen}</h1>
           <ol className={pageCss.crumbs}>
             <li>
-              <span>CatalogImport</span>
+              <span>{PRODUCT}</span>
             </li>
             <li>
-              <span aria-current="page">Werkvoorraad</span>
+              <span>{GROUP.inlezen}</span>
+            </li>
+            <li>
+              <span aria-current="page">{SCREEN.inlezingen}</span>
             </li>
           </ol>
         </div>
         {/* Navigatie, geen schrijfactie: de uploadpagina zelf poort de actie met het recht Beheren. */}
         <Link className={button.primary} to="/upload">
           <UploadIcon />
-          Levering uploaden
+          {SCREEN.bestandUploaden}
         </Link>
       </header>
       <WhatIsThis>

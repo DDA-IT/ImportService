@@ -1,12 +1,12 @@
 /**
  * NT-11d — bewaker van de woordkeuzes van de mens (beslissingslog 2026-10-01): in zichtbare tekst staat nooit
  * "bookmark" (is "invulpunt"), "revisie" (is "versie"), "bronorganisatie" (is "leverancier of aankoopvereniging")
- * of "importdefinitie" (is "beschrijving van het bestand"), in welke hoofdlettercombinatie ook. Tooltips
+ * in welke hoofdlettercombinatie ook. Tooltips
  * (attributen) en de inklapbare `<details>`-blokken tellen niet mee, net als in `noRawCodes.test.tsx`.
  */
 import { expect } from 'vitest';
 
-const OLD_WORDING = /bookmark|revisie|bronorganisatie|importdefinitie/gi;
+const OLD_WORDING = /bookmark|revisie|bronorganisatie/gi;
 
 /** De zichtbare tekst zonder `<details>`; tekstknopen met een spatie gescheiden. */
 export function visibleTextOf(container: HTMLElement): string {

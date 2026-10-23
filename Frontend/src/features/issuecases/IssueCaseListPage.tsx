@@ -27,6 +27,7 @@ import { DICTIONARY, term } from '../../terms/index.ts';
 import pageCss from '../../components/Page.module.css';
 import styles from './IssueCaseListPage.module.css';
 import { formatDateTime } from '../../format.ts';
+import { GROUP, PRODUCT, SCREEN } from '../../terms/navigation.ts';
 
 /**
  * De keuzelijst "Soort vaststelling" (NT-11c): de Nederlandse woorden uit het woordenboek, alfabetisch; de waarde
@@ -161,16 +162,16 @@ export function IssueCaseListPage() {
     <div className={styles.page}>
       <header className={pageCss.pageHead}>
         <div className={pageCss.pageHeadText}>
-          <h1 className={pageCss.title}>Behandelgevallen</h1>
+          <h1 className={pageCss.title}>{SCREEN.afwijkingen}</h1>
           <ol className={pageCss.crumbs}>
             <li>
-              <span>CatalogImport</span>
+              <span>{PRODUCT}</span>
             </li>
             <li>
-              <span>Werk</span>
+              <span>{GROUP.beoordelen}</span>
             </li>
             <li>
-              <span aria-current="page">Behandelgevallen</span>
+              <span aria-current="page">{SCREEN.afwijkingen}</span>
             </li>
           </ol>
         </div>

@@ -25,6 +25,7 @@ import { FlagOffNotice } from '../setup/FlagOffNotice.tsx';
 import { isSetupApiDisabledError, SETUP_API_DISABLED_MESSAGE } from './setupApiFlag.ts';
 import pageCss from '../../components/Page.module.css';
 import styles from './TemplateListPage.module.css';
+import { GROUP, PRODUCT, SCREEN } from '../../terms/navigation.ts';
 
 const COLUMNS: readonly DataTableColumn<TemplateView>[] = [
   {
@@ -60,16 +61,16 @@ export function TemplateListPage() {
     <div className={styles.page}>
       <header className={pageCss.pageHead}>
         <div className={pageCss.pageHeadText}>
-          <h1 className={pageCss.title}>Sjablonen</h1>
+          <h1 className={pageCss.title}>{SCREEN.importdefinities}</h1>
           <ol className={pageCss.crumbs}>
             <li>
-              <span>CatalogImport</span>
+              <span>{PRODUCT}</span>
             </li>
             <li>
-              <span>Inrichting</span>
+              <span>{GROUP.inrichting}</span>
             </li>
             <li>
-              <span aria-current="page">Sjablonen</span>
+              <span aria-current="page">{SCREEN.importdefinities}</span>
             </li>
           </ol>
         </div>

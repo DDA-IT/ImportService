@@ -20,6 +20,7 @@ import {
 } from './components/icons.tsx';
 import { ProductSwitcher } from './layout/ProductSwitcher.tsx';
 import { ThemeButton } from './layout/ThemeButton.tsx';
+import { GROUP, SCREEN, SCREEN_HINT } from './terms/navigation.ts';
 
 const NO_PERMISSIONS_MESSAGE = 'U heeft geen rechten voor CatalogImport.';
 const MINI_STORAGE_KEY = 'catalogimport.nav.mini';
@@ -27,9 +28,11 @@ const MINI_STORAGE_KEY = 'catalogimport.nav.mini';
 interface NavItem {
   to: string;
   label: string;
+  /** Eénregelige uitleg, als tooltip. */
+  hint?: string;
   end: boolean;
   Icon: ComponentType<IconProps>;
-  /** Enkel tonen met dit recht (zelfde recht als de knop "Nieuwe leverancier en taak" op de inrichtingspagina). */
+  /** Enkel tonen met dit recht (zelfde recht als de knop "Leverancier toevoegen" op de pagina Leveranciers). */
   requires?: typeof PERMISSION_MANAGE;
 }
 
@@ -39,32 +42,41 @@ interface NavGroup {
   items: NavItem[];
 }
 
-// Linkteksten en routes ongewijzigd (tests zoeken erop); "Inrichting" is nu de naam van de groep, het item heet "Overzicht".
+// N1: namen uit `terms/navigation.ts` (beslissing 2026-10-23); routes en testids ongewijzigd.
 const NAV_GROUPS: NavGroup[] = [
   {
-    id: 'werk',
-    title: 'Werk',
+    id: 'inlezen',
+    title: GROUP.inlezen,
     items: [
-      { to: '/', label: 'Werkvoorraad', end: true, Icon: QueueIcon },
-      { to: '/issue-cases', label: 'Behandelgevallen', end: false, Icon: CaseIcon },
+      { to: '/', label: SCREEN.inlezingen, hint: SCREEN_HINT.inlezingen, end: true, Icon: QueueIcon },
+      { to: '/upload', label: SCREEN.bestandUploaden, hint: SCREEN_HINT.bestandUploaden, end: false, Icon: UploadIcon },
     ],
   },
   {
-    id: 'leveringen',
-    title: 'Leveringen',
-    items: [
-      { to: '/upload', label: 'Levering uploaden', end: false, Icon: UploadIcon },
-      { to: '/bundles', label: 'Publicatiebundels', end: false, Icon: BundleIcon },
-    ],
+    id: 'beoordelen',
+    title: GROUP.beoordelen,
+    items: [{ to: '/issue-cases', label: SCREEN.afwijkingen, hint: SCREEN_HINT.afwijkingen, end: false, Icon: CaseIcon }],
+  },
+  {
+    id: 'publiceren',
+    title: GROUP.publiceren,
+    items: [{ to: '/bundles', label: SCREEN.publicaties, hint: SCREEN_HINT.publicaties, end: false, Icon: BundleIcon }],
   },
   {
     id: 'inrichting',
-    title: 'Inrichting',
+    title: GROUP.inrichting,
     items: [
-      { to: '/setup', label: 'Overzicht', end: true, Icon: SetupIcon },
-      { to: '/setup/new', label: 'Nieuwe leverancier', end: false, Icon: SupplierIcon, requires: PERMISSION_MANAGE },
-      { to: '/templates', label: 'Sjablonen', end: false, Icon: TemplateIcon },
-      { to: '/setup/legacy-config', label: 'Overname uit legacy', end: false, Icon: LinkIcon, requires: PERMISSION_MANAGE },
+      { to: '/setup', label: SCREEN.leveranciers, hint: SCREEN_HINT.leveranciers, end: true, Icon: SetupIcon },
+      {
+        to: '/setup/new',
+        label: SCREEN.leverancierToevoegen,
+        hint: SCREEN_HINT.leverancierToevoegen,
+        end: false,
+        Icon: SupplierIcon,
+        requires: PERMISSION_MANAGE,
+      },
+      { to: '/templates', label: SCREEN.importdefinities, hint: SCREEN_HINT.importdefinities, end: false, Icon: TemplateIcon },
+      { to: '/setup/legacy-config', label: SCREEN.overnameUitLegacy, end: false, Icon: LinkIcon, requires: PERMISSION_MANAGE },
     ],
   },
 ];
@@ -154,9 +166,9 @@ function App() {
                   {group.title}
                 </button>
                 <ul id={`nav-list-${group.id}`} className={styles.navList}>
-                  {items.map(({ to, label, end, Icon }) => (
+                  {items.map(({ to, label, hint, end, Icon }) => (
                     <li key={to}>
-                      <NavLink to={to} end={end} className={styles.navItem} onClick={() => setMenuOpen(false)}>
+                      <NavLink to={to} end={end} title={hint} className={styles.navItem} onClick={() => setMenuOpen(false)}>
                         <Icon className={styles.navIcon} />
                         <span className={styles.navText}>{label}</span>
                       </NavLink>

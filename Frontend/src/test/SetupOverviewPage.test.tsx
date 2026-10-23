@@ -360,17 +360,17 @@ describe('SetupOverviewPage', () => {
 
   // --- NT-6: stappenplan "Nieuwe leverancier en taak" ---------------------------------------------------
 
-  it('NT-6.1: met Beheren opent "Nieuwe leverancier en taak" het stappenplan', async () => {
+  it('NT-6.1: met Beheren opent "Leverancier toevoegen" het stappenplan', async () => {
     renderPage();
     await screen.findByText('ORG-1');
-    const link = screen.getByRole('link', { name: 'Nieuwe leverancier en taak' });
+    const link = screen.getByRole('link', { name: 'Leverancier toevoegen' });
     expect(link).toHaveAttribute('href', '/setup/new');
   });
 
   it('NT-6.2: zonder Beheren is de knop uitgeschakeld mét reden', async () => {
     renderPage(testIdentityWith('catalogImport.read'));
     await screen.findByText('ORG-1');
-    const button = screen.getByRole('button', { name: 'Nieuwe leverancier en taak' });
+    const button = screen.getByRole('button', { name: 'Leverancier toevoegen' });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('title', "U heeft het recht 'Beheren' (catalogImport.manage) niet.");
     expect(screen.getByTestId('new-supplier-blocked')).toHaveTextContent("U heeft het recht 'Beheren'");

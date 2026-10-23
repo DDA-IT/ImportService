@@ -41,6 +41,7 @@ import button from '../../components/Button.module.css';
 import pageCss from '../../components/Page.module.css';
 import styles from './UploadPage.module.css';
 import { formatDateTime } from '../../format.ts';
+import { GROUP, PRODUCT, SCREEN } from '../../terms/navigation.ts';
 
 const MAX_FILE_NAME_LENGTH = 500;
 const NO_TASK = '';
@@ -283,16 +284,16 @@ export function UploadPage() {
     <div className={styles.page}>
       <header className={pageCss.pageHead}>
         <div className={pageCss.pageHeadText}>
-          <h1 className={pageCss.title}>Levering uploaden</h1>
+          <h1 className={pageCss.title}>{SCREEN.bestandUploaden}</h1>
           <ol className={pageCss.crumbs}>
             <li>
-              <span>CatalogImport</span>
+              <span>{PRODUCT}</span>
             </li>
             <li>
-              <span>Leveringen</span>
+              <span>{GROUP.inlezen}</span>
             </li>
             <li>
-              <span aria-current="page">Levering uploaden</span>
+              <span aria-current="page">{SCREEN.bestandUploaden}</span>
             </li>
           </ol>
         </div>
@@ -305,7 +306,7 @@ export function UploadPage() {
         )}
         {noManualTask && (
           <p className={styles.note} role="status" data-testid="no-manual-task">
-            Er is nog geen taak. Maak er een via <Link to="/setup">Inrichting</Link> → Nieuwe leverancier en taak (recht Beheren nodig).
+            Er is nog geen taak. Maak er een via <Link to="/setup">Inrichting</Link> → {SCREEN.leverancierToevoegen} (recht Beheren nodig).
           </p>
         )}
         {hasNotReadyTask && (

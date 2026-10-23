@@ -45,6 +45,7 @@ import { isSetupApiDisabledError, SETUP_API_DISABLED_MESSAGE } from './setupApiF
 import button from '../../components/Button.module.css';
 import pageCss from '../../components/Page.module.css';
 import styles from './TemplateDetailPage.module.css';
+import { SCREEN } from '../../terms/navigation.ts';
 
 /** Waarom een conceptversie van een sjabloon niet te kiezen is (V7: gewoon Nederlands, geen statuscode). */
 const DRAFT_REASON = 'een concept van een sjabloon is nog niet bruikbaar om uit te materialiseren';
@@ -331,7 +332,7 @@ export function TemplateDetailPage() {
               <span>Inrichting</span>
             </li>
             <li>
-              <Link to="/templates">Sjablonen</Link>
+              <Link to="/templates">{SCREEN.importdefinities}</Link>
             </li>
             <li>
               <span aria-current="page">Sjabloon #{definitionId}</span>

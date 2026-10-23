@@ -19,7 +19,7 @@ describe('NotFoundPage', () => {
 
     expect(screen.getByRole('heading', { name: '404 — Pagina niet gevonden' })).toBeInTheDocument();
     expect(screen.getByText('De pagina die u zoekt, bestaat niet.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Naar de werkvoorraad' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: 'Naar Inlezingen' })).toHaveAttribute('href', '/');
     expect(container.querySelector('[style]')).toBeNull();
   });
 });

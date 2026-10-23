@@ -25,6 +25,7 @@ import { CreateBundleForm } from './CreateBundleForm.tsx';
 import pageCss from '../../components/Page.module.css';
 import styles from './BundleListPage.module.css';
 import { formatDateTime } from '../../format.ts';
+import { GROUP, PRODUCT, SCREEN } from '../../terms/navigation.ts';
 
 const NO_STATUS_FILTER = '';
 type StatusFilter = PublicationBundleStatus | typeof NO_STATUS_FILTER;
@@ -97,16 +98,16 @@ export function BundleListPage() {
     <div className={styles.page}>
       <header className={pageCss.pageHead}>
         <div className={pageCss.pageHeadText}>
-          <h1 className={pageCss.title}>Publicatiebundels</h1>
+          <h1 className={pageCss.title}>{SCREEN.publicaties}</h1>
           <ol className={pageCss.crumbs}>
             <li>
-              <span>CatalogImport</span>
+              <span>{PRODUCT}</span>
             </li>
             <li>
-              <span>Leveringen</span>
+              <span>{GROUP.publiceren}</span>
             </li>
             <li>
-              <span aria-current="page">Publicatiebundels</span>
+              <span aria-current="page">{SCREEN.publicaties}</span>
             </li>
           </ol>
         </div>

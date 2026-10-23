@@ -18,6 +18,7 @@ import { linkCheckHref } from '../check/linkCheck.ts';
 import { revisionDetailHref, type WizardData } from './wizardTypes.ts';
 import button from '../../../components/Button.module.css';
 import styles from './Wizard.module.css';
+import { SCREEN } from '../../../terms/navigation.ts';
 
 const THRESHOLD_KEYS = [
   'creationThresholdSharePercent',
@@ -126,7 +127,7 @@ export function SummaryStep({ data }: { data: WizardData }) {
             <Link className={button.primary} to={revisionDetailHref(definition.id, revision.id)} data-testid="wizard-next-step">
               Bekijk de versie bij Inrichting
             </Link>
-            {revision.status === 'ACTIVE' && <Link to="/upload">Naar Levering uploaden</Link>}
+            {revision.status === 'ACTIVE' && <Link to="/upload">Naar {SCREEN.bestandUploaden}</Link>}
           </div>
         </>
       )}

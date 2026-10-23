@@ -635,7 +635,7 @@ describe('NewSupplierWizardPage (NT-6)', () => {
     expect(posts(mock)).toHaveLength(0);
   });
 
-  it('alleen-lezen: in Inrichting is "Nieuwe leverancier en taak" uitgeschakeld mét reden', async () => {
+  it('alleen-lezen: in Leveranciers is "Leverancier toevoegen" uitgeschakeld mét reden', async () => {
     installServer(emptyState());
     render(
       <ActorProvider identity={testIdentityWith('catalogImport.read')}>
@@ -644,7 +644,7 @@ describe('NewSupplierWizardPage (NT-6)', () => {
         </MemoryRouter>
       </ActorProvider>,
     );
-    const button = await screen.findByRole('button', { name: 'Nieuwe leverancier en taak' });
+    const button = await screen.findByRole('button', { name: 'Leverancier toevoegen' });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('title', "U heeft het recht 'Beheren' (catalogImport.manage) niet.");
     expect(screen.getByTestId('new-supplier-blocked')).toHaveTextContent("U heeft het recht 'Beheren'");

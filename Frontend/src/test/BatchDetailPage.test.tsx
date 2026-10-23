@@ -170,7 +170,7 @@ describe('BatchDetailPage', () => {
   it('A-F1.1: toont kop, koppelingslabels en tellers, met "—" (nooit 0) voor niet vastgestelde tellers', async () => {
     renderAt('/batches/101');
 
-    expect(await screen.findByRole('heading', { name: 'Batch 101' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Inlezing 101' })).toBeInTheDocument();
     const facts = screen.getByTestId('batch-facts');
     expect(within(facts).getByText('LNK-1')).toBeInTheDocument();
     expect(within(facts).getByText(/SUP1 · LIB1/)).toBeInTheDocument();
@@ -219,26 +219,26 @@ describe('BatchDetailPage', () => {
 
     stubFetch({ batch: json({ ...BATCH, stagingPurgedAt: null }) });
     renderAt('/batches/101');
-    await screen.findByRole('heading', { name: 'Batch 101' });
+    await screen.findByRole('heading', { name: 'Inlezing 101' });
     expect(screen.queryByTestId('batch-staging-purged')).toBeNull();
     cleanup();
 
     stubFetch();
     renderAt('/batches/101');
-    await screen.findByRole('heading', { name: 'Batch 101' });
+    await screen.findByRole('heading', { name: 'Inlezing 101' });
     expect(screen.queryByTestId('batch-staging-purged')).toBeNull();
   });
 
   it('A-F1.3: zonder blokkade en nulmeting verschijnen die blokken niet', async () => {
     renderAt('/batches/101');
-    await screen.findByRole('heading', { name: 'Batch 101' });
+    await screen.findByRole('heading', { name: 'Inlezing 101' });
     expect(screen.queryByTestId('batch-blocked')).toBeNull();
     expect(screen.queryByTestId('batch-baseline')).toBeNull();
   });
 
   it('A-F1.4: de mutatielijst is een leeslijst en vraagt /batches/{id}/mutations op', async () => {
     renderAt('/batches/101');
-    await screen.findByRole('heading', { name: 'Batch 101' });
+    await screen.findByRole('heading', { name: 'Inlezing 101' });
     openTab('Mutaties');
     expect(await screen.findByText('Deze batch heeft (met deze filter) geen mutaties.')).toBeInTheDocument();
     const calls = vi.mocked(global.fetch).mock.calls.map((c) => c[0]?.toString() ?? '');
@@ -264,7 +264,7 @@ describe('BatchDetailPage', () => {
 
   it('A-F2.1: foutgroepen tonen het werkelijke aantal en filteren de problemen op groep', async () => {
     renderAt('/batches/101');
-    await screen.findByRole('heading', { name: 'Batch 101' });
+    await screen.findByRole('heading', { name: 'Inlezing 101' });
     openTab('Problemen');
 
     const groups = await screen.findByTestId('batch-issue-groups');
@@ -283,7 +283,7 @@ describe('BatchDetailPage', () => {
 
   it('A-F2.2: problemen tonen de voorbeeldwaarschuwing en een leveringsprobleem zonder rij', async () => {
     renderAt('/batches/101');
-    await screen.findByRole('heading', { name: 'Batch 101' });
+    await screen.findByRole('heading', { name: 'Inlezing 101' });
     openTab('Problemen');
     const issues = await screen.findByTestId('batch-issues');
     expect(within(issues).getByRole('note')).toHaveTextContent('voorbeeldrijen');
@@ -294,7 +294,7 @@ describe('BatchDetailPage', () => {
   it('A-F2.3: lege foutgroepen en problemen tonen een lege melding', async () => {
     stubFetch({ groups: page([]), issues: page([]) });
     renderAt('/batches/101');
-    await screen.findByRole('heading', { name: 'Batch 101' });
+    await screen.findByRole('heading', { name: 'Inlezing 101' });
     openTab('Problemen');
     expect(await screen.findByText('Deze batch heeft geen foutgroepen.')).toBeInTheDocument();
     expect(await screen.findByText('Geen problemen vastgesteld.')).toBeInTheDocument();
@@ -302,7 +302,7 @@ describe('BatchDetailPage', () => {
 
   it('A-F2.4: de levering toont bestanden, "—" voor onbekende verwachte waarden en niet-bewezen volledigheid', async () => {
     renderAt('/batches/101');
-    await screen.findByRole('heading', { name: 'Batch 101' });
+    await screen.findByRole('heading', { name: 'Inlezing 101' });
     openTab('Levering');
     const delivery = await screen.findByTestId('batch-delivery');
     expect(await within(delivery).findByText('prijzen.csv')).toBeInTheDocument();
@@ -314,16 +314,16 @@ describe('BatchDetailPage', () => {
   it('A-F2.5: een fout bij de levering (DELIVERY_NOT_FOUND) blijft beperkt tot die sectie', async () => {
     stubFetch({ delivery: json({ code: 'DELIVERY_NOT_FOUND', error: 'nope' }, 404) });
     renderAt('/batches/101');
-    await screen.findByRole('heading', { name: 'Batch 101' });
+    await screen.findByRole('heading', { name: 'Inlezing 101' });
     openTab('Levering');
     const delivery = await screen.findByTestId('batch-delivery');
     expect(await within(delivery).findByText('Levering niet gevonden')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Batch 101' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Inlezing 101' })).toBeInTheDocument();
   });
 
   it('UI-7: tabbladen wisselen op klik; inhoud van een tabblad laadt pas bij het openen', async () => {
     renderAt('/batches/101');
-    await screen.findByRole('heading', { name: 'Batch 101' });
+    await screen.findByRole('heading', { name: 'Inlezing 101' });
 
     const tabs = screen.getAllByRole('tab');
     expect(tabs.map((t) => t.textContent)).toEqual(['Overzicht', 'Problemen', 'Mutaties', 'Levering']);
@@ -345,7 +345,7 @@ describe('BatchDetailPage', () => {
 
   it('UI-7: pijltjestoetsen, Home en End verplaatsen focus en selectie (roving tabindex)', async () => {
     renderAt('/batches/101');
-    await screen.findByRole('heading', { name: 'Batch 101' });
+    await screen.findByRole('heading', { name: 'Inlezing 101' });
 
     const tab = (name: string) => screen.getByRole('tab', { name });
     tab('Overzicht').focus();
@@ -382,7 +382,7 @@ describe('BatchDetailPage', () => {
       return Promise.resolve(json(BATCH));
     }) as unknown as typeof fetch;
     renderAt('/batches/101');
-    await screen.findByRole('heading', { name: 'Batch 101' });
+    await screen.findByRole('heading', { name: 'Inlezing 101' });
     openTab('Problemen');
     const groups = await screen.findByTestId('batch-issue-groups');
     expect(await within(groups).findByText('Onverwachte serverfout')).toBeInTheDocument();

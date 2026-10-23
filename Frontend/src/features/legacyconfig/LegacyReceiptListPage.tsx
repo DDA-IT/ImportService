@@ -26,6 +26,7 @@ import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
 import { term } from '../../terms/index.ts';
 import pageCss from '../../components/Page.module.css';
 import styles from './LegacyConfig.module.css';
+import { SCREEN } from '../../terms/navigation.ts';
 
 const NO_STATUS_FILTER = '';
 type StatusFilter = LegacyReceiptStatus | typeof NO_STATUS_FILTER;
@@ -56,7 +57,7 @@ function Crumbs() {
         <span>Inrichting</span>
       </li>
       <li>
-        <span aria-current="page">Overname uit legacy</span>
+        <span aria-current="page">{SCREEN.overnameUitLegacy}</span>
       </li>
     </ol>
   );

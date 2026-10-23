@@ -53,6 +53,7 @@ import {
 import button from '../../../components/Button.module.css';
 import pageCss from '../../../components/Page.module.css';
 import styles from './Wizard.module.css';
+import { GROUP, PRODUCT, SCREEN } from '../../../terms/navigation.ts';
 
 const ALL_STEPS: WizardStep[] = [1, 2, 3, 4, 5, 6];
 
@@ -322,16 +323,16 @@ export function NewSupplierWizardPage() {
     <div className={styles.page}>
       <header className={pageCss.pageHead}>
         <div className={pageCss.pageHeadText}>
-          <h1 className={pageCss.title}>Nieuwe leverancier en taak</h1>
+          <h1 className={pageCss.title}>{SCREEN.leverancierToevoegen}</h1>
           <ol className={pageCss.crumbs}>
             <li>
-              <span>CatalogImport</span>
+              <span>{PRODUCT}</span>
             </li>
             <li>
-              <Link to="/setup">Inrichting</Link>
+              <Link to="/setup">{GROUP.inrichting}</Link>
             </li>
             <li>
-              <span aria-current="page">Nieuwe leverancier en taak</span>
+              <span aria-current="page">{SCREEN.leverancierToevoegen}</span>
             </li>
           </ol>
         </div>

@@ -34,6 +34,7 @@ import { TrialReadSection } from './TrialReadSection.tsx';
 import button from '../../../components/Button.module.css';
 import pageCss from '../../../components/Page.module.css';
 import styles from './LinkCheckPage.module.css';
+import { SCREEN } from '../../../terms/navigation.ts';
 
 function parseId(value: string | null | undefined): number | null {
   if (value === null || value === undefined || !/^\d+$/.test(value)) {
@@ -150,7 +151,7 @@ function WhatNowSection({ hasActiveRevision }: { hasActiveRevision: boolean }) {
       {hasActiveRevision ? (
         <div className={styles.actions}>
           <Link className={button.primary} to="/upload" data-testid="what-now-upload">
-            Naar Levering uploaden
+            Naar {SCREEN.bestandUploaden}
           </Link>
         </div>
       ) : (

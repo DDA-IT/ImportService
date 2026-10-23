@@ -25,6 +25,7 @@ import { IssueCaseActions } from './IssueCaseActions.tsx';
 import pageCss from '../../components/Page.module.css';
 import styles from './IssueCaseDetailPage.module.css';
 import { formatDateTime } from '../../format.ts';
+import { GROUP, PRODUCT, SCREEN } from '../../terms/navigation.ts';
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -43,7 +44,7 @@ function CaseOverview({ issueCase }: { issueCase: IssueCaseRow }) {
           <BackIcon />
         </Link>
         <div className={styles.detailId}>
-          <h1 className={pageCss.title}>Behandelgeval #{issueCase.id}</h1>
+          <h1 className={pageCss.title}>Afwijking #{issueCase.id}</h1>
           <div className={styles.chips}>
             <StatusBadge status={issueCase.status} domain="issueCaseStatus" />
             {issueCase.hasUnreviewedRecurrence && (
@@ -228,16 +229,16 @@ export function IssueCaseDetailPage() {
         <div className={pageCss.pageHeadText}>
           <ol className={pageCss.crumbs}>
             <li>
-              <span>CatalogImport</span>
+              <span>{PRODUCT}</span>
             </li>
             <li>
-              <span>Werk</span>
+              <span>{GROUP.beoordelen}</span>
             </li>
             <li>
-              <NavLink to="/issue-cases">Behandelgevallen</NavLink>
+              <NavLink to="/issue-cases">{SCREEN.afwijkingen}</NavLink>
             </li>
             <li>
-              <span aria-current="page">Geval {validId ? `#${caseId}` : ''}</span>
+              <span aria-current="page">Afwijking {validId ? `#${caseId}` : ''}</span>
             </li>
           </ol>
         </div>

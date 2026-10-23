@@ -875,7 +875,7 @@ describe('NT-11b — bundelschermen: geen ruwe codes als zichtbare tekst', () =>
         frozenReason: status === 'ASSEMBLING' ? null : 'Klaar',
       });
       const { unmount } = renderBundle('/bundles/42');
-      await screen.findByRole('heading', { name: 'BND-2026-001' });
+      await screen.findByRole('heading', { name: 'Publicatie #42' });
       await screen.findByText('Tellers');
       expectNoRawCodes(document.body, `overzicht bij status ${status}`);
       unmount();

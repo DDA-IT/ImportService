@@ -153,7 +153,7 @@ describe('IssueCaseDetailPage', () => {
   it('S2-F1.5: toont de kop, classificatie, tellers en de laatste beslissing', async () => {
     renderAt('/issue-cases/501');
 
-    expect(await screen.findByRole('heading', { name: 'Behandelgeval #501' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Afwijking #501' })).toBeInTheDocument();
     const facts = screen.getByTestId('issue-case-facts');
     // NT-11c: het Nederlandse woord staat in beeld, de technische code in de tooltip en onder "Technische details".
     const issueWord = within(facts).getByText('Prijs ontbreekt');
@@ -207,7 +207,7 @@ describe('IssueCaseDetailPage', () => {
   it('S2-F2.1: AWAITING_REVIEW toont Corrigeren/Afwijzen, geen Heropenen', async () => {
     stubFetch({ caseResponses: [json(issueCase({ status: 'AWAITING_REVIEW' }))] });
     renderAt('/issue-cases/501');
-    await screen.findByRole('heading', { name: 'Behandelgeval #501' });
+    await screen.findByRole('heading', { name: 'Afwijking #501' });
 
     expect(screen.getByRole('button', { name: 'Corrigeren' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Afwijzen' })).toBeInTheDocument();
@@ -219,7 +219,7 @@ describe('IssueCaseDetailPage', () => {
     async (status) => {
       stubFetch({ caseResponses: [json(issueCase({ status }))] });
       renderAt('/issue-cases/501');
-      await screen.findByRole('heading', { name: 'Behandelgeval #501' });
+      await screen.findByRole('heading', { name: 'Afwijking #501' });
 
       expect(screen.getByRole('button', { name: 'Heropenen' })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Corrigeren' })).not.toBeInTheDocument();
@@ -278,7 +278,7 @@ describe('IssueCaseDetailPage', () => {
     // De pagina herlaadt het geval na de actie: de nieuwe status is nu ook zichtbaar in het overzicht
     // (de StatusBadge naast de titel).
     await waitFor(() => {
-      const badge = screen.getByRole('heading', { name: 'Behandelgeval #501' }).parentElement!;
+      const badge = screen.getByRole('heading', { name: 'Afwijking #501' }).parentElement!;
       expect(within(badge).getByText('Gecorrigeerd')).toBeInTheDocument();
     });
   });
@@ -354,7 +354,7 @@ describe('IssueCaseDetailPage', () => {
   it('S2-F2.6: zonder recht MANAGE zijn de acties zichtbaar maar uitgeschakeld, met reden', async () => {
     stubFetch({ caseResponses: [json(issueCase({ status: 'AWAITING_REVIEW' }))] });
     renderAt('/issue-cases/501', [PERMISSION_READ]);
-    await screen.findByRole('heading', { name: 'Behandelgeval #501' });
+    await screen.findByRole('heading', { name: 'Afwijking #501' });
 
     const correctButton = screen.getByRole('button', { name: 'Corrigeren' });
     expect(correctButton).toBeDisabled();
