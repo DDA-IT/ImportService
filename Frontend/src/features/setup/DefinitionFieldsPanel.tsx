@@ -8,7 +8,8 @@
  * concept staat in de kopstrook de schakelaar Bekijken|Bewerken (standaard Bekijken; `?bewerken=1` zet Bewerken aan). In
  * Bewerken heeft elke rij van Herkenning en Basis een potlood dat een zijpaneel opent (`FieldPanel`, direct bewaren met
  * een PATCH). Een actieve of vervangen versie is alleen-lezen, met "Opvolger maken" (of "Open het concept" als er al een
- * concept is). Extra velden, filters en activeren blijven tot E2/E3/E4 bereikbaar via "Meer opties" (de bestaande
+ * concept is). E2: extra velden bewerken in het grid. E3: Filters als zinnen met Wijzigen, Verwijderen en Filter toevoegen (zijpaneel
+ * `FilterPanel`). Activeren en de overige instellingen blijven tot E4/E6 bereikbaar via "Meer opties" (de bestaande
  * `RevisionDetailSection`).
  */
 
@@ -25,6 +26,7 @@ import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { EDITOR_TEXT } from '../../terms/setupEditor.ts';
 import { CreateSuccessorAction } from './CreateSuccessorAction.tsx';
 import { FieldPanel, type PanelTarget } from './FieldPanel.tsx';
+import { FilterPanel, type FilterPanelMode } from './FilterPanel.tsx';
 import { MappingPanel, type MappingPanelMode } from './MappingPanel.tsx';
 import { RevisionDetailSection } from './RevisionDetailSection.tsx';
 import { RevisionReadView } from './RevisionReadView.tsx';
@@ -152,6 +154,8 @@ function RevisionFields({
   const [panel, setPanel] = useState<{ target: PanelTarget; opener: HTMLElement } | null>(null);
   // E2: het paneel voor een extra veld (wijzigen, toevoegen, koppelen); sleutel = het doelveld, nooit het id.
   const [mappingPanel, setMappingPanel] = useState<{ mode: MappingPanelMode; opener: HTMLElement } | null>(null);
+  // E3: het paneel om een filter toe te voegen of te wijzigen.
+  const [filterPanel, setFilterPanel] = useState<{ mode: FilterPanelMode; opener: HTMLElement } | null>(null);
   const [saved, setSaved] = useState<string[] | null>(null);
 
   const detail = useQuery(`supplier-revision-read:${definition.id}:${revision.id}`, (signal) =>
@@ -180,6 +184,7 @@ function RevisionFields({
     setSaved(null);
     setPanel(null);
     setMappingPanel(null);
+    setFilterPanel(null);
     onEditingChange(next);
   }
 
@@ -254,28 +259,50 @@ function RevisionFields({
           onEditRow={(key, opener) => {
             setSaved(null);
             setMappingPanel(null);
+            setFilterPanel(null);
             setPanel({ target: { kind: 'row', key }, opener });
           }}
           onEditUppercase={(opener) => {
             setSaved(null);
             setMappingPanel(null);
+            setFilterPanel(null);
             setPanel({ target: { kind: 'uppercase' }, opener });
           }}
           onEditMapping={(code, opener) => {
             setSaved(null);
             setPanel(null);
+            setFilterPanel(null);
             setMappingPanel({ mode: { kind: 'edit', code }, opener });
           }}
           onAddField={(opener) => {
             setSaved(null);
             setPanel(null);
+            setFilterPanel(null);
             setMappingPanel({ mode: { kind: 'add', code: null }, opener });
           }}
           onMapField={(code, opener) => {
             setSaved(null);
             setPanel(null);
+            setFilterPanel(null);
             setMappingPanel({ mode: { kind: 'add', code }, opener });
           }}
+          onAddFilter={(opener) => {
+            setSaved(null);
+            setPanel(null);
+            setMappingPanel(null);
+            setFilterPanel({ mode: { kind: 'add' }, opener });
+          }}
+          onEditFilter={(filter, opener) => {
+            setSaved(null);
+            setPanel(null);
+            setMappingPanel(null);
+            setFilterPanel({ mode: { kind: 'edit', filter }, opener });
+          }}
+          onFiltersChanged={() => {
+            setSaved([]);
+            afterChange();
+          }}
+          onReload={afterChange}
         />
       )}
       {extra?.(revision)}
@@ -308,6 +335,22 @@ function RevisionFields({
             setSaved([]);
             afterChange();
           }}
+        />
+      )}
+
+      {filterPanel !== null && detailData !== null && editingNow && (
+        <FilterPanel
+          key={filterPanel.mode.kind === 'edit' ? `edit:${filterPanel.mode.filter.id}` : 'add'}
+          revision={detailData}
+          mode={filterPanel.mode}
+          opener={filterPanel.opener}
+          onClose={() => setFilterPanel(null)}
+          onSaved={() => {
+            setFilterPanel(null);
+            setSaved([]);
+            afterChange();
+          }}
+          onChanged={afterChange}
         />
       )}
 

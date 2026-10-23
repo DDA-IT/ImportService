@@ -47,8 +47,8 @@ export const EDITOR_TEXT = {
         ? 'Deze versie is vervangen en kan niet gewijzigd worden.'
         : 'Deze versie kan niet gewijzigd worden.',
   openDraft: (n: number | null) => (n === null ? 'Open het concept' : `Open het concept (versie ${n})`),
-  moreOptions: 'Meer opties: extra velden, filters en activeren',
-  moreOptionsHint: 'Extra velden en filters beheert u hier nog in de uitgebreide weergave; daar activeert u het concept ook.',
+  moreOptions: 'Meer opties: activeren en overige instellingen',
+  moreOptionsHint: 'Het concept activeert u, en de overige instellingen wijzigt u, nog in de uitgebreide weergave.',
   editRowLabel: (field: string) => `Wijzigen: ${field}`,
   saved: 'Bewaard in het concept',
 
@@ -191,4 +191,114 @@ export const MAPPING_TEXT = {
   vkpDiffers: 'Verschilt',
   expand: 'Uitklappen',
   collapse: 'Inklappen',
+} as const;
+
+/**
+ * E3 — de woorden van de sectie Filters (zinnen), het zijpaneel om een filter toe te voegen of te wijzigen en de
+ * ankerchips bovenaan "Bestand en velden" (beslissingslog 2026-10-23 "Nieuwe bewerkervaring", mock
+ * `docs/mock/setup-redesign-mock.html`). De namen van de uitkomsten en vergelijkingen blijven die van het woordenboek
+ * (`filterOutcome`, `filterOperator`); hier staan de zinsdelen en de keuzes van "Meer".
+ */
+export const FILTER_TEXT = {
+  heading: 'Filters',
+  none: 'Geen filters: alle regels worden verwerkt.',
+  heads: {
+    EXCLUDE: 'Sla regels over waar',
+    REJECT: 'Verwerp regels waar',
+    INCLUDE: 'Neem alleen regels mee waar',
+  },
+  unknownHead: 'Pas een filter toe op regels waar',
+  column: (reference: string, kind: string) => (kind === 'COLUMN_INDEX' ? `kolom ${reference}` : `kolom '${reference}'`),
+  isEmpty: 'is leeg',
+  valueQuoted: (value: string) => `"${value}"`,
+  and: ' én ',
+  groupSuffix: '(alle voorwaarden samen)',
+  suffixes: {
+    caseSensitive: 'hoofdlettergevoelig',
+    caseSensitiveSome: 'hoofdlettergevoelig bij sommige voorwaarden',
+    noTrim: 'spaties blijven staan',
+    nullBehaviour: {
+      REJECT: 'lege cel: regel verwerpen',
+      COMPARE_AS_EMPTY: 'lege cel: telt als lege tekst',
+    },
+    missingColumn: {
+      EXCLUDE: 'ontbrekende kolom: alle regels overslaan',
+      REJECT: 'ontbrekende kolom: alle regels verwerpen',
+    },
+  },
+  rowLabel: (n: number) => `filter ${n}`,
+  groupLabel: (n: number) => `uitsluitingsgroep ${n}`,
+  change: 'Wijzigen',
+  changeLabel: (what: string) => `Wijzigen: ${what}`,
+  remove: 'Verwijderen',
+  removeLabel: (what: string) => `Verwijderen: ${what}`,
+  add: 'Filter toevoegen',
+  removeTitle: 'Filter verwijderen?',
+  removeGroupTitle: 'Uitsluitingsgroep verwijderen?',
+  removeBody: 'Dit filter wordt uit dit concept verwijderd. Andere versies blijven ongemoeid.',
+  removeGroupBody: 'Alle voorwaarden van deze groep worden uit dit concept verwijderd. Andere versies blijven ongemoeid.',
+  removeBookmarkNote:
+    'Steunt een invulpunt van dit concept nog op dit filter, dan weigert de server en wordt er niets verwijderd.',
+  removeConfirm: 'Verwijderen',
+  removeKeep: 'Behouden',
+  removePartial: (done: number, total: number) =>
+    `Er zijn ${done} van de ${total} voorwaarden verwijderd; de rest staat nog in de groep. Verwijder de resterende voorwaarden zelf of maak de groep opnieuw aan.`,
+
+  // Zijpaneel
+  panelAddTitle: 'Filter toevoegen',
+  panelEditTitle: (n: number) => `Wijzigen: filter ${n}`,
+  previewLabel: 'Zo leest het filter',
+  outcomeLabel: 'Uitkomst',
+  columnNumberLabel: 'Kolomnummer',
+  columnNameLabel: 'Kolomnaam',
+  columnNumberHint: 'Het nummer van de kolom in het bestand (de eerste kolom is 1).',
+  columnNameHint: 'De naam van de kolom, zoals die in de kopregel van het bestand staat.',
+  operatorLabel: 'Vergelijking',
+  valueLabel: 'Waarde',
+  valueHint: 'Waarmee de inhoud van de kolom vergeleken wordt. Voor een lege cel gebruikt u een uitsluitingsgroep.',
+  more: 'Meer',
+  caseSensitiveLabel: 'Hoofdlettergevoelig',
+  nullBehaviourLabel: 'Als de cel leeg is',
+  nullBehaviourOptions: {
+    EXCLUDE: 'De regel overslaan',
+    REJECT: 'De regel verwerpen',
+    COMPARE_AS_EMPTY: 'Vergelijken als lege tekst',
+  },
+  missingColumnLabel: 'Als de kolom niet in het bestand staat',
+  missingColumnOptions: {
+    BLOCK: 'De levering blokkeren',
+    EXCLUDE: 'Alle regels overslaan',
+    REJECT: 'Alle regels verwerpen',
+  },
+  problems: 'Los eerst dit op:',
+  problemColumn: 'Vul de kolom in.',
+  problemColumnLong: 'De kolom is te lang (hoogstens 50 tekens).',
+  problemValue: 'Vul de waarde in.',
+  problemValueLong: 'De waarde is te lang (hoogstens 500 tekens).',
+  bothExist:
+    'Het nieuwe filter is toegevoegd, maar het oude kon niet verwijderd worden. Beide filters staan nu in het concept: ' +
+    'verwijder het oude filter zelf, anders gelden ze allebei.',
+  close: 'Sluiten',
+} as const;
+
+/** E3 — de ankerchips en de kleine secties onder het grid. */
+export const SECTION_TEXT = {
+  navLabel: 'Naar sectie',
+  chips: {
+    fields: (n: number) => `Velden ${n}`,
+    filters: (n: number) => `Filters ${n}`,
+    translations: (n: number) => `Vertalingen ${n}`,
+    file: 'Bestandsopbouw',
+    thresholds: 'Drempels',
+    bookmarks: (n: number) => `Invulpunten ${n}`,
+  },
+  translationsNone: 'Geen vertalingen in deze versie.',
+  translationMeta: (count: number, keep: boolean) =>
+    `${count} ${count === 1 ? 'waarde' : 'waarden'} · bij een onbekende waarde: ${keep ? 'onveranderd laten' : 'verwerpen'}`,
+  changeAtField: 'Wijzigen bij het veld',
+  changeAtFieldLabel: (field: string) => `Wijzigen bij het veld: ${field}`,
+  thresholdsSummary: 'Drempels en prijscontrole bekijken',
+  bookmarksHeading: 'Invulpunten',
+  bookmarksNone: 'Deze versie heeft geen invulpunten.',
+  bookmarksNote: 'Invulpunten bekijkt u hier alleen; de waarden stelt u per koppeling in.',
 } as const;

@@ -379,3 +379,35 @@
 .subRow td:first-child {
   padding-left: var(--spacing-8, 32px);
 }
+
+/* --- E3: ankerchips en de sectie Filters (zinnen) --- */
+.anchorChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-3);
+}
+
+.sentence {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.sentenceSuffix {
+  margin-left: var(--spacing-2);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.sectionActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-3);
+}
+
+.thresholds summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}

@@ -1,24 +1,24 @@
 /**
  * Het leesbare beeld van één versie van een importdefinitie, voor het tabblad "Bestand en velden" van het
- * leveranciersdetail (R1, mock `vdSection`): Bestandsopbouw, het Velden-grid (Herkenning van het artikel, Basis, Extra
- * velden; `FieldsGrid`, E1: dezelfde lay-out om te lezen en te bewerken), Filters, Vertalingen. Toont enkel wat
- * `RevisionDetail` levert; de woorden komen uit hetzelfde woordenboek en dezelfde bouwstenen als `RevisionDetailSection`
- * (`revisionDetailParts.tsx`). Extra velden bewerken kan sinds E2 in het grid (`MappingPanel`); filters blijven tot E3 in `RevisionDetailSection`.
+ * leveranciersdetail (R1, mock `vdSection`). E3 (beslissingslog 2026-10-23 "Nieuwe bewerkervaring"): ankerchips bovenaan, dan
+ * het Velden-grid (`FieldsGrid`, E1/E2: dezelfde lay-out om te lezen en te bewerken), Filters als zinnen, Vertalingen,
+ * Bestandsopbouw, Drempels en Invulpunten (`EditorSections`). Toont enkel wat `RevisionDetail` levert; de woorden komen uit
+ * hetzelfde woordenboek en dezelfde bouwstenen als `RevisionDetailSection`.
  */
 
 import type { ReactNode } from 'react';
-import type { RevisionDetail, RevisionLegacyOrigin } from '../../api/types.ts';
+import type { FilterView, RevisionDetail, RevisionLegacyOrigin } from '../../api/types.ts';
 import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { Term } from '../../terms/Term.tsx';
-import { groupFilters } from './filterGroupModel.ts';
 import { LegacyOriginNotice, LegacyTechnicalDetails, usableLegacyOrigin } from './LegacyOriginParts.tsx';
+import { AnchorChips, BookmarksSection, FiltersSection, SECTION_IDS, ThresholdsSection, TranslationsSection } from './EditorSections.tsx';
 import { FieldsGrid } from './FieldsGrid.tsx';
 import type { CoreRowKey } from './fieldsGridModel.ts';
-import { FieldKeyTerm, FilterSummary, show } from './revisionDetailParts.tsx';
 import styles from './SetupScreens.module.css';
-import detailStyles from './RevisionDetailSection.module.css';
 
 const TEXT = SUPPLIER_TEXT;
+
+function noop() {}
 
 function Kv({ field, children }: { field: string; children: ReactNode }) {
   return (
@@ -37,8 +37,8 @@ function Unset({ children }: { children: string }) {
 
 export function FileSection({ revision }: { revision: RevisionDetail }) {
   return (
-    <section className={styles.vdSection} aria-labelledby="vd-file" data-testid="read-file">
-      <h3 id="vd-file">{TEXT.sections.file}</h3>
+    <section id={SECTION_IDS.file} className={styles.vdSection} aria-labelledby="vd-file" data-testid="read-file">
+      <h3 id="vd-file" tabIndex={-1}>{TEXT.sections.file}</h3>
       <dl className={styles.dl}>
         <Kv field="structureFormat">
           <Term domain="structureFormat" code={revision.structureFormat} unknownLabel="Ander formaat" />
@@ -65,83 +65,6 @@ export function FileSection({ revision }: { revision: RevisionDetail }) {
   );
 }
 
-function FiltersSection({ revision }: { revision: RevisionDetail }) {
-  return (
-    <section className={styles.vdSection} aria-labelledby="vd-filters" data-testid="read-filters">
-      <h3 id="vd-filters">{TEXT.sections.filters}</h3>
-      {revision.filters.length === 0 ? (
-        <p className={styles.rowMeta}>{TEXT.noFilters}</p>
-      ) : (
-        <ul className={styles.rowList}>
-          {groupFilters(revision.filters).map((entry) =>
-            entry.kind === 'single' ? (
-              <li key={entry.filter.id}>
-                <div className={detailStyles.listItem}>
-                  <FilterSummary filter={entry.filter} />
-                </div>
-              </li>
-            ) : (
-              <li key={`group-${entry.group}`} className={styles.filterGroup}>
-                <span className={detailStyles.filterGroupTitle}>
-                  Uitsluitingsgroep {entry.group}: alle voorwaarden samen
-                </span>
-                <ul className={styles.rowList}>
-                  {entry.filters.map((filter) => (
-                    <li key={filter.id}>
-                      <div className={detailStyles.listItem}>
-                        <FilterSummary filter={filter} />
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ),
-          )}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function TranslationsSection({ revision }: { revision: RevisionDetail }) {
-  const head = TEXT.translationHead;
-  const withMap = revision.mappings.filter((mapping) => (mapping.valueMap?.length ?? 0) > 0);
-  return (
-    <section className={styles.vdSection} aria-labelledby="vd-translations" data-testid="read-translations">
-      <h3 id="vd-translations">{TEXT.sections.translations}</h3>
-      {withMap.length === 0 ? (
-        <p className={styles.rowMeta}>{TEXT.noTranslations}</p>
-      ) : (
-        withMap.map((mapping) => (
-          <div key={mapping.id} className={styles.mapCard}>
-            <h4>
-              <FieldKeyTerm code={mapping.targetFieldCode} />
-            </h4>
-            <div className={styles.tableWrap}>
-              <table className={`${styles.table} ${styles.stack}`}>
-                <thead>
-                  <tr>
-                    <th>{head.source}</th>
-                    <th>{head.target}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(mapping.valueMap ?? []).map((entry, position) => (
-                    <tr key={`${position}-${entry.source}`}>
-                      <td data-label={head.source}>{show(entry.source)}</td>
-                      <td data-label={head.target}>{show(entry.target)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))
-      )}
-    </section>
-  );
-}
-
 export type RevisionReadViewProps = {
   revision: RevisionDetail;
   /** De legacy-herkomst van deze versie (lui geladen); afwezig zolang ze er niet is. */
@@ -158,6 +81,13 @@ export type RevisionReadViewProps = {
   onEditMapping?: (code: string, opener: HTMLElement) => void;
   onAddField?: (opener: HTMLElement) => void;
   onMapField?: (code: string, opener: HTMLElement) => void;
+  /** E3: filters in de sectie Filters. */
+  onAddFilter?: (opener: HTMLElement) => void;
+  onEditFilter?: (filter: FilterView, opener: HTMLElement) => void;
+  /** Na een geslaagde verwijdering van een filter: melding en herladen. */
+  onFiltersChanged?: () => void;
+  /** Enkel herladen (groepsdialoog, deels mislukte verwijdering). */
+  onReload?: () => void;
 };
 
 export function RevisionReadView({
@@ -171,24 +101,40 @@ export function RevisionReadView({
   onEditMapping,
   onAddField,
   onMapField,
+  onAddFilter,
+  onEditFilter,
+  onFiltersChanged,
+  onReload,
 }: RevisionReadViewProps) {
   const legacy = usableLegacyOrigin(legacyOrigin);
   return (
     <div data-testid="revision-read-view">
       <LegacyOriginNotice origin={legacyOrigin} failed={legacyFailed} originVersionNumber={legacyOriginVersionNumber} />
-      <FileSection revision={revision} />
-      <FieldsGrid
+      <AnchorChips revision={revision} />
+      <div id={SECTION_IDS.fields}>
+        <FieldsGrid
+          revision={revision}
+          legacy={legacy}
+          editing={editing}
+          onEditRow={onEditRow}
+          onEditUppercase={onEditUppercase}
+          onEditMapping={onEditMapping}
+          onAddField={onAddField}
+          onMapField={onMapField}
+        />
+      </div>
+      <FiltersSection
         revision={revision}
-        legacy={legacy}
         editing={editing}
-        onEditRow={onEditRow}
-        onEditUppercase={onEditUppercase}
-        onEditMapping={onEditMapping}
-        onAddField={onAddField}
-        onMapField={onMapField}
+        onAdd={onAddFilter}
+        onEdit={onEditFilter}
+        onChanged={onFiltersChanged ?? noop}
+        onReload={onReload ?? noop}
       />
-      <FiltersSection revision={revision} />
-      <TranslationsSection revision={revision} />
+      <TranslationsSection revision={revision} editing={editing} onEditMapping={onEditMapping} />
+      <FileSection revision={revision} />
+      <ThresholdsSection revision={revision} />
+      <BookmarksSection revision={revision} />
       {legacy !== null && <LegacyTechnicalDetails origin={legacy} />}
     </div>
   );
