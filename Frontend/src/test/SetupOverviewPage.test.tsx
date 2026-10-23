@@ -245,6 +245,72 @@ describe('dashboard Leveranciers', () => {
   });
 });
 
+describe('dashboard: tweede fase met de controle van de koppelingen (F4)', () => {
+  function readinessCalls(calls: { urls: string[] }): string[] {
+    return calls.urls.filter((url) => url.includes('/import-links/readiness'));
+  }
+
+  it('een koppeling die de controle niet doorstaat haalt de leverancier uit "Klaar" en komt als reden in het paneel', async () => {
+    const state = dashboardState();
+    state.readiness = {
+      501: {
+        ready: false,
+        problems: [{ code: 'NO_ACTIVE_REVISION', status: 'PROBLEM', subject: { type: 'DEFINITION', id: 10 }, detail: 'x' }],
+      },
+    };
+    const { calls } = await dashboard(state);
+    // Alleen koppelingen van eigen definities van actieve organisaties (501 en 502).
+    expect(readinessCalls(calls)).toHaveLength(1);
+    expect(decodeURIComponent(readinessCalls(calls)[0]!)).toContain('linkIds=501,502');
+    const row = within(screen.getByTestId('source-organisations')).getByTestId('supplier-row-1');
+    expect(row).toHaveTextContent('Nog niet klaar');
+    expect(screen.getByTestId('setup-card-count-ready')).toHaveTextContent('0');
+    expect(
+      within(screen.getByTestId('not-ready-rows')).getByText(
+        'De controle van de koppeling is niet geslaagd: er is nog geen versie in gebruik',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('link-checks-unavailable')).not.toBeInTheDocument();
+  });
+
+  it('250 koppelingen geven 3 verzoeken (100, 100, 50)', async () => {
+    const state = emptySetupState();
+    state.organisations = [organisation(1)];
+    state.definitions = [definition(10, 1, { activeRevisionId: 99 })];
+    state.links = Array.from({ length: 250 }, (_, index) => link(index + 1, 10));
+    state.tasks = [task(7, 1, 10, { activeRevisionId: 99 })];
+    const { calls } = await dashboard(state);
+    const requests = readinessCalls(calls);
+    expect(requests).toHaveLength(3);
+    const sizes = requests.map((url) => decodeURIComponent(url.split('linkIds=')[1]!).split(',').length).sort((x, y) => y - x);
+    expect(sizes).toEqual([100, 100, 50]);
+    expect(within(screen.getByTestId('source-organisations')).getByTestId('supplier-row-1')).toHaveTextContent('Klaar');
+  });
+
+  it('zonder koppelingen van eigen definities is er geen tweede fase', async () => {
+    const state = emptySetupState();
+    state.organisations = [organisation(1)];
+    const { calls } = await dashboard(state);
+    expect(readinessCalls(calls)).toHaveLength(0);
+    expect(screen.queryByTestId('link-checks-unavailable')).not.toBeInTheDocument();
+  });
+
+  it('mislukt de controle, dan blijft de heuristiek en staat er een niet-blokkerende melding', async () => {
+    installSetupServer(dashboardState(), (url) =>
+      url.includes('/import-links/readiness') ? jsonResponse({ error: 'stuk', code: 'INTERNAL' }, 500) : null,
+    );
+    renderRoutes('/setup');
+    await screen.findByTestId('setup-cards');
+    expect(await screen.findByTestId('link-checks-unavailable')).toHaveTextContent(
+      'De controle van de koppelingen kon niet geladen worden',
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // Heuristiek: Vrooam blijft "Klaar" (actieve taak met actieve versie).
+    expect(within(screen.getByTestId('source-organisations')).getByTestId('supplier-row-1')).toHaveTextContent('Klaar');
+    expect(screen.getByTestId('setup-card-count-ready')).toHaveTextContent('1');
+  });
+});
+
 describe('oude adresvorm ?definitionId=&revisionId=', () => {
   it('verwijst door naar Bestand en velden van de juiste leverancier, met het bewerkblok open', async () => {
     const state = dashboardState();

@@ -35,6 +35,7 @@ export const REASON_TEXT: Record<NotReadyReasonKind, string> = {
   NO_ACTIVE_TASK: 'Alle taken staan uit',
   NO_LINK: 'Nog geen koppeling',
   NO_DEFINITION: 'Nog geen importdefinitie',
+  LINK_CHECK_FAILED: 'De controle van de koppeling is niet geslaagd',
 };
 
 export const DASHBOARD_TEXT = {
@@ -45,6 +46,8 @@ export const DASHBOARD_TEXT = {
     'hoe een leveranciersbestand gelezen wordt (in legacy de importsoort). Een herbruikbare importdefinitie wordt door ' +
     'meerdere leveranciers of koppelingen gedeeld.',
   loading: 'Bezig met laden…',
+  linkChecksUnavailable:
+    'De controle van de koppelingen kon niet geladen worden. De gereedheid hieronder is een inschatting op basis van versies en taken; laad de pagina opnieuw om de controle te herhalen.',
   gridLabel: 'Samenvatting van de leveranciers',
   show: 'Tonen',
   hide: 'Verbergen',
@@ -177,7 +180,16 @@ export const SUPPLIER_TEXT = {
     check: 'Controleren',
   },
   groupTitle: 'Gegevens',
-  keyValue: { code: 'Code', kind: 'Soort', status: 'Status' },
+  keyValue: {
+    code: 'Code',
+    kind: 'Soort',
+    status: 'Status',
+    library: 'Bibliotheek',
+    charset: 'Tekenset',
+    password: 'Wachtwoord',
+  },
+  charsetLoading: '…',
+  charsetUnknown: '—',
   unset: 'Niet ingesteld',
   statusActive: 'Actief',
   statusInactive: 'Inactief',

@@ -8,14 +8,16 @@
  */
 
 import { Link } from 'react-router-dom';
-import type { TaskRow } from '../../api/types.ts';
+import type { LinkReadinessSummary, TaskRow } from '../../api/types.ts';
 import button from '../../components/Button.module.css';
 import pageCss from '../../components/Page.module.css';
 import { ToneBadge } from '../../components/StatusBadge.tsx';
 import { formatDateTime } from '../../format.ts';
+import { CREDENTIAL_LABEL, CREDENTIAL_STATE_LABEL } from '../../terms/linkReadiness.ts';
 import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { Term } from '../../terms/Term.tsx';
 import { linkCheckHref } from './check/linkCheck.ts';
+import { LinkReadinessBadge, useLinkReadiness } from './linkReadiness.tsx';
 import { AddTaskAction, ContinueSetupAction } from './SetupActions.tsx';
 import { isOwnDefinition, type DefinitionModel, type LinkModel } from './setupDashboardModel.ts';
 import { useSupplierDetailContext } from './SupplierDetailPage.tsx';
@@ -48,7 +50,18 @@ function TaskLine({ task, definitionHasActiveVersion }: { task: TaskRow; definit
   );
 }
 
-function LinkCard({ entry, definition, organisationId }: { entry: LinkModel; definition: DefinitionModel['definition']; organisationId: number }) {
+function LinkCard({
+  entry,
+  definition,
+  organisationId,
+  readiness,
+}: {
+  entry: LinkModel;
+  definition: DefinitionModel['definition'];
+  organisationId: number;
+  /** De uitkomst van de servercontrole; `null` zolang ze laadt of mislukte (dan de schatting uit versies en taken). */
+  readiness: LinkReadinessSummary | null;
+}) {
   const { link, tasks } = entry;
   const own = isOwnDefinition(definition);
   const hasActiveVersion = definition.activeRevisionId !== null;
@@ -66,8 +79,15 @@ function LinkCard({ entry, definition, organisationId }: { entry: LinkModel; def
       <p className={styles.rowMeta}>
         {TEXT.linkLibrary(link.libraryCode)} · {TEXT.linkSupplier(link.supplierCode)}
       </p>
+      <p className={styles.rowMeta} data-testid={`link-credential-${link.id}`}>
+        {CREDENTIAL_LABEL}: {CREDENTIAL_STATE_LABEL[link.credentialState]}
+      </p>
       <p>
-        <ToneBadge label={ready ? 'Klaar' : 'Nog niet klaar'} tone={ready ? 'ready' : 'awaiting'} />
+        {readiness !== null ? (
+          <LinkReadinessBadge summary={readiness} testId={`link-readiness-${link.id}`} />
+        ) : (
+          <ToneBadge label={ready ? 'Klaar' : 'Nog niet klaar'} tone={ready ? 'ready' : 'awaiting'} />
+        )}
       </p>
       <div data-testid={`link-tasks-${link.id}`}>
         <h4 className={`${styles.overline} ${styles.overlineTight}`}>
@@ -105,6 +125,10 @@ export function SupplierLinksTab() {
   const { bundle } = useSupplierDetailContext();
   const { supplier } = bundle;
   const organisationId = supplier.organisation.id;
+  const readiness = useLinkReadiness(
+    supplier.definitions.flatMap(({ links }) => links.map((entry) => entry.link.id)),
+    `supplier-${organisationId}`,
+  );
 
   if (supplier.ownDefinitions.length === 0 && supplier.linkCount === 0) {
     return (
@@ -140,7 +164,13 @@ export function SupplierLinksTab() {
           ) : (
             <div className={styles.linkGrid}>
               {links.map((entry) => (
-                <LinkCard key={entry.link.id} entry={entry} definition={definition} organisationId={organisationId} />
+                <LinkCard
+                  key={entry.link.id}
+                  entry={entry}
+                  definition={definition}
+                  organisationId={organisationId}
+                  readiness={readiness?.get(entry.link.id) ?? null}
+                />
               ))}
             </div>
           )}

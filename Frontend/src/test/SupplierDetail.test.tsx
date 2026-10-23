@@ -91,6 +91,13 @@ function supplierState(): SetupState {
   state.definitions = [definition(10, 1, { name: 'Vrooam artikelbestand', activeRevisionId: 99 })];
   state.links = [link(501, 10, { code: 'VROOAM', name: 'Vrooam koppeling' }), link(502, 10, { code: 'VROOAM2', name: 'Tweede koppeling' })];
   state.tasks = [task(7, 501, 10, { name: 'Handmatige levering', activeRevisionId: 99, lastRunFinishedAt: '2026-10-20T10:00:00Z' })];
+  // F4: koppeling 502 heeft geen taak en keurt de servercontrole dus af.
+  state.readiness = {
+    502: {
+      ready: false,
+      problems: [{ code: 'LINK_HAS_NO_TASK', status: 'PROBLEM', subject: { type: 'LINK', id: 502 }, detail: 'Link has no task' }],
+    },
+  };
   state.revisions[10] = [
     {
       id: 100,
@@ -208,6 +215,59 @@ describe('tab Overzicht', () => {
     expect(data).toHaveTextContent('Actief');
   });
 
+  it('Gegevens: bibliotheek uit de koppelingen, tekenset van de actieve versie en het wachtwoord', async () => {
+    const state = supplierState();
+    state.links = [
+      link(501, 10, { code: 'VROOAM', libraryCode: '181', credentialState: 'NONE' }),
+      link(502, 10, { code: 'VROOAM2', libraryCode: '182', credentialState: 'STORED' }),
+      link(503, 10, { code: 'VROOAM3', libraryCode: '181', credentialState: 'REVOKED' }),
+    ];
+    state.details[99] = revisionDetail(99, 10, { revisionNumber: 3, status: 'ACTIVE', structureCharset: 'ISO-8859-1' });
+    await open('/setup/suppliers/1', state);
+    const data = screen.getByTestId('supplier-data');
+    expect(within(data).getByText('Bibliotheek').nextElementSibling).toHaveTextContent(/^181, 182$/);
+    await waitFor(() => expect(within(data).getByTestId('supplier-charset')).toHaveTextContent('ISO-8859-1'));
+    expect(within(data).getByText('Tekenset')).toBeInTheDocument();
+    // Eén bewaard wachtwoord is genoeg.
+    expect(within(data).getByTestId('supplier-credential')).toHaveTextContent(/^Veilig bewaard$/);
+    expect(data).not.toHaveTextContent('Opmerking');
+  });
+
+  it('Gegevens: standaardwaarden (tekenset UTF-8, geen wachtwoord) en ingetrokken zonder bewaard wachtwoord', async () => {
+    await open('/setup/suppliers/1');
+    const data = screen.getByTestId('supplier-data');
+    expect(within(data).getByText('Bibliotheek').nextElementSibling).toHaveTextContent(/^LIB1$/);
+    await waitFor(() => expect(within(data).getByTestId('supplier-charset')).toHaveTextContent(/^UTF-8$/));
+    expect(within(data).getByTestId('supplier-credential')).toHaveTextContent(/^Geen$/);
+    cleanup();
+    const revoked = supplierState();
+    revoked.links = [link(501, 10, { credentialState: 'REVOKED' }), link(502, 10, { credentialState: 'NONE' })];
+    await open('/setup/suppliers/1', revoked);
+    expect(within(screen.getByTestId('supplier-data')).getByTestId('supplier-credential')).toHaveTextContent(/^Ingetrokken$/);
+  });
+
+  it('Gegevens: zonder actieve versie is de tekenset "Niet ingesteld"; zonder koppelingen ook de bibliotheek', async () => {
+    const state = supplierState();
+    state.definitions = [definition(10, 1, { name: 'Vrooam artikelbestand', activeRevisionId: null })];
+    state.revisions[10] = [];
+    state.links = [];
+    state.tasks = [];
+    await open('/setup/suppliers/1', state);
+    const data = screen.getByTestId('supplier-data');
+    expect(within(data).getByText('Tekenset').nextElementSibling).toHaveTextContent('Niet ingesteld');
+    expect(within(data).getByText('Bibliotheek').nextElementSibling).toHaveTextContent('Niet ingesteld');
+    expect(within(data).getByTestId('supplier-credential')).toHaveTextContent(/^Geen$/);
+  });
+
+  it('Gegevens: een tekenset die niet geladen kan worden toont een streepje, de rest blijft staan', async () => {
+    const state = supplierState();
+    delete state.details[99];
+    await open('/setup/suppliers/1', state);
+    const data = screen.getByTestId('supplier-data');
+    await waitFor(() => expect(within(data).getByTestId('supplier-charset')).toHaveTextContent(/^—$/));
+    expect(data).toHaveTextContent('VROOAM');
+  });
+
   it('"Volgende stap" heeft precies één actie: het concept bekijken', async () => {
     await open('/setup/suppliers/1');
     const banner = screen.getByTestId('next-step');
@@ -308,7 +368,7 @@ describe('tab Bestand en velden', () => {
     const filters = within(view).getByTestId('read-filters');
     expect(filters).toHaveTextContent('STATUS');
     expect(filters).toHaveTextContent('GEBLOKKEERD');
-    expect(filters).toHaveTextContent('Overslaan');
+    expect(filters).toHaveTextContent("Sla regels over waar kolom 'STATUS' is gelijk aan \"GEBLOKKEERD\"");
 
     const translations = within(view).getByTestId('read-translations');
     expect(translations).toHaveTextContent('BOSCH');
@@ -471,7 +531,7 @@ describe('tab Koppelingen en taken', () => {
     expect(first).toHaveTextContent('VROOAM');
     expect(first).toHaveTextContent('Bibliotheek LIB1');
     expect(first).toHaveTextContent('Actief');
-    expect(first).toHaveTextContent('Klaar');
+    expect(await within(first).findByTestId('link-readiness-501')).toHaveTextContent(/^Klaar$/);
     const tasks = within(first).getByTestId('link-tasks-501');
     expect(within(tasks).getByTestId('task-7')).toHaveTextContent('Handmatige levering');
     expect(within(tasks).getByTestId('task-7')).toHaveTextContent('Handmatig');
@@ -483,11 +543,37 @@ describe('tab Koppelingen en taken', () => {
     );
 
     const second = screen.getByTestId('link-card-502');
-    expect(second).toHaveTextContent('Nog niet klaar');
+    await within(second).findByText('Niet klaar: er is nog geen taak');
     expect(within(second).getByTestId('continue-link-502')).toHaveAttribute(
       'href',
       '/setup/new?organisationId=1&definitionId=10&linkId=502',
     );
+  });
+
+  it('toont per koppeling het wachtwoord: veilig bewaard, ingetrokken of geen', async () => {
+    const state = supplierState();
+    state.links = [
+      link(501, 10, { code: 'VROOAM', name: 'Vrooam koppeling', credentialState: 'STORED' }),
+      link(502, 10, { code: 'VROOAM2', name: 'Tweede koppeling', credentialState: 'REVOKED' }),
+      link(503, 10, { code: 'VROOAM3', name: 'Derde koppeling', credentialState: 'NONE' }),
+    ];
+    state.readiness = {};
+    await open('/setup/suppliers/1/links', state);
+    expect(screen.getByTestId('link-credential-501')).toHaveTextContent('Wachtwoord: Veilig bewaard');
+    expect(screen.getByTestId('link-credential-502')).toHaveTextContent('Wachtwoord: Ingetrokken');
+    expect(screen.getByTestId('link-credential-503')).toHaveTextContent('Wachtwoord: Geen');
+  });
+
+  it('mislukt de servercontrole, dan blijft de schatting uit versies en taken zonder foutmelding', async () => {
+    installSetupServer(supplierState(), (url) =>
+      url.includes('/import-links/readiness') ? jsonResponse({ error: 'stuk', code: 'INTERNAL' }, 500) : null,
+    );
+    renderRoutes('/setup/suppliers/1/links');
+    const second = await screen.findByTestId('link-card-502');
+    expect(second).toHaveTextContent('Nog niet klaar');
+    expect(screen.getByTestId('link-card-501')).toHaveTextContent('Klaar');
+    expect(screen.queryByTestId('link-readiness-501')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('een taak van een importdefinitie zonder actieve versie is "nog niet klaar"', async () => {

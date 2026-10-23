@@ -6,7 +6,7 @@
  * `importDefinitionId` is additief (S1-B1): sluit de boom van scherm 1a tot op koppelingenniveau.
  */
 import { request, toQueryString } from './http.ts';
-import type { ImportLinkRow, LinkReadiness, PageResult } from './types.ts';
+import type { ImportLinkRow, LinkReadiness, LinkReadinessSummary, PageResult } from './types.ts';
 
 /** GET /import-links — CatalogImportImportLinkController.importLinks */
 export function listImportLinks(
@@ -32,4 +32,32 @@ export function listImportLinks(
  */
 export function getImportLinkReadiness(linkId: number, signal?: AbortSignal): Promise<LinkReadiness> {
   return request<LinkReadiness>(`/import-links/${linkId}/readiness`, { signal });
+}
+
+/** Het servermaximum aan koppelingen per aanroep van `GET /import-links/readiness`. */
+export const READINESS_BATCH_SIZE = 100;
+
+/**
+ * GET /import-links/readiness?linkIds=1,2 — CatalogImportImportLinkController (READ): de gereedheid van meerdere
+ * koppelingen in één verzoek, met dezelfde uitkomst als de enkelvoudige controle (`ready` + enkel de problemen).
+ * Het servermaximum is 100 id's per verzoek; meer id's worden hier in stukken van 100 gesplitst. Een lege lijst doet
+ * geen verzoek. Een fout van één stuk is een fout van het geheel (nooit een stil onvolledig antwoord).
+ *
+ * @throws {import('./http.ts').ApiError} 400 `READINESS_LINK_IDS_INVALID`; 404 `LINK_NOT_FOUND`; 403 `PERMISSION_DENIED`
+ */
+export async function listLinkReadiness(
+  ids: readonly number[],
+  signal?: AbortSignal,
+): Promise<LinkReadinessSummary[]> {
+  const unique = [...new Set(ids)];
+  const chunks: number[][] = [];
+  for (let start = 0; start < unique.length; start += READINESS_BATCH_SIZE) {
+    chunks.push(unique.slice(start, start + READINESS_BATCH_SIZE));
+  }
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      request<LinkReadinessSummary[]>(`/import-links/readiness${toQueryString({ linkIds: chunk.join(',') })}`, { signal }),
+    ),
+  );
+  return results.flat();
 }

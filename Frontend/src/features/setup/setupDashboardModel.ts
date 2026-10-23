@@ -7,7 +7,8 @@
  * Gereedheid van een leverancier:
  * - `INACTIVE`   — de organisatie is niet actief;
  * - `NOT_SET_UP` — geen eigen importdefinitie (herbruikbare definities tellen niet mee: die krijgen nooit een koppeling);
- * - `READY`      — er is een koppeling met een actieve taak waarvan de importdefinitie een actieve versie heeft;
+ * - `READY`      — er is een koppeling met een actieve taak waarvan de importdefinitie een actieve versie heeft en (als
+ *                  de serverchecks van F4 bekend zijn) die de controle van de server doorstaat;
  * - `NOT_READY`  — de rest.
  *
  * De redenen ({@link NotReadyReason}) staan los van de gereedheid: een actieve leverancier draagt al wat nog ontbreekt
@@ -35,14 +36,24 @@ export type NotReadyReasonKind =
   /** Een eigen importdefinitie zonder koppeling. */
   | 'NO_LINK'
   /** Een actieve leverancier zonder eigen importdefinitie. */
-  | 'NO_DEFINITION';
+  | 'NO_DEFINITION'
+  /**
+   * Een koppeling die er klaar uitziet (actieve versie en een actieve taak) maar de controle van de server (F4,
+   * `GET /import-links/readiness`) niet doorstaat. Enkel gezet als de tweede fase van het dashboard slaagde.
+   */
+  | 'LINK_CHECK_FAILED';
 
 export type NotReadyReason = {
   kind: NotReadyReasonKind;
   organisationId: number;
   definitionId?: number;
   linkId?: number;
+  /** Bij `LINK_CHECK_FAILED`: de code van het eerste probleem van de server (voor het Nederlandse woord in de UI). */
+  checkCode?: string;
 };
+
+/** De uitkomst van de serverchecks per koppeling-id (tweede fase van het dashboard). */
+export type LinkCheckResults = ReadonlyMap<number, { ready: boolean; problems: readonly { code: string }[] }>;
 
 export type LinkModel = { link: ImportLinkRow; tasks: TaskRow[] };
 export type DefinitionModel = { definition: DefinitionRow; links: LinkModel[] };
@@ -114,6 +125,7 @@ function buildSupplier(
   definitionsOf: readonly DefinitionRow[],
   linksByDefinition: Map<number, ImportLinkRow[]>,
   tasksByLink: Map<number, TaskRow[]>,
+  linkChecks: LinkCheckResults | null,
 ): SupplierModel {
   const definitions: DefinitionModel[] = definitionsOf.map((definition) => ({
     definition,
@@ -152,7 +164,19 @@ function buildSupplier(
       }
       if (hasActiveVersion) {
         const activeTasks = linkModel.tasks.filter((task) => task.active);
-        readyTasks.push(...activeTasks);
+        const check = organisation.active ? linkChecks?.get(linkModel.link.id) : undefined;
+        if (check !== undefined && !check.ready && activeTasks.length > 0) {
+          // De koppeling lijkt klaar maar de server keurt ze af: haar taken tellen niet als klaar, en de reden staat erbij.
+          reasons.push({
+            kind: 'LINK_CHECK_FAILED',
+            organisationId: organisation.id,
+            definitionId: entry.definition.id,
+            linkId: linkModel.link.id,
+            ...(check.problems[0] !== undefined ? { checkCode: check.problems[0].code } : {}),
+          });
+        } else {
+          readyTasks.push(...activeTasks);
+        }
         if (linkModel.tasks.length > 0 && activeTasks.length === 0) {
           reasons.push({
             kind: 'NO_ACTIVE_TASK',
@@ -193,13 +217,32 @@ function buildSupplier(
   };
 }
 
-export function buildDashboardModel(input: DashboardInput): DashboardModel {
+/**
+ * De koppelingen die de tweede fase van het dashboard bij de server laat controleren (F4): enkel koppelingen van eigen
+ * importdefinities van actieve organisaties (een herbruikbare definitie krijgt nooit een koppeling; een inactieve
+ * organisatie is toch al "Inactief").
+ */
+export function linkIdsToCheck(input: DashboardInput): number[] {
+  const activeOrganisations = new Set(input.organisations.filter((o) => o.active).map((o) => o.id));
+  const ownDefinitions = new Set(
+    input.definitions
+      .filter((d) => isOwnDefinition(d) && activeOrganisations.has(d.sourceOrganisationId))
+      .map((d) => d.id),
+  );
+  return input.links.filter((link) => ownDefinitions.has(link.importDefinitionId)).map((link) => link.id);
+}
+
+/**
+ * Bouwt het dashboardmodel. Zonder `linkChecks` (`null`: de tweede fase is niet gelopen of mislukt) is het model het
+ * heuristische model van de vier bulklijsten, ongewijzigd.
+ */
+export function buildDashboardModel(input: DashboardInput, linkChecks: LinkCheckResults | null = null): DashboardModel {
   const definitionsByOrganisation = groupBy(input.definitions, (definition) => definition.sourceOrganisationId);
   const linksByDefinition = groupBy(input.links, (link) => link.importDefinitionId);
   const tasksByLink = groupBy(input.tasks, (task) => task.importLinkId);
 
   const suppliers = input.organisations.map((organisation) =>
-    buildSupplier(organisation, definitionsByOrganisation.get(organisation.id) ?? [], linksByDefinition, tasksByLink),
+    buildSupplier(organisation, definitionsByOrganisation.get(organisation.id) ?? [], linksByDefinition, tasksByLink, linkChecks),
   );
 
   const reasonCounts: Record<NotReadyReasonKind, number> = {
@@ -208,6 +251,7 @@ export function buildDashboardModel(input: DashboardInput): DashboardModel {
     NO_ACTIVE_TASK: 0,
     NO_LINK: 0,
     NO_DEFINITION: 0,
+    LINK_CHECK_FAILED: 0,
   };
   const reasons: NotReadyReason[] = [];
   for (const supplier of suppliers) {

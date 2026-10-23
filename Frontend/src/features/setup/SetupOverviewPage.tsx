@@ -29,9 +29,10 @@ import { useQuery } from '../../hooks/useQuery.ts';
 import { GROUP, PRODUCT, SCREEN } from '../../terms/navigation.ts';
 import { DASHBOARD_TEXT, READINESS_LABEL, READINESS_TONE, REASON_TEXT } from '../../terms/setupDashboard.ts';
 import { term } from '../../terms/index.ts';
+import { lowerFirst } from '../../terms/linkReadiness.ts';
 import { Term } from '../../terms/Term.tsx';
 import { WhatIsThis } from '../../terms/WhatIsThis.tsx';
-import { linkCheckHref } from './check/linkCheck.ts';
+import { describeReadinessCheck, linkCheckHref } from './check/linkCheck.ts';
 import { ContinueSetupAction, NewSupplierButton } from './SetupActions.tsx';
 import { loadDashboard } from './setupDashboardData.ts';
 import {
@@ -111,7 +112,7 @@ function ReasonRow({ reason, supplier }: { reason: NotReadyReason; supplier: Sup
   const linkEntry = definitionEntry?.links.find((entry) => entry.link.id === reason.linkId);
   const firstLink = linkEntry ?? definitionEntry?.links[0];
   const name =
-    reason.kind === 'LINK_WITHOUT_TASK' || reason.kind === 'NO_ACTIVE_TASK'
+    reason.kind === 'LINK_WITHOUT_TASK' || reason.kind === 'NO_ACTIVE_TASK' || reason.kind === 'LINK_CHECK_FAILED'
       ? (linkEntry?.link.name ?? organisation.name)
       : reason.kind === 'NO_DEFINITION'
         ? organisation.name
@@ -178,6 +179,7 @@ function ReasonRow({ reason, supplier }: { reason: NotReadyReason; supplier: Sup
         </>
       );
       break;
+    case 'LINK_CHECK_FAILED':
     case 'NO_ACTIVE_TASK':
       actions = (
         <>
@@ -188,8 +190,12 @@ function ReasonRow({ reason, supplier }: { reason: NotReadyReason; supplier: Sup
       break;
   }
 
+  const meta =
+    reason.kind === 'LINK_CHECK_FAILED' && reason.checkCode !== undefined
+      ? `${REASON_TEXT[reason.kind]}: ${lowerFirst(describeReadinessCheck(reason.checkCode).label)}`
+      : REASON_TEXT[reason.kind];
   return (
-    <PanelRow code={organisation.code} name={name} meta={REASON_TEXT[reason.kind]}>
+    <PanelRow code={organisation.code} name={name} meta={meta}>
       {actions}
     </PanelRow>
   );
@@ -489,7 +495,7 @@ function DashboardBody({ model, legacy, canManage }: { model: DashboardModel; le
     noVersion: totals.reasonCounts.NO_ACTIVE_VERSION,
     noTask: totals.reasonCounts.LINK_WITHOUT_TASK,
     noLink: totals.reasonCounts.NO_LINK + totals.reasonCounts.NO_DEFINITION,
-    other: totals.reasonCounts.NO_ACTIVE_TASK,
+    other: totals.reasonCounts.NO_ACTIVE_TASK + totals.reasonCounts.LINK_CHECK_FAILED,
   });
   const ownDefinitions = totals.definitions - totals.reusableDefinitions;
 
@@ -680,13 +686,20 @@ export function SetupOverviewPage() {
       )}
       {dashboard.data !== null &&
         (redirecting ? (
-          <LegacyQueryRedirect model={dashboard.data} definitionId={legacyDefinitionId} revisionId={legacyRevisionId} />
+          <LegacyQueryRedirect model={dashboard.data.model} definitionId={legacyDefinitionId} revisionId={legacyRevisionId} />
         ) : (
-          <DashboardBody
-            model={dashboard.data}
-            legacy={manageGate.allowed ? legacy.data : null}
-            canManage={manageGate.allowed}
-          />
+          <>
+            {dashboard.data.linkChecksFailed && (
+              <p className={styles.rowMeta} role="status" data-testid="link-checks-unavailable">
+                {DASHBOARD_TEXT.linkChecksUnavailable}
+              </p>
+            )}
+            <DashboardBody
+              model={dashboard.data.model}
+              legacy={manageGate.allowed ? legacy.data : null}
+              canManage={manageGate.allowed}
+            />
+          </>
         ))}
     </div>
   );

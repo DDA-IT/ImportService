@@ -10,20 +10,49 @@ import * as tasksApi from '../../api/tasks.ts';
 import {
   buildDashboardModel,
   fetchAllPages,
+  linkIdsToCheck,
+  type DashboardInput,
   type DashboardModel,
+  type LinkCheckResults,
   type RevisionsByDefinition,
   type SupplierModel,
 } from './setupDashboardModel.ts';
 
-/** Het dashboard: alle organisaties, definities, koppelingen en taken, elk tot en met de laatste pagina. */
-export async function loadDashboard(signal?: AbortSignal): Promise<DashboardModel> {
+/** Het dashboard en of de tweede fase (serverchecks van de koppelingen) ontbreekt. */
+export type LoadedDashboard = {
+  model: DashboardModel;
+  /** `true` als de controle van de koppelingen mislukte: het model is dan de heuristiek van de vier lijsten. */
+  linkChecksFailed: boolean;
+};
+
+/**
+ * Het dashboard: alle organisaties, definities, koppelingen en taken, elk tot en met de laatste pagina (fase 1). Daarna
+ * een tweede fase (F4): de serverchecks (`GET /import-links/readiness`, per 100) enkel voor de koppelingen van eigen
+ * importdefinities van actieve organisaties. Mislukt die fase, dan blijft het model de heuristiek van fase 1 en geeft
+ * `linkChecksFailed` dat door voor een niet-blokkerende melding; een afgebroken verzoek wordt wel doorgegeven.
+ */
+export async function loadDashboard(signal?: AbortSignal): Promise<LoadedDashboard> {
   const [organisations, definitions, links, tasks] = await Promise.all([
     fetchAllPages((page, size, s) => setupApi.listSourceOrganisations({ page, size }, s), signal),
     fetchAllPages((page, size, s) => setupApi.listDefinitions({ page, size }, s), signal),
     fetchAllPages((page, size, s) => importLinksApi.listImportLinks({ page, size }, s), signal),
     fetchAllPages((page, size, s) => tasksApi.listTasks({ page, size }, s), signal),
   ]);
-  return buildDashboardModel({ organisations, definitions, links, tasks });
+  const input: DashboardInput = { organisations, definitions, links, tasks };
+  const ids = linkIdsToCheck(input);
+  if (ids.length === 0) {
+    return { model: buildDashboardModel(input), linkChecksFailed: false };
+  }
+  try {
+    const summaries = await importLinksApi.listLinkReadiness(ids, signal);
+    const checks: LinkCheckResults = new Map(summaries.map((summary) => [summary.linkId, summary]));
+    return { model: buildDashboardModel(input, checks), linkChecksFailed: false };
+  } catch (cause) {
+    if (signal?.aborted === true) {
+      throw cause;
+    }
+    return { model: buildDashboardModel(input), linkChecksFailed: true };
+  }
 }
 
 /** Eén leverancier met haar keten en de versies van haar importdefinities. */

@@ -7,8 +7,9 @@
  *   (bestaande `LinkBookmarkValuesSection`) openen met de knop bij de koppeling.
  * - Eigen: de ene leverancier met haar koppelingen.
  *
- * Wat de API niet levert staat er niet: of een koppeling "klaar" is (dat zijn taken en versies per koppeling) toont de
- * mock wel, hier staat enkel of de koppeling actief is.
+ * Per koppeling staat de servercontrole (F4, `GET /import-links/readiness`): "Klaar" of "Niet klaar: <eerste probleem>".
+ * Is die controle nog niet geladen of mislukt, dan staat er (zoals vroeger) enkel of de koppeling actief is; een
+ * niet-actieve koppeling houdt ook naast de controle haar badge "Niet actief".
  */
 
 import { useState } from 'react';
@@ -21,6 +22,7 @@ import { ToneBadge } from '../../components/StatusBadge.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useQuery } from '../../hooks/useQuery.ts';
 import { DEFINITIONS_TEXT } from '../../terms/importDefinitions.ts';
+import { LinkReadinessBadge, useLinkReadiness } from '../setup/linkReadiness.tsx';
 import { BasedOnReusable } from '../setup/BasedOnReusable.tsx';
 import { FlagOffNotice } from '../setup/FlagOffNotice.tsx';
 import { fetchAllPages } from '../setup/setupDashboardModel.ts';
@@ -43,6 +45,10 @@ function LinkList({
   selectedLinkId: number | null;
   onSelect?: (link: SelectedLink) => void;
 }) {
+  const readiness = useLinkReadiness(
+    links.map((link) => link.id),
+    'used-by',
+  );
   if (links.length === 0) {
     return <p className={styles.empty}>{TEXT.noLinks}</p>;
   }
@@ -53,7 +59,14 @@ function LinkList({
           <span className={styles.grow}>
             <strong>{link.name}</strong> · {TEXT.linkLibrary(link.libraryCode)}
           </span>
-          <ToneBadge label={link.active ? TEXT.linkActive : TEXT.linkInactive} tone={link.active ? 'ready' : 'neutral'} />
+          {readiness?.get(link.id) !== undefined ? (
+            <>
+              <LinkReadinessBadge summary={readiness.get(link.id)!} testId={`link-readiness-${link.id}`} />
+              {!link.active && <ToneBadge label={TEXT.linkInactive} tone="neutral" />}
+            </>
+          ) : (
+            <ToneBadge label={link.active ? TEXT.linkActive : TEXT.linkInactive} tone={link.active ? 'ready' : 'neutral'} />
+          )}
           {onSelect !== undefined && (
             <button
               type="button"

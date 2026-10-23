@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { DefinitionRow, ImportLinkRow, PageResult, SourceOrganisationRow, TaskRow } from '../api/types';
-import { buildDashboardModel, fetchAllPages } from '../features/setup/setupDashboardModel';
+import { buildDashboardModel, fetchAllPages, linkIdsToCheck, type LinkCheckResults } from '../features/setup/setupDashboardModel';
 
 function org(id: number, over: Partial<SourceOrganisationRow> = {}): SourceOrganisationRow {
   return { id, code: `ORG-${id}`, name: `Leverancier ${id}`, type: 'SUPPLIER', active: true, ...over };
@@ -31,6 +31,7 @@ function link(id: number, definitionId: number, over: Partial<ImportLinkRow> = {
     libraryCode: 'LIB',
     active: true,
     importDefinitionId: definitionId,
+    credentialState: 'NONE',
     ...over,
   };
 }
@@ -226,5 +227,72 @@ describe('fetchAllPages', () => {
         return pageOf([1, 2, 3, 4], page, size);
       }, undefined, 2),
     ).rejects.toThrow('stuk');
+  });
+});
+
+describe('buildDashboardModel met de serverchecks van de koppelingen (F4)', () => {
+  const input = {
+    organisations: [org(1), org(2), org(3, { active: false })],
+    definitions: [def(10, 1), def(20, 2), def(30, 3), def(40, 1, { usageType: 'REUSABLE_TEMPLATE' })],
+    links: [link(501, 10), link(502, 10), link(503, 20), link(504, 30)],
+    tasks: [task(7, 501, 10), task(8, 502, 10), task(9, 503, 20), task(10, 504, 30)],
+  };
+
+  it('vraagt enkel koppelingen van eigen definities van actieve organisaties', () => {
+    expect(linkIdsToCheck(input)).toEqual([501, 502, 503]);
+  });
+
+  it('een leverancier is enkel klaar met minstens een klare taak op een koppeling die de controle doorstaat', () => {
+    const checks: LinkCheckResults = new Map([
+      [501, { ready: false, problems: [{ code: 'CONFIG_PRICE_FIELD_MISSING' }] }],
+      [502, { ready: true, problems: [] }],
+      [503, { ready: false, problems: [{ code: 'NO_ACTIVE_REVISION' }, { code: 'LINK_HAS_NO_TASK' }] }],
+    ]);
+    const model = buildDashboardModel(input, checks);
+    // Org 1: een koppeling faalt maar de andere slaagt: nog READY, met de afgekeurde koppeling als reden.
+    expect(model.suppliers[0]!.readiness).toBe('READY');
+    expect(model.suppliers[0]!.readyTasks.map((t) => t.id)).toEqual([8]);
+    expect(model.suppliers[0]!.reasons).toEqual([
+      { kind: 'LINK_CHECK_FAILED', organisationId: 1, definitionId: 10, linkId: 501, checkCode: 'CONFIG_PRICE_FIELD_MISSING' },
+    ]);
+    // Org 2: haar enige koppeling faalt: niet meer READY, eerste probleem als code.
+    expect(model.suppliers[1]!.readiness).toBe('NOT_READY');
+    expect(model.suppliers[1]!.readyTasks).toEqual([]);
+    expect(model.suppliers[1]!.reasons).toEqual([
+      { kind: 'LINK_CHECK_FAILED', organisationId: 2, definitionId: 20, linkId: 503, checkCode: 'NO_ACTIVE_REVISION' },
+    ]);
+    // Org 3 is inactief: geen checks, geen redenen.
+    expect(model.suppliers[2]!.readiness).toBe('INACTIVE');
+    expect(model.suppliers[2]!.reasons).toEqual([]);
+    expect(model.totals.readySuppliers).toBe(1);
+    expect(model.totals.reasonCounts.LINK_CHECK_FAILED).toBe(2);
+  });
+
+  it('alle koppelingen klaar: hetzelfde model als zonder checks', () => {
+    const checks: LinkCheckResults = new Map([501, 502, 503].map((id) => [id, { ready: true, problems: [] }] as const));
+    expect(buildDashboardModel(input, checks)).toEqual(buildDashboardModel(input));
+  });
+
+  it('een koppeling zonder taak of zonder actieve versie krijgt geen dubbele reden', () => {
+    const model = buildDashboardModel(
+      {
+        organisations: [org(1)],
+        definitions: [def(10, 1, { activeRevisionId: null }), def(11, 1)],
+        links: [link(501, 10), link(502, 11)],
+        tasks: [task(7, 501, 10), task(8, 502, 11, { active: false })],
+      },
+      new Map([
+        [501, { ready: false, problems: [{ code: 'NO_ACTIVE_REVISION' }] }],
+        [502, { ready: false, problems: [{ code: 'LINK_HAS_NO_TASK' }] }],
+      ]),
+    );
+    expect(model.suppliers[0]!.reasons.map((reason) => reason.kind)).toEqual(['NO_ACTIVE_VERSION', 'NO_ACTIVE_TASK']);
+  });
+
+  it('zonder checks (mislukte tweede fase) blijft het model de heuristiek, ongewijzigd', () => {
+    const heuristic = buildDashboardModel(input);
+    expect(buildDashboardModel(input, null)).toEqual(heuristic);
+    expect(heuristic.suppliers[1]!.readiness).toBe('READY');
+    expect(heuristic.totals.reasonCounts.LINK_CHECK_FAILED).toBe(0);
   });
 });

@@ -24,6 +24,11 @@ export type SetupState = {
   bookmarkSets?: Record<string, unknown>;
   /** F2: legacy-herkomst per revisie-id (`.../revisions/{rev}/legacy-origin`); zonder invoer: niet uit legacy. */
   legacyOrigins?: Record<number, unknown>;
+  /**
+   * F4: de uitkomst van `GET /import-links/readiness` per koppeling-id. Zonder invoer is de koppeling klaar. Een
+   * koppeling die niet in `links` staat geeft 404 `LINK_NOT_FOUND`, zoals de server.
+   */
+  readiness?: Record<number, { ready: boolean; problems: unknown[] }>;
 };
 
 /** De herkomst van een versie die niet uit legacy komt (zoals de server ze levert). */
@@ -152,6 +157,19 @@ export function installSetupServer(state: SetupState, extra?: (url: string, init
       );
       return Promise.resolve(jsonResponse(pageOf(rows, params)));
     }
+    if (path!.endsWith('/import-links/readiness')) {
+      const ids = (params.get('linkIds') ?? '').split(',').filter((id) => id !== '').map(Number);
+      if (ids.length === 0 || ids.length > 100) {
+        return Promise.resolve(jsonResponse({ error: 'nope', code: 'READINESS_LINK_IDS_INVALID' }, 400));
+      }
+      const known = new Set(state.links.map((row) => (row as { id: number }).id));
+      if (ids.some((id) => !known.has(id))) {
+        return Promise.resolve(jsonResponse({ error: 'nope', code: 'LINK_NOT_FOUND' }, 404));
+      }
+      return Promise.resolve(
+        jsonResponse(ids.map((linkId) => ({ linkId, ...(state.readiness?.[linkId] ?? { ready: true, problems: [] }) }))),
+      );
+    }
     if (path!.endsWith('/import-links')) {
       const def = params.get('importDefinitionId');
       const rows = state.links.filter(
@@ -221,6 +239,7 @@ export function link(id: number, definitionId: number, over: Record<string, unkn
     libraryCode: 'LIB1',
     active: true,
     importDefinitionId: definitionId,
+    credentialState: 'NONE',
     ...over,
   };
 }

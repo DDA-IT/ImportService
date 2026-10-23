@@ -3388,3 +3388,13 @@ leesendpoint, G1). "Veld toevoegen" gebruikt de woordenlijst als catalogus (15 v
 Eén waardebewerking per veld (Vertaling, Hoofdletters, Delen/Vermenigvuldigen, Percentage sluiten elkaar uit, ketenblok 3);
 onbekende bewerkingen blijven ongewijzigd behouden met melding. Chiplabel "Uitknippen" (woordenlijst: "Deel van de tekst").
 **Bron:** bouwer-gemiddeld (E2-rapport)
+
+## 2026-10-23 — E3 en F3/F4: keuzes
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** E3: een uitsluitingsgroep is één zin en kan enkel als
+geheel verwijderd worden (geen wijzigen, geen PUT); filter wijzigen = nieuw toevoegen en daarna oude verwijderen (nieuw
+filter komt achteraan); geen operator "is leeg" (bestaat niet op de server, enkel in een groep); achtervoegsels enkel bij
+niet-standaardwaarden (+ "spaties blijven staan"). Filters zijn tot E6 ook nog in het oude blok bewerkbaar.
+F3/F4: badge "Klaar / Niet klaar: …" vervangt "Actief" in "Gebruikt door" (inactief blijft een aparte badge); de
+servercontrole per koppeling geldt op het dashboard en de koppelingskaarten, niet op de algemene gereedheid van het
+leveranciersdetail; geen dubbele reden naast NO_ACTIVE_VERSION/LINK_WITHOUT_TASK/NO_ACTIVE_TASK.
+**Bron:** bouwer-gemiddeld (E3- en F3/F4-rapport)

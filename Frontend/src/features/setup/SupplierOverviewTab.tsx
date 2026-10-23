@@ -1,15 +1,20 @@
 /**
  * Tab "Overzicht" van het leveranciersdetail: de stappenbalk (waar zit deze leverancier in de keten), kleine kaarten,
  * de ene "Volgende stap" en de gegevens in het Prodis-`dl`-patroon (leeg = cursief "Niet ingesteld"). Toont enkel wat
- * de API levert: bibliotheek, tekenset, wachtwoord en opmerking uit de mock staan niet op de organisatie.
+ * de API levert (F3): bibliotheek = de unieke bibliotheekcodes van de koppelingen, tekenset = die van de actieve
+ * versie van de eigen importdefinitie(s), wachtwoord = of er een wachtwoord bewaard is (nooit het wachtwoord zelf).
+ * "Opmerking" uit de mock heeft geen bron en staat er niet.
  */
 
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import * as setupApi from '../../api/setup.ts';
 import button from '../../components/Button.module.css';
 import pageCss from '../../components/Page.module.css';
 import { ToneBadge } from '../../components/StatusBadge.tsx';
 import { MiniCard } from '../../components/SummaryCards.tsx';
+import { useQuery } from '../../hooks/useQuery.ts';
+import { aggregateCredentialState, CREDENTIAL_STATE_LABEL } from '../../terms/linkReadiness.ts';
 import { READINESS_HINT, READINESS_LABEL, READINESS_TONE, SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { Term } from '../../terms/Term.tsx';
 import { ContinueSetupAction } from './SetupActions.tsx';
@@ -43,6 +48,27 @@ export function KeyValue({ label, children }: { label: string; children: ReactNo
       <dd>{empty ? <span className={styles.unset}>{TEXT.unset}</span> : children}</dd>
     </>
   );
+}
+
+/**
+ * De tekenset van de actieve versie van elke eigen importdefinitie (unieke waarden, in volgorde). Leest het bestaande
+ * revisiedetail; zonder actieve versie is er niets te tonen ("Niet ingesteld"), bij een fout staat er een streepje.
+ */
+function CharsetValue({ pairs }: { pairs: readonly { definitionId: number; revisionId: number }[] }) {
+  const key = pairs.map((pair) => `${pair.definitionId}:${pair.revisionId}`).join(',');
+  const charsets = useQuery(`supplier-overview-charset:${key}`, async (signal) => {
+    const details = await Promise.all(
+      pairs.map((pair) => setupApi.getRevisionDetail(pair.definitionId, pair.revisionId, signal)),
+    );
+    return [...new Set(details.map((detail) => detail.structureCharset))];
+  });
+  if (charsets.error !== null) {
+    return <span data-testid="supplier-charset">{TEXT.charsetUnknown}</span>;
+  }
+  if (charsets.data === null) {
+    return <span data-testid="supplier-charset">{TEXT.charsetLoading}</span>;
+  }
+  return <span data-testid="supplier-charset">{charsets.data.join(', ')}</span>;
 }
 
 function NextStepBanner({ organisationId, step }: { organisationId: number; step: NextStep }) {
@@ -150,6 +176,14 @@ export function SupplierOverviewTab() {
     activeVersionValue = `${withActive}/${own.length}`;
   }
   const idPrefix = `supplier-${organisation.id}`;
+  const libraries = [...new Set(supplier.definitions.flatMap(({ links }) => links.map((entry) => entry.link.libraryCode)))];
+  const credential = aggregateCredentialState(
+    supplier.definitions.flatMap(({ links }) => links.map((entry) => entry.link.credentialState)),
+  );
+  const charsetPairs = own.flatMap((entry) => {
+    const active = activeRevisionOf(bundle.revisions[entry.definition.id] ?? []);
+    return active === null ? [] : [{ definitionId: entry.definition.id, revisionId: active.id }];
+  });
 
   return (
     <div data-testid="supplier-overview">
@@ -191,6 +225,13 @@ export function SupplierOverviewTab() {
               label={organisation.active ? TEXT.statusActive : TEXT.statusInactive}
               tone={organisation.active ? 'ready' : 'neutral'}
             />
+          </KeyValue>
+          <KeyValue label={TEXT.keyValue.library}>{libraries.length === 0 ? null : libraries.join(', ')}</KeyValue>
+          <KeyValue label={TEXT.keyValue.charset}>
+            {charsetPairs.length === 0 ? null : <CharsetValue pairs={charsetPairs} />}
+          </KeyValue>
+          <KeyValue label={TEXT.keyValue.password}>
+            <span data-testid="supplier-credential">{CREDENTIAL_STATE_LABEL[credential]}</span>
           </KeyValue>
           <KeyValue label="Gereedheid">
             <span title={READINESS_HINT[supplier.readiness]}>

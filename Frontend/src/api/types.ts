@@ -603,7 +603,13 @@ export type ImportLinkRow = {
   libraryCode: string;
   active: boolean;
   importDefinitionId: number;
+  /** B3 (additief): of er een wachtwoord bij de koppeling bewaard is; nooit het wachtwoord zelf. */
+  credentialState: LinkCredentialState;
 };
+
+// B3: `ImportLinkRow.credentialState`.
+export const LINK_CREDENTIAL_STATES = ['STORED', 'REVOKED', 'NONE'] as const;
+export type LinkCredentialState = (typeof LINK_CREDENTIAL_STATES)[number];
 
 // be.dda.catalogimport.service.ImportLinkReadinessService (NT-8, gereedheidscontrole zonder bestand)
 export const READINESS_CHECK_STATUSES = ['OK', 'PROBLEM', 'INFO'] as const;
@@ -646,6 +652,13 @@ export type LinkReadiness = {
   linkId: number;
   ready: boolean;
   checks: ReadinessCheck[];
+};
+
+/** Eén element van `GET /import-links/readiness?linkIds=` (B4): `ready` + enkel de problemen (status `PROBLEM`). */
+export type LinkReadinessSummary = {
+  linkId: number;
+  ready: boolean;
+  problems: ReadinessCheck[];
 };
 
 // be.dda.catalogimport.domain.SourceOrganisationType (S1-B1)

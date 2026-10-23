@@ -635,9 +635,52 @@ describe('importdefinitiedetail: Gebruikt door', () => {
     expect(card).toHaveTextContent('Deelbaar');
     await within(card).findByText('Vrooam koppeling', { exact: false });
     expect(within(card).getByText('Tweede koppeling', { exact: false })).toBeInTheDocument();
-    expect(within(card).getAllByText('Actief').length).toBe(2);
+    // F4: de servercontrole vervangt de losse "Actief"-badge.
+    await waitFor(() => expect(within(card).getAllByText('Klaar')).toHaveLength(2));
+    expect(within(card).queryByText('Actief')).not.toBeInTheDocument();
     expect(within(card).getByTestId('to-supplier-11')).toHaveAttribute('href', '/setup/suppliers/1');
     expect(within(card).queryByTestId('not-shareable-11')).not.toBeInTheDocument();
+  });
+
+  it('Gebruikt door: een koppeling die de controle niet doorstaat toont "Niet klaar" met het eerste probleem in woorden', async () => {
+    const s = state();
+    s.readiness = {
+      502: {
+        ready: false,
+        problems: [
+          { code: 'NO_ACTIVE_REVISION', status: 'PROBLEM', subject: { type: 'DEFINITION', id: 11 }, detail: 'No active revision' },
+          { code: 'LINK_HAS_NO_TASK', status: 'PROBLEM', subject: { type: 'LINK', id: 502 }, detail: null },
+        ],
+      },
+    };
+    s.links = [
+      link(501, 11, { code: 'VROOAM', name: 'Vrooam koppeling', libraryCode: '181' }),
+      link(502, 11, { code: 'VROOAM2', name: 'Tweede koppeling', libraryCode: '181', active: false }),
+      link(503, 13, { code: 'KRAMP', name: 'Kramp koppeling', libraryCode: '4' }),
+    ];
+    await openDetail('/templates/10/used-by', s);
+    const card = await screen.findByTestId('used-by-11');
+    expect(await within(card).findByTestId('link-readiness-501')).toHaveTextContent(/^Klaar$/);
+    expect(within(card).getByTestId('link-readiness-502')).toHaveTextContent('Niet klaar: er is nog geen versie in gebruik');
+    // Een niet-actieve koppeling houdt naast de controle haar eigen badge.
+    expect(within(card).getAllByText('Niet actief')).toHaveLength(1);
+    expect(card).not.toHaveTextContent('NO_ACTIVE_REVISION');
+  });
+
+  it('Gebruikt door: mislukt de servercontrole, dan staat er enkel of de koppeling actief is', async () => {
+    await openDetail('/templates/10/used-by', state(), (url) =>
+      url.includes('/import-links/readiness') ? jsonResponse({ error: 'stuk', code: 'INTERNAL' }, 500) : null,
+    );
+    const card = await screen.findByTestId('used-by-11');
+    await within(card).findByText('Vrooam koppeling', { exact: false });
+    await waitFor(() => expect(within(card).getAllByText('Actief')).toHaveLength(2));
+    expect(within(card).queryByTestId('link-readiness-501')).not.toBeInTheDocument();
+  });
+
+  it('eigen: ook de koppelingen van een eigen importdefinitie tonen de servercontrole', async () => {
+    await openDetail('/templates/11/used-by');
+    const card = await screen.findByTestId('used-by-own');
+    expect(await within(card).findByTestId('link-readiness-501')).toHaveTextContent('Klaar');
   });
 
   it('een niet-deelbare gebruiker toont een waarschuwing met het invulpunt bij naam; de technische naam staat in de tooltip', async () => {
