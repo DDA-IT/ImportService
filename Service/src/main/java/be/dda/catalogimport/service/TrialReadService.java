@@ -15,6 +15,7 @@ import be.dda.catalogimport.service.support.CandidateNormaliser;
 import be.dda.catalogimport.service.support.ConfigCheckReport;
 import be.dda.catalogimport.service.support.ConfigFinding;
 import be.dda.catalogimport.service.support.CandidateNormaliser.NormalisedCandidate;
+import be.dda.catalogimport.service.support.ColumnPreview;
 import be.dda.catalogimport.service.support.CsvRecordStreamer;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.LineIssue;
 import be.dda.catalogimport.service.support.CsvRecordStreamer.ParsedRow;
@@ -28,9 +29,12 @@ import be.dda.catalogimport.service.support.PriceRules;
 import be.dda.catalogimport.service.support.RecordFilterEvaluator;
 import be.dda.catalogimport.service.support.RecordScreeningCore;
 import be.dda.catalogimport.service.support.ScreeningBlockedException;
+import be.dda.catalogimport.service.support.SourceLayout;
 import be.dda.catalogimport.service.support.SourceStructureConfig;
 import be.dda.catalogimport.service.support.SourceStructureConfig.FieldReferenceKind;
+import be.dda.catalogimport.service.support.SourceStructureConfigFactory;
 import be.dda.catalogimport.service.support.ThresholdEvaluator;
+import java.io.ByteArrayOutputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -84,6 +88,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li>Pure functie: hetzelfde bestand tegen dezelfde revisie (en koppelingsvaluta) geeft een byte-gelijk antwoord;
  *       er staat geen tijdstip en geen gegenereerd id in.</li>
  *   <li>Precies één INFO-logregel per voltooide proef, zonder bestandsnaam en zonder inhoud.</li>
+ *   <li>Kolomvoorbeeld (EB5/G3, {@link ColumnPreview}): een byte-tap tussen de hash en de streamer houdt de eerste
+ *       {@code catalogimport.trial-read.preview-max-bytes} bytes bij; ná het lezen (ook na een configuratiefout of een
+ *       headerblokkade: het leeglezen loopt door de tap) worden die gesplitst met de leesindeling van
+ *       {@link SourceStructureConfigFactory#layoutOf}. Streamer, screening en {@code sampleRows} merken er niets van.</li>
  * </ul>
  */
 @Service
@@ -100,6 +108,14 @@ public class TrialReadService {
     public static final int DEFAULT_MAX_TRACKED_IDENTITIES = 2_000_000;
     /** Een celwaarde in {@code rawValues} wordt op zoveel tekens gekapt. */
     public static final int RAW_VALUE_MAX_LENGTH = 200;
+    /** Kolomvoorbeeld (EB5): standaard en bovengrens van {@code catalogimport.trial-read.preview-rows}. */
+    public static final int DEFAULT_PREVIEW_ROWS = 10;
+    public static final int MAX_PREVIEW_ROWS = 50;
+    /** Kolomvoorbeeld (EB5): standaard van {@code catalogimport.trial-read.preview-max-columns}. */
+    public static final int DEFAULT_PREVIEW_MAX_COLUMNS = 500;
+    /** Kolomvoorbeeld (EB5): standaard (1 MiB) en bovengrens (8 MiB) van {@code catalogimport.trial-read.preview-max-bytes}. */
+    public static final int DEFAULT_PREVIEW_MAX_BYTES = 1024 * 1024;
+    public static final int MAX_PREVIEW_MAX_BYTES = 8 * 1024 * 1024;
 
     // --- Redenen in notEvaluated -----------------------------------------------------------------------------------
     public static final String REASON_NO_SOURCE_STATE = "NO_SOURCE_STATE";
@@ -128,7 +144,7 @@ public class TrialReadService {
                                   Counters counters, Header header, List<SampleRow> sampleRows,
                                   boolean sampleRowsTruncated, List<IssueGroup> issueGroups, Thresholds thresholds,
                                   List<ConfigProblem> configProblems, List<String> configChecksSkippedBecause,
-                                  List<NotEvaluated> notEvaluated) {
+                                  List<NotEvaluated> notEvaluated, ColumnPreview columnPreview) {
     }
 
     public record FileInfo(long byteSize, String sha256, String fileName) {
@@ -232,14 +248,26 @@ public class TrialReadService {
     private final ImportLinkRepository links;
     private final DeliveryScreeningService screening;
     private final ChainConfigurationChecks chainChecks;
+    private final SourceStructureConfigFactory structureFactory;
     private final TransactionTemplate readOnly;
     private final int sampleRows;
     private final int maxIssueExamples;
     private final int maxTrackedIdentities;
     private final int maxLineLength;
+    private final ColumnPreview.Limits previewLimits;
+    private final int previewMaxBytes;
 
+    /**
+     * @param previewRows       hoogstens zoveel regels in het kolomvoorbeeld; 0 of negatief = standaard 10; boven 50
+     *                          start de applicatie niet
+     * @param previewMaxColumns hoogstens zoveel kolommen in het kolomvoorbeeld; 0 of negatief = standaard 500
+     * @param previewMaxBytes   zoveel bytes van het begin van het bestand bekijkt het kolomvoorbeeld; 0 of negatief =
+     *                          standaard 1 MiB; boven 8 MiB start de applicatie niet
+     * @throws IllegalStateException bij een voorbeeldgrens boven haar bovengrens (nooit stil verlaagd)
+     */
     public TrialReadService(ImportDefinitionRevisionRepository revisions, ImportLinkRepository links,
                             DeliveryScreeningService screening, ChainConfigurationChecks chainChecks,
+                            SourceStructureConfigFactory structureFactory,
                             PlatformTransactionManager transactionManager,
                             @Value("${catalogimport.trial-read.sample-rows:" + DEFAULT_SAMPLE_ROWS + "}")
                             int sampleRows,
@@ -247,17 +275,37 @@ public class TrialReadService {
                                     + DEFAULT_MAX_ISSUE_EXAMPLES + "}") int maxIssueExamples,
                             @Value("${catalogimport.trial-read.max-tracked-identities:"
                                     + DEFAULT_MAX_TRACKED_IDENTITIES + "}") int maxTrackedIdentities,
-                            @Value("${catalogimport.screening.max-line-length:100000}") int maxLineLength) {
+                            @Value("${catalogimport.screening.max-line-length:100000}") int maxLineLength,
+                            @Value("${catalogimport.trial-read.preview-rows:" + DEFAULT_PREVIEW_ROWS + "}")
+                            int previewRows,
+                            @Value("${catalogimport.trial-read.preview-max-columns:" + DEFAULT_PREVIEW_MAX_COLUMNS
+                                    + "}") int previewMaxColumns,
+                            @Value("${catalogimport.trial-read.preview-max-bytes:" + DEFAULT_PREVIEW_MAX_BYTES + "}")
+                            int previewMaxBytes) {
         this.revisions = revisions;
         this.links = links;
         this.screening = screening;
         this.chainChecks = chainChecks;
+        this.structureFactory = structureFactory;
         this.readOnly = new TransactionTemplate(transactionManager);
         this.readOnly.setReadOnly(true);
         this.sampleRows = sampleRows > 0 ? sampleRows : DEFAULT_SAMPLE_ROWS;
         this.maxIssueExamples = maxIssueExamples > 0 ? maxIssueExamples : DEFAULT_MAX_ISSUE_EXAMPLES;
         this.maxTrackedIdentities = maxTrackedIdentities > 0 ? maxTrackedIdentities : DEFAULT_MAX_TRACKED_IDENTITIES;
         this.maxLineLength = maxLineLength > 0 ? maxLineLength : CsvRecordStreamer.DEFAULT_MAX_LINE_LENGTH;
+        int rows = previewRows > 0 ? previewRows : DEFAULT_PREVIEW_ROWS;
+        if (rows > MAX_PREVIEW_ROWS) {
+            throw new IllegalStateException("catalogimport.trial-read.preview-rows must be at most " + MAX_PREVIEW_ROWS
+                    + " but is " + previewRows);
+        }
+        int bytes = previewMaxBytes > 0 ? previewMaxBytes : DEFAULT_PREVIEW_MAX_BYTES;
+        if (bytes > MAX_PREVIEW_MAX_BYTES) {
+            throw new IllegalStateException("catalogimport.trial-read.preview-max-bytes must be at most "
+                    + MAX_PREVIEW_MAX_BYTES + " but is " + previewMaxBytes);
+        }
+        this.previewLimits = new ColumnPreview.Limits(rows,
+                previewMaxColumns > 0 ? previewMaxColumns : DEFAULT_PREVIEW_MAX_COLUMNS, this.maxLineLength);
+        this.previewMaxBytes = bytes;
     }
 
     /**
@@ -274,6 +322,8 @@ public class TrialReadService {
         Setup setup = readOnly.execute(status -> setup(revisionId, linkId));
         LoadedConfiguration loaded = setup.loaded();
         DigestingInputStream in = new DigestingInputStream(content);
+        // EB5: de streamer leest door de tap, het leeglezen ook; zo staat het begin van het bestand er altijd in.
+        PreviewTap tap = new PreviewTap(in, previewMaxBytes);
 
         TrialSink sink = null;
         ReadSummary summary = null;
@@ -282,19 +332,21 @@ public class TrialReadService {
         if (blocked == null) {
             sink = new TrialSink(loaded.config(), loaded.mappingConfig());
             try {
-                summary = streamer.read(in, loaded.config(), loaded.mappingConfig().headerExpectations(),
+                summary = streamer.read(tap, loaded.config(), loaded.mappingConfig().headerExpectations(),
                         maxLineLength, sink);
             } catch (ScreeningBlockedException readBlockage) {
                 blocked = readBlockage;
                 blockedStage = Stage.READING;
             }
         }
-        in.drain();
+        tap.drain();
         FileInfo file = new FileInfo(in.count(), in.sha256Hex(), fileName);
+        ColumnPreview preview = ColumnPreview.of(tap.captured(), in.count() <= tap.capturedCount(), setup.layout(),
+                previewLimits);
 
         TrialReadResult result = blockedStage == Stage.CONFIGURATION
-                ? configurationFailure(setup, file, blocked)
-                : evaluate(setup, file, sink, summary, blocked);
+                ? configurationFailure(setup, file, blocked, preview)
+                : evaluate(setup, file, sink, summary, blocked, preview);
         LOG.info("Trial read: revisionId={} linkId={} byteSize={} raw={} verdict={} blockedCode={}",
                 result.revisionId(), result.linkId(), file.byteSize(), result.counters().rawRecordCount(),
                 result.verdict().result(), result.verdict().blockedCode());
@@ -305,7 +357,7 @@ public class TrialReadService {
 
     private record Setup(long revisionId, int revisionNumber, RevisionStatus revisionStatus, Long linkId,
                          String linkCurrency, LoadedConfiguration loaded, ConfigCheckReport configReport,
-                         BigDecimal bulkSharePercent,
+                         SourceLayout layout, BigDecimal bulkSharePercent,
                          BigDecimal maxCriticalSharePercent, BigDecimal maxRejectedSharePercent) {
     }
 
@@ -328,20 +380,23 @@ public class TrialReadService {
         ConfigCheckReport report = loaded.failure() == null ? null
                 : chainChecks.configurationReport(revision, linkCurrency);
         return new Setup(revision.getId(), revision.getRevisionNumber(), revision.getStatus(), linkId, linkCurrency,
-                loaded, report, revision.getBulkIncidentSharePercent(), revision.getMaxCriticalSharePercent(),
+                loaded, report, structureFactory.layoutOf(revision), revision.getBulkIncidentSharePercent(),
+                revision.getMaxCriticalSharePercent(),
                 revision.getMaxRejectedSharePercent());
     }
 
     // --- Stap 2a: configuratiefout — alles null, secties leeg -------------------------------------------------------
 
-    private TrialReadResult configurationFailure(Setup setup, FileInfo file, ScreeningBlockedException failure) {
+    private TrialReadResult configurationFailure(Setup setup, FileInfo file, ScreeningBlockedException failure,
+                                                 ColumnPreview preview) {
         Verdict verdict = blockedVerdict(failure, Stage.CONFIGURATION);
         Counters counters = new Counters(null, null, null, null, null, null, null, null, null, null, null, null,
                 null, null);
         return new TrialReadResult(setup.revisionId(), setup.revisionNumber(), setup.revisionStatus(),
                 setup.linkId(), file, currencyDefault(setup), verdict, counters, null, List.of(), false, List.of(),
                 null, allConfigProblems(setup.configReport(), verdict),
-                setup.configReport() == null ? List.of() : setup.configReport().skippedBecause(), List.of());
+                setup.configReport() == null ? List.of() : setup.configReport().skippedBecause(), List.of(),
+                preview);
     }
 
     /**
@@ -373,7 +428,7 @@ public class TrialReadService {
     // --- Stap 2b: gelezen (volledig of tot een leesblokkade) --------------------------------------------------------
 
     private TrialReadResult evaluate(Setup setup, FileInfo file, TrialSink sink, ReadSummary summary,
-                                     ScreeningBlockedException readBlockage) {
+                                     ScreeningBlockedException readBlockage, ColumnPreview preview) {
         RecordScreeningCore core = sink.core;
         boolean completed = readBlockage == null && summary != null;
 
@@ -440,7 +495,7 @@ public class TrialReadService {
                 setup.linkId(), file, currencyDefault(setup), verdict, counters,
                 header(sink, completed ? summary : null), List.copyOf(samples),
                 sink.dataRecords > samples.size(), groups, thresholds, configProblems(verdict), List.of(),
-                notEvaluated(sink.mappingConfig, sink.identities.limitReached));
+                notEvaluated(sink.mappingConfig, sink.identities.limitReached), preview);
     }
 
     private static Verdict blockedVerdict(ScreeningBlockedException blocked, Stage stage) {
@@ -994,24 +1049,106 @@ public class TrialReadService {
             // Nooit de onderliggende stream sluiten: dat is de zaak van de aanroeper.
         }
 
-        /** Leest de rest van het bestand door de hash (ook na een blokkade), zodat grootte en hash volledig zijn. */
-        private void drain() {
-            byte[] buffer = new byte[64 * 1024];
-            try {
-                while (read(buffer, 0, buffer.length) >= 0) {
-                    // enkel tellen en hashen
-                }
-            } catch (IOException failure) {
-                throw new UncheckedIOException("Cannot read the uploaded file", failure);
-            }
-        }
-
         private long count() {
             return count;
         }
 
         private String sha256Hex() {
             return HexFormat.of().formatHex(digest.digest());
+        }
+    }
+
+    /**
+     * EB5: houdt de eerste {@code limit} bytes bij die erdoor gelezen worden, voor het kolomvoorbeeld. Staat tussen de
+     * hash en de streamer: wat de streamer (met zijn eigen leesbuffer) leest en wat het leeglezen daarna leest, komt in
+     * bestandsvolgorde voorbij. Geeft elke byte ongewijzigd door en bewaart nooit meer dan {@code limit} bytes.
+     */
+    private static final class PreviewTap extends FilterInputStream {
+
+        private final int limit;
+        private final ByteArrayOutputStream captured;
+
+        private PreviewTap(InputStream delegate, int limit) {
+            super(delegate);
+            this.limit = limit;
+            this.captured = new ByteArrayOutputStream(Math.min(limit, 64 * 1024));
+        }
+
+        @Override
+        public int read() throws IOException {
+            int value = super.read();
+            if (value >= 0 && captured.size() < limit) {
+                captured.write(value);
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            int read = super.read(buffer, offset, length);
+            if (read > 0 && captured.size() < limit) {
+                captured.write(buffer, offset, Math.min(read, limit - captured.size()));
+            }
+            return read;
+        }
+
+        /** Overslaan zou bytes buiten het voorbeeld houden; er wordt dus gelezen in plaats van overgeslagen. */
+        @Override
+        public long skip(long requested) throws IOException {
+            byte[] buffer = new byte[(int) Math.min(Math.max(requested, 0), 64 * 1024)];
+            long skipped = 0;
+            while (skipped < requested) {
+                int read = read(buffer, 0, (int) Math.min(buffer.length, requested - skipped));
+                if (read < 0) {
+                    break;
+                }
+                skipped += read;
+            }
+            return skipped;
+        }
+
+        /** Terugspoelen zou bytes dubbel in het voorbeeld zetten. */
+        @Override
+        public boolean markSupported() {
+            return false;
+        }
+
+        @Override
+        public void mark(int readLimit) {
+            // niet ondersteund
+        }
+
+        @Override
+        public void reset() throws IOException {
+            throw new IOException("mark/reset is not supported");
+        }
+
+        @Override
+        public void close() {
+            // Nooit de onderliggende stream sluiten: dat is de zaak van de aanroeper.
+        }
+
+        /**
+         * Leest de rest van het bestand door de tap en de hash (ook na een blokkade, en zonder voorafgaand lezen bij
+         * een configuratiefout), zodat grootte, hash en het begin van het bestand volledig zijn.
+         */
+        private void drain() {
+            byte[] buffer = new byte[64 * 1024];
+            try {
+                while (read(buffer, 0, buffer.length) >= 0) {
+                    // enkel tellen, hashen en het begin bijhouden
+                }
+            } catch (IOException failure) {
+                throw new UncheckedIOException("Cannot read the uploaded file", failure);
+            }
+        }
+
+        private byte[] captured() {
+            return captured.toByteArray();
+        }
+
+        private long capturedCount() {
+            return captured.size();
         }
     }
 }

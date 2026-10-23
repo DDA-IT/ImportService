@@ -100,7 +100,16 @@ Structuur- en configfouten zijn het resultaat, geen HTTP-fout. Tellers `Long` of
   },
   "configProblems": [ { "code": "CONFIG_…", "message": "…", "fieldName": "…|null", "revisionField": "…|null" } ],
   "configChecksSkippedBecause": [ "CONFIG_…" ],
-  "notEvaluated": [ { "check": "…", "status": "INFO", "reason": "…" } ]
+  "notEvaluated": [ { "check": "…", "status": "INFO", "reason": "…" } ],
+  "columnPreview": {
+    "status": "AVAILABLE|LAYOUT_INVALID|FILE_EMPTY|HEADER_BEYOND_PREVIEW",
+    "layout": { "charset": "UTF-8|null", "delimiter": ";|null", "quoteChar": "\"|null", "hasHeader": true,
+                "headerLineNumber": 1, "referenceKind": "HEADER_NAME|COLUMN_INDEX|null" },
+    "headerLineNumber": 1,
+    "columns": [ { "position": 1, "header": "…|null" } ],
+    "rows": [ { "lineNumber": 2, "cells": ["…"], "unreadable": false } ],
+    "columnsTruncated": false, "rowsTruncated": false
+  }
 }
 ```
 
@@ -128,12 +137,47 @@ Regels:
   `REFERENCE_CONTROL` (NO_SOURCE_STATE, enkel bij gemapte referenties), `DUPLICATE_REFERENCE_IN_DELIVERY` (NOT_IMPLEMENTED_V1),
   `PRICE_DEVIATION` (NO_PRICE_HISTORY), `MANIFEST_COUNTS` (NO_MANIFEST), `IDENTITY_HASH_COLLISION_IN_FILE` (NOT_TRACKED),
   `IDENTITY_INCIDENTS_IN_CRITICAL_THRESHOLD` (NO_SOURCE_STATE). Geen `validationResult` in het antwoord.
+- **columnPreview** (EB5/G3, beslissingslog 2026-10-23 "Editor-API-gaten"; additief): wat er in het begin van het bestand
+  staat, zodat de bewerker een kolom aan een veld of filter kan koppelen (die koppeling doet de frontend tegen de actuele
+  versie). Onafhankelijk van het verdict: ook bij een configuratiefout (bv. `CONFIG_PRICE_FIELD_MISSING`) of een
+  headerblokkade (bv. `HEADER_FIELD_MISSING:*`) staat het er.
+  - Technisch: een byte-tap tussen de hash en de streamer houdt de eerste ≤ `preview-max-bytes` bytes bij; ook het
+    leeglezen ná een blokkade of zonder lezen (configuratiefout) loopt door de tap. Ná het lezen: decoderen met de
+    tekenset van de revisie, BOM vooraan weg, regels splitsen zoals `BufferedReader.readLine` (`\n`, `\r\n`, `\r`),
+    prefixregels vóór de header en volledig lege regels overslaan, splitsen met `ImportValueRules.parseCsvLine`.
+    Streamer, screening en `sampleRows` blijven ongewijzigd.
+  - `layout` komt uit `SourceStructureConfigFactory.layoutOf(revision)`: dezelfde regels S1-S6 als `from()` (formaat,
+    tekenset, scheidingsteken, aanhalingsteken, headerregel, verwijzingswijze), maar zonder de veldconfiguratie. Een
+    ongeldig onderdeel is `null`; `referenceKind = null` bij een onbekende waarde (geen leesvoorwaarde).
+    `layout.headerLineNumber` is de geconfigureerde waarde.
+  - `status`: `LAYOUT_INVALID` bij een ongeldig formaat, tekenset, scheidingsteken, aanhalingsteken of headerregel
+    (kolommen en regels leeg; de oorzaak staat in `configProblems`); `FILE_EMPTY` bij 0 bytes;
+    `HEADER_BEYOND_PREVIEW` wanneer de headerregel na het einde van het bestand of na het bekeken begin valt;
+    anders `AVAILABLE`.
+  - `headerLineNumber`: de gebruikte headerregel, `null` zonder header. `columns`: met header de headercellen (getrimd,
+    zoals `header.foundColumns`); zonder header de posities 1..n met `header = null`, n = het grootste aantal cellen in
+    de getoonde regels. Een headerregel die niet te parsen is (aanhalingsteken niet gesloten): `columns` leeg, de
+    regels staan er wel.
+  - `rows`: de eerste ≤ `preview-rows` niet-lege datalijnen, `lineNumber` fysiek. Een regel langer dan
+    `screening.max-line-length` of die niet te parsen is: `unreadable = true`, `cells = null`. Een ander kolomaantal
+    wordt getoond zoals gelezen (nooit aangevuld of afgekapt). Cellen en headernamen gekapt op 200 tekens; hoogstens
+    `preview-max-columns` kolommen en cellen per regel (`columnsTruncated`).
+  - `rowsTruncated`: er zijn meer datalijnen dan getoond, of het bestand is groter dan `preview-max-bytes` (de regel die
+    op die grens afgebroken is, valt weg; nooit half getoond).
+  - Een vastebreedtebestand (posities) bestaat niet: `structure_format` is enkel `CSV` (databasecheck en S1); een
+    ander formaat geeft `LAYOUT_INVALID`.
+  - Niets bewaard, niets gelogd (de ene INFO-logregel blijft zonder inhoud); hetzelfde bestand tegen dezelfde revisie
+    geeft een byte-gelijk antwoord.
 
 ## 3. Grenzen en fouten
 
 - Bestandsgrootte: bestaande multipartlimiet (geen extra property).
 - Properties: `catalogimport.trial-read.sample-rows` (20; ≤0 → default), `catalogimport.trial-read.max-issue-examples-per-code` (5),
   `catalogimport.trial-read.max-tracked-identities` (2000000); `catalogimport.screening.max-line-length` hergebruikt.
+- Kolomvoorbeeld (EB5): `catalogimport.trial-read.preview-rows` (10; ≤0 → default; > 50 → de applicatie start niet),
+  `catalogimport.trial-read.preview-max-columns` (500; ≤0 → default), `catalogimport.trial-read.preview-max-bytes`
+  (1048576 = 1 MiB; ≤0 → default; > 8 MiB → de applicatie start niet). Een grens wordt nooit stil verlaagd. Het
+  geheugen per proef groeit met hoogstens `preview-max-bytes` (plus de gedecodeerde tekst daarvan).
 - Streaming, nooit het hele bestand in geheugen. Configuratie in één korte leestransactie; lezen zonder open verbinding. Geen timeout-/
   gelijktijdigheidsgrens in v1.
 - HTTP: 200 (elke voltooide proef, ook 0-bytes = `SOURCE_FILE_EMPTY`); 400 `FILE_REQUIRED`; 400 `LINK_NOT_OF_REVISION_DEFINITION`;

@@ -145,6 +145,52 @@ public class SourceStructureConfigFactory {
         return read(revision, linkDefaultCurrency, problems).facts();
     }
 
+    /**
+     * Enkel de fysieke leesindeling van de revisie (EB5/G3): formaat (S1), tekenset (S2), scheidingsteken (S3),
+     * aanhalingsteken (S4), header (S5) en de verwijzingswijze (S6). Exact dezelfde regels als
+     * {@link #from(ImportDefinitionRevision, String)} — dezelfde private methoden — maar de veldconfiguratie
+     * (identiteit, prijs, kolomindexen, canonicalisatie, ...) wordt niet beoordeeld. Zo kan de proefinlezing de
+     * kolommen van een bestand tonen terwijl bv. {@code CONFIG_PRICE_FIELD_MISSING} de structuur doet falen.
+     * <p>
+     * Gooit nooit een {@link ScreeningBlockedException}: een fout in S1-S5 maakt de indeling onbruikbaar
+     * ({@link SourceLayout#invalidCodes()}, fabrieksvolgorde); een onbekende verwijzingswijze (S6) geeft enkel
+     * {@code referenceKind = null}, want ze speelt voor het splitsen in regels en kolommen geen rol. Leest de revisie
+     * uitsluitend via getters (aanroepen binnen de openende transactie).
+     */
+    public SourceLayout layoutOf(ImportDefinitionRevision revision) {
+        ConfigProblemCollector problems = ConfigProblemCollector.all();
+        // S1: enkel CSV bestaat (databasecheck en fabriek); een ander formaat is met deze indeling niet te lezen.
+        problems.check(REVISION_FIELD_FORMAT, () -> requireSupportedFormat(revision.getStructureFormat()));
+        // S2, S3, S4 (de gelijkheid met het scheidingsteken steunt op S3)
+        Charset charset = problems.branch(REVISION_FIELD_CHARSET,
+                () -> charset(revision.getStructureCharset())).value();
+        Outcome<Character> delimiter = problems.branch(REVISION_FIELD_DELIMITER,
+                () -> delimiter(revision.getStructureDelimiter()));
+        Outcome<Character> quote = problems.branch(REVISION_FIELD_QUOTE,
+                () -> quote(revision.getStructureQuoteChar(), delimiter, problems));
+        // S5
+        boolean hasHeader = revision.isStructureHasHeader();
+        int headerLineNumber = revision.getStructureHeaderLineNumber();
+        problems.check(REVISION_FIELD_HEADER_LINE_NUMBER, () -> requireHeaderLine(hasHeader, headerLineNumber));
+        // S6, buiten de collector: geen leesvoorwaarde.
+        FieldReferenceKind referenceKind;
+        try {
+            referenceKind = referenceKind(revision.getStructureFieldReferenceKind());
+        } catch (ScreeningBlockedException unknown) {
+            referenceKind = null;
+        }
+
+        ConfigCheckReport report = problems.toReport();
+        List<String> invalidCodes = new ArrayList<>();
+        for (ConfigFinding finding : report.findings()) {
+            invalidCodes.add(finding.code());
+        }
+        // Een overgeslagen afhankelijke controle steunt op een fout die hierboven al staat.
+        Character quoteValue = quote.failed() ? null : quote.value();
+        return new SourceLayout(charset, delimiter.value(), quoteValue, hasHeader, headerLineNumber, referenceKind,
+                invalidCodes);
+    }
+
     /** De opgebouwde configuratie (enkel in de stand FIRST) en de feiten voor de mappingcontrole. */
     private record Reading(SourceStructureConfig config, StructureFacts facts) {
     }
@@ -158,11 +204,7 @@ public class SourceStructureConfigFactory {
                                 ConfigProblemCollector problems) {
         // S1
         String format = revision.getStructureFormat();
-        problems.check(REVISION_FIELD_FORMAT, () -> {
-            if (!"CSV".equals(format)) {
-                throw blocked(CODE_FORMAT_UNSUPPORTED, "Source format " + format + " is not supported");
-            }
-        });
+        problems.check(REVISION_FIELD_FORMAT, () -> requireSupportedFormat(format));
 
         // S2, S3, S4 (de gelijkheid met het scheidingsteken steunt op S3)
         Charset charset = problems.branch(REVISION_FIELD_CHARSET,
@@ -175,12 +217,7 @@ public class SourceStructureConfigFactory {
         // S5
         boolean hasHeader = revision.isStructureHasHeader();
         int headerLineNumber = revision.getStructureHeaderLineNumber();
-        problems.check(REVISION_FIELD_HEADER_LINE_NUMBER, () -> {
-            if (hasHeader && headerLineNumber < 1) {
-                throw blocked(CODE_HEADER_LINE_INVALID,
-                        "Header line number must be 1 or higher but is " + headerLineNumber);
-            }
-        });
+        problems.check(REVISION_FIELD_HEADER_LINE_NUMBER, () -> requireHeaderLine(hasHeader, headerLineNumber));
 
         // S6, S7 (steunt op S6)
         Outcome<FieldReferenceKind> kind = problems.branch(REVISION_FIELD_REFERENCE_KIND,
@@ -373,6 +410,21 @@ public class SourceStructureConfigFactory {
                     + "currency is never guessed, corrected or replaced by the system default");
         }
         return trimmed;
+    }
+
+    /** S1: enkel CSV wordt ondersteund (databasecheck {@code structure_format in ('CSV')}). */
+    private static void requireSupportedFormat(String format) {
+        if (!"CSV".equals(format)) {
+            throw blocked(CODE_FORMAT_UNSUPPORTED, "Source format " + format + " is not supported");
+        }
+    }
+
+    /** S5: een header staat op regel 1 of later. */
+    private static void requireHeaderLine(boolean hasHeader, int headerLineNumber) {
+        if (hasHeader && headerLineNumber < 1) {
+            throw blocked(CODE_HEADER_LINE_INVALID,
+                    "Header line number must be 1 or higher but is " + headerLineNumber);
+        }
     }
 
     private static Charset charset(String name) {

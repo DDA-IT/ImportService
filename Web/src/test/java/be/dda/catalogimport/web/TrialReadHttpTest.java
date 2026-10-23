@@ -529,6 +529,87 @@ class TrialReadHttpTest {
                 chain.revisionId())).isEqualTo("ACTIVE");
     }
 
+    // --- Kolomvoorbeeld (EB5/G3, par. 2 en 3) ---------------------------------------------------------------------
+
+    /**
+     * EB5: {@code columnPreview} staat in het antwoord, is byte-gelijk bij een tweede proef van hetzelfde bestand en laat
+     * geen spoor na in de tabellen of het archief; {@code sampleRows} blijft ongewijzigd.
+     */
+    @Test
+    void theColumnPreviewIsInTheAnswerByteEqualOnRepeatAndNothingIsStoredOrArchived() throws Exception {
+        Chain chain = chain("CPV", revisionJson("25", "null"), null, true, revisionId -> { });
+        byte[] csv = csv(row("R1", "1,00", "Hamer"), row("R2", "2,00", "Zaag"));
+        List<Long> tablesBefore = sideEffectCounts();
+        long archivedBefore = archivedFileCount();
+
+        String first = trialOk(chain, csv, true);
+        String second = trialOk(chain, csv, true);
+
+        assertThat(second).isEqualTo(first);
+        assertThat(sideEffectCounts()).isEqualTo(tablesBefore);
+        assertThat(archivedFileCount()).isEqualTo(archivedBefore);
+
+        assertThat(string(first, "$.columnPreview.status")).isEqualTo("AVAILABLE");
+        assertThat(string(first, "$.columnPreview.layout.charset")).isEqualTo("UTF-8");
+        assertThat(string(first, "$.columnPreview.layout.delimiter")).isEqualTo(";");
+        assertThat(string(first, "$.columnPreview.layout.quoteChar")).isEqualTo("\"");
+        assertThat((Boolean) read(first, "$.columnPreview.layout.hasHeader")).isTrue();
+        assertThat(number(first, "$.columnPreview.layout.headerLineNumber")).isEqualTo(1L);
+        assertThat(string(first, "$.columnPreview.layout.referenceKind")).isEqualTo("HEADER_NAME");
+        assertThat(number(first, "$.columnPreview.headerLineNumber")).isEqualTo(1L);
+        assertThat(this.<List<String>>read(first, "$.columnPreview.columns[*].header"))
+                .containsExactly("leverancier", "groep", "referentie", "prijs", "omschrijving");
+        assertThat(this.<List<Integer>>read(first, "$.columnPreview.columns[*].position")).containsExactly(1, 2, 3, 4, 5);
+        assertThat(this.<List<Object>>read(first, "$.columnPreview.rows")).hasSize(2);
+        assertThat(number(first, "$.columnPreview.rows[0].lineNumber")).isEqualTo(2L);
+        assertThat(this.<List<String>>read(first, "$.columnPreview.rows[0].cells"))
+                .containsExactly("ACME", "G1", "R1", "1,00", "Hamer");
+        assertThat((Boolean) read(first, "$.columnPreview.rows[0].unreadable")).isFalse();
+        assertThat((Boolean) read(first, "$.columnPreview.columnsTruncated")).isFalse();
+        assertThat((Boolean) read(first, "$.columnPreview.rowsTruncated")).isFalse();
+        // Het bestaande contract blijft.
+        assertThat(this.<List<Object>>read(first, "$.sampleRows")).hasSize(2);
+        assertThat(string(first, "$.sampleRows[0].status")).isEqualTo("VALID");
+    }
+
+    /** EB5: ook bij een configuratiefout vóór het lezen toont het voorbeeld de kolommen van het bestand. */
+    @Test
+    void theColumnPreviewIsAlsoThereWhenTheConfigurationFails(CapturedOutput output) throws Exception {
+        Chain chain = chain("CPC", revisionJson("25", "null"), null, true, revisionId -> { });
+        jdbc.update("update import_definition_revision set identity_supplier_field = ' ' where id = ?",
+                chain.revisionId());
+        byte[] csv = csv(row("GEHEIMREF", "1,00", "Geheime omschrijving"));
+        List<Long> tablesBefore = sideEffectCounts();
+
+        String trial = trialOk(chain, csv, true);
+
+        assertThat(string(trial, "$.verdict.stage")).isEqualTo("CONFIGURATION");
+        assertThat(string(trial, "$.verdict.blockedCode")).isEqualTo("CONFIG_IDENTITY_FIELD_MISSING");
+        assertThat(string(trial, "$.columnPreview.status")).isEqualTo("AVAILABLE");
+        assertThat(this.<List<String>>read(trial, "$.columnPreview.columns[*].header")).hasSize(5).first()
+                .isEqualTo("leverancier");
+        assertThat(this.<List<String>>read(trial, "$.columnPreview.rows[0].cells")).contains("GEHEIMREF");
+        assertThat(sideEffectCounts()).isEqualTo(tablesBefore);
+        // De inhoud staat in het antwoord, nooit in de log.
+        assertThat(output.getOut()).doesNotContain("GEHEIMREF", "Geheime omschrijving");
+    }
+
+    /** EB5: een ongeldige tekenset geeft LAYOUT_INVALID, zonder kolommen; het verdict is de configuratiefout. */
+    @Test
+    void anUnknownCharsetGivesAnInvalidLayoutPreview() throws Exception {
+        Chain chain = chain("CPL", revisionJson("25", "null"), null, true, revisionId -> { });
+        jdbc.update("update import_definition_revision set structure_charset = 'NOPE-9' where id = ?",
+                chain.revisionId());
+
+        String trial = trialOk(chain, csv(row("R1", "1,00", "a")), true);
+
+        assertThat(string(trial, "$.verdict.blockedCode")).isEqualTo("CONFIG_CHARSET_UNKNOWN");
+        assertThat(string(trial, "$.columnPreview.status")).isEqualTo("LAYOUT_INVALID");
+        assertThat((Object) read(trial, "$.columnPreview.layout.charset")).isNull();
+        assertThat(this.<List<Object>>read(trial, "$.columnPreview.columns")).isEmpty();
+        assertThat(this.<List<Object>>read(trial, "$.columnPreview.rows")).isEmpty();
+    }
+
     // --- Revisiestatus, rechten en foutcodes (par. 1, 3 en 5) -----------------------------------------------------
 
     @Test

@@ -3460,3 +3460,11 @@ MIGRATED-item, NOT_FOUND verwijdert het; OVERWRITTEN en MANUAL_OVERWRITTEN zijn 
 Prodis-rijen van de geplande codes. Bewust wissen (beide leeg, MANUAL) wordt bij een volgende overname opnieuw gevuld
 (matrix "leeg → invullen"). `targetOfLine(51/45)` = LINK_CREATION_DEFAULT (frontend volgt).
 **Bron:** bouwer-zwaar (CD-B3-rapport)
+
+## 2026-10-23 — EB5: keuzes kolomvoorbeeld proefinlezing
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** Properties buiten bereik (preview-rows > 50,
+preview-max-bytes > 8 MiB) laten de applicatie niet starten (stijl SftpConnector). Ongeldige quote, kopregel of formaat
+geven ook LAYOUT_INVALID. Een onleesbare kopregel geeft status AVAILABLE met lege kolommen (geen extra status). Vaste
+posities bestaan niet in het project (structure_format = CSV); geen voorbeeld voor andere formaten. rowsTruncated mag
+"mogelijk meer" zijn.
+**Bron:** bouwer-zwaar (EB5-rapport)

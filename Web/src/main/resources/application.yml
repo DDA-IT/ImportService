@@ -219,6 +219,15 @@ catalogimport:
     # identiteiten (grofweg 100 bytes per identiteit). Wordt de grens bereikt, dan is duplicateIdentityCount null
     # en staat de controle als TRACKING_LIMIT_REACHED in notEvaluated - nooit een stille 0.
     max-tracked-identities: 2000000
+    # Kolomvoorbeeld (columnPreview, EB5/G3; docs/design/proefinlezing-design.md par. 2 en 3): enkel het begin van het
+    # bestand wordt bekeken en niets wordt bewaard. Aantal datalijnen (0 of negatief = default 10; meer dan 50 = de
+    # applicatie start niet).
+    preview-rows: 10
+    # Hoogstens zoveel kolommen (en cellen per regel); 0 of negatief = default 500. Een cel wordt op 200 tekens gekapt.
+    preview-max-columns: 500
+    # Zoveel bytes van het begin van het bestand (0 of negatief = default 1 MiB; meer dan 8 MiB = de applicatie start
+    # niet). Een regel die op die grens afgebroken is, wordt weggelaten (rowsTruncated).
+    preview-max-bytes: 1048576
   publication-run:
     # Herstel van een vastgelopen PREPARING-publicatierun (docs/decisions.md 2026-09-27): een run die
     # tussen aanmaken en afronden door een proces- of serverfout blijft staan, blokkeert anders voorgoed
