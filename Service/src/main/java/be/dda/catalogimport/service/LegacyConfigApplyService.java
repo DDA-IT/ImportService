@@ -1836,7 +1836,8 @@ public class LegacyConfigApplyService {
      * G2a: de eigen kopie van de gedeelde definitie ({@code docs/design/g2-design.md} par. G2a punten 3 en 4).
      * <ol>
      *   <li>{@code OWN_DEFINITION} met de geplande code en beschrijving via {@link SetupService#createDefinition} (zelfde
-     *       leverancier), {@code based_on_definition_id} = de gedeelde definitie (niet het sjabloon);</li>
+     *       leverancier), {@code based_on_definition_id} = de gedeelde definitie (niet het sjabloon), en de vlag
+     *       {@code overwrite_creation_defaults} van de gedeelde definitie (CD-B2; audit leeg);</li>
      *   <li>met een ACTIVE revisie (V2 = A): revisie 1 = letterlijke kopie via {@link RevisionCopier} met alle
      *       kindtabellen zoals een opvolgende revisie (mappings met vertaalrijen en ketenstappen, filters,
      *       kritiekheden, bookmarkdeclaraties met usages en bookmarkwaarden), gecontroleerd tegen de inhoud die de
@@ -1857,6 +1858,8 @@ public class LegacyConfigApplyService {
                 DefinitionUsageType.OWN_DEFINITION), actor).id();
         ImportDefinition copy = definitions.findById(copyId).orElseThrow();
         copy.setBasedOnDefinition(shared);
+        // CD-B2 (beslissingslog 2026-10-23 "Vlag 'standaarden overschrijven'"): de kopie erft de vlag, zonder audit.
+        copy.inheritOverwriteCreationDefaults(shared);
         definitions.saveAndFlush(copy);
         if (!detach.carriesActive()) {
             long first = setup.createRevision(copyId, createCommand(planned, reason), actor, false).id();

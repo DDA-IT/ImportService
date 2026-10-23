@@ -245,8 +245,11 @@ class ImportLinkCredentialStateHttpTest {
         String body = body(f.definitionId());
         List<Map<String, Object>> rows = JsonPath.read(body, "$.content");
         assertThat(rows).singleElement().satisfies(row -> {
+            // CD-B2 voegde de aanmaakstandaard toe (additief, geen credentialgegevens).
             assertThat(row.keySet()).containsExactlyInAnyOrder("id", "code", "name", "supplierCode",
-                    "supplierName", "libraryCode", "active", "importDefinitionId", "credentialState");
+                    "supplierName", "libraryCode", "active", "importDefinitionId", "credentialState",
+                    "defaultVatCode", "defaultUnitCode", "creationDefaultsOrigin", "creationDefaultsUpdatedAt",
+                    "creationDefaultsUpdatedBy");
             assertThat(row.get("credentialState")).isEqualTo("STORED");
         });
         for (CredentialView credential : List.of(legacy, chain)) {

@@ -2,6 +2,8 @@ package be.dda.catalogimport.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.ForeignKey;
 import jakarta.persistence.GeneratedValue;
@@ -77,6 +79,34 @@ public class ImportLink {
      */
     @Column(name = "default_currency", length = 3)
     private String defaultCurrency;
+
+    /**
+     * Aanmaakstandaard (changeset 030; beslissingslog 2026-10-23 "Aanmaakstandaard per koppeling: uitwerking (CD)"):
+     * de Prodis-btw-code ({@code vat_code.code}) die CatalogImport gebruikt wanneer het later een artikel aanmaakt (P8);
+     * nooit om een bestaand artikel te overschrijven. {@code null} = geen standaard.
+     */
+    @Column(name = "default_vat_code", length = 50)
+    private String defaultVatCode;
+
+    /** Aanmaakstandaard: de Prodis-eenheid ({@code unit_of_measure.code}); zie {@link #defaultVatCode}. */
+    @Column(name = "default_unit_code", length = 50)
+    private String defaultUnitCode;
+
+    /** Wie de huidige aanmaakstandaard zette; {@code null} = nooit gezet. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "creation_defaults_origin", length = 20)
+    private CreationDefaultsOrigin creationDefaultsOrigin;
+
+    /** Audit van de laatste wijziging van de aanmaakstandaard (ook een wissing). */
+    @Column(name = "creation_defaults_updated_at")
+    private Instant creationDefaultsUpdatedAt;
+
+    @Column(name = "creation_defaults_updated_by", length = 100)
+    private String creationDefaultsUpdatedBy;
+
+    /** OIDC-subject bij {@link #creationDefaultsUpdatedBy}; {@code null} = geen geverifieerde identiteit (zoals 007). */
+    @Column(name = "creation_defaults_updated_by_subject", length = 255)
+    private String creationDefaultsUpdatedBySubject;
 
     @Column(name = "active", nullable = false)
     private boolean active = true;
@@ -172,6 +202,55 @@ public class ImportLink {
 
     public void setDefaultCurrency(String defaultCurrency) {
         this.defaultCurrency = defaultCurrency;
+    }
+
+    public String getDefaultVatCode() {
+        return defaultVatCode;
+    }
+
+    public String getDefaultUnitCode() {
+        return defaultUnitCode;
+    }
+
+    public CreationDefaultsOrigin getCreationDefaultsOrigin() {
+        return creationDefaultsOrigin;
+    }
+
+    public Instant getCreationDefaultsUpdatedAt() {
+        return creationDefaultsUpdatedAt;
+    }
+
+    public String getCreationDefaultsUpdatedBy() {
+        return creationDefaultsUpdatedBy;
+    }
+
+    public String getCreationDefaultsUpdatedBySubject() {
+        return creationDefaultsUpdatedBySubject;
+    }
+
+    /**
+     * Vervangt de volledige aanmaakstandaard (btw-code én eenheid) en legt vast wie dat deed en wanneer. {@code null}
+     * wist een code. Er is geen losse setter per veld: herkomst en audit horen altijd bij de waarden
+     * ({@code ck_import_link_creation_defaults_audit}).
+     *
+     * @param vatCode       de btw-code (getrimd, niet blanco) of {@code null}
+     * @param unitCode      de eenheid (getrimd, niet blanco) of {@code null}
+     * @param origin        wie de waarden zette; verplicht
+     * @param updatedBy     de naam van wie de wijziging deed; verplicht
+     * @param updatedBySubject het OIDC-subject, of {@code null} (geen geverifieerde identiteit)
+     * @param now           het tijdstip van de wijziging; verplicht
+     */
+    public void setCreationDefaults(String vatCode, String unitCode, CreationDefaultsOrigin origin, String updatedBy,
+                                    String updatedBySubject, Instant now) {
+        if (origin == null || updatedBy == null || updatedBy.isBlank() || now == null) {
+            throw new IllegalArgumentException("Creation defaults need an origin, a signer and a timestamp");
+        }
+        this.defaultVatCode = vatCode;
+        this.defaultUnitCode = unitCode;
+        this.creationDefaultsOrigin = origin;
+        this.creationDefaultsUpdatedBy = updatedBy;
+        this.creationDefaultsUpdatedBySubject = updatedBySubject;
+        this.creationDefaultsUpdatedAt = now;
     }
 
     public boolean isActive() {

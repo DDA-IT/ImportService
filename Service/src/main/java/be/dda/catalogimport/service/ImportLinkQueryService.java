@@ -5,6 +5,7 @@ import be.dda.catalogimport.dao.ExternalCredentialRepository.LinkCredentialStatu
 import be.dda.catalogimport.dao.ImportLinkRepository;
 import be.dda.catalogimport.domain.ExternalCredentialStatus;
 import be.dda.catalogimport.domain.ImportLink;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,15 +48,25 @@ public class ImportLinkQueryService {
      * ({@code legacy_config_origin.credential_id}) of via een taak → leveringsconfiguratieversie →
      * verbindingsprofielversie. Enkel statusinformatie (L7b, READ): nooit {@code credentialRef}, label, host of
      * ciphertext.
+     * <p>
+     * De aanmaakstandaard is additief (CD-B2, beslissingslog 2026-10-23 "Aanmaakstandaard per koppeling: uitwerking
+     * (CD)"): {@code defaultVatCode}/{@code defaultUnitCode} ({@code null} = geen standaard),
+     * {@code creationDefaultsOrigin} ({@code LEGACY}, {@code MANUAL} of {@code null} = nooit gezet) en de audit van de
+     * laatste wijziging ({@code creationDefaultsUpdatedAt}/{@code creationDefaultsUpdatedBy}; het subject blijft intern).
      */
     public record ImportLinkRow(Long id, String code, String name, String supplierCode, String supplierName,
                                 String libraryCode, boolean active, long importDefinitionId,
-                                String credentialState) {
+                                String credentialState, String defaultVatCode, String defaultUnitCode,
+                                String creationDefaultsOrigin, Instant creationDefaultsUpdatedAt,
+                                String creationDefaultsUpdatedBy) {
 
         private static ImportLinkRow of(ImportLink link, String credentialState) {
             return new ImportLinkRow(link.getId(), link.getCode(), link.getName(),
                     link.getSupplierOrganisation().getCode(), link.getSupplierOrganisation().getName(),
-                    link.getLibraryCode(), link.isActive(), link.getImportDefinition().getId(), credentialState);
+                    link.getLibraryCode(), link.isActive(), link.getImportDefinition().getId(), credentialState,
+                    link.getDefaultVatCode(), link.getDefaultUnitCode(),
+                    link.getCreationDefaultsOrigin() == null ? null : link.getCreationDefaultsOrigin().name(),
+                    link.getCreationDefaultsUpdatedAt(), link.getCreationDefaultsUpdatedBy());
         }
     }
 

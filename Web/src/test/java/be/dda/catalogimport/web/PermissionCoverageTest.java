@@ -168,6 +168,11 @@ class PermissionCoverageTest {
         m.put("DELETE " + s + "/revisions/{}/mappings/{}", "MANAGE");
         m.put("PUT " + s + "/revisions/{}/mappings/{}", "MANAGE");
         m.put("DELETE " + s + "/revisions/{}/filters/{}", "MANAGE");
+        // CD-B2 (beslissingslog 2026-10-23 "Aanmaakstandaard per koppeling: uitwerking (CD)" en "Vlag 'standaarden
+        // overschrijven'"): aanmaakstandaard van een koppeling en de vlag op de definitie - setup-schrijfpaden, MANAGE,
+        // niet achter de setup-vlag.
+        m.put("PUT " + s + "/links/{}/creation-defaults", "MANAGE");
+        m.put("PUT " + s + "/definitions/{}/overwrite-creation-defaults", "MANAGE");
         // Templates en links. Sinds NT-3 staan enkel de twee declaratiepaden (bookmarks, usages - sjabloonbeheer,
         // CatalogImportTemplateDeclarationController) nog achter catalogimport.setup-api.enabled; lezen,
         // materialiseren en de bookmarkwaarden van een koppeling niet meer.

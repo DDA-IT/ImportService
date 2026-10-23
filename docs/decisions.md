@@ -3398,3 +3398,11 @@ F3/F4: badge "Klaar / Niet klaar: …" vervangt "Actief" in "Gebruikt door" (ina
 servercontrole per koppeling geldt op het dashboard en de koppelingskaarten, niet op de algemene gereedheid van het
 leveranciersdetail; geen dubbele reden naast NO_ACTIVE_VERSION/LINK_WITHOUT_TASK/NO_ACTIVE_TASK.
 **Bron:** bouwer-gemiddeld (E3- en F3/F4-rapport)
+
+## 2026-10-23 — Werkwijze: tests schrijven, niet uitvoeren (mens)
+**Vraag:** De mens vond de doorlooptijd te lang.
+**Beslissing (mens):** Bouwers schrijven en passen tests aan, maar voeren ze niet uit; ook de hoofdsessie hertest niet.
+De mens draait de tests zelf. Compileren / typecontrole (tsc, test-compile) mag wel. Elk rapport en elke commit vermeldt
+welke tests geschreven/gewijzigd zijn, het commando om ze te draaien, en dat ze niet uitgevoerd zijn. Wijkt af van
+AGENT.md §3 "gericht getest" en §4 regel 4 (DoD-controle door hertest); de DoD-controle gebeurt nu op inhoud + compilatie.
+**Bron:** mens

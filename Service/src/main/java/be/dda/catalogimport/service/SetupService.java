@@ -15,6 +15,7 @@ import be.dda.catalogimport.dao.ImportRevisionFieldCriticalityRepository;
 import be.dda.catalogimport.dao.SourceOrganisationRepository;
 import be.dda.catalogimport.dao.SourceStateDao;
 import be.dda.catalogimport.domain.CatalogImportTask;
+import be.dda.catalogimport.domain.CreationDefaultsOrigin;
 import be.dda.catalogimport.domain.Criticality;
 import be.dda.catalogimport.domain.DefinitionUsageType;
 import be.dda.catalogimport.domain.FieldTransformKind;
@@ -137,6 +138,14 @@ public class SetupService {
     static final int MAX_IDENTITY_FIXED_VALUE_LENGTH = 50;
     /** {@code import_definition_revision.change_reason}. */
     static final int MAX_CHANGE_REASON_LENGTH = 500;
+    /** {@code import_link.default_vat_code}, {@code import_link.default_unit_code} (changeset 030). */
+    static final int MAX_CREATION_DEFAULT_CODE_LENGTH = 50;
+    /** 400 (CD-B2): de btw-code bestaat niet onder de actieve Prodis-rijen ({@code vat_code.code}). */
+    public static final String CODE_PRODIS_VAT_CODE_NOT_FOUND = "PRODIS_VAT_CODE_NOT_FOUND";
+    /** 400 (CD-B2): de eenheid bestaat niet onder de actieve Prodis-rijen ({@code unit_of_measure.code}). */
+    public static final String CODE_PRODIS_UNIT_NOT_FOUND = "PRODIS_UNIT_NOT_FOUND";
+    /** Waarschuwing (CD-B2): de code komt meer dan eens voor onder de actieve Prodis-rijen; de waarde is bewaard. */
+    public static final String WARNING_PRODIS_REFERENCE_AMBIGUOUS = "PRODIS_REFERENCE_AMBIGUOUS";
     /** Wie een rij aanmaakte wanneer de aanroeper niets meegeeft; nooit een echte gebruikersnaam. */
     private static final String DEFAULT_CREATED_BY = "setup-api";
 
@@ -396,9 +405,11 @@ public class SetupService {
      * Een waarschuwing bij het aanmaken of wijzigen van een revisie (legacy-config S6, additief): het verzoek is
      * uitgevoerd, maar iets is niet nagekeken. Vandaag enkel {@code PRODIS_REFERENCE_NOT_VERIFIED}: een vaste
      * leverancier/groep is aanvaard zonder Prodis-controle omdat de Prodis-leesbron niet geconfigureerd is. Wordt niet
-     * bewaard; enkel in het antwoord van dat verzoek.
+     * bewaard; enkel in het antwoord van dat verzoek. Sinds CD-B2 ook bij de aanmaakstandaard van een koppeling
+     * ({@code PRODIS_REFERENCE_NOT_VERIFIED} of {@value #WARNING_PRODIS_REFERENCE_AMBIGUOUS}).
      *
-     * @param field het verzoekveld ({@code supplierFixedValue} of {@code supplierGroupFixedValue})
+     * @param field het verzoekveld ({@code supplierFixedValue}, {@code supplierGroupFixedValue}, {@code vatCode} of
+     *              {@code unitCode})
      */
     public record SetupWarning(String code, String field, String message) {
     }
@@ -441,6 +452,37 @@ public class SetupService {
 
     public record TaskView(long id, long linkId, String name, String triggerType, boolean active,
                            boolean preventConcurrentRuns) {
+    }
+
+    /**
+     * Body van {@code PUT /setup/links/{id}/creation-defaults} (CD-B2): vervangt <b>beide</b> codes; blanco of
+     * {@code null} wist die code.
+     */
+    public record SetCreationDefaultsCommand(String vatCode, String unitCode) {
+    }
+
+    /**
+     * De aanmaakstandaard van een koppeling na het verzoek, met de waarschuwingen van dat verzoek (niet bewaard).
+     *
+     * @param creationDefaultsOrigin {@code LEGACY}, {@code MANUAL} of {@code null} (nooit gezet)
+     */
+    public record LinkCreationDefaultsView(long linkId, String defaultVatCode, String defaultUnitCode,
+                                           String creationDefaultsOrigin, Instant creationDefaultsUpdatedAt,
+                                           String creationDefaultsUpdatedBy, List<SetupWarning> warnings) {
+
+        public LinkCreationDefaultsView {
+            warnings = warnings == null ? List.of() : List.copyOf(warnings);
+        }
+    }
+
+    /** Body van {@code PUT /setup/definitions/{id}/overwrite-creation-defaults} (CD-B2); {@code enabled} is verplicht. */
+    public record SetOverwriteCreationDefaultsCommand(Boolean enabled) {
+    }
+
+    /** De vlag "standaarden overschrijven" van een definitie met de audit van de laatste wijziging. */
+    public record DefinitionOverwriteFlagView(long definitionId, boolean overwriteCreationDefaults,
+                                              Instant overwriteCreationDefaultsChangedAt,
+                                              String overwriteCreationDefaultsChangedBy) {
     }
 
     /** Het overzicht dat toont welke {@code taskId} bij welke keten hoort. */
@@ -1527,6 +1569,91 @@ public class SetupService {
             }
             throw translateCreateConflict(violation, "uk_import_link_scope", linkScopeInUse(supplier, libraryCode));
         }
+    }
+
+    // --- Aanmaakstandaard en vlag "standaarden overschrijven" (CD-B2) -------------------------------------------------
+
+    /**
+     * Zet of wist de aanmaakstandaard (btw-code en eenheid) van een koppeling (CD-B2; beslissingslog 2026-10-23
+     * "Aanmaakstandaard per koppeling: uitwerking (CD)"). Het verzoek vervangt <b>beide</b> codes; blanco wordt
+     * {@code null} (wissen mag); waarden worden getrimd en daarna exact (hoofdlettergevoelig) in Prodis vergeleken.
+     * Controle in Prodis volgens het S6-patroon ({@link ProdisReferenceService#verifyCreationDefaults}):
+     * <ul>
+     *   <li>niet gevonden onder de actieve rijen → 400 {@value #CODE_PRODIS_VAT_CODE_NOT_FOUND} /
+     *       {@value #CODE_PRODIS_UNIT_NOT_FOUND}, er wordt niets bewaard;</li>
+     *   <li>meer dan één actieve rij met die code → bewaard, met waarschuwing {@value #WARNING_PRODIS_REFERENCE_AMBIGUOUS}
+     *       (de code is een businesscode; welke rij P8 later gebruikt, beslist P8 - nooit stil hier);</li>
+     *   <li>Prodis niet geconfigureerd → bewaard, met waarschuwing {@code PRODIS_REFERENCE_NOT_VERIFIED} per code;</li>
+     *   <li>Prodis onbereikbaar → 503 {@code PRODIS_DB_UNAVAILABLE}, er wordt niets bewaard.</li>
+     * </ul>
+     * Elk geslaagd verzoek zet de herkomst op {@link CreationDefaultsOrigin#MANUAL} en de audit (naam, subject, tijdstip)
+     * op deze wijziging, ook als de waarden gelijk blijven (een expliciete menselijke handeling); {@code import_link
+     * .updated_at} schuift mee. De Prodis-controle gebeurt enkel voor een gevraagde (niet-lege) code.
+     *
+     * @throws NotFoundException   {@code LINK_NOT_FOUND}
+     * @throws BadRequestException {@code VAT_CODE_TOO_LONG}, {@code UNIT_CODE_TOO_LONG},
+     *                             {@value #CODE_PRODIS_VAT_CODE_NOT_FOUND}, {@value #CODE_PRODIS_UNIT_NOT_FOUND}
+     * @throws ProdisReferenceUnavailableException 503
+     */
+    public LinkCreationDefaultsView setLinkCreationDefaults(long linkId, SetCreationDefaultsCommand command,
+                                                            ActorIdentity actor) {
+        ImportLink link = links.findById(linkId)
+                .orElseThrow(() -> new NotFoundException("LINK_NOT_FOUND", "Import link " + linkId + " does not exist"));
+        SetCreationDefaultsCommand request = command == null ? new SetCreationDefaultsCommand(null, null) : command;
+        String vatCode = SetupInput.optionalText(request.vatCode(), "vatCode", MAX_CREATION_DEFAULT_CODE_LENGTH);
+        String unitCode = SetupInput.optionalText(request.unitCode(), "unitCode", MAX_CREATION_DEFAULT_CODE_LENGTH);
+        String updatedBy = SetupInput.requireText(actor.username(), "updatedBy", MAX_USER_LENGTH);
+
+        ProdisReferenceService.CreationDefaultsCheck check = prodis.verifyCreationDefaults(vatCode, unitCode);
+        List<SetupWarning> warnings = new ArrayList<>(2);
+        creationDefaultOutcome(check.vat(), "vatCode", "VAT code " + vatCode, CODE_PRODIS_VAT_CODE_NOT_FOUND,
+                "vat_code.code", warnings);
+        creationDefaultOutcome(check.unit(), "unitCode", "unit " + unitCode, CODE_PRODIS_UNIT_NOT_FOUND,
+                "unit_of_measure.code", warnings);
+
+        link.setCreationDefaults(vatCode, unitCode, CreationDefaultsOrigin.MANUAL, updatedBy, actor.subject(),
+                Instant.now());
+        ImportLink saved = links.saveAndFlush(link);
+        return new LinkCreationDefaultsView(saved.getId(), saved.getDefaultVatCode(), saved.getDefaultUnitCode(),
+                saved.getCreationDefaultsOrigin() == null ? null : saved.getCreationDefaultsOrigin().name(),
+                saved.getCreationDefaultsUpdatedAt(), saved.getCreationDefaultsUpdatedBy(), warnings);
+    }
+
+    /** Vertaalt de Prodis-uitkomst van één code: 400 bij niet gevonden, anders hoogstens een waarschuwing. */
+    private static void creationDefaultOutcome(ProdisReferenceService.CodeMatch match, String field, String what,
+                                               String notFoundCode, String prodisColumn, List<SetupWarning> warnings) {
+        switch (match) {
+            case NOT_FOUND -> throw new BadRequestException(notFoundCode, field + ": " + what
+                    + " is not an active " + prodisColumn + " in Prodis; nothing was saved");
+            case AMBIGUOUS -> warnings.add(new SetupWarning(WARNING_PRODIS_REFERENCE_AMBIGUOUS, field, what
+                    + " occurs more than once among the active rows in Prodis (" + prodisColumn + " is not unique)"));
+            case NOT_CONFIGURED -> warnings.add(notVerified(field, what));
+            case FOUND, NOT_REQUESTED -> {
+                // Niets te melden.
+            }
+        }
+    }
+
+    /**
+     * Zet de vlag "standaarden overschrijven" van een importdefinitie (CD-B2; beslissingslog 2026-10-23 "Vlag
+     * 'standaarden overschrijven' op de importdefinitie") en legt de audit van deze wijziging vast. Bij een gedeelde
+     * definitie geldt de vlag voor alle koppelingen eronder. Raakt geen revisie, hash of readiness.
+     *
+     * @throws NotFoundException   {@code DEFINITION_NOT_FOUND}
+     * @throws BadRequestException {@code ENABLED_REQUIRED}
+     */
+    public DefinitionOverwriteFlagView setOverwriteCreationDefaults(long definitionId,
+                                                                    SetOverwriteCreationDefaultsCommand command,
+                                                                    ActorIdentity actor) {
+        ImportDefinition definition = definitions.findById(definitionId)
+                .orElseThrow(() -> new NotFoundException("DEFINITION_NOT_FOUND",
+                        "Import definition " + definitionId + " does not exist"));
+        boolean enabled = SetupInput.require(command == null ? null : command.enabled(), "enabled");
+        String changedBy = SetupInput.requireText(actor.username(), "changedBy", MAX_USER_LENGTH);
+        definition.setOverwriteCreationDefaults(enabled, changedBy, actor.subject(), Instant.now());
+        ImportDefinition saved = definitions.saveAndFlush(definition);
+        return new DefinitionOverwriteFlagView(saved.getId(), saved.isOverwriteCreationDefaults(),
+                saved.getOverwriteCreationDefaultsChangedAt(), saved.getOverwriteCreationDefaultsChangedBy());
     }
 
     private static ConflictException linkCodeInUse(String code) {

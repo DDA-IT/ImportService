@@ -11,12 +11,16 @@ import be.dda.catalogimport.service.SetupService.CreateMappingCommand;
 import be.dda.catalogimport.service.SetupService.CreateRevisionCommand;
 import be.dda.catalogimport.service.SetupService.CreateSourceOrganisationCommand;
 import be.dda.catalogimport.service.SetupService.CreateTaskCommand;
+import be.dda.catalogimport.service.SetupService.DefinitionOverwriteFlagView;
 import be.dda.catalogimport.service.SetupService.DefinitionView;
 import be.dda.catalogimport.service.SetupService.FieldCriticalityView;
 import be.dda.catalogimport.service.SetupService.FilterView;
+import be.dda.catalogimport.service.SetupService.LinkCreationDefaultsView;
 import be.dda.catalogimport.service.SetupService.LinkView;
 import be.dda.catalogimport.service.SetupService.MappingView;
 import be.dda.catalogimport.service.SetupService.RevisionView;
+import be.dda.catalogimport.service.SetupService.SetCreationDefaultsCommand;
+import be.dda.catalogimport.service.SetupService.SetOverwriteCreationDefaultsCommand;
 import be.dda.catalogimport.service.SetupService.SourceOrganisationView;
 import be.dda.catalogimport.service.SetupService.TaskView;
 import be.dda.catalogimport.service.SetupService.UpdateRevisionCommand;
@@ -274,6 +278,39 @@ public class CatalogImportSetupController {
     LinkView createLink(@RequestBody CreateLinkCommand request) {
         requireSigningUser();
         return setup.createLink(request);
+    }
+
+    /**
+     * Zet of wist de aanmaakstandaard (btw-code en eenheid) van een koppeling (CD-B2; beslissingslog 2026-10-23
+     * "Aanmaakstandaard per koppeling: uitwerking (CD)"). Body {@code {vatCode, unitCode}} vervangt beide; blanco wist.
+     * <p>
+     * 200 met de aanmaakstandaard en de waarschuwingen ({@code PRODIS_REFERENCE_AMBIGUOUS},
+     * {@code PRODIS_REFERENCE_NOT_VERIFIED}); 404 {@code LINK_NOT_FOUND}; 400 {@code VAT_CODE_TOO_LONG},
+     * {@code UNIT_CODE_TOO_LONG}, {@code PRODIS_VAT_CODE_NOT_FOUND}, {@code PRODIS_UNIT_NOT_FOUND}; 503
+     * {@code PRODIS_DB_UNAVAILABLE}. Bij een fout is er niets bewaard. Zoals elk setup-schrijfpad enkel MANAGE, niet
+     * achter de setup-vlag (NT-3).
+     */
+    @RequiresPermission(Permission.MANAGE)
+    @PutMapping("/links/{linkId}/creation-defaults")
+    LinkCreationDefaultsView setLinkCreationDefaults(@PathVariable("linkId") long linkId,
+                                                     @RequestBody(required = false) SetCreationDefaultsCommand request) {
+        ActorIdentity actor = currentActor.signer(null, "updatedBy");
+        return setup.setLinkCreationDefaults(linkId, request, actor);
+    }
+
+    /**
+     * Zet de vlag "standaarden overschrijven" van een importdefinitie (CD-B2; beslissingslog 2026-10-23 "Vlag
+     * 'standaarden overschrijven' op de importdefinitie"). Body {@code {enabled}}.
+     * <p>
+     * 200 met de vlag en de audit; 404 {@code DEFINITION_NOT_FOUND}; 400 {@code ENABLED_REQUIRED}.
+     */
+    @RequiresPermission(Permission.MANAGE)
+    @PutMapping("/definitions/{definitionId}/overwrite-creation-defaults")
+    DefinitionOverwriteFlagView setOverwriteCreationDefaults(
+            @PathVariable("definitionId") long definitionId,
+            @RequestBody(required = false) SetOverwriteCreationDefaultsCommand request) {
+        ActorIdentity actor = currentActor.signer(null, "changedBy");
+        return setup.setOverwriteCreationDefaults(definitionId, request, actor);
     }
 
     @RequiresPermission(Permission.MANAGE)

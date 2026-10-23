@@ -171,6 +171,9 @@ class PermissionWriteEndpointsHttpTest {
         denied(delete(API + "/setup/revisions/{id}/filters/{f}", 1L, 1L), "");
         denied(post(API + "/setup/links"), "{}");
         denied(post(API + "/setup/tasks"), "{}");
+        // CD-B2: aanmaakstandaard en vlag "standaarden overschrijven" - zonder MANAGE niets gelezen of geschreven.
+        denied(put(API + "/setup/links/{id}/creation-defaults", 1L), "{\"vatCode\":\"3\",\"unitCode\":\"ST\"}");
+        denied(put(API + "/setup/definitions/{id}/overwrite-creation-defaults", 1L), "{\"enabled\":true}");
 
         // Sjabloonbeheer (bookmarks/usages declareren) blijft achter de vlag en staat hier dus niet (vlag uit = 404);
         // zie SetupApiFlagOnlyPermissionHttpTest. Materialiseren staat sinds NT-3 niet meer achter de vlag.
@@ -281,6 +284,15 @@ class PermissionWriteEndpointsHttpTest {
                 as(USER, Permission.MANAGE), "")
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("REVISION_NOT_FOUND"));
+        // CD-B2: recht eerst, dan 404.
+        json(put(API + "/setup/links/{id}/creation-defaults", 999_999_999L), as(USER, Permission.MANAGE),
+                "{\"vatCode\":\"3\"}")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("LINK_NOT_FOUND"));
+        json(put(API + "/setup/definitions/{id}/overwrite-creation-defaults", 999_999_999L),
+                as(USER, Permission.MANAGE), "{\"enabled\":true}")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("DEFINITION_NOT_FOUND"));
         // Zelfde volgorde als hierboven voor het link-PUT-endpoint.
         json(put(API + "/links/{id}/bookmark-values/{name}", 999_999_999L, "X"), as(USER, Permission.MANAGE),
                 "{\"value\":\"NL\"}").andExpect(status().isNotFound());
@@ -309,6 +321,8 @@ class PermissionWriteEndpointsHttpTest {
         forbiddenSystem(delete(API + "/setup/revisions/{id}/filters/{f}", 1L, 1L), "");
         forbiddenSystem(post(API + "/templates/{d}/materialisations", 1L), "{}");
         forbiddenSystem(put(API + "/links/{id}/bookmark-values/{name}", 1L, "X"), "{\"value\":\"NL\"}");
+        forbiddenSystem(put(API + "/setup/links/{id}/creation-defaults", 1L), "{\"vatCode\":\"3\"}");
+        forbiddenSystem(put(API + "/setup/definitions/{id}/overwrite-creation-defaults", 1L), "{\"enabled\":true}");
         forbiddenSystem(post(API + "/credentials"), CREDENTIAL_BODY);
         forbiddenSystem(post(API + "/credentials/{ref}/revoke", java.util.UUID.randomUUID().toString()),
                 "{\"reason\":\"x\"}");

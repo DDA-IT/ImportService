@@ -93,7 +93,9 @@ public class SetupQueryService {
      *       of {@value #LEGACY_ORIGIN_MIGRATED_DETACHED} volgens {@code legacy_config_definition_origin}, {@code null}
      *       voor een handmatige definitie;</li>
      *   <li>{@code legacyDefinitionCodes}: de legacy-definitiecodes van die herkomstrijen, gesorteerd en zonder dubbels;
-     *       leeg voor een handmatige definitie.</li>
+     *       leeg voor een handmatige definitie;</li>
+     *   <li>{@code overwriteCreationDefaults}: de vlag "standaarden overschrijven" (CD-B2, additief; beslissingslog
+     *       2026-10-23 "Vlag 'standaarden overschrijven' op de importdefinitie").</li>
      * </ul>
      * Beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen", punt 5 (additief).
      */
@@ -101,7 +103,7 @@ public class SetupQueryService {
                                 String sourceOrganisationCode, Long activeRevisionId, Integer activeRevisionNumber,
                                 Long draftRevisionId, Integer draftRevisionNumber, boolean sourceOrganisationActive,
                                 Long basedOnDefinitionId, String legacyOriginKind,
-                                List<String> legacyDefinitionCodes) {
+                                List<String> legacyDefinitionCodes, boolean overwriteCreationDefaults) {
     }
 
     /**
@@ -147,6 +149,9 @@ public class SetupQueryService {
      * configuratie-kindtabellen — precies wat een gebruiker moet zien vóór hij een opvolger wijzigt
      * (S1-X-4/S1-F4). Werkt op elke revisiestatus (DRAFT/ACTIVE/SUPERSEDED): dit is een leesendpoint
      * zonder statusbeperking, in tegenstelling tot de schrijfpaden die enkel een DRAFT bewerken.
+     * <p>
+     * {@code overwriteCreationDefaults} (CD-B2, additief) is de vlag van de <b>definitie</b>, niet van de revisie: elke
+     * revisie van dezelfde definitie toont dezelfde, actuele waarde.
      */
     public record RevisionDetail(long id, long definitionId, int revisionNumber, String status,
                                  Long basedOnRevisionId, String changeReason,
@@ -177,7 +182,7 @@ public class SetupQueryService {
                                  String approvedBySubject,
                                  List<MappingView> mappings, List<FilterView> filters,
                                  List<FieldCriticalityView> fieldCriticalities, List<BookmarkView> bookmarks,
-                                 List<BookmarkValueRow> bookmarkValues) {
+                                 List<BookmarkValueRow> bookmarkValues, boolean overwriteCreationDefaults) {
     }
 
     private final SourceOrganisationRepository organisations;
@@ -382,7 +387,8 @@ public class SetupQueryService {
                 revision.getCreatedAt(), revision.getCreatedBy(), revision.getCreatedBySubject(),
                 revision.getUpdatedAt(), revision.getApprovedAt(), revision.getApprovedBy(),
                 revision.getApprovedBySubject(),
-                mappings, filters, fieldCriticalities, bookmarks, bookmarkValues);
+                mappings, filters, fieldCriticalities, bookmarks, bookmarkValues,
+                revision.getImportDefinition().isOverwriteCreationDefaults());
     }
 
     /**
@@ -433,7 +439,8 @@ public class SetupQueryService {
                 active == null ? null : active.getId(), active == null ? null : active.getRevisionNumber(),
                 draft == null ? null : draft.getId(), draft == null ? null : draft.getRevisionNumber(),
                 organisation.isActive(), basedOn == null ? null : basedOn.getId(),
-                legacyOriginKind(own, asTemplate), legacyDefinitionCodes(own, asTemplate));
+                legacyOriginKind(own, asTemplate), legacyDefinitionCodes(own, asTemplate),
+                definition.isOverwriteCreationDefaults());
     }
 
     /**

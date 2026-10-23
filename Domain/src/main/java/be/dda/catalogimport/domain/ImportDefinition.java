@@ -88,6 +88,25 @@ public class ImportDefinition {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /**
+     * Vlag "standaarden overschrijven" (changeset 030; beslissingslog 2026-10-23 "Vlag 'standaarden overschrijven' op de
+     * importdefinitie"): staat ze aan, dan neemt de legacy-config-overname een afwijkende legacy-aanmaakstandaard over
+     * op de koppelingen van deze definitie (ook een manuele waarde); uit = enkel een lege standaard invullen. Op de
+     * definitie, niet op de revisie: geen invloed op inhoudshash of identiteit. Standaard uit.
+     */
+    @Column(name = "overwrite_creation_defaults", nullable = false)
+    private boolean overwriteCreationDefaults;
+
+    /** Audit van de laatste wijziging van de vlag via de setup-API; {@code null} = nooit gewijzigd (ook bij een G2a-kopie). */
+    @Column(name = "overwrite_creation_defaults_changed_at")
+    private Instant overwriteCreationDefaultsChangedAt;
+
+    @Column(name = "overwrite_creation_defaults_changed_by", length = 100)
+    private String overwriteCreationDefaultsChangedBy;
+
+    @Column(name = "overwrite_creation_defaults_changed_by_subject", length = 255)
+    private String overwriteCreationDefaultsChangedBySubject;
+
     protected ImportDefinition() {
         // JPA
     }
@@ -188,5 +207,49 @@ public class ImportDefinition {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public boolean isOverwriteCreationDefaults() {
+        return overwriteCreationDefaults;
+    }
+
+    public Instant getOverwriteCreationDefaultsChangedAt() {
+        return overwriteCreationDefaultsChangedAt;
+    }
+
+    public String getOverwriteCreationDefaultsChangedBy() {
+        return overwriteCreationDefaultsChangedBy;
+    }
+
+    public String getOverwriteCreationDefaultsChangedBySubject() {
+        return overwriteCreationDefaultsChangedBySubject;
+    }
+
+    /**
+     * Zet de vlag "standaarden overschrijven" en legt vast wie dat deed en wanneer (de laatste wijziging).
+     *
+     * @param changedBy        verplicht
+     * @param changedBySubject het OIDC-subject, of {@code null} (geen geverifieerde identiteit)
+     * @param now              verplicht
+     */
+    public void setOverwriteCreationDefaults(boolean enabled, String changedBy, String changedBySubject, Instant now) {
+        if (changedBy == null || changedBy.isBlank() || now == null) {
+            throw new IllegalArgumentException("Changing overwriteCreationDefaults needs a signer and a timestamp");
+        }
+        this.overwriteCreationDefaults = enabled;
+        this.overwriteCreationDefaultsChangedBy = changedBy;
+        this.overwriteCreationDefaultsChangedBySubject = changedBySubject;
+        this.overwriteCreationDefaultsChangedAt = now;
+    }
+
+    /**
+     * G2a: een losgekoppelde kopie erft de vlag van de gedeelde definitie. Dat is geen wijziging door een gebruiker:
+     * de audit blijft leeg (beslissingslog 2026-10-23 "Vlag 'standaarden overschrijven'": "G2a-kopie erft de vlag").
+     */
+    public void inheritOverwriteCreationDefaults(ImportDefinition from) {
+        this.overwriteCreationDefaults = from.isOverwriteCreationDefaults();
+        this.overwriteCreationDefaultsChangedAt = null;
+        this.overwriteCreationDefaultsChangedBy = null;
+        this.overwriteCreationDefaultsChangedBySubject = null;
     }
 }

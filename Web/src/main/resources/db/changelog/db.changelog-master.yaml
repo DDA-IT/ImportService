@@ -66,3 +66,5 @@ databaseChangeLog:
       file: db/changelog/028-publication-run-production.sql
   - include:
       file: db/changelog/029-credential-retained-kinds.sql
+  - include:
+      file: db/changelog/030-link-creation-defaults.sql
