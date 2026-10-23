@@ -6,12 +6,18 @@
  * hetzelfde woordenboek en dezelfde bouwstenen als `RevisionDetailSection`.
  */
 
-import type { ReactNode } from 'react';
-import type { FilterView, RevisionDetail, RevisionLegacyOrigin } from '../../api/types.ts';
+import { useState, type ReactNode } from 'react';
+import type { FilterView, RevisionDetail, RevisionLegacyOrigin, RevisionView } from '../../api/types.ts';
+import button from '../../components/Button.module.css';
 import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
+import { INLINE_EDIT_TEXT } from '../../terms/setupEditor.ts';
 import { Term } from '../../terms/Term.tsx';
 import { LegacyOriginNotice, LegacyTechnicalDetails, usableLegacyOrigin } from './LegacyOriginParts.tsx';
 import { AnchorChips, BookmarksSection, FiltersSection, SECTION_IDS, ThresholdsSection, TranslationsSection } from './EditorSections.tsx';
+import { DiffChip } from './DiffParts.tsx';
+import { FileEditForm } from './InlineSectionEditors.tsx';
+import type { RevisionDiff } from './revisionDiffModel.ts';
+import editor from './FieldsEditor.module.css';
 import { FieldsGrid } from './FieldsGrid.tsx';
 import type { CoreRowKey } from './fieldsGridModel.ts';
 import styles from './SetupScreens.module.css';
@@ -20,13 +26,16 @@ const TEXT = SUPPLIER_TEXT;
 
 function noop() {}
 
-function Kv({ field, children }: { field: string; children: ReactNode }) {
+function Kv({ field, diff, scalar, children }: { field: string; diff?: RevisionDiff | null; scalar?: string; children: ReactNode }) {
   return (
     <>
       <dt>
         <Term domain="revisionField" code={field} />
       </dt>
-      <dd>{children}</dd>
+      <dd>
+        {children}
+        <DiffChip kind={diff?.scalarKinds[scalar ?? field]} testId={`diff-chip-${scalar ?? field}`} />
+      </dd>
     </>
   );
 }
@@ -35,32 +44,69 @@ function Unset({ children }: { children: string }) {
   return <span className={styles.unset}>{children}</span>;
 }
 
-export function FileSection({ revision }: { revision: RevisionDetail }) {
+export type FileSectionProps = {
+  revision: RevisionDetail;
+  /** E4: Bewerken (alleen op een concept): [Wijzigen] opent de invoervelden. */
+  editing?: boolean;
+  diff?: RevisionDiff | null;
+  onSaved?: (result: RevisionView, message: string) => void;
+};
+
+export function FileSection({ revision, editing = false, diff = null, onSaved }: FileSectionProps) {
+  const [changing, setChanging] = useState(false);
+  const showForm = changing && editing;
   return (
     <section id={SECTION_IDS.file} className={styles.vdSection} aria-labelledby="vd-file" data-testid="read-file">
       <h3 id="vd-file" tabIndex={-1}>{TEXT.sections.file}</h3>
-      <dl className={styles.dl}>
-        <Kv field="structureFormat">
-          <Term domain="structureFormat" code={revision.structureFormat} unknownLabel="Ander formaat" />
-        </Kv>
-        <Kv field="delimiter">
-          <span className={styles.code}>{revision.structureDelimiter}</span>
-        </Kv>
-        <Kv field="quoteChar">{revision.structureQuoteChar === null ? <Unset>{TEXT.notUsed}</Unset> : revision.structureQuoteChar}</Kv>
-        <Kv field="charset">{revision.structureCharset}</Kv>
-        <Kv field="hasHeader">
-          {revision.structureHasHeader ? `${TEXT.yes} (regel ${revision.structureHeaderLineNumber})` : TEXT.no}
-        </Kv>
-        <Kv field="fieldReferenceKind">
-          <Term domain="fieldReferenceKind" code={revision.structureFieldReferenceKind} unknownLabel="Andere herkenning" />
-        </Kv>
-        {revision.structureExpectedColumnCount !== null && (
-          <Kv field="expectedColumnCount">{revision.structureExpectedColumnCount}</Kv>
-        )}
-        <Kv field="deliverySetKind">
-          <Term domain="deliverySetKind" code={revision.accessDeliverySetKind} unknownLabel="Andere soort" />
-        </Kv>
-      </dl>
+      {showForm ? (
+        <FileEditForm
+          key={revision.updatedAt ?? 'new'}
+          revision={revision}
+          onCancel={() => setChanging(false)}
+          onSaved={(result) => {
+            setChanging(false);
+            onSaved?.(result, INLINE_EDIT_TEXT.savedFile);
+          }}
+        />
+      ) : (
+        <>
+          <dl className={styles.dl}>
+            <Kv field="structureFormat">
+              <Term domain="structureFormat" code={revision.structureFormat} unknownLabel="Ander formaat" />
+            </Kv>
+            <Kv field="delimiter" diff={diff}>
+              <span className={styles.code}>{revision.structureDelimiter}</span>
+            </Kv>
+            <Kv field="quoteChar" diff={diff}>{revision.structureQuoteChar === null ? <Unset>{TEXT.notUsed}</Unset> : revision.structureQuoteChar}</Kv>
+            <Kv field="charset" diff={diff}>{revision.structureCharset}</Kv>
+            <Kv field="hasHeader" diff={diff}>
+              {revision.structureHasHeader ? `${TEXT.yes} (regel ${revision.structureHeaderLineNumber})` : TEXT.no}
+            </Kv>
+            <Kv field="fieldReferenceKind" diff={diff}>
+              <Term domain="fieldReferenceKind" code={revision.structureFieldReferenceKind} unknownLabel="Andere herkenning" />
+            </Kv>
+            {revision.structureExpectedColumnCount !== null && (
+              <Kv field="expectedColumnCount" diff={diff}>{revision.structureExpectedColumnCount}</Kv>
+            )}
+            <Kv field="deliverySetKind">
+              <Term domain="deliverySetKind" code={revision.accessDeliverySetKind} unknownLabel="Andere soort" />
+            </Kv>
+          </dl>
+          {editing && (
+            <div className={editor.sectionActions}>
+              <button
+                type="button"
+                className={`${button.secondary} ${button.small}`}
+                aria-label={INLINE_EDIT_TEXT.changeFile}
+                data-testid="file-change"
+                onClick={() => setChanging(true)}
+              >
+                {INLINE_EDIT_TEXT.change}
+              </button>
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }
@@ -88,6 +134,10 @@ export type RevisionReadViewProps = {
   onFiltersChanged?: () => void;
   /** Enkel herladen (groepsdialoog, deels mislukte verwijdering). */
   onReload?: () => void;
+  /** E4: het verschil met de basisversie (chips Nieuw/Gewijzigd, "Niet meer in deze versie"). */
+  diff?: RevisionDiff | null;
+  /** E4: Bestandsopbouw of Drempels is bewaard (de melding); de aanroeper herlaadt. */
+  onSectionSaved?: (result: RevisionView, message: string) => void;
 };
 
 export function RevisionReadView({
@@ -105,6 +155,8 @@ export function RevisionReadView({
   onEditFilter,
   onFiltersChanged,
   onReload,
+  diff = null,
+  onSectionSaved,
 }: RevisionReadViewProps) {
   const legacy = usableLegacyOrigin(legacyOrigin);
   return (
@@ -121,6 +173,7 @@ export function RevisionReadView({
           onEditMapping={onEditMapping}
           onAddField={onAddField}
           onMapField={onMapField}
+          diff={diff}
         />
       </div>
       <FiltersSection
@@ -130,10 +183,11 @@ export function RevisionReadView({
         onEdit={onEditFilter}
         onChanged={onFiltersChanged ?? noop}
         onReload={onReload ?? noop}
+        diff={diff}
       />
       <TranslationsSection revision={revision} editing={editing} onEditMapping={onEditMapping} />
-      <FileSection revision={revision} />
-      <ThresholdsSection revision={revision} />
+      <FileSection revision={revision} editing={editing} diff={diff} onSaved={onSectionSaved} />
+      <ThresholdsSection revision={revision} editing={editing} diff={diff} onSaved={onSectionSaved} />
       <BookmarksSection revision={revision} />
       {legacy !== null && <LegacyTechnicalDetails origin={legacy} />}
     </div>

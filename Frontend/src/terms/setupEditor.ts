@@ -47,8 +47,9 @@ export const EDITOR_TEXT = {
         ? 'Deze versie is vervangen en kan niet gewijzigd worden.'
         : 'Deze versie kan niet gewijzigd worden.',
   openDraft: (n: number | null) => (n === null ? 'Open het concept' : `Open het concept (versie ${n})`),
-  moreOptions: 'Meer opties: activeren en overige instellingen',
-  moreOptionsHint: 'Het concept activeert u, en de overige instellingen wijzigt u, nog in de uitgebreide weergave.',
+  moreOptions: 'Meer opties: uitgebreide weergave',
+  moreOptionsHint:
+    'Activeren, de reden, Bestandsopbouw en Drempels staan hierboven. De overige instellingen wijzigt u nog in de uitgebreide weergave.',
   editRowLabel: (field: string) => `Wijzigen: ${field}`,
   saved: 'Bewaard in het concept',
 
@@ -301,4 +302,104 @@ export const SECTION_TEXT = {
   bookmarksHeading: 'Invulpunten',
   bookmarksNone: 'Deze versie heeft geen invulpunten.',
   bookmarksNote: 'Invulpunten bekijkt u hier alleen; de waarden stelt u per koppeling in.',
+} as const;
+
+/** E4 — de conceptbalk, het verschil met de basisversie ("Toon wijzigingen") en de impactbanner voor een gedeelde definitie. */
+export const CONCEPT_TEXT = {
+  barLabel: 'Conceptbalk',
+  title: (version: number, basedOn: number | null, count: number | null) =>
+    [
+      `Concept · versie ${version}`,
+      basedOn === null ? null : `gebaseerd op versie ${basedOn}`,
+      count === null ? null : `${count} ${count === 1 ? 'wijziging' : 'wijzigingen'}`,
+    ]
+      .filter((part) => part !== null)
+      .join(' · '),
+  showChanges: 'Toon wijzigingen',
+  hideChanges: 'Verberg wijzigingen',
+  baseFailed: 'De basisversie kon niet geladen worden, dus de wijzigingen kunnen niet getoond worden.',
+  reasonLabel: 'Reden van deze versie:',
+  reasonNone: 'Geen reden opgegeven',
+  reasonChange: 'Reden van deze versie wijzigen',
+  reasonInput: 'Reden van deze versie',
+  reasonSave: 'Opslaan',
+  reasonCancel: 'Annuleren',
+  steps: ['① Aanpassen', '② Controleren', '③ Activeren'] as const,
+  stepsLabel: 'Stappen',
+  trialButton: 'Controleren met testbestand',
+  activateButton: 'Activeren',
+  note: 'Elke wijziging wordt meteen in het concept bewaard. Het concept is nog niet actief.',
+  noTrialWarning:
+    'Er is met deze versie nog geen geslaagde controle met een testbestand gedaan. Activeren kan, maar controleer bij voorkeur eerst.',
+  shared: (names: string[]) =>
+    `Deze importdefinitie wordt gedeeld door ${names.length} koppelingen (${names.join(', ')}). ` +
+    `Activeren van een nieuwe versie geldt voor alle ${names.length}.`,
+} as const;
+
+export const DIFF_TEXT = {
+  panelLabel: (base: number) => `Wijzigingen ten opzichte van versie ${base}`,
+  heading: (base: number) => `Wijzigingen ten opzichte van versie ${base}`,
+  none: (base: number) => `Geen wijzigingen: dit concept is gelijk aan versie ${base}.`,
+  was: 'was',
+  now: 'nu',
+  kinds: { added: 'Nieuw', changed: 'Gewijzigd', removed: 'Niet meer in deze versie' },
+  chipAdded: 'Nieuw',
+  chipChanged: 'Gewijzigd',
+  removedStrip: (labels: string[]) => `Niet meer in deze versie: ${labels.join(', ')}`,
+  notFilled: 'niet ingevuld',
+  notUsed: 'niet gebruikt',
+  required: 'verplicht',
+  yes: 'ja',
+  no: 'nee',
+  fixed: (value: string) => `vaste waarde ${value}`,
+  column: (value: string) => `kolom ${value}`,
+  headerLine: (n: number) => `ja (regel ${n})`,
+  filterLabel: 'Filter',
+  sections: {
+    identity: 'Herkenning',
+    basis: 'Basis',
+    field: 'Veld',
+    filter: 'Filter',
+    file: 'Bestandsopbouw',
+    thresholds: 'Drempels',
+  },
+} as const;
+
+/** E4 — Bestandsopbouw en Drempels inline bewerken. */
+export const INLINE_EDIT_TEXT = {
+  change: 'Wijzigen',
+  changeFile: 'Bestandsopbouw wijzigen',
+  changeThresholds: 'Drempels wijzigen',
+  save: 'Opslaan',
+  saving: 'Bezig…',
+  cancel: 'Annuleren',
+  nothingChanged: 'Er is niets gewijzigd.',
+  notClearable: 'Kan hier niet leeg gemaakt worden',
+  notClearableProblem: (field: string) =>
+    `"${field}" kan hier niet leeg gemaakt worden. Er is niets verstuurd; vul een getal in of annuleer.`,
+  fileType: 'Bestandstype',
+  fileTypeFixed: 'Het bestandstype kan niet gewijzigd worden.',
+  yes: 'Ja',
+  no: 'Nee',
+  advanced: 'Geavanceerd',
+  advancedWarning:
+    'Wijzig de herkenningsversie alleen als u zeker weet wat u doet: ze bepaalt hoe een artikel herkend wordt en is na de ' +
+    'eerste aanvaarde levering niet meer te wijzigen.',
+  thresholdsIntro: 'Leeg laten betekent: ongewijzigd laten.',
+  severityLabel: 'Ernst van een prijsafwijking',
+  savedFile: 'Bestandsopbouw bewaard in het concept',
+  savedThresholds: 'Drempels bewaard in het concept',
+} as const;
+
+/** E4 — het testbestand in de conceptbalk (hergebruikt de proefinlezing). */
+export const TRIAL_BOX_TEXT = {
+  heading: 'Controleren met testbestand',
+  intro:
+    'Kies een bestand van de leverancier om te zien hoe deze versie het zou lezen. Er wordt niets opgeslagen of gepubliceerd.',
+  fileLabel: 'Testbestand',
+  start: 'Controle starten',
+  running: 'Bezig…',
+  noFile: 'Kies eerst een bestand om te testen.',
+  close: 'Sluiten',
+  fileName: (name: string) => `Testbestand: ${name}`,
 } as const;

@@ -16,6 +16,8 @@ import { PencilIcon } from '../../components/icons.tsx';
 import { EDITOR_TEXT as TEXT, MAPPING_TEXT } from '../../terms/setupEditor.ts';
 import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { Term } from '../../terms/Term.tsx';
+import { DiffChip, RemovedStrip } from './DiffParts.tsx';
+import type { RevisionDiff } from './revisionDiffModel.ts';
 import { LegacyHint, UncoveredLegacyLines, legacyColumnLabel } from './LegacyOriginParts.tsx';
 import { lineForRow, type LegacyRowKey } from './legacyOrigin.ts';
 import {
@@ -53,6 +55,8 @@ export type FieldsGridProps = {
   onAddField?: (opener: HTMLElement) => void;
   /** E2: "Koppelen" bij een veld in "Nog niet gekoppeld". */
   onMapField?: (code: string, opener: HTMLElement) => void;
+  /** E4: het verschil met de basisversie: chips Nieuw/Gewijzigd en de strook "Niet meer in deze versie". */
+  diff?: RevisionDiff | null;
 };
 
 function Unset({ children }: { children: string }) {
@@ -115,6 +119,7 @@ export function FieldsGrid({
   onEditMapping,
   onAddField,
   onMapField,
+  diff = null,
 }: FieldsGridProps) {
   const [unmappedOpen, setUnmappedOpen] = useState(false);
   const [vkpOpen, setVkpOpen] = useState(false);
@@ -154,6 +159,7 @@ export function FieldsGrid({
     <tr key={row.key} className={coreRowMissing(row) ? editor.rowWarn : undefined} data-testid={`grid-row-${row.key}`}>
       <td data-label={head.field}>
         <strong>{row.label}</strong>
+        <DiffChip kind={diff?.scalarKinds[row.key]} testId={`diff-chip-${row.key}`} />
       </td>
       <td data-label={head.source}>
         <SourceCell source={row.source} />
@@ -212,6 +218,7 @@ export function FieldsGrid({
           <strong>
             <FieldKeyTerm code={mapping.targetFieldCode} />
           </strong>
+          <DiffChip kind={diff?.fieldKinds[mapping.targetFieldCode]} testId={`diff-chip-${mapping.targetFieldCode}`} />
         </td>
         <td data-label={head.source}>{mappingSource(mapping)}</td>
         <td data-label={head.operation}>
@@ -251,6 +258,10 @@ export function FieldsGrid({
             <span aria-hidden="true">{vkpOpen ? '▾' : '▸'}</span>
           </button>
           <strong>{MAPPING_TEXT.vkpGroup}</strong>
+          <DiffChip
+            kind={group.some((member) => diff?.fieldKinds[member.targetFieldCode] !== undefined) ? 'changed' : undefined}
+            testId="diff-chip-vkp-group"
+          />
         </td>
         <td data-label={head.source}>{mappingSource(first)}</td>
         <td data-label={head.operation}>
@@ -315,6 +326,7 @@ export function FieldsGrid({
         {uppercaseText}
       </span>
     );
+  const uppercaseDiff = <DiffChip kind={diff?.scalarKinds.uppercase} testId="diff-chip-uppercase" />;
 
   return (
     <section className={styles.vdSection} aria-labelledby="vd-fields" data-testid="read-fields">
@@ -350,7 +362,14 @@ export function FieldsGrid({
             </tr>
           </thead>
           <tbody aria-labelledby={identityHeadId} data-testid="read-identity">
-            {groupRow(identityHeadId, TEXT.groups.identity, uppercaseControl)}
+            {groupRow(
+              identityHeadId,
+              TEXT.groups.identity,
+              <>
+                {uppercaseControl}
+                {uppercaseDiff}
+              </>,
+            )}
             {identityRows(revision).map(coreRow)}
           </tbody>
           <tbody aria-labelledby={basisHeadId} data-testid="read-basis">
@@ -423,6 +442,7 @@ export function FieldsGrid({
           )}
         </table>
       </div>
+      <RemovedStrip entries={diff?.removedFields ?? []} testId="removed-fields" />
       {legacy !== null && <UncoveredLegacyLines origin={legacy} revision={revision} />}
     </section>
   );

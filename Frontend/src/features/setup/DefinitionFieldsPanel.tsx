@@ -9,14 +9,16 @@
  * Bewerken heeft elke rij van Herkenning en Basis een potlood dat een zijpaneel opent (`FieldPanel`, direct bewaren met
  * een PATCH). Een actieve of vervangen versie is alleen-lezen, met "Opvolger maken" (of "Open het concept" als er al een
  * concept is). E2: extra velden bewerken in het grid. E3: Filters als zinnen met Wijzigen, Verwijderen en Filter toevoegen (zijpaneel
- * `FilterPanel`). Activeren en de overige instellingen blijven tot E4/E6 bereikbaar via "Meer opties" (de bestaande
- * `RevisionDetailSection`).
+ * `FilterPanel`). E4: conceptbalk (diff, reden, Controleren, Activeren), Bestandsopbouw en Drempels bewerkbaar; de
+ * overige instellingen blijven tot E6 bereikbaar via "Meer opties" (de bestaande `RevisionDetailSection`, die nog zijn
+ * eigen activeerknop heeft).
  */
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { usePermissionGate } from '../../actor/permissions.ts';
+import * as importLinksApi from '../../api/importLinks.ts';
 import * as setupApi from '../../api/setup.ts';
-import { PERMISSION_MANAGE, type DefinitionRow, type RevisionDetail, type RevisionRow } from '../../api/types.ts';
+import { PERMISSION_MANAGE, type DefinitionRow, type RevisionDetail, type RevisionRow, type TrialReadResult } from '../../api/types.ts';
 import button from '../../components/Button.module.css';
 import pageCss from '../../components/Page.module.css';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
@@ -24,10 +26,12 @@ import { useQuery } from '../../hooks/useQuery.ts';
 import { term } from '../../terms/index.ts';
 import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { EDITOR_TEXT } from '../../terms/setupEditor.ts';
+import { ConceptBar, SharedDefinitionNotice } from './ConceptBar.tsx';
 import { CreateSuccessorAction } from './CreateSuccessorAction.tsx';
 import { FieldPanel, type PanelTarget } from './FieldPanel.tsx';
 import { FilterPanel, type FilterPanelMode } from './FilterPanel.tsx';
 import { MappingPanel, type MappingPanelMode } from './MappingPanel.tsx';
+import { computeRevisionDiff, EMPTY_DIFF } from './revisionDiffModel.ts';
 import { RevisionDetailSection } from './RevisionDetailSection.tsx';
 import { RevisionReadView } from './RevisionReadView.tsx';
 import { defaultRevisionOf } from './setupDashboardModel.ts';
@@ -157,6 +161,8 @@ function RevisionFields({
   // E3: het paneel om een filter toe te voegen of te wijzigen.
   const [filterPanel, setFilterPanel] = useState<{ mode: FilterPanelMode; opener: HTMLElement } | null>(null);
   const [saved, setSaved] = useState<string[] | null>(null);
+  // E4: de laatste proefinlezing met dit concept; ze vervalt zodra de inhoud van het concept wijzigt.
+  const [trialResult, setTrialResult] = useState<TrialReadResult | null>(null);
 
   const detail = useQuery(`supplier-revision-read:${definition.id}:${revision.id}`, (signal) =>
     setupApi.getRevisionDetail(definition.id, revision.id, signal),
@@ -164,6 +170,18 @@ function RevisionFields({
   // De legacy-herkomst laadt apart en lui: een fout of een trage herkomst blokkeert het leesbeeld nooit.
   const origin = useQuery(`supplier-revision-legacy-origin:${definition.id}:${revision.id}`, (signal) =>
     setupApi.getRevisionLegacyOrigin(definition.id, revision.id, signal),
+  );
+  // E4: de koppelingen van de definitie (impactbanner) en de basisversie (verschil), enkel voor een concept.
+  const links = useQuery(`supplier-definition-links:${definition.id}:${isDraft ? 'draft' : 'other'}`, (signal) =>
+    isDraft ? importLinksApi.listImportLinks({ importDefinitionId: definition.id, size: 100 }, signal) : Promise.resolve(null),
+  );
+  const baseId = isDraft ? (detail.data?.basedOnRevisionId ?? null) : null;
+  const base = useQuery(`supplier-revision-base:${definition.id}:${baseId ?? 'none'}`, (signal) =>
+    baseId === null ? Promise.resolve(null) : setupApi.getRevisionDetail(definition.id, baseId, signal),
+  );
+  const diff = useMemo(
+    () => (detail.data === null || base.data === null ? EMPTY_DIFF : computeRevisionDiff(detail.data, base.data)),
+    [detail.data, base.data],
   );
   const originRevisionId = origin.data?.originRevisionId ?? null;
   const originVersionNumber =
@@ -175,6 +193,7 @@ function RevisionFields({
     definition.draftRevisionNumber ?? revisions.find((candidate) => candidate.id === draftId)?.revisionNumber ?? null;
 
   function afterChange() {
+    setTrialResult(null);
     detail.reload();
     origin.reload();
     onChanged();
@@ -249,6 +268,24 @@ function RevisionFields({
 
       {detail.error !== null && <ErrorBanner error={detail.error} />}
       {detail.loading && detailData === null && <p className={styles.loading}>{TEXT.loading}</p>}
+      {isDraft && <SharedDefinitionNotice links={links.data?.content ?? []} />}
+      {isDraft && detailData !== null && (
+        <ConceptBar
+          revision={detailData}
+          baseNumber={base.data?.revisionNumber ?? null}
+          baseFailed={baseId !== null && base.error !== null}
+          diff={diff}
+          editing={editingNow}
+          links={links.data?.content ?? []}
+          trialResult={trialResult}
+          onTrialResult={setTrialResult}
+          onReasonSaved={() => {
+            detail.reload();
+            onChanged();
+          }}
+          onActivated={afterChange}
+        />
+      )}
       {detailData !== null && (
         <RevisionReadView
           revision={detailData}
@@ -303,6 +340,11 @@ function RevisionFields({
             afterChange();
           }}
           onReload={afterChange}
+          diff={isDraft ? diff : null}
+          onSectionSaved={(_result, message) => {
+            setSaved([message]);
+            afterChange();
+          }}
         />
       )}
       {extra?.(revision)}

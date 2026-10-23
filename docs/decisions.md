@@ -3406,3 +3406,12 @@ De mens draait de tests zelf. Compileren / typecontrole (tsc, test-compile) mag 
 welke tests geschreven/gewijzigd zijn, het commando om ze te draaien, en dat ze niet uitgevoerd zijn. Wijkt af van
 AGENT.md §3 "gericht getest" en §4 regel 4 (DoD-controle door hertest); de DoD-controle gebeurt nu op inhoud + compilatie.
 **Bron:** mens
+
+## 2026-10-23 — E4: keuzes conceptbalk en verschil
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** Stap ② "Controleren" vinkt enkel af bij uitkomst
+NO_BLOCKER_FOUND; activeren zonder geslaagde controle mag, met extra waarschuwing. Proefinlezing stuurt `linkId` enkel mee
+bij precies één koppeling. Impactbanner "gedeeld door n koppelingen" vanaf 2 koppelingen. Filters zonder vaste sleutel
+over versies: ongematcht filter op dezelfde kolom als een weggevallen filter = "Gewijzigd". In Drempels ook prijsafwijking
+en prijstoleranties bewerkbaar (in het PATCH-contract); getalvelden kunnen hier niet leeggemaakt worden (melding).
+"Decimaalteken" uit de mock bestaat niet in het datamodel. Oude activeerknop blijft tot E6.
+**Bron:** bouwer-gemiddeld (E4-rapport)

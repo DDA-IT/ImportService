@@ -411,3 +411,131 @@
   color: var(--text-secondary);
   font-size: 0.8125rem;
 }
+
+/* --- E4: conceptbalk, verschil met de basisversie en inline bewerken --- */
+.conceptBar {
+  position: sticky;
+  top: var(--header-h);
+  z-index: 1000;
+  margin: var(--spacing-3) 0 0;
+  padding: var(--spacing-3) var(--spacing-4);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
+  background: var(--bg-paper);
+  box-shadow: var(--shadow-dialog);
+}
+
+.barTop,
+.barReason {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2) var(--spacing-3);
+}
+
+.barTop {
+  justify-content: space-between;
+}
+
+.barReason {
+  margin-top: var(--spacing-2);
+  font-size: 0.875rem;
+}
+
+.barReason .textInput {
+  width: auto;
+  min-width: 260px;
+  flex: 1 1 260px;
+}
+
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2) var(--spacing-4);
+  margin: var(--spacing-2) 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.steps li[aria-current="step"] {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.steps li.stepDone {
+  color: var(--status-ready-text);
+}
+
+.barButtons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.barNote {
+  margin: var(--spacing-2) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.diffBox,
+.trialBox {
+  margin: var(--spacing-3) 0 0;
+  padding: var(--spacing-3) var(--spacing-4);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
+}
+
+.diffHeading {
+  margin: 0 0 var(--spacing-2);
+  font-size: 1rem;
+}
+
+.diffChip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--spacing-2);
+  padding: 0 8px;
+  height: 22px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.diffAdded {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+.diffChanged {
+  background: var(--status-awaiting-bg);
+  color: var(--status-awaiting-text);
+}
+
+.diffRemoved {
+  background: var(--bg-neutral);
+  color: var(--text-secondary);
+}
+
+.removedStrip {
+  margin: var(--spacing-2) 0 0;
+}
+
+.inlineForm {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--spacing-3) var(--spacing-4);
+  margin: var(--spacing-3) 0;
+}
+
+.inlineField {
+  min-width: 0;
+}
+
+.advanced {
+  margin: var(--spacing-2) 0;
+}

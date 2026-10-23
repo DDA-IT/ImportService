@@ -74,9 +74,17 @@ export type ActivateRevisionActionProps = {
    * houdt het activeren niet tegen.
    */
   extraWarning?: ReactNode;
+  /** E4: een eigen testid voor de knop als er op hetzelfde scherm een tweede activeerknop staat (standaard `activate-revision`). */
+  testId?: string;
 };
 
-export function ActivateRevisionAction({ revision, onActivated, wording, extraWarning }: ActivateRevisionActionProps) {
+export function ActivateRevisionAction({
+  revision,
+  onActivated,
+  wording,
+  extraWarning,
+  testId = 'activate-revision',
+}: ActivateRevisionActionProps) {
   const manageGate = usePermissionGate(PERMISSION_MANAGE);
   const gate = withPermission(manageGate, activateGate(revision.status));
   const [open, setOpen] = useState(false);
@@ -103,7 +111,7 @@ export function ActivateRevisionAction({ revision, onActivated, wording, extraWa
         className={button.primary}
         disabled={!gate.allowed}
         title={gateTitle(gate)}
-        data-testid="activate-revision"
+        data-testid={testId}
         onClick={() => {
           runner.reset();
           setOpen(true);
@@ -112,7 +120,7 @@ export function ActivateRevisionAction({ revision, onActivated, wording, extraWa
         {wording?.buttonLabel ?? 'Versie activeren'}
       </button>
       {!gate.allowed && (
-        <span className={styles.reason} data-testid="activate-revision-reason">
+        <span className={styles.reason} data-testid={`${testId}-reason`}>
           {gate.reason}
         </span>
       )}

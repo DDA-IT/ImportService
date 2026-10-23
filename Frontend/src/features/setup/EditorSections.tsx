@@ -6,8 +6,8 @@
  * van Bestandsopbouw, Drempels en Invulpunten volgt in E4.
  */
 
-import { useRef, useState, type ReactNode } from 'react';
-import type { FilterView, MappingView, RevisionDetail } from '../../api/types.ts';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { FilterView, MappingView, RevisionDetail, RevisionView } from '../../api/types.ts';
 import * as setupRevisionsApi from '../../api/setupRevisions.ts';
 import button from '../../components/Button.module.css';
 import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
@@ -15,8 +15,11 @@ import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
 import { termLabel } from '../../terms/index.ts';
 import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
-import { FILTER_TEXT, SECTION_TEXT } from '../../terms/setupEditor.ts';
+import { FILTER_TEXT, INLINE_EDIT_TEXT, SECTION_TEXT } from '../../terms/setupEditor.ts';
 import { Term } from '../../terms/Term.tsx';
+import { DiffChip, RemovedStrip } from './DiffParts.tsx';
+import { ThresholdsEditForm } from './InlineSectionEditors.tsx';
+import type { ChipKind, RevisionDiff } from './revisionDiffModel.ts';
 import { AddFilterGroupAction } from './FilterGroupDialog.tsx';
 import { groupFilters, type FilterListEntry } from './filterGroupModel.ts';
 import { entrySentence, fieldCount, sentenceText, translationCount } from './filterSentenceModel.ts';
@@ -88,13 +91,15 @@ export type FiltersSectionProps = {
   onChanged: () => void;
   /** Enkel herladen (de groepsdialoog meldt zelf; een deels mislukte verwijdering ook). */
   onReload: () => void;
+  /** E4: het verschil met de basisversie (chips Nieuw/Gewijzigd en "Niet meer in deze versie"). */
+  diff?: RevisionDiff | null;
 };
 
 function entryLabel(entry: FilterListEntry): string {
   return entry.kind === 'single' ? FILTER_TEXT.rowLabel(entry.filter.sequenceNumber) : FILTER_TEXT.groupLabel(entry.group);
 }
 
-export function FiltersSection({ revision, editing, onAdd, onEdit, onChanged, onReload }: FiltersSectionProps) {
+export function FiltersSection({ revision, editing, onAdd, onEdit, onChanged, onReload, diff = null }: FiltersSectionProps) {
   const referenceKind = revision.structureFieldReferenceKind;
   const entries = groupFilters(revision.filters);
   const [removing, setRemoving] = useState<FilterListEntry | null>(null);
@@ -170,11 +175,22 @@ export function FiltersSection({ revision, editing, onAdd, onEdit, onChanged, on
           {entries.map((entry) => {
             const sentence = entrySentence(entry, referenceKind);
             const label = entryLabel(entry);
+            const chip: ChipKind | undefined =
+              diff === null
+                ? undefined
+                : entry.kind === 'single'
+                  ? diff.filterKinds[entry.filter.id]
+                  : entry.filters.every((row) => diff.filterKinds[row.id] === 'added')
+                    ? 'added'
+                    : entry.filters.some((row) => diff.filterKinds[row.id] !== undefined)
+                      ? 'changed'
+                      : undefined;
             const key = entry.kind === 'single' ? `filter-${entry.filter.id}` : `group-${entry.group}`;
             return (
               <li key={key} data-testid={key}>
                 <div className={editor.sentence}>
                   <span data-testid="filter-sentence">{sentence.text}</span>
+                  <DiffChip kind={chip} testId="filter-diff-chip" />
                   {sentence.suffix !== null && (
                     <span className={editor.sentenceSuffix} data-testid="filter-suffix">
                       ({sentence.suffix})
@@ -214,6 +230,7 @@ export function FiltersSection({ revision, editing, onAdd, onEdit, onChanged, on
           })}
         </ul>
       )}
+      <RemovedStrip entries={diff?.removedFilters ?? []} testId="removed-filters" />
       {editing && (
         <div className={editor.sectionActions}>
           <button
@@ -324,20 +341,56 @@ export function TranslationsSection({ revision, editing, onEditMapping }: Transl
   );
 }
 
-// --- Drempels en Invulpunten (alleen-lezen tot E4) ---
+// --- Drempels (E4: bewerkbaar) en Invulpunten (alleen-lezen) ---
 
-function Kv({ field, children }: { field: string; children: ReactNode }) {
+function Kv({ field, diff, children }: { field: string; diff?: RevisionDiff | null; children: ReactNode }) {
   return (
     <>
       <dt>
         <Term domain="revisionField" code={field} />
       </dt>
-      <dd>{children}</dd>
+      <dd>
+        {children}
+        <DiffChip kind={diff?.scalarKinds[field]} testId={`diff-chip-${field}`} />
+      </dd>
     </>
   );
 }
 
-export function ThresholdsSection({ revision }: { revision: RevisionDetail }) {
+const THRESHOLD_KEYS = [
+  'creationThresholdAbsolute',
+  'creationThresholdSharePercent',
+  'maxCriticalSharePercent',
+  'maxRejectedSharePercent',
+  'bulkIncidentSharePercent',
+  'basePriceZeroAllowed',
+  'basePriceNegativeAllowed',
+  'priceDeviationPercent',
+  'priceDeviationSeverity',
+  'priceDerivationTolerance',
+] as const;
+
+export type ThresholdsSectionProps = {
+  revision: RevisionDetail;
+  /** Bewerken (alleen op een concept): [Wijzigen] opent de invoervelden. */
+  editing?: boolean;
+  diff?: RevisionDiff | null;
+  /** Na een geslaagde PATCH: de aanroeper toont de melding en herlaadt. */
+  onSaved?: (result: RevisionView, message: string) => void;
+};
+
+export function ThresholdsSection({ revision, editing = false, diff = null, onSaved }: ThresholdsSectionProps) {
+  // Ingeklapt, tenzij een waarde afwijkt van de basisversie.
+  const differs = diff !== null && THRESHOLD_KEYS.some((key) => diff.scalarKinds[key] !== undefined);
+  const [open, setOpen] = useState(differs);
+  // De basisversie laadt apart en kan later binnenkomen dan het detail: dan klapt de sectie alsnog open.
+  useEffect(() => {
+    if (differs) {
+      setOpen(true);
+    }
+  }, [differs]);
+  const [changing, setChanging] = useState(false);
+  const showForm = changing && editing;
   return (
     <section
       id={SECTION_IDS.thresholds}
@@ -348,18 +401,57 @@ export function ThresholdsSection({ revision }: { revision: RevisionDetail }) {
       <h3 id="vd-thresholds" tabIndex={-1}>
         {SECTION_TEXT.chips.thresholds}
       </h3>
-      <details className={editor.thresholds}>
+      <details
+        className={editor.thresholds}
+        open={open}
+        data-testid="thresholds-details"
+        onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}
+      >
         <summary>{SECTION_TEXT.thresholdsSummary}</summary>
-        <dl className={styles.dl}>
-          <Kv field="creationThresholdAbsolute">{String(revision.creationThresholdAbsolute)}</Kv>
-          <Kv field="creationThresholdSharePercent">{show(revision.creationThresholdSharePercent)}</Kv>
-          <Kv field="maxCriticalSharePercent">{show(revision.maxCriticalSharePercent)}</Kv>
-          <Kv field="maxRejectedSharePercent">{show(revision.maxRejectedSharePercent)}</Kv>
-          <Kv field="bulkIncidentSharePercent">{show(revision.bulkIncidentSharePercent)}</Kv>
-          <Kv field="basePriceZeroAllowed">{bool(revision.basePriceZeroAllowed)}</Kv>
-          <Kv field="basePriceNegativeAllowed">{bool(revision.basePriceNegativeAllowed)}</Kv>
-          <Kv field="priceDeviationPercent">{show(revision.priceDeviationPercent)}</Kv>
-        </dl>
+        {showForm ? (
+          <ThresholdsEditForm
+            key={revision.updatedAt ?? 'new'}
+            revision={revision}
+            onCancel={() => setChanging(false)}
+            onSaved={(result) => {
+              setChanging(false);
+              onSaved?.(result, INLINE_EDIT_TEXT.savedThresholds);
+            }}
+          />
+        ) : (
+          <>
+            <dl className={styles.dl}>
+              <Kv field="creationThresholdAbsolute" diff={diff}>{String(revision.creationThresholdAbsolute)}</Kv>
+              <Kv field="creationThresholdSharePercent" diff={diff}>{show(revision.creationThresholdSharePercent)}</Kv>
+              <Kv field="maxCriticalSharePercent" diff={diff}>{show(revision.maxCriticalSharePercent)}</Kv>
+              <Kv field="maxRejectedSharePercent" diff={diff}>{show(revision.maxRejectedSharePercent)}</Kv>
+              <Kv field="bulkIncidentSharePercent" diff={diff}>{show(revision.bulkIncidentSharePercent)}</Kv>
+              <Kv field="basePriceZeroAllowed" diff={diff}>{bool(revision.basePriceZeroAllowed)}</Kv>
+              <Kv field="basePriceNegativeAllowed" diff={diff}>{bool(revision.basePriceNegativeAllowed)}</Kv>
+              <Kv field="priceDeviationPercent" diff={diff}>{show(revision.priceDeviationPercent)}</Kv>
+              <Kv field="priceDeviationSeverity" diff={diff}>
+                {termLabel('severity', revision.priceDeviationSeverity, 'Andere ernst')}
+              </Kv>
+              <Kv field="priceDerivationTolerance" diff={diff}>{show(revision.priceDerivationTolerance)}</Kv>
+            </dl>
+            {editing && (
+              <div className={editor.sectionActions}>
+                <button
+                  type="button"
+                  className={`${button.secondary} ${button.small}`}
+                  aria-label={INLINE_EDIT_TEXT.changeThresholds}
+                  data-testid="thresholds-change"
+                  onClick={() => {
+                    setOpen(true);
+                    setChanging(true);
+                  }}
+                >
+                  {INLINE_EDIT_TEXT.change}
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </details>
     </section>
   );
