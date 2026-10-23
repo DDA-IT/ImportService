@@ -3187,3 +3187,59 @@ voorloopnullen (de datasync schrijft het numerieke legacy-bibliotheeknummer).
 genegeerd wanneer de waarde enkel uit cijfers bestaat (`00181` = `181`; `0`/`000` = `0`). Niet-numerieke waarden blijven
 exact vergeleken. Technische correctie zonder architectuurimpact.
 **Bron:** hoofdsessie (bevinding lokale Prodis) / legacy-config-bundle-design.md par. 6 (S5/A3)
+
+## 2026-10-23 — Redesign inrichtingsoverzicht /setup: dashboard + leveranciersdetail (ontwerp, mock eerst)
+**Vraag:** De mens vond `/setup` onoverzichtelijk (tabel in tabel in tabel) en vroeg een mock: dashboard en dan details,
+in de Prodis-stijl.
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** enkel frontend, geen API-wijziging. `/setup` wordt een
+dashboard: kaarten (Leveranciers en verenigingen, Klaar voor levering, Nog niet klaar, Overname uit legacy [enkel met
+Beheren], Sjablonen) met één detailpaneel onder het rooster (patroon 2026-10-22), daaronder één platte leverancierslijst
+(zoek/filter, gereedheid). Nieuwe route `/setup/suppliers/:organisationId` met tabs via nested routes (Overzicht |
+Beschrijving en versies | Koppelingen en taken), bestaande secties (RevisionDetailSection e.d.) hergebruikt. Gegevens via
+4 bulk-aanroepen (organisaties, definities, koppelingen, taken) met doorbladeren, client-side gegroepeerd; geen
+`/setup/overview`. A: geen kaart "concepten wachten" in v1. D: oude query `?definitionId=&revisionId=` blijft als redirect.
+E: sjablonen blijven op `/templates`. F: mock in `docs/mock/setup-redesign-mock.html`. G: detail gebruikt het Prodis
+`dl`-patroon (label/waarde, leeg = "Niet ingesteld"). Bouw pas na akkoord van de mens op de mock.
+**Bron:** denker-gemiddeld (ontwerp /setup) / Prodis `app-widget-summary.tsx`, `supplier-overview-tab.tsx`
+
+## 2026-10-23 — Naamgeving navigatie (voorstel, open) en sjablonensectie in de mock
+**Vraag:** De mens vond "Uploaden, Pakketten, …" nietszeggend en vroeg een naamgevingsvoorstel, plus de sjablonensectie in
+de `/setup`-mock.
+**Status naamgeving: OPEN bij de mens** (herroept 2026-10-01 "Batch, Mutatie, Bundel blijven", dus niet stil gevolgd).
+Voorstel denker-gemiddeld: groepen Inlezen / Beoordelen / Publiceren / Inrichting; Werkvoorraad → Inlezingen, Levering
+uploaden → Bestand uploaden, Behandelgevallen → Afwijkingen, Publicatiebundels → Publicaties, Inrichting-Overzicht →
+Leveranciers, Nieuwe leverancier → Leverancier toevoegen, Sjablonen en Overname uit legacy blijven; woordenlijst Batch →
+Inlezing, Mutatie → Wijziging, Bundel → Publicatie, Behandelgeval → Afwijking (enkel zichtbare tekst; routes, codes, API,
+design-docs blijven). Invoering in twee stappen (navigatie/titels; daarna alle gebruikerstekst + oldWording-guard). De
+mock toont deze namen ter beoordeling.
+**Beslissing sjablonen (aanbeveling gevolgd — door de mens te herzien):** sjablonenoverzicht (kaarten + platte lijst) en
+sjabloondetail (tabs Overzicht | Versies | Gebruikt door), enkel frontend, lazy geladen; herkomst "uit legacy" afgeleid uit
+de code `-SJ` en zo gemarkeerd; de wizard krijgt een queryparameter `templateId` voor "Leverancier toevoegen op basis van
+dit sjabloon".
+**Bron:** mens (vraag) / denker-gemiddeld (naamgeving + sjablonen) / Prodis `core.json` ("Catalogi inlezen")
+
+## 2026-10-23 — Importdefinitie als schermwoord; menu "Importdefinities" met alle definities
+**Vraag:** De mens stelde voor "Sjablonen" te hernoemen naar "Importdefinities" (legacy-woord: importsoort).
+**Beslissing (mens):** Herroept de woordkeuze van 2026-10-01 "Beschrijving van het bestand vervangt definitie": het
+zichtbare woord wordt overal **Importdefinitie**. Het menu-item "Sjablonen" wordt **Importdefinities** en toont ALLE
+definities (eigen en herbruikbaar/gedeeld), met een filter "Herbruikbaar" (vroeger sjabloon) en de herkomst uit legacy.
+Een herbruikbare definitie blijft technisch `REUSABLE_TEMPLATE`; routes, codes en API blijven. Het oude-woordenguard
+(`Frontend/src/test/oldWording.ts`) laat "importdefinitie" voortaan toe; "Beschrijving van het bestand" wordt het oude
+woord. Eerst in de mock; invoering in de app samen met de rest van de naamgeving.
+**Bron:** mens
+
+## 2026-10-23 — Naamgeving en redesign inrichting: goedgekeurd, bouwen
+**Vraag:** Akkoord op het naamgevingsvoorstel en de mock `docs/mock/setup-redesign-mock.html`?
+**Beslissing (mens):** Ja. Navigatie: Inlezen (Inlezingen, Bestand uploaden) · Beoordelen (Afwijkingen) · Publiceren
+(Publicaties) · Inrichting (Leveranciers, Leverancier toevoegen, Importdefinities, Overname uit legacy). Schermwoorden:
+Batch → Inlezing, Mutatie → Wijziging, Bundel/Publicatiebundel → Publicatie, Behandelgeval → Afwijking, Beschrijving van
+het bestand/Sjabloon → Importdefinitie (herbruikbare importdefinitie). Herroept 2026-10-01 "Batch, Mutatie, Bundel
+blijven" en de woordkeuze "Beschrijving van het bestand". Enkel zichtbare tekst; routes, codes, API, testids en
+design-docs blijven. De schermen worden gebouwd volgens de mock (dashboard Leveranciers, leveranciersdetail met tabs
+Overzicht | Bestand en velden | Versies | Koppelingen en taken, Importdefinities-overzicht met alle definities en
+importdefinitie-detail met tabs Overzicht | Bestand en velden | Versies | Gebruikt door), enkel frontend, zonder
+API-wijziging; waar de mock gegevens toont die de API niet heeft, toont het scherm enkel wat bestaat.
+Bouwvolgorde (sequentieel, één commit per slice): N1 navigatie/titels/crumbs/knoppen; R1 dashboard Leveranciers +
+leveranciersdetail; R2 Importdefinities-overzicht + detail (+ wizard `templateId`); N2 alle gebruikerstekst, begrippen.md
+en oldWording-guard.
+**Bron:** mens / denker-gemiddeld (naamgeving, ontwerp /setup) / mock

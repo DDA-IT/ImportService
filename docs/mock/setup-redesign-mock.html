@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock: Inrichting (leveranciers, importdefinities)</title>
+<style>
+/* ===== Tokens (letterlijk uit Frontend/src/styles/tokens.css) ===== */
+:root {
+  color-scheme: light;
+  --primary-lighter: #CAFDF5; --primary-light: #61F3F3; --primary-main: #00B8D9; --primary-dark: #006C9C; --primary-darker: #003768; --primary-contrast: #FFFFFF;
+  --primary-ch: 0 184 217;
+  --success-main: #22C55E; --success-dark: #118D57; --success-light: #77ED8B; --success-ch: 34 197 94;
+  --warning-main: #FFAB00; --warning-dark: #B76E00; --warning-light: #FFD666; --warning-ch: 255 171 0;
+  --error-main: #FF5630;   --error-dark: #B71D18;   --error-light: #FFAC82;   --error-ch: 255 86 48;
+  --info-main: #00A76F;    --info-dark: #007867;    --info-light: #5BE49B;    --info-ch: 0 167 111;
+  --secondary-main: #8E33FF; --secondary-dark: #5119B7; --secondary-light: #C684FF; --secondary-ch: 142 51 255;
+  --grey-ch: 145 158 171;
+  --black-ch: 0 0 0;
+  --text-primary: #1C252E; --text-secondary: #637381; --text-disabled: #919EAB;
+  --bg-default: #FFFFFF; --bg-paper: #FFFFFF; --bg-neutral: #F4F6F8;
+  --bg-default-ch: 255 255 255; --bg-paper-ch: 255 255 255;
+  --action-active: #637381;
+  --action-hover: rgb(var(--grey-ch) / 0.08);
+  --action-selected: rgb(var(--grey-ch) / 0.16);
+  --divider: rgb(var(--grey-ch) / 0.2);
+  --input-outlined: rgb(var(--grey-ch) / 0.2);
+  --button-outlined: rgb(var(--grey-ch) / 0.32);
+  --nav-border: rgb(var(--grey-ch) / 0.12);
+  --inherit-bg: #1C252E; --inherit-text: #FFFFFF; --inherit-hover: #454F5B;
+  --soft-default-bg: rgb(var(--grey-ch) / 0.16); --soft-default-text: #1C252E;
+  --soft-primary-text: var(--primary-dark);
+  --soft-success-text: var(--success-dark);
+  --soft-warning-text: var(--warning-dark);
+  --soft-error-text: var(--error-dark);
+  --soft-info-text: var(--info-dark);
+  --nav-active-color: var(--primary-main);
+  --shadow-ch: var(--grey-ch);
+  --shadow-card: 0 0 2px 0 rgb(var(--shadow-ch) / 0.2), 0 12px 24px -4px rgb(var(--shadow-ch) / 0.12);
+  --shadow-dropdown: 0 0 2px 0 rgb(var(--shadow-ch) / 0.24), -20px 20px 40px -4px rgb(var(--shadow-ch) / 0.24);
+  --shadow-dialog: -40px 40px 80px -8px rgb(var(--black-ch) / 0.24);
+  --shadow-z8: 0 8px 16px 0 rgb(var(--shadow-ch) / 0.16);
+  --shadow-primary: 0 8px 16px 0 rgb(var(--primary-ch) / 0.24);
+  --backdrop: rgb(28 37 46 / 0.48);
+  --focus-ring: rgb(var(--primary-ch) / 0.48);
+  --radius: 8px; --radius-card: 16px; --radius-label: 6px; --radius-dropdown: 10px;
+  --nav-w: 300px; --nav-mini-w: 88px; --nav-mobile-w: 288px;
+  --header-h: 64px;
+}
+@media (min-width: 1200px) { :root { --header-h: 72px; } }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --text-primary: #FFFFFF; --text-secondary: #919EAB; --text-disabled: #637381;
+    --bg-default: #141A21; --bg-paper: #1C252E; --bg-neutral: #28323D;
+    --bg-default-ch: 20 26 33; --bg-paper-ch: 28 37 46;
+    --action-active: #919EAB;
+    --nav-border: rgb(var(--grey-ch) / 0.08);
+    --inherit-bg: #FFFFFF; --inherit-text: #1C252E; --inherit-hover: #C4CDD5;
+    --soft-default-text: #FFFFFF;
+    --soft-primary-text: var(--primary-light); --soft-success-text: var(--success-light);
+    --soft-warning-text: var(--warning-light); --soft-error-text: var(--error-light); --soft-info-text: var(--info-light);
+    --nav-active-color: var(--primary-light);
+    --shadow-ch: var(--black-ch);
+    --backdrop: rgb(0 0 0 / 0.6);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --text-primary: #FFFFFF; --text-secondary: #919EAB; --text-disabled: #637381;
+  --bg-default: #141A21; --bg-paper: #1C252E; --bg-neutral: #28323D;
+  --bg-default-ch: 20 26 33; --bg-paper-ch: 28 37 46;
+  --action-active: #919EAB;
+  --nav-border: rgb(var(--grey-ch) / 0.08);
+  --inherit-bg: #FFFFFF; --inherit-text: #1C252E; --inherit-hover: #C4CDD5;
+  --soft-default-text: #FFFFFF;
+  --soft-primary-text: var(--primary-light); --soft-success-text: var(--success-light);
+  --soft-warning-text: var(--warning-light); --soft-error-text: var(--error-light); --soft-info-text: var(--info-light);
+  --nav-active-color: var(--primary-light);
+  --shadow-ch: var(--black-ch);
+  --backdrop: rgb(0 0 0 / 0.6);
+}
+:root {
+  --font-sans: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-accent: var(--primary-main);
+  --color-border-dark: var(--button-outlined);
+  --color-danger: var(--error-main); --color-warning: var(--warning-main); --color-success: var(--success-main);
+  --status-ready-text: var(--soft-success-text); --status-ready-bg: rgb(var(--success-ch) / 0.16);
+  --status-awaiting-text: var(--soft-warning-text); --status-awaiting-bg: rgb(var(--warning-ch) / 0.16);
+  --status-planned-text: var(--soft-info-text); --status-planned-bg: rgb(var(--info-ch) / 0.16);
+  --status-neutral-text: var(--soft-default-text); --status-neutral-bg: var(--soft-default-bg);
+  --alert-info-bg: rgb(var(--primary-ch) / 0.12);
+  --radius-sm: var(--radius-label);
+}
+
+/* ===== Basis ===== */
+* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.57; color: var(--text-primary); background: var(--bg-default); }
+button { font: inherit; color: inherit; }
+a { color: var(--soft-primary-text); }
+:focus-visible { outline: 2px solid var(--primary-main); outline-offset: 2px; }
+h1, h2, h3, p { margin: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+[hidden] { display: none !important; }
+
+/* ===== Mock-schakelaar ===== */
+.mockbar { position: sticky; top: 0; z-index: 1400; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px 16px; background: var(--inherit-bg); color: var(--inherit-text); font-size: 13px; }
+.seg { display: inline-flex; border: 1px solid currentColor; border-radius: var(--radius-label); overflow: hidden; }
+.seg button { padding: 4px 12px; border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--primary-main); color: #fff; font-weight: 600; }
+.mockbar :focus-visible { outline-color: var(--primary-light); }
+
+/* ===== Shell ===== */
+.sidebar { position: fixed; top: 0; bottom: 0; left: 0; z-index: 1201; width: var(--nav-w); display: flex; flex-direction: column; background: var(--bg-default); border-right: 1px solid var(--nav-border); transition: transform 200ms ease; }
+.navTop { padding: 16px 16px 8px; display: flex; align-items: center; gap: 12px; height: var(--header-h); }
+.mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--primary-main); color: #fff; font-weight: 800; font-size: 14px; }
+.brand { font-weight: 700; font-size: 16px; }
+.navScroll { flex: 1; overflow-y: auto; padding: 0 16px 16px; }
+.navSub { padding: 16px 8px 8px 12px; font-size: 11px; font-weight: 700; line-height: 1.5; text-transform: uppercase; color: var(--text-disabled); }
+.navList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.navItem { display: flex; align-items: center; min-height: 44px; padding: 4px 8px 4px 12px; border-radius: var(--radius); color: var(--text-secondary); text-decoration: none; font-size: 14px; font-weight: 500; line-height: 22px; }
+.navItem:hover { background: var(--action-hover); }
+.navItem[aria-current="page"] { color: var(--nav-active-color); background: rgb(var(--primary-ch) / 0.08); font-weight: 600; }
+.navIcon { width: 24px; height: 24px; margin-right: 12px; flex-shrink: 0; }
+.content { display: flex; flex-direction: column; min-height: calc(100vh - 41px); padding-left: var(--nav-w); }
+.header { position: sticky; top: 41px; z-index: 1101; display: flex; align-items: center; gap: 8px; height: var(--header-h); padding: 0 40px; background: rgb(var(--bg-default-ch) / 0.8); backdrop-filter: blur(8px); }
+.iconBtn { display: inline-grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--action-active); cursor: pointer; }
+.iconBtn:hover { background: var(--action-hover); }
+.menuButton { display: none; }
+.headerActor { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 14px; font-weight: 500; }
+.avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--soft-default-bg); font-size: 12px; font-weight: 700; }
+.main { width: 100%; max-width: 1400px; margin: 0 auto; padding: 8px 40px 96px; }
+.scrim { position: fixed; inset: 0; z-index: 1200; background: var(--backdrop); }
+
+/* ===== Page.module.css ===== */
+.pageHead { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; justify-content: flex-end; margin-bottom: 40px; }
+.pageHeadText { flex: 1 1 auto; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.title { font-size: 24px; font-weight: 700; line-height: 1.5; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.subtitle { font-size: 18px; font-weight: 600; line-height: 1.5556; }
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; column-gap: 16px; row-gap: 4px; margin: 0; padding: 0; list-style: none; }
+.crumbs li { display: inline-flex; align-items: center; gap: 16px; font-size: 14px; }
+.crumbs li + li::before { content: ''; width: 4px; height: 4px; border-radius: 50%; background: var(--text-disabled); }
+.crumbs a { color: var(--text-primary); text-decoration: none; }
+.crumbs a:hover { text-decoration: underline; }
+.crumbs [aria-current] { color: var(--text-disabled); }
+.card { position: relative; background: var(--bg-paper); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+.cardPad { padding: 24px; }
+.cardHead { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 24px 24px 0; }
+.cardHead p { margin: 4px 0 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 20px; }
+.tabs { display: flex; gap: 40px; margin-bottom: 24px; border-bottom: 1px solid var(--divider); overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { position: relative; display: inline-flex; align-items: center; gap: 8px; min-width: 48px; min-height: 48px; padding: 0; border: 0; background: none; color: var(--text-secondary); font-size: 14px; font-weight: 500; line-height: 22px; white-space: nowrap; cursor: pointer; }
+.tab:hover { color: var(--text-primary); }
+.tab[aria-selected="true"] { color: var(--text-primary); font-weight: 600; }
+.tab[aria-selected="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: currentColor; }
+
+/* ===== Knoppen ===== */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 6px 16px; border: 1px solid var(--button-outlined); border-radius: var(--radius); background: transparent; color: var(--text-primary); font-size: 14px; font-weight: 700; cursor: pointer; text-decoration: none; white-space: nowrap; }
+.btn:hover { background: var(--action-hover); }
+.btnPrimary { background: var(--primary-main); border-color: var(--primary-main); color: #fff; }
+.btnPrimary:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
+.btnSm { min-height: 0; padding: 4px 12px; border-radius: var(--radius-sm); font-size: 0.8125rem; font-weight: 500; }
+.btnRow { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ===== Badges (StatusBadge.module.css) ===== */
+.badge { display: inline-flex; align-items: center; justify-content: center; height: 24px; min-width: 24px; padding: 0 6px; border-radius: var(--radius-label); font-size: 0.75rem; font-weight: 700; line-height: 1.5; white-space: nowrap; }
+.ready { background: var(--status-ready-bg); color: var(--status-ready-text); }
+.awaiting { background: var(--status-awaiting-bg); color: var(--status-awaiting-text); }
+.planned { background: var(--status-planned-bg); color: var(--status-planned-text); }
+.neutral { background: var(--status-neutral-bg); color: var(--status-neutral-text); }
+
+/* ===== Kaarten (LegacyConfig.module.css) ===== */
+.cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+.summaryCard { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 16px; border: 1px solid var(--divider); border-top-width: 4px; border-radius: var(--radius-card); background: var(--bg-paper); box-shadow: var(--shadow-card); overflow-wrap: anywhere; }
+.summaryCardOpen { outline: 2px solid var(--color-accent); }
+.cardWarning { border-top-color: var(--color-warning); }
+.cardSuccess { border-top-color: var(--color-success); }
+.cardNeutral { border-top-color: var(--divider); }
+.summaryTitle { font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); }
+.summaryCount { font-size: 2rem; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.summaryTop { font-weight: 600; }
+.summarySub { font-size: 0.8125rem; color: var(--text-secondary); }
+.summaryButton { align-self: flex-start; margin-top: auto; padding: 4px 12px; border: 1px solid var(--color-border-dark); border-radius: var(--radius-sm); background: transparent; color: var(--text-primary); font-size: 0.8125rem; cursor: pointer; }
+.summaryButton:hover { background: var(--action-hover); }
+.summaryCard .summaryButton { margin-top: 8px; }
+.detailPanel { margin-top: 16px; padding: 24px; border-radius: var(--radius-card); background: var(--bg-paper); box-shadow: var(--shadow-card); overflow-wrap: anywhere; }
+.detailPanel h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+
+/* Paneelrijen */
+.rowList { list-style: none; margin: 0; padding: 0; }
+.rowList li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 0; border-bottom: 1px dashed var(--divider); }
+.rowList li:last-child { border-bottom: 0; }
+.rowMain { flex: 1 1 280px; min-width: 0; }
+.rowMain strong { font-weight: 600; }
+.rowMeta { color: var(--text-secondary); font-size: 0.8125rem; }
+.code { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ===== Intro / uitleg ===== */
+.intro { margin-bottom: 24px; max-width: 760px; }
+.intro p { color: var(--text-secondary); }
+details.what { margin-top: 8px; }
+details.what summary, details.tech summary { cursor: pointer; font-weight: 600; color: var(--soft-primary-text); width: fit-content; border-radius: 4px; }
+details.what p { margin-top: 8px; }
+.section { margin-top: 32px; }
+
+/* ===== Formuliervelden ===== */
+.field { height: 40px; padding: 0 12px; border: 1px solid var(--input-outlined); border-radius: var(--radius); background: transparent; color: var(--text-primary); font: inherit; }
+.field:hover { border-color: var(--text-primary); }
+select.field { padding-right: 8px; }
+select.field option { background: var(--bg-paper); color: var(--text-primary); }
+.search { flex: 1 1 240px; min-width: 200px; }
+.fieldLabel { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 0.8125rem; font-weight: 600; }
+
+/* ===== Tabel (DataTable.module.css) ===== */
+.wrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.table th, .table td { padding: 14px 16px; border-bottom: 1px dashed var(--divider); text-align: left; vertical-align: middle; }
+.table td { height: 52px; }
+.table th { padding: 16px; background: var(--bg-neutral); font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
+.table th:first-child, .table td:first-child { padding-left: 20px; }
+.table tbody tr:last-child td { border-bottom: 0; }
+.empty { padding: 16px; color: var(--text-secondary); font-style: italic; }
+.pager { display: flex; justify-content: flex-end; align-items: center; gap: 16px; padding: 12px 20px; border-top: 1px dashed var(--divider); color: var(--text-secondary); font-size: 0.8125rem; }
+.pager button { border: 0; background: transparent; padding: 4px 8px; border-radius: var(--radius-sm); cursor: pointer; color: var(--text-primary); }
+.pager button:disabled { color: var(--text-disabled); cursor: not-allowed; }
+.cardClip { overflow: hidden; }
+
+/* ===== Prodis FieldGroup ===== */
+.fieldGroup { margin-top: 24px; }
+.overline { font-size: 0.75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 12px; }
+.dl { display: grid; grid-template-columns: minmax(140px, 220px) 1fr; gap: 12px 24px; margin: 0; }
+.dl dt { color: var(--text-secondary); }
+.dl dd { margin: 0; font-weight: 500; }
+.dl .unset { font-style: italic; font-weight: 400; color: var(--text-disabled); }
+
+/* ===== Banner e.d. ===== */
+.banner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 24px; padding: 16px 20px; border-radius: var(--radius); background: var(--alert-info-bg); color: var(--text-primary); }
+.banner .bi { flex: none; width: 20px; height: 20px; color: var(--soft-primary-text); }
+.banner p { flex: 1 1 280px; }
+.mini { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
+.taskList { list-style: none; margin: 8px 0 0; padding: 0; }
+.taskList li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 0; border-top: 1px dashed var(--divider); font-size: 0.8125rem; }
+.taskList .grow { flex: 1 1 auto; }
+.linkCardTop { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.linkCardTop h3 { font-size: 16px; font-weight: 700; }
+.versionRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 24px; border-top: 1px dashed var(--divider); }
+.versionRow .vname { flex: 1 1 160px; font-weight: 600; }
+.techBox { margin-top: 32px; padding: 16px 24px; border: 1px dashed var(--divider); border-radius: var(--radius-card); }
+.techBox .dl { margin-top: 12px; }
+.vdSection { margin-top: 24px; }
+.vdSection > h4 { margin: 0 0 12px; font-size: 0.75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
+.vdHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.mapCard { padding: 16px; border: 1px solid var(--divider); border-radius: var(--radius-card); }
+.mapCard h5 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.legacyCol { color: var(--text-secondary); font-size: 0.8125rem; }
+.chain { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 24px; padding: 0; list-style: none; counter-reset: st; }
+.chain li { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border: 1px solid var(--divider); border-radius: var(--radius-label); color: var(--text-secondary); font-size: 0.8125rem; }
+.chain li + li::before { content: '→'; margin-right: 0; color: var(--text-disabled); }
+.chain li[aria-current="step"] { border-color: var(--primary-main); background: rgb(var(--primary-ch) / 0.08); color: var(--text-primary); font-weight: 700; }
+
+/* ===== Importdefinities / naamgeving ===== */
+.btn:disabled { color: var(--text-disabled); border-color: var(--divider); cursor: not-allowed; background: transparent; }
+.btnPrimary:disabled { background: var(--action-selected); border-color: transparent; color: var(--text-disabled); }
+.banner.warn { background: rgb(var(--warning-ch) / 0.16); }
+.banner.warn .bi { color: var(--soft-warning-text); }
+.linkRow { margin-top: 8px; font-size: 0.8125rem; }
+.footnote { margin-top: 4px; font-size: 0.75rem; color: var(--text-disabled); }
+.mockbar .toggle { padding: 4px 12px; border: 1px solid currentColor; border-radius: var(--radius-label); background: transparent; color: inherit; cursor: pointer; font-size: 13px; }
+.mockbar .toggle[aria-pressed="true"], .mockbar .toggle[aria-expanded="true"] { background: var(--primary-main); color: #fff; font-weight: 600; }
+.namePop { position: fixed; top: 44px; right: 16px; z-index: 1500; width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow: auto; padding: 20px 24px; border-radius: var(--radius-card); background: var(--bg-paper); color: var(--text-primary); box-shadow: var(--shadow-dialog); border: 1px solid var(--divider); }
+.namePop h2 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.namePop h3 { font-size: 13px; font-weight: 700; margin: 16px 0 4px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-secondary); }
+.namePop .table th, .namePop .table td { padding: 8px 12px; height: auto; }
+.namePop .table th:first-child, .namePop .table td:first-child { padding-left: 12px; }
+@media (max-width: 768px) { .namePop .table thead { position: static; width: auto; height: auto; clip: auto; } .namePop .table, .namePop .table tbody, .namePop .table tr, .namePop .table td { display: revert; width: auto; } .namePop .table tr { padding: 0; } .namePop .table td, .namePop .table th:first-child, .namePop .table td:first-child { padding: 8px 12px; } .namePop .table td[data-label]::before { content: none; } .mockbar { flex-wrap: wrap; } }
+
+/* ===== Legenda ===== */
+.legend { position: fixed; right: 16px; bottom: 16px; z-index: 1300; padding: 6px 12px; border-radius: var(--radius); background: var(--inherit-bg); color: var(--inherit-text); font-size: 12px; box-shadow: var(--shadow-z8); }
+
+/* ===== Responsief ===== */
+@media (max-width: 900px) {
+  .sidebar { width: var(--nav-mobile-w); transform: translateX(-100%); }
+  .sidebar.open { transform: none; }
+  .content { padding-left: 0; }
+  .header { padding: 0 16px; }
+  .main { padding: 8px 16px 96px; }
+  .menuButton { display: inline-grid; }
+}
+@media (max-width: 899px) { .tabs { gap: 24px; } }
+@media (max-width: 768px) {
+  .table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .table, .table tbody, .table tr, .table td { display: block; width: 100%; }
+  .table tr { padding: 12px 16px; border-bottom: 1px dashed var(--divider); }
+  .table tbody tr:last-child { border-bottom: 0; }
+  .table td, .table th:first-child, .table td:first-child { height: auto; padding: 4px 0; border: 0; }
+  .table td[data-label]::before { content: attr(data-label) ": "; color: var(--text-secondary); font-weight: 600; }
+  .dl { grid-template-columns: 1fr; gap: 2px; }
+  .dl dd { margin-bottom: 10px; }
+  .legend { left: 16px; right: 16px; text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<div class="mockbar">
+  <span id="mockLabel">Mock:</span>
+  <div class="seg" role="group" aria-labelledby="mockLabel">
+    <button type="button" data-route="dashboard" aria-pressed="true">Dashboard</button>
+    <button type="button" data-route="supplier" aria-pressed="false">Leveranciersdetail</button>
+    <button type="button" data-route="templates" aria-pressed="false">Importdefinities</button>
+    <button type="button" data-route="template" aria-pressed="false">Importdefinitie-detail</button>
+  </div>
+    <button type="button" class="toggle" id="nameBtn" aria-expanded="false" aria-controls="namePop">Naamgeving (voorstel)</button>
+</div>
+<section class="namePop" id="namePop" role="region" aria-label="Naamgeving (voorstel)" hidden></section>
+
+<aside class="sidebar" id="sidebar" aria-label="Hoofdnavigatie">
+  <div class="navTop"><span class="mark" aria-hidden="true">CI</span><span class="brand">CatalogImport</span></div>
+  <nav class="navScroll">
+    <div class="navSub">Inlezen</div>
+    <ul class="navList">
+      <li><a class="navItem" href="#dashboard" data-nolink title="Alle ingelezen leveranciersbestanden en wat er nog mee moet gebeuren."><svg class="navIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l3 3 5-6"/></svg><span>Inlezingen</span></a></li>
+      <li><a class="navItem" href="#dashboard" data-nolink title="Lees een bestand van een leverancier in en laat het controleren."><svg class="navIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg><span>Bestand uploaden</span></a></li>
+    </ul>
+    <div class="navSub">Beoordelen</div>
+    <ul class="navList">
+      <li><a class="navItem" href="#dashboard" data-nolink title="Dezelfde vaststelling uit meerdere bestanden, één keer te beoordelen."><svg class="navIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 4l9 16H3L12 4zM12 10v4M12 17v.5"/></svg><span>Afwijkingen</span></a></li>
+    </ul>
+    <div class="navSub">Publiceren</div>
+    <ul class="navList">
+      <li><a class="navItem" href="#dashboard" data-nolink title="Goedgekeurde wijzigingen samenstellen, bevriezen en naar Prodis publiceren."><svg class="navIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8l8-4 8 4-8 4-8-4zM4 8v8l8 4 8-4V8"/></svg><span>Publicaties</span></a></li>
+    </ul>
+    <div class="navSub">Inrichting</div>
+    <ul class="navList">
+      <li><a class="navItem" id="navOverview" href="#dashboard" title="Welke leveranciers kunnen bestanden aanleveren en wat moet nog ingericht worden."><svg class="navIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg><span>Leveranciers</span></a></li>
+      <li><a class="navItem" href="#supplier" data-nolink title="Richt een nieuwe leverancier of aankoopvereniging in, stap voor stap."><svg class="navIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/></svg><span>Leverancier toevoegen</span></a></li>
+      <li><a class="navItem" id="navTemplates" href="#templates" title="Alle importdefinities: hoe elk leveranciersbestand gelezen wordt, eigen en herbruikbaar."><svg class="navIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M7 4h10v16H7zM10 8h4M10 12h4"/></svg><span>Importdefinities</span></a></li>
+      <li><a class="navItem" href="#dashboard" data-nolink><svg class="navIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 12h12M12 7l5 5-5 5M20 4v16"/></svg><span>Overname uit legacy</span></a></li>
+    </ul>
+  </nav>
+</aside>
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="content">
+  <header class="header">
+    <button type="button" class="iconBtn menuButton" id="menuBtn" aria-label="Menu openen" aria-expanded="false" aria-controls="sidebar">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+    </button>
+    <div class="headerActor">
+      <button type="button" class="iconBtn" id="themeBtn" aria-label="Thema wisselen (licht/donker)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z"/></svg>
+      </button>
+      <span class="avatar" aria-hidden="true">EW</span><span>Ewout Seldeslachts</span>
+    </div>
+  </header>
+  <main class="main" id="main"></main>
+</div>
+
+<div class="legend" role="note">Mock — voorbeelddata; niet aangesloten op de API</div>
+
+<script>
+(function () {
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var badge = function (t, tone) { return '<span class="badge ' + tone + '">' + esc(t) + '</span>'; };
+  var iconInfo = '<svg class="bi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.5"/></svg>';
+
+  /* ---------- Data ---------- */
+  var suppliers = [
+    ['VROOAM', 'Vrooam BV', 'Leverancier', 'Actief', 3, 'Klaar'],
+    ['KRAMP', 'Kramp Groep', 'Leverancier', 'Actief', 2, 'Nog niet klaar'],
+    ['INTERCARS', 'Inter Cars', 'Leverancier', 'Actief', 1, 'Nog niet klaar'],
+    ['DELICOLOR', 'Delicolor', 'Leverancier', 'Actief', 0, 'Nog niet ingericht'],
+    ['VRMKROON', 'Vrooam Kroon', 'Aankoopvereniging', 'Actief', 2, 'Klaar'],
+    ['WILMINK', 'Wilmink', 'Leverancier', 'Actief', 1, 'Klaar'],
+    ['OUDLEV', 'Oude leverancier', 'Leverancier', 'Inactief', 0, 'Inactief'],
+    ['04599', 'Partner 04599', 'Leverancier', 'Actief', 1, 'Klaar']
+  ];
+  var readyTone = { 'Klaar': 'ready', 'Nog niet klaar': 'awaiting', 'Nog niet ingericht': 'neutral', 'Inactief': 'neutral' };
+
+  var cards = [
+    { id: 'lev', title: 'Leveranciers en verenigingen', count: 24, tone: 'cardNeutral', sub: '21 leveranciers, 3 aankoopverenigingen', btn: 'Toon leveranciers',
+      panelTitle: 'Leveranciers en verenigingen',
+      rows: [['VROOAM', 'Vrooam BV', 'Leverancier, 3 koppelingen', ['Naar leverancier']], ['VRMKROON', 'Vrooam Kroon', 'Aankoopvereniging, 2 koppelingen', ['Naar leverancier']], ['KRAMP', 'Kramp Groep', 'Leverancier, 2 koppelingen', ['Naar leverancier']]],
+      more: 'Toont 3 van 24; de volledige lijst staat hieronder.' },
+    { id: 'klaar', title: 'Klaar voor levering', count: 17, tone: 'cardSuccess', sub: '17 taken met actieve versie', btn: 'Toon taken',
+      panelTitle: 'Klaar voor levering',
+      rows: [['VROOAM', 'Vrooam artikelbestand', 'Handmatige levering, versie 3 actief', ['Naar leverancier']], ['WILMINK', 'Wilmink prijslijst', 'Automatische levering, versie 1 actief', ['Naar leverancier']], ['04599', 'Partner 04599 voorraad', 'Handmatige levering, versie 2 actief', ['Naar leverancier']]],
+      more: 'Toont 3 van 17.' },
+    { id: 'niet', title: 'Nog niet klaar', count: 5, tone: 'cardWarning', sub: '3 taken zonder actieve versie, 2 koppelingen zonder taak', btn: 'Toon wat ontbreekt',
+      panelTitle: 'Nog niet klaar',
+      rows: [
+        ['KRAMP', 'Kramp prijslijst', 'Versie 2 nog niet geactiveerd', ['Controleren', 'Naar leverancier']],
+        ['INTERCARS', 'Inter Cars', 'Nog geen taak', ['Verder inrichten']],
+        ['DELICOLOR', 'Delicolor', 'Nog geen koppeling', ['Verder inrichten']],
+        ['VROOAM', 'Vrooam voorraad', 'Taak ‘Handmatige levering’: versie niet geactiveerd', ['Controleren']],
+        ['VROOAM2', 'Vrooam voorraad', 'Taak ‘Handmatige levering’: versie niet geactiveerd', ['Controleren']]
+      ] },
+    { id: 'legacy', title: 'Overname uit legacy', count: 4, tone: 'cardWarning', sub: '4 ontvangsten te beoordelen', btn: 'Toon ontvangsten',
+      panelTitle: 'Overname uit legacy',
+      rows: [['KRAMP', 'Ontvangst 22 okt 2026', 'Nog te beoordelen', ['Beoordelen']], ['WILMINK', 'Ontvangst 21 okt 2026', 'Nog te beoordelen', ['Beoordelen']], ['VRMKROON', 'Ontvangst 19 okt 2026', 'Nog te beoordelen', ['Beoordelen']], ['04599', 'Ontvangst 15 okt 2026', 'Nog te beoordelen', ['Beoordelen']]] },
+    { id: 'sjab', title: 'Importdefinities', count: 10, tone: 'cardNeutral', sub: '10 importdefinities: 6 herbruikbaar, 4 eigen', btn: 'Toon importdefinities',
+      more: 'Toont 6 van 10; de volledige lijst staat onder Importdefinities.',
+      panelTitle: 'Importdefinities',
+      rows: [['VRM-SJ', 'Vrooam artikelbestand (gedeeld)', 'Herbruikbaar, actief, gebruikt door 1 importdefinitie', ['Openen'], '#template/VRM-SJ'], ['KRAMP-SJ', 'Kramp Pricat', 'Herbruikbaar, actief, gebruikt door 1 importdefinitie', ['Openen'], '#template/KRAMP-SJ'], ['STD-CSV', 'Standaard CSV prijslijst', 'Herbruikbaar, actief, gebruikt door 3 importdefinities', ['Openen'], '#template/STD-CSV'],
+        ['STD-ART', 'Standaard artikelbestand', 'Herbruikbaar, actief, gebruikt door 2 importdefinities', ['Openen'], '#template/STD-ART'], ['INTC-SJ', 'Inter Cars artikelbestand', 'Herbruikbaar, concept, nog door geen enkele leverancier gebruikt', ['Openen'], '#template/INTC-SJ'], ['DELI-SJ', 'Delicolor prijslijst', 'Herbruikbaar, concept, nog door geen enkele leverancier gebruikt', ['Openen'], '#template/DELI-SJ']] }
+  ];
+  var openCard = 'niet';
+
+  /* ---------- Dashboard ---------- */
+  function dashboard() {
+    var h = '<header class="pageHead"><div class="pageHeadText"><h1 class="title">Leveranciers</h1>' +
+      '<ol class="crumbs"><li><a href="#dashboard">CatalogImport</a></li><li><span>Inrichting</span></li><li><span aria-current="page">Leveranciers</span></li></ol></div>' +
+      '<a class="btn btnPrimary" href="#supplier">Leverancier toevoegen</a></header>' +
+      '<div class="intro"><p>Hier zie je in één blik welke leveranciers en koppelingen klaar zijn voor levering en wat nog moet gebeuren.</p>' +
+      '<details class="what"><summary>Wat is dit?</summary><p>Een leverancier heeft een of meer koppelingen. Een koppeling heeft taken die bepalen hoe een levering binnenkomt. Een taak is klaar zodra de bijhorende versie van de importdefinitie geactiveerd is. Een importdefinitie beschrijft hoe een leveranciersbestand gelezen wordt: in legacy de importsoort (PSIMDHFD/PSIMPDEF). Een herbruikbare importdefinitie wordt door meerdere leveranciers of interfaces gedeeld.</p></details></div>' +
+      '<div class="cardGrid">';
+    cards.forEach(function (c) {
+      var open = openCard === c.id;
+      h += '<section class="summaryCard ' + c.tone + (open ? ' summaryCardOpen' : '') + '" role="group" aria-labelledby="ct-' + c.id + '">' +
+        '<h2 class="summaryTitle" id="ct-' + c.id + '">' + esc(c.title) + '</h2>' +
+        '<p class="summaryCount">' + c.count + '</p><p class="summarySub">' + esc(c.sub) + '</p>' +
+        '<button type="button" class="summaryButton" data-card="' + c.id + '" aria-expanded="' + open + '" aria-controls="panel">' + (open ? 'Verberg' : esc(c.btn)) + '</button>' +
+        (c.id === 'sjab' ? '<p class="linkRow"><a href="#templates">Alle importdefinities</a></p>' : '') + '</section>';
+    });
+    h += '</div>';
+    var oc = cards.filter(function (c) { return c.id === openCard; })[0];
+    h += '<div id="panel">';
+    if (oc) {
+      h += '<section class="detailPanel" role="region" aria-labelledby="ph"><h3 id="ph">' + esc(oc.panelTitle) + '</h3><ul class="rowList">';
+      oc.rows.forEach(function (r) {
+        h += '<li><div class="rowMain">' + (r[0] ? '<span class="code">' + esc(r[0]) + '</span> · ' : '') + '<strong>' + esc(r[1]) + '</strong> · <span class="rowMeta">' + esc(r[2]) + '</span></div><div class="btnRow">' +
+          r[3].map(function (b) { return '<a class="btn btnSm" href="' + (r[4] || '#supplier') + '">' + esc(b) + '</a>'; }).join('') + '</div></li>';
+      });
+      h += '</ul>' + (oc.more ? '<p class="rowMeta" style="margin-top:8px">' + esc(oc.more) + '</p>' : '') + '</section>';
+    }
+    h += '</div>';
+    h += '<section class="section" aria-labelledby="levh"><h2 class="subtitle" id="levh" style="margin-bottom:16px">Leveranciers</h2>' +
+      '<div class="card cardClip"><div class="toolbar">' +
+      '<input class="field search" type="search" id="q" placeholder="Zoek op code of naam" aria-label="Zoek op code of naam">' +
+      '<label class="fieldLabel">Soort <select class="field" id="fSoort"><option>Alle</option><option>Leverancier</option><option>Aankoopvereniging</option></select></label>' +
+      '<label class="fieldLabel">Status <select class="field" id="fStatus"><option>Alle</option><option>Actief</option><option>Inactief</option></select></label>' +
+      '</div><div class="wrap"><table class="table"><thead><tr><th>Code</th><th>Naam</th><th>Soort</th><th>Status</th><th>Koppelingen</th><th>Gereedheid</th><th><span class="sr-only">Actie</span></th></tr></thead><tbody id="tbody"></tbody></table></div>' +
+      '<div class="pager"><span id="pagerTxt">1–8 van 24</span><button type="button" disabled aria-label="Vorige pagina">‹</button><button type="button" disabled aria-label="Volgende pagina">›</button></div></div></section>';
+    $('#main').innerHTML = h;
+
+    function fill() {
+      var q = $('#q').value.trim().toLowerCase(), s = $('#fSoort').value, st = $('#fStatus').value;
+      var rows = suppliers.filter(function (r) {
+        return (!q || r[0].toLowerCase().indexOf(q) > -1 || r[1].toLowerCase().indexOf(q) > -1) && (s === 'Alle' || r[2] === s) && (st === 'Alle' || r[3] === st);
+      });
+      $('#tbody').innerHTML = rows.length ? rows.map(function (r) {
+        return '<tr><td data-label="Code" class="code">' + esc(r[0]) + '</td><td data-label="Naam"><strong>' + esc(r[1]) + '</strong></td><td data-label="Soort">' + esc(r[2]) + '</td>' +
+          '<td data-label="Status">' + badge(r[3], r[3] === 'Actief' ? 'ready' : 'neutral') + '</td><td data-label="Koppelingen">' + r[4] + '</td>' +
+          '<td data-label="Gereedheid">' + badge(r[5], readyTone[r[5]]) + '</td><td><a class="btn btnSm" href="#supplier" aria-label="Openen: ' + esc(r[1]) + '">Openen</a></td></tr>';
+      }).join('') : '<tr><td colspan="7" class="empty">Geen leveranciers gevonden.</td></tr>';
+      $('#pagerTxt').textContent = rows.length === suppliers.length ? '1–8 van 24' : (rows.length ? '1–' + rows.length + ' van ' + rows.length + ' (gefilterd)' : '0 van 24');
+    }
+    ['#q', '#fSoort', '#fStatus'].forEach(function (s) { $(s).addEventListener('input', fill); });
+    fill();
+    document.querySelectorAll('[data-card]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-card');
+        openCard = openCard === id ? null : id;
+        dashboard();
+        var nb = document.querySelector('[data-card="' + id + '"]'); if (nb) nb.focus();
+      });
+    });
+  }
+
+  /* ---------- Bestand en velden (gedeeld: importdefinitie-detail en leverancier) ---------- */
+  var FT = { csv: 'CSV met scheidingsteken', fixed: 'Tekst met vaste posities', xml: 'XML' };
+  function compact(t) {
+    var out = [];
+    t.split(', ').forEach(function (p, i) {
+      var m;
+      if (i === 0) { out.push(p.replace('PSIMPDEF#', 'regel ')); }
+      else if ((m = /^CALCULATION 4 waarde (\d+)/.exec(p))) { out.push('berekening ÷ ' + m[1]); }
+      else if (/^CALCULATION 2/.test(p)) { out.push('berekening hoofdletters'); }
+      else if (/^Prefix /.test(p)) { out.push(p.replace('Prefix', 'voorvoegsel')); }
+      else if (/^(vertaaltabel |vaste waarde|lengte)/.test(p)) { out.push(p); }
+    });
+    return out.join(', ');
+  }
+  var fld = function (veld, bron, bew, verpl, legacy) { return { veld: veld, bron: bron, bew: bew, verpl: verpl, legacy: legacy, leg: compact(legacy) }; };
+  var vrmFields = [
+    fld('Referentie', 'kolom 5', '—', 'Ja', 'PSIMPDEF#5, kolom 5'),
+    fld('Omschrijving', 'kolom 7', 'eerste 60 tekens', 'Nee', 'PSIMPDEF#7, kolom 7, positie 1, lengte 60'),
+    fld('Basisprijs', 'kolom 12', '÷ 100', 'Ja', 'PSIMPDEF#12, kolom 12, CALCULATION 4 waarde 100'),
+    fld('Aankoopkorting (%)', 'kolom 13', '—', 'Nee', 'PSIMPDEF#13, kolom 13'),
+    fld('Verkoopprijs 1 (%)', 'vaste waarde 100', '—', 'Nee', 'PSIMPDEF#20, geen kolom, vaste waarde 100'),
+    fld('EAN-barcode', 'kolom 14', '—', 'Nee', 'PSIMPDEF#14, kolom 14'),
+    fld('Merk', 'kolom 9', 'vertaling "Merken Vrooam" (12 waarden)', 'Nee', 'PSIMPDEF#9, kolom 9, vertaaltabel MERKEN_VRM'),
+    fld('Eenheid', 'kolom 10', 'hoofdletters', 'Nee', 'PSIMPDEF#10, kolom 10, CALCULATION 2 (UPPER)'),
+    fld('Barcode leverancier', 'kolom 15', 'voorvoegsel "VRM-"', 'Nee', 'PSIMPDEF#15, kolom 15, Prefix "VRM-"'),
+    fld('PIM-id', 'kolom 16', '—', 'Nee', 'PSIMPDEF#16, kolom 16')
+  ];
+  var vrmMap = { name: 'Merken Vrooam', count: 12, rows: [['BOS', 'Bosch'], ['MKT', 'Makita'], ['DWT', 'DeWalt'], ['HLT', 'Hilti'], ['FSK', 'Fiskars']] };
+  var vrmData = {
+    status: ['Actief', 'ready'], file: { type: 'csv', sep: ';', charset: 'UTF-8', header: 'Ja, regel 1', dec: ',' },
+    ident: { supplier: 'vast: 06310', check: 'Controle: kolom 40 moet VRM-ELEC zijn', group: 'kolom 3', ref: 'kolom 5', disc: '' },
+    fields: vrmFields,
+    filters: [['Regels overslaan waar kolom 2 = "X"', 'Overslaan'], ['Regel verwerpen waar kolom 40 ≠ "VRM-ELEC"', 'Verwerpen']],
+    maps: [vrmMap], rev: '203'
+  };
+  var vrmData4 = JSON.parse(JSON.stringify(vrmData));
+  vrmData4.status = ['Concept', 'planned']; vrmData4.rev = '204';
+  vrmData4.fields.splice(5, 0, fld('Verkoopprijs 2 (%)', 'vaste waarde 100', '—', 'Nee', 'PSIMPDEF#21, geen kolom, vaste waarde 100'));
+  vrmData4.maps = [{ name: 'Merken Vrooam', count: 14, rows: vrmMap.rows }];
+  var verData = {
+    'VRM-SJ:3': vrmData,
+    'VRM-SJ:4': vrmData4,
+    'KRAMP-SJ:2': {
+      status: ['Actief', 'ready'], file: { type: 'xml', sep: '', charset: 'UTF-8', header: '', dec: '.', base: 'PRICAT/Item' },
+      ident: { supplier: 'vast: 04877', check: '', group: 'XML: PRICAT/Item/ProductGroup', ref: 'XML: PRICAT/Item/SupplierArticleNumber', disc: 'XML: PRICAT/Item/DiscountGroup' },
+      fields: [
+        fld('Referentie', 'XML: PRICAT/Item/SupplierArticleNumber', '—', 'Ja', 'PSIMPDEF#1, XML_ELEMENT_PATH PRICAT/Item/SupplierArticleNumber'),
+        fld('Omschrijving', 'XML: PRICAT/Item/Description', 'eerste 60 tekens', 'Nee', 'PSIMPDEF#2, XML_ELEMENT_PATH PRICAT/Item/Description, lengte 60'),
+        fld('Basisprijs', 'XML: PRICAT/Item/NetPrice', '—', 'Ja', 'PSIMPDEF#3, XML_ELEMENT_PATH PRICAT/Item/NetPrice'),
+        fld('Aankoopkorting (%)', 'XML: PRICAT/Item/DiscountPercentage', '—', 'Nee', 'PSIMPDEF#4, XML_ELEMENT_PATH PRICAT/Item/DiscountPercentage'),
+        fld('EAN-barcode', 'XML: PRICAT/Item/EAN', '—', 'Nee', 'PSIMPDEF#5, XML_ELEMENT_PATH PRICAT/Item/EAN'),
+        fld('Merk', 'XML: PRICAT/Item/Brand', '—', 'Nee', 'PSIMPDEF#6, XML_ELEMENT_PATH PRICAT/Item/Brand'),
+        fld('Eenheid', 'XML: PRICAT/Item/UnitOfMeasure', 'vertaling "Eenheden Kramp" (4 waarden)', 'Nee', 'PSIMPDEF#7, XML_ELEMENT_PATH PRICAT/Item/UnitOfMeasure, vertaaltabel EENH_KRAMP'),
+        fld('Verkoopprijs 1 (%)', 'vaste waarde 100', '—', 'Nee', 'PSIMPDEF#8, geen pad, vaste waarde 100')
+      ],
+      filters: [['Items overslaan waar XML PRICAT/Item/Status = "DISCONTINUED"', 'Overslaan']],
+      maps: [{ name: 'Eenheden Kramp', count: 4, rows: [['PCE', 'ST'], ['MTR', 'M'], ['KGM', 'KG'], ['LTR', 'L']] }], rev: '206'
+    },
+    'STD-CSV:1': {
+      status: ['Actief', 'ready'], file: { type: 'csv', sep: ',', charset: 'UTF-8', header: 'Ja, regel 1 (kolomnamen)', dec: '.' },
+      ident: { supplier: 'per koppeling ingevuld', check: '', group: "kolom 'Productgroep'", ref: "kolom 'Artikelnr'", disc: '' },
+      fields: [
+        fld('Referentie', "kolom 'Artikelnr'", '—', 'Ja', 'PSIMPDEF#1, kolomnaam Artikelnr'),
+        fld('Omschrijving', "kolom 'Omschrijving'", 'eerste 60 tekens', 'Nee', 'PSIMPDEF#2, kolomnaam Omschrijving, lengte 60'),
+        fld('Basisprijs', "kolom 'Prijs'", '—', 'Ja', 'PSIMPDEF#3, kolomnaam Prijs'),
+        fld('EAN-barcode', "kolom 'EAN'", '—', 'Nee', 'PSIMPDEF#4, kolomnaam EAN'),
+        fld('Merk', "kolom 'Merk'", '—', 'Nee', 'PSIMPDEF#5, kolomnaam Merk'),
+        fld('Eenheid', "kolom 'Eenheid'", 'hoofdletters', 'Nee', 'PSIMPDEF#6, kolomnaam Eenheid, CALCULATION 2 (UPPER)')
+      ],
+      filters: [["Regels overslaan waar kolom 'Prijs' leeg is", 'Overslaan']], maps: [], rev: '207'
+    },
+    'STD-ART:2': {
+      status: ['Actief', 'ready'], file: { type: 'fixed', sep: '', charset: 'Windows-1252', header: 'Nee', dec: ',' },
+      ident: { supplier: 'per koppeling ingevuld', check: '', group: 'positie 1–3', ref: 'positie 4–13', disc: '' },
+      fields: [
+        fld('Referentie', 'positie 4–13', '—', 'Ja', 'PSIMPDEF#1, positie 4, lengte 10'),
+        fld('Omschrijving', 'positie 14–73', '—', 'Nee', 'PSIMPDEF#2, positie 14, lengte 60'),
+        fld('Basisprijs', 'positie 74–83', '÷ 100', 'Ja', 'PSIMPDEF#3, positie 74, lengte 10, CALCULATION 4 waarde 100'),
+        fld('EAN-barcode', 'positie 84–96', '—', 'Nee', 'PSIMPDEF#4, positie 84, lengte 13'),
+        fld('Eenheid', 'positie 97–99', 'hoofdletters', 'Nee', 'PSIMPDEF#5, positie 97, lengte 3, CALCULATION 2 (UPPER)')
+      ],
+      filters: [['Regels overslaan waar positie 1–3 = "XXX"', 'Overslaan']], maps: [], rev: '209'
+    },
+    'INTC-SJ:1': {
+      status: ['Concept', 'planned'], file: { type: 'fixed', sep: '', charset: 'Windows-1252', header: 'Nee', dec: ',' },
+      ident: { supplier: 'vast: 00271', check: '', group: 'positie 1–2', ref: 'positie 3–14', disc: '' },
+      fields: [
+        fld('Referentie', 'positie 3–14', '—', 'Ja', 'PSIMPDEF#1, positie 3, lengte 12'),
+        fld('Omschrijving', 'positie 15–54', '—', 'Nee', 'PSIMPDEF#2, positie 15, lengte 40'),
+        fld('Basisprijs', 'positie 55–64', '÷ 100', 'Ja', 'PSIMPDEF#3, positie 55, lengte 10, CALCULATION 4 waarde 100')
+      ],
+      filters: [], maps: [], rev: '210'
+    },
+    'DELI-SJ:1': {
+      status: ['Concept', 'planned'], file: { type: 'csv', sep: ';', charset: 'UTF-8', header: 'Ja, regel 1', dec: ',' },
+      ident: { supplier: 'vast: 00181', check: '', group: 'kolom 1', ref: 'kolom 2', disc: '' },
+      fields: [
+        fld('Referentie', 'kolom 2', '—', 'Ja', 'PSIMPDEF#1, kolom 2'),
+        fld('Omschrijving', 'kolom 3', '—', 'Nee', 'PSIMPDEF#2, kolom 3'),
+        fld('Basisprijs', 'kolom 4', '—', 'Ja', 'PSIMPDEF#3, kolom 4'),
+        fld('EAN-barcode', 'kolom 5', '—', 'Nee', 'PSIMPDEF#4, kolom 5')
+      ],
+      filters: [], maps: [], rev: '211'
+    },
+    'WIL-EIG:1': {
+      status: ['Actief', 'ready'], file: { type: 'csv', sep: ';', charset: 'UTF-8', header: 'Ja, regel 1 (kolomnamen)', dec: ',' },
+      ident: { supplier: 'vast: 00352', check: '', group: "kolom 'Groep'", ref: "kolom 'Artikelcode'", disc: '' },
+      fields: [
+        fld('Referentie', "kolom 'Artikelcode'", '—', 'Ja', 'PSIMPDEF#1, kolomnaam Artikelcode'),
+        fld('Omschrijving', "kolom 'Omschrijving'", 'eerste 60 tekens', 'Nee', 'PSIMPDEF#2, kolomnaam Omschrijving, lengte 60'),
+        fld('Voorraad', "kolom 'Voorraad'", '—', 'Ja', 'PSIMPDEF#3, kolomnaam Voorraad'),
+        fld('EAN-barcode', "kolom 'EAN'", '—', 'Nee', 'PSIMPDEF#4, kolomnaam EAN')
+      ],
+      filters: [["Regels overslaan waar kolom 'Artikelcode' leeg is", 'Overslaan']], maps: [], rev: '212'
+    },
+    '04599-EIG:1': {
+      status: ['Actief', 'ready'], file: { type: 'fixed', sep: '', charset: 'Windows-1252', header: 'Nee', dec: ',' },
+      ident: { supplier: 'vast: 04599', check: '', group: 'positie 1–2', ref: 'positie 3–12', disc: '' },
+      fields: [
+        fld('Referentie', 'positie 3–12', '—', 'Ja', 'PSIMPDEF#1, positie 3, lengte 10'),
+        fld('Omschrijving', 'positie 13–52', '—', 'Nee', 'PSIMPDEF#2, positie 13, lengte 40'),
+        fld('Voorraad', 'positie 53–58', '—', 'Ja', 'PSIMPDEF#3, positie 53, lengte 6')
+      ],
+      filters: [], maps: [], rev: '213'
+    },
+    'VRK-EIG:1': {
+      status: ['Actief', 'ready'], file: { type: 'csv', sep: ',', charset: 'UTF-8', header: 'Ja, regel 1 (kolomnamen)', dec: '.' },
+      ident: { supplier: 'vast: 06311', check: '', group: "kolom 'Productgroep'", ref: "kolom 'Artikelnr'", disc: "kolom 'Kortingscode'" },
+      fields: [
+        fld('Referentie', "kolom 'Artikelnr'", '—', 'Ja', 'PSIMPDEF#1, kolomnaam Artikelnr'),
+        fld('Basisprijs', "kolom 'Prijs'", '—', 'Ja', 'PSIMPDEF#2, kolomnaam Prijs'),
+        fld('Aankoopkorting (%)', "kolom 'Korting'", '—', 'Nee', 'PSIMPDEF#3, kolomnaam Korting')
+      ],
+      filters: [["Regels overslaan waar kolom 'Prijs' leeg is", 'Overslaan']], maps: [], rev: '214'
+    },
+    'OUD-EIG:1': {
+      status: ['Inactief', 'neutral'], file: { type: 'fixed', sep: '', charset: 'Windows-1252', header: 'Nee', dec: ',' },
+      ident: { supplier: 'vast: 00090', check: '', group: 'positie 1–2', ref: 'positie 3–12', disc: '' },
+      fields: [
+        fld('Referentie', 'positie 3–12', '—', 'Ja', 'PSIMPDEF#1, positie 3, lengte 10'),
+        fld('Omschrijving', 'positie 13–52', '—', 'Nee', 'PSIMPDEF#2, positie 13, lengte 40'),
+        fld('Basisprijs', 'positie 53–62', '÷ 100', 'Ja', 'PSIMPDEF#3, positie 53, lengte 10, CALCULATION 4 waarde 100')
+      ],
+      filters: [], maps: [], rev: '215'
+    }
+  };
+  /* Oudere (vervangen) versies zijn in de mock afgeleid van de nieuwste voorbeeldversie met iets minder velden. */
+  function verDataFor(key) {
+    if (verData[key]) { return verData[key]; }
+    var pre = key.split(':')[0], n = parseInt(key.split(':')[1], 10), base = null;
+    Object.keys(verData).forEach(function (k) { if (!base && k.split(':')[0] === pre) { base = verData[k]; } });
+    if (!base) { return null; }
+    var c = JSON.parse(JSON.stringify(base));
+    c.status = ['Vervangen', 'neutral'];
+    c.fields = c.fields.slice(0, Math.max(3, c.fields.length - 2)).map(function (r) { if (r.bew.indexOf('vertaling') === 0) { r.bew = '—'; } return r; });
+    c.maps = []; c.rev = String(parseInt(base.rev, 10) - (5 - n));
+    verData[key] = c; return c;
+  }
+  var LEG = { 'WIL-EIG': ['WIL001', '#4795 · 21 okt 2026'], '04599-EIG': ['P45001', '#4655 · 15 okt 2026'], 'VRK-EIG': ['VRK001', '#4780 · 19 okt 2026'], 'OUD-EIG': ['OUD001', '#3010 · 2 mrt 2026'], 'VRM-SJ': ['VRM001', '#4821 · 22 okt 2026'], 'KRAMP-SJ': ['KRP002', '#4790 · 21 okt 2026'], 'STD-CSV': ['STD010', '#4655 · 15 okt 2026'], 'STD-ART': ['STD020', '#4655 · 15 okt 2026'], 'INTC-SJ': ['ICR001', '#4802 · 22 okt 2026'], 'DELI-SJ': ['DEL001', '#4811 · 22 okt 2026'] };
+  var fakeHash = function (seed, k) { var x = ((parseInt(seed, 10) * 2654435761 + k * 40503) >>> 0).toString(16); return ('00000000' + x).slice(-8) + ('00000000' + ((parseInt(seed, 10) * 97 + k * 7919) >>> 0).toString(16)).slice(-8) + '…'; };
+  function dlRaw(rows) {
+    return '<dl class="dl">' + rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + r[1] + '</dd>'; }).join('') + '</dl>';
+  }
+  /* Echte support-info van één versie; komt in het vak "Technische details (voor support)" van de pagina. */
+  function techExtra(key) {
+    var d = verDataFor(key); if (!d) { return ''; }
+    var lt = LEG[key.split(':')[0]] || ['—', '—'];
+    return dlRaw([['Versie-id', esc(d.rev)], ['Legacy-importsoort (PSIMDHFD)', esc(lt[0])], ['Overgenomen uit ontvangst', esc(lt[1])],
+      ['Structuurhash', esc(fakeHash(d.rev, 1))], ['Identiteitshash', esc(fakeHash(d.rev, 2))], ['Samengestelde hash', esc(fakeHash(d.rev, 3))]]) +
+      '<h5 class="overline" style="margin:16px 0 8px">Regel in legacy-definitie (PSIMPDEF) per veld</h5>' +
+      dlRaw(d.fields.map(function (r) { return [r.veld, esc(r.legacy)]; }));
+  }
+  function techBox(rows, key) {
+    return '<details class="tech techBox"><summary>Technische details (voor support)</summary>' + kv(rows) + (key ? techExtra(key) : '') + '</details>';
+  }
+  function verFieldCount(key) { var d = verDataFor(key); return d ? d.fields.length : 0; }
+  function bestandsKaart(key, attr) {
+    var d = verDataFor(key); if (!d) { return ''; }
+    return '<section class="card cardPad fieldGroup" aria-labelledby="gb"><h3 class="overline" id="gb">Bestandsopbouw</h3>' +
+      kv([['Bestandstype', FT[d.file.type]], ['Scheidingsteken', d.file.type === 'csv' ? '"' + d.file.sep + '"' : 'Niet van toepassing'], ['Aantal velden', String(verFieldCount(key))]]) +
+      '<div class="btnRow" style="margin-top:16px"><button type="button" class="btn btnSm" ' + attr + '="' + key + '">Velden bekijken</button></div></section>';
+  }
+  var CHAIN = ['Leverancier', 'Importdefinitie (versie = hoe het bestand gelezen wordt)', 'Koppeling', 'Taak', 'Inlezing', 'Publicatie naar Prodis'];
+  function chainBar(cur) {
+    return '<nav aria-label="Waar past dit in de keten?"><ol class="chain">' + CHAIN.map(function (c, i) { return '<li' + (i === cur ? ' aria-current="step"' : '') + '>' + esc(c) + '</li>'; }).join('') + '</ol></nav>';
+  }
+  /* Eén component, twee plekken: tab "Bestand en velden" van importdefinitie en van leverancier. */
+  function mapView(ctx) {
+    var key = ctx.prefix + ':' + ctx.num, d = verDataFor(key); if (!d) { return ''; }
+    var f = d.file, i = d.ident, na = '<span class="unset">Niet van toepassing</span>';
+    var fileRows = [['Bestandstype', esc(FT[f.type])], ['Scheidingsteken', f.type === 'csv' ? esc('"' + f.sep + '"') : na]];
+    if (f.base) { fileRows.push(['Artikelen staan onder', '<code>' + esc(f.base) + '</code>']); }
+    fileRows.push(['Tekenset', esc(f.charset)], ['Kopregel', f.type === 'xml' ? na : esc(f.header)], ['Decimaalteken', esc('"' + f.dec + '"')]);
+    var identRows = [['Leverancier', esc(i.supplier) + (i.check ? ' <span class="rowMeta">· ' + esc(i.check) + '</span>' : '')],
+      ['Groep', '← ' + esc(i.group)], ['Referentie', '← ' + esc(i.ref)],
+      ['Kortingscode', i.disc ? '← ' + esc(i.disc) : '<span class="unset">Niet gebruikt</span>']];
+    return '<section class="card cardPad" aria-labelledby="vdh"><h2 class="subtitle" id="vdh">Zo leest CatalogImport het bestand van ' + esc(ctx.name) + ' — versie ' + esc(ctx.num) + ' (' + d.status[0].toLowerCase() + ')</h2>' +
+      '<p style="margin-top:12px"><label class="fieldLabel">Andere versie bekijken <select class="field" id="vsel" data-vsel="' + ctx.who + '">' +
+      ctx.versions.map(function (v) { return '<option value="' + esc(v[0]) + '"' + (v[0] === ctx.num ? ' selected' : '') + '>Versie ' + esc(v[0]) + ' (' + esc(v[1].toLowerCase()) + ')</option>'; }).join('') + '</select></label></p>' +
+      (d.status[0] === 'Concept' ? '<div class="banner" role="status">' + iconInfo + '<p>Dit is een conceptversie: ze is nog niet actief en wordt nog nergens gebruikt.</p></div>' : '') +
+      (ctx.shared ? '<div class="banner" role="note">' + iconInfo + '<p>Deze importdefinitie is gedeeld vanuit de herbruikbare importdefinitie <a href="#template/' + esc(ctx.shared[0]) + '">' + esc(ctx.shared[1]) + '</a>. De velden hieronder komen uit die importdefinitie; wijzig ze daar.</p></div>' : '') +
+      '<section class="vdSection" aria-labelledby="vd-a"><h4 id="vd-a">Bestandsopbouw</h4>' + dlRaw(fileRows) + '</section>' +
+      '<section class="vdSection" aria-labelledby="vd-b"><h4 id="vd-b">Herkenning van het artikel</h4>' + dlRaw(identRows) + '</section>' +
+      '<section class="vdSection" aria-labelledby="vd-c"><h4 id="vd-c">Velden</h4><div class="wrap"><table class="table"><thead><tr><th>Veld</th><th>Bron</th><th>Bewerking</th><th>Verplicht</th><th title="Regelnummer in de legacy-definitie (PSIMPDEF) waar dit veld vandaan komt">Uit legacy</th></tr></thead><tbody>' +
+      d.fields.map(function (r) { return '<tr><td data-label="Veld"><strong>' + esc(r.veld) + '</strong></td><td data-label="Bron">' + esc(r.bron) + '</td><td data-label="Bewerking">' + esc(r.bew) + '</td><td data-label="Verplicht">' + esc(r.verpl) + '</td><td data-label="Uit legacy" class="legacyCol">' + esc(r.leg) + '</td></tr>'; }).join('') +
+      '</tbody></table></div></section>' +
+      '<section class="vdSection" aria-labelledby="vd-d"><h4 id="vd-d">Filters</h4>' +
+      (d.filters.length ? '<ul class="rowList">' + d.filters.map(function (x) { return '<li><div class="rowMain">' + esc(x[0]) + '</div>' + badge(x[1], x[1] === 'Verwerpen' ? 'awaiting' : 'neutral') + '</li>'; }).join('') + '</ul>' : '<p class="rowMeta">Geen filters: alle regels worden verwerkt.</p>') + '</section>' +
+      '<section class="vdSection" aria-labelledby="vd-e"><h4 id="vd-e">Vertalingen</h4>' +
+      (d.maps.length ? d.maps.map(function (m) {
+        return '<div class="mapCard"><h5>' + esc(m.name) + '</h5><div class="wrap"><table class="table"><thead><tr><th>Waarde in bestand</th><th>Wordt</th></tr></thead><tbody>' +
+          m.rows.map(function (r) { return '<tr><td data-label="Waarde in bestand">' + esc(r[0]) + '</td><td data-label="Wordt">' + esc(r[1]) + '</td></tr>'; }).join('') + '</tbody></table></div>' +
+          (m.count > m.rows.length ? '<p class="rowMeta" style="margin-top:8px">+' + (m.count - m.rows.length) + ' meer</p>' : '') + '</div>';
+      }).join('') : '<p class="rowMeta">Geen vertalingen in deze versie.</p>') + '</section>' +
+      (ctx.actions || '') + '</section>';
+  }
+  var vWho = [['22 okt 2026', 'Ewout Seldeslachts'], ['3 sep 2026', 'An Peeters'], ['14 jun 2026', 'An Peeters'], ['2 mrt 2026', 'Overname uit legacy']];
+
+  /* ---------- Leveranciersdetail ---------- */
+  var tab = 'overzicht', mapVer = '3';
+  var supVersions = [['4', 'Concept', 'planned'], ['3', 'Actief', 'ready'], ['2', 'Vervangen', 'neutral']];
+  function kv(rows) {
+    return '<dl class="dl">' + rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + (r[1] ? esc(r[1]) : '<span class="unset">Niet ingesteld</span>') + '</dd>'; }).join('') + '</dl>';
+  }
+  function small(title, val, tone, id) {
+    return '<section class="summaryCard ' + tone + '" role="group" aria-labelledby="sc-' + id + '"><h3 class="summaryTitle" id="sc-' + id + '">' + title + '</h3><p class="summaryCount" style="font-size:1.5rem">' + val + '</p></section>';
+  }
+  function tabOverzicht() {
+    return '<p class="rowMeta">Zo hangt het samen: een leverancier heeft een importdefinitie, daaraan hangen koppelingen en taken, en daaruit volgen inlezingen en publicaties.</p>' + chainBar(1) +
+      '<div class="mini">' + small('Importdefinities', 1, 'cardNeutral', 'b') + small('Actieve versie', 'Versie 3', 'cardSuccess', 'a') + small('Koppelingen', 3, 'cardNeutral', 'k') + small('Taken', 3, 'cardNeutral', 't') + small('Nog niet klaar', 1, 'cardWarning', 'n') + '</div>' +
+      '<div class="banner" role="status">' + iconInfo + '<p><strong>Volgende stap:</strong> versie 4 (concept) controleren en activeren</p><button type="button" class="btn btnSm" data-vview="4">Versie 4 bekijken</button></div>' +
+      '<section class="card cardPad fieldGroup" aria-labelledby="gg"><h3 class="overline" id="gg">Gegevens</h3>' +
+      kv([['Code', 'VROOAM'], ['Soort', 'Leverancier'], ['Bibliotheek', '181 – DELICOLOR'], ['Tekenset', 'UTF-8'], ['Wachtwoord', 'Veilig bewaard'], ['Opmerking', '']]) + '</section>' +
+      bestandsKaart('VRM-SJ:3', 'data-vfields');
+  }
+  function tabVelden() {
+    return mapView({ prefix: 'VRM-SJ', num: mapVer, name: 'Vrooam artikelbestand', who: 'supplier', shared: ['VRM-SJ', 'Vrooam artikelbestand (gedeeld)'],
+      versions: supVersions.map(function (v) { return [v[0], v[1]]; }),
+      actions: mapVer === '4' ? '<div class="btnRow" style="margin-top:24px"><button type="button" class="btn btnSm">Controleren</button><button type="button" class="btn btnSm btnPrimary">Activeren</button></div>' : '' });
+  }
+  function tabVersies() {
+    var acts = { '4': ['Controleren', 'Activeren'], '3': ['Opvolger maken'], '2': [] };
+    var h = '<section class="card cardClip" aria-labelledby="bh"><div class="cardHead"><div><h2 class="subtitle" id="bh">Vrooam artikelbestand</h2><p class="rowMeta">Eigen importdefinitie · actieve versie 3 · historiek van de versies</p><p class="linkRow">Gebaseerd op herbruikbare importdefinitie <a href="#template/VRM-SJ">Vrooam artikelbestand (gedeeld)</a></p></div>' + badge('Eigen importdefinitie', 'neutral') + '</div><div style="margin-top:16px">';
+    supVersions.forEach(function (v, i) {
+      h += '<div class="versionRow"><span class="vname">Versie ' + v[0] + '</span>' + badge(v[1], v[2]) + '<span class="rowMeta">' + vWho[i][0] + ' · ' + vWho[i][1] + '</span><span class="btnRow">' +
+        '<button type="button" class="btn btnSm" data-vview="' + v[0] + '" aria-label="Bekijken: versie ' + v[0] + '">Bekijken</button>' +
+        acts[v[0]].map(function (b) { return '<button type="button" class="btn btnSm' + (b === 'Activeren' ? ' btnPrimary' : '') + '">' + b + '</button>'; }).join('') + '</span></div>';
+    });
+    return h + '</div></section>';
+  }
+  function tabKoppelingen() {
+    var ks = [['VROOAM', false], ['VROOAM2', true], ['VROOAM3', false]];
+    var h = '<div class="cardGrid">';
+    ks.forEach(function (k) {
+      h += '<section class="card cardPad" role="group" aria-labelledby="k-' + k[0] + '"><div class="linkCardTop"><h3 id="k-' + k[0] + '">' + k[0] + '</h3>' + badge('Actief', 'ready') + '</div>' +
+        '<p class="rowMeta">Bibliotheek 181</p><ul class="taskList"><li><span class="grow"><strong>Handmatige levering</strong> · Handmatig</span>' +
+        (k[1] ? badge('Niet klaar: versie niet geactiveerd', 'awaiting') : badge('Klaar', 'ready')) + '</li></ul>' +
+        '<div class="btnRow" style="margin-top:16px"><button type="button" class="btn btnSm">Controleren</button><button type="button" class="btn btnSm">Taak toevoegen</button></div></section>';
+    });
+    return h + '</div>';
+  }
+  function supplier() {
+    var tabs = [['overzicht', 'Overzicht'], ['velden', 'Bestand en velden'], ['versies', 'Versies'], ['koppelingen', 'Koppelingen en taken']];
+    var body = tab === 'overzicht' ? tabOverzicht() : tab === 'velden' ? tabVelden() : tab === 'versies' ? tabVersies() : tabKoppelingen();
+    var h = '<header class="pageHead"><div class="pageHeadText"><h1 class="title">Vrooam BV ' + badge('Leverancier', 'neutral') + ' ' + badge('Actief', 'ready') + '</h1>' +
+      '<ol class="crumbs"><li><a href="#dashboard">CatalogImport</a></li><li><span>Inrichting</span></li><li><a href="#dashboard">Leveranciers</a></li><li><span aria-current="page">Vrooam BV</span></li></ol></div>' +
+      '<div class="btnRow"><button type="button" class="btn">Verder inrichten</button><button type="button" class="btn btnPrimary">Nieuwe taak</button></div></header>' +
+      '<div class="tabs" role="tablist" aria-label="Leveranciersgegevens">' +
+      tabs.map(function (t) { return '<button type="button" role="tab" class="tab" id="tab-' + t[0] + '" aria-selected="' + (tab === t[0]) + '" aria-controls="tabpanel" tabindex="' + (tab === t[0] ? 0 : -1) + '" data-tab="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>' +
+      '<div id="tabpanel" role="region" aria-labelledby="tab-' + tab + '">' + body + '</div>' +
+      techBox([['Organisatie-id', '12'], ['Definitie-id', '34'], ['Versie-ids', '101, 102'], ['Soort start', 'MANUAL']], tab === 'velden' ? 'VRM-SJ:' + mapVer : null);
+    $('#main').innerHTML = h;
+    document.querySelectorAll('[data-tab]').forEach(function (b, i, all) {
+      b.addEventListener('click', function () { tab = b.getAttribute('data-tab'); supplier(); $('#tab-' + tab).focus(); });
+      b.addEventListener('keydown', function (e) {
+        var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0; if (!d) return;
+        tab = all[(i + d + all.length) % all.length].getAttribute('data-tab'); supplier(); $('#tab-' + tab).focus();
+      });
+    });
+    function toFields(v) {
+      mapVer = v; tab = 'velden'; supplier();
+      var p = $('#vdh'); if (p) { p.setAttribute('tabindex', '-1'); p.focus(); if (p.scrollIntoView) { p.scrollIntoView({ block: 'start' }); } }
+    }
+    document.querySelectorAll('[data-vview]').forEach(function (b) { b.addEventListener('click', function () { toFields(b.getAttribute('data-vview')); }); });
+    document.querySelectorAll('[data-vfields]').forEach(function (b) { b.addEventListener('click', function () { toFields('3'); }); });
+    var sel = $('[data-vsel="supplier"]');
+    if (sel) { sel.addEventListener('change', function () { mapVer = sel.value; supplier(); $('#vsel').focus(); }); }
+  }
+
+  /* ---------- Importdefinities (overzicht: alle definities, herbruikbaar en eigen) ---------- */
+  var tpls = [
+    ['VRM-SJ', 'Vrooam artikelbestand (gedeeld)', 'Herbruikbaar', 'VROOAM', 'Versie 3', 'Actief', '1 importdefinitie: VROOAM, VROOAM2, VROOAM3', 3, 'Uit legacy'],
+    ['KRAMP-SJ', 'Kramp Pricat', 'Herbruikbaar', 'KRAMP', 'Versie 2', 'Actief', '1 importdefinitie: KRAMP', 1, 'Uit legacy'],
+    ['STD-CSV', 'Standaard CSV prijslijst', 'Herbruikbaar', 'INTERN', 'Versie 1', 'Actief', '3 importdefinities: WILMINK, 04599, VRMKROON', 3, 'Eigen'],
+    ['STD-ART', 'Standaard artikelbestand', 'Herbruikbaar', 'INTERN', 'Versie 2', 'Actief', '2 importdefinities', 2, 'Eigen'],
+    ['INTC-SJ', 'Inter Cars artikelbestand', 'Herbruikbaar', 'INTERCARS', 'Versie 1', 'Concept', 'Nog niet gebruikt', 0, 'Uit legacy'],
+    ['DELI-SJ', 'Delicolor prijslijst', 'Herbruikbaar', 'DELICOLOR', 'Versie 1', 'Concept', 'Nog niet gebruikt', 0, 'Uit legacy'],
+    ['WIL-EIG', 'Wilmink voorraad', 'Eigen', 'WILMINK', 'Versie 1', 'Actief', 'Leverancier WILMINK', 1, 'Uit legacy'],
+    ['04599-EIG', 'Partner 04599 voorraad', 'Eigen', '04599', 'Versie 1', 'Actief', 'Leverancier 04599', 1, 'Uit legacy'],
+    ['VRK-EIG', 'Vrooam Kroon prijslijst', 'Eigen', 'VRMKROON', 'Versie 1', 'Actief', 'Leverancier VRMKROON', 1, 'Eigen'],
+    ['OUD-EIG', 'Oude leverancier artikelen', 'Eigen', 'OUDLEV', 'Geen actieve versie', 'Inactief', 'Leverancier OUDLEV (inactief)', 0, 'Uit legacy']
+  ];
+  var tplCards = [
+    { id: 'alle', title: 'Importdefinities', count: 10, tone: 'cardNeutral', sub: '7 actief, 2 concept, 1 inactief' },
+    { id: 'actief', title: 'Actief', count: 7, tone: 'cardSuccess', sub: '4 herbruikbaar, 3 eigen' },
+    { id: 'concept', title: 'Concept: nog te activeren', count: 2, tone: 'cardWarning', sub: 'nog niet bruikbaar — activeer eerst', btn: 'Toon concepten',
+      panelTitle: 'Concept: nog te activeren', rows: [['INTC-SJ', 'Inter Cars artikelbestand', 'Versie 1 (Concept)', ['Openen']], ['DELI-SJ', 'Delicolor prijslijst', 'Versie 1 (Concept)', ['Openen']]] },
+    { id: 'gedeeld', title: 'Herbruikbaar (gedeeld)', count: 6, tone: 'cardNeutral', sub: 'gedeeld door meer dan één leverancier of interface', foot: 'afgeleid uit -SJ en aantal koppelingen' }
+  ];
+  var openTCard = 'concept';
+  function templates() {
+    var h = '<header class="pageHead"><div class="pageHeadText"><h1 class="title">Importdefinities</h1>' +
+      '<ol class="crumbs"><li><a href="#dashboard">CatalogImport</a></li><li><span>Inrichting</span></li><li><span aria-current="page">Importdefinities</span></li></ol></div></header>' +
+      '<div class="intro"><p>Alle importdefinities: hoe elk leveranciersbestand gelezen wordt, eigen en herbruikbaar. Een herbruikbare importdefinitie zelf krijgt nooit een koppeling of levering.</p>' +
+      '<details class="what"><summary>Wat is dit?</summary><p>Een importdefinitie beschrijft hoe een leveranciersbestand gelezen wordt: in legacy de importsoort (PSIMDHFD/PSIMPDEF). Een herbruikbare importdefinitie wordt door meerdere leveranciers of interfaces gedeeld. Je maakt uit een herbruikbare importdefinitie een eigen importdefinitie, een conceptversie en een koppeling. Dat heet hier materialiseren. Gedeelde importdefinities uit legacy hangen aan één herbruikbare importdefinitie (-SJ).</p></details></div>' +
+      '<div class="cardGrid">';
+    tplCards.forEach(function (c) {
+      var open = openTCard === c.id;
+      h += '<section class="summaryCard ' + c.tone + (open ? ' summaryCardOpen' : '') + '" role="group" aria-labelledby="tc-' + c.id + '">' +
+        '<h2 class="summaryTitle" id="tc-' + c.id + '">' + esc(c.title) + '</h2><p class="summaryCount">' + c.count + '</p><p class="summarySub">' + esc(c.sub) + '</p>' +
+        (c.foot ? '<p class="footnote">' + esc(c.foot) + '</p>' : '') +
+        (c.btn ? '<button type="button" class="summaryButton" data-tcard="' + c.id + '" aria-expanded="' + open + '" aria-controls="tpanel">' + (open ? 'Verberg' : esc(c.btn)) + '</button>' : '') + '</section>';
+    });
+    h += '</div><div id="tpanel">';
+    var oc = tplCards.filter(function (c) { return c.id === openTCard && c.rows; })[0];
+    if (oc) {
+      h += '<section class="detailPanel" role="region" aria-labelledby="tph"><h3 id="tph">' + esc(oc.panelTitle) + '</h3><ul class="rowList">';
+      oc.rows.forEach(function (r) {
+        h += '<li><div class="rowMain"><span class="code">' + esc(r[0]) + '</span> · <strong>' + esc(r[1]) + '</strong> · <span class="rowMeta">' + esc(r[2]) + '</span></div><div class="btnRow">' +
+          r[3].map(function (b) { return '<a class="btn btnSm" href="#template/' + esc(r[0]) + '">' + esc(b) + '</a>'; }).join('') + '</div></li>';
+      });
+      h += '</ul></section>';
+    }
+    h += '</div>';
+    h += '<section class="section" aria-labelledby="tlh"><h2 class="subtitle" id="tlh" style="margin-bottom:16px">Alle importdefinities</h2>' +
+      '<div class="card cardClip"><div class="toolbar">' +
+      '<input class="field search" type="search" id="tq" placeholder="Zoek op code of naam" aria-label="Zoek op code of naam">' +
+      '<label class="fieldLabel">Soort <select class="field" id="tSoort"><option>Alle</option><option>Herbruikbaar</option><option>Eigen</option></select></label>' +
+      '<label class="fieldLabel">Status <select class="field" id="tStatus"><option>Alle</option><option>Actief</option><option>Concept</option><option>Inactief</option></select></label>' +
+      '<label class="fieldLabel">Herkomst <select class="field" id="tHerk"><option>Alle</option><option>Eigen</option><option>Uit legacy</option></select></label>' +
+      '</div><div class="wrap"><table class="table"><thead><tr><th>Code</th><th>Naam</th><th>Soort</th><th>Leverancier/Bron</th><th>Actieve versie</th><th>Gebruikt door</th><th>Koppelingen</th><th>Herkomst</th><th><span class="sr-only">Actie</span></th></tr></thead><tbody id="ttbody"></tbody></table></div>' +
+      '<div class="pager"><span id="tpagerTxt">1–10 van 10</span><button type="button" disabled aria-label="Vorige pagina">‹</button><button type="button" disabled aria-label="Volgende pagina">›</button></div></div></section>';
+    $('#main').innerHTML = h;
+    function fill() {
+      var q = $('#tq').value.trim().toLowerCase(), so = $('#tSoort').value, st = $('#tStatus').value, hk = $('#tHerk').value;
+      var rows = tpls.filter(function (r) {
+        return (!q || r[0].toLowerCase().indexOf(q) > -1 || r[1].toLowerCase().indexOf(q) > -1) && (so === 'Alle' || r[2] === so) && (st === 'Alle' || r[5] === st) && (hk === 'Alle' || r[8] === hk);
+      });
+      $('#ttbody').innerHTML = rows.length ? rows.map(function (r) {
+        return '<tr><td data-label="Code" class="code">' + esc(r[0]) + '</td><td data-label="Naam"><strong>' + esc(r[1]) + '</strong></td><td data-label="Soort">' + badge(r[2], r[2] === 'Herbruikbaar' ? 'planned' : 'neutral') + '</td><td data-label="Leverancier/Bron">' + esc(r[3]) + '</td>' +
+          '<td data-label="Actieve versie">' + esc(r[4]) + ' ' + badge(r[5], r[5] === 'Actief' ? 'ready' : r[5] === 'Concept' ? 'awaiting' : 'neutral') + '</td><td data-label="Gebruikt door">' + esc(r[6]) + '</td><td data-label="Koppelingen">' + r[7] + '</td>' +
+          '<td data-label="Herkomst">' + badge(r[8], 'neutral') + '</td><td><a class="btn btnSm" href="#template/' + esc(r[0]) + '" aria-label="Openen: ' + esc(r[1]) + '">Openen</a></td></tr>';
+      }).join('') : '<tr><td colspan="9" class="empty">Geen importdefinities gevonden.</td></tr>';
+      $('#tpagerTxt').textContent = rows.length === tpls.length ? '1–10 van 10' : (rows.length ? '1–' + rows.length + ' van ' + rows.length + ' (gefilterd)' : '0 van 10');
+    }
+    ['#tq', '#tSoort', '#tStatus', '#tHerk'].forEach(function (s) { $(s).addEventListener('input', fill); });
+    fill();
+    document.querySelectorAll('[data-tcard]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-tcard');
+        openTCard = openTCard === id ? null : id;
+        templates();
+        var nb = document.querySelector('[data-tcard="' + id + '"]'); if (nb) nb.focus();
+      });
+    });
+  }
+
+
+  /* ---------- Importdefinitie-detail (data-gedreven per importdefinitie) ---------- */
+  var invStd = [['Leverancierscode', 'Leverancierscode', 'Bij de importdefinitie', 'Ja'], ['Bibliotheek', 'Bibliotheek', 'Per koppeling', 'Ja'], ['Kortingscode', 'Kortingscode', 'Per koppeling', 'Nee'],
+    ['Bestandsnaam', 'Bestandsnaam', 'Per koppeling', 'Ja'], ['Tekenset', 'Tekenset', 'Bij de importdefinitie', 'Nee'], ['Valuta', 'Valuta', 'Bij de importdefinitie', 'Nee']];
+  var invCsv = [['Leverancierscode', 'Leverancierscode', 'Bij de importdefinitie', 'Ja'], ['Bestandsnaam', 'Bestandsnaam', 'Per koppeling', 'Ja'], ['Scheidingsteken', 'Scheidingsteken', 'Bij de importdefinitie', 'Ja'], ['Tekenset', 'Tekenset', 'Bij de importdefinitie', 'Nee']];
+  var invKramp = [['Leverancierscode', 'Leverancierscode', 'Bij de importdefinitie', 'Ja'], ['Bestandsnaam', 'Bestandsnaam', 'Per koppeling', 'Ja'], ['Valuta', 'Valuta', 'Bij de importdefinitie', 'Nee']];
+  var invArt = [['Leverancierscode', 'Leverancierscode', 'Bij de importdefinitie', 'Ja'], ['Bibliotheek', 'Bibliotheek', 'Per koppeling', 'Ja'], ['Bestandsnaam', 'Bestandsnaam', 'Per koppeling', 'Ja'], ['Tekenset', 'Tekenset', 'Bij de importdefinitie', 'Nee'], ['Eenheid', 'Eenheid', 'Bij de importdefinitie', 'Nee']];
+  var vAct = function (n, extra) { return [['Versie ' + n, 'Actief', 'ready', ['Opvolger maken', 'Detail openen']]].concat(extra || []); };
+  var tplData = {
+    'VRM-SJ': { name: 'Vrooam artikelbestand (gedeeld)', bron: 'VROOAM', status: 'Actief', herkomst: 'Uit legacy (afgeleid)', active: 3,
+      versions: [['Versie 4', 'Concept', 'planned', ['Controleren', 'Activeren']], ['Versie 3', 'Actief', 'ready', ['Opvolger maken', 'Detail openen']], ['Versie 2', 'Vervangen', 'neutral', []], ['Versie 1', 'Vervangen', 'neutral', []]],
+      inv: invStd, warn: true, tech: ['77', '201, 202, 203, 204'],
+      users: [{ title: 'Vrooam artikelbestand (gedeelde importdefinitie)', tag: 'Gedeeld', note: 'Gebaseerd op versie 3 van de herbruikbare importdefinitie', links: [['VROOAM', 'bibliotheek 181', null], ['VROOAM2', 'bibliotheek 181', 'Niet klaar: versie niet geactiveerd'], ['VROOAM3', 'bibliotheek 181', null]] }] },
+    'KRAMP-SJ': { name: 'Kramp Pricat', bron: 'KRAMP', status: 'Actief', herkomst: 'Uit legacy (afgeleid)', active: 2,
+      versions: vAct(2, [['Versie 1', 'Vervangen', 'neutral', []]]), inv: invKramp, tech: ['78', '205, 206'],
+      users: [{ title: 'Kramp Pricat (eigen importdefinitie)', tag: 'Eigen', note: 'Gebaseerd op versie 2 van de herbruikbare importdefinitie', links: [['KRAMP', '', 'Niet klaar: versie 2 niet geactiveerd']] }] },
+    'STD-CSV': { name: 'Standaard CSV prijslijst', bron: 'INTERN', status: 'Actief', herkomst: 'Eigen', active: 1,
+      versions: vAct(1), inv: invCsv, tech: ['79', '207'],
+      users: [{ title: 'Wilmink prijslijst (eigen importdefinitie)', tag: 'Eigen', note: 'Gebaseerd op versie 1 van de herbruikbare importdefinitie', links: [['WILMINK', '', null]] },
+        { title: 'Partner 04599 prijslijst (eigen importdefinitie)', tag: 'Eigen', note: 'Gebaseerd op versie 1 van de herbruikbare importdefinitie', links: [['04599', '', null]] },
+        { title: 'Vrooam Kroon prijslijst (eigen importdefinitie)', tag: 'Eigen', note: 'Gebaseerd op versie 1 van de herbruikbare importdefinitie', links: [['VRMKROON', '', null]] }] },
+    'STD-ART': { name: 'Standaard artikelbestand', bron: 'INTERN', status: 'Actief', herkomst: 'Eigen', active: 2,
+      versions: vAct(2, [['Versie 1', 'Vervangen', 'neutral', []]]), inv: invArt, tech: ['80', '208, 209'],
+      users: [{ title: 'Wilmink artikelbestand (eigen importdefinitie)', tag: 'Eigen', note: 'Gebaseerd op versie 2 van de herbruikbare importdefinitie', links: [['WILMINK', '', null]] },
+        { title: 'Vrooam Kroon artikelbestand (eigen importdefinitie)', tag: 'Eigen', note: 'Gebaseerd op versie 2 van de herbruikbare importdefinitie', links: [['VRMKROON', '', null]] }] },
+    'INTC-SJ': { name: 'Inter Cars artikelbestand', bron: 'INTERCARS', status: 'Concept', herkomst: 'Uit legacy (afgeleid)', active: 0,
+      versions: [['Versie 1', 'Concept', 'planned', ['Controleren', 'Activeren']]], inv: invArt, tech: ['81', '210'], users: [] },
+    'DELI-SJ': { name: 'Delicolor prijslijst', bron: 'DELICOLOR', status: 'Concept', herkomst: 'Uit legacy (afgeleid)', active: 0,
+      versions: [['Versie 1', 'Concept', 'planned', ['Controleren', 'Activeren']]], inv: invCsv, tech: ['82', '211'], users: [] },
+    'WIL-EIG': { kind: 'Eigen', name: 'Wilmink voorraad', bron: 'WILMINK', status: 'Actief', herkomst: 'Uit legacy', active: 1,
+      versions: vAct(1), inv: invCsv, tech: ['83', '212'],
+      users: [{ title: 'Wilmink voorraad (eigen importdefinitie)', tag: 'Eigen', note: 'Eigen importdefinitie van leverancier Wilmink', links: [['WILMINK', 'bibliotheek 352', null]] }] },
+    '04599-EIG': { kind: 'Eigen', name: 'Partner 04599 voorraad', bron: '04599', status: 'Actief', herkomst: 'Uit legacy', active: 1,
+      versions: vAct(1), inv: invArt, tech: ['84', '213'],
+      users: [{ title: 'Partner 04599 voorraad (eigen importdefinitie)', tag: 'Eigen', note: 'Eigen importdefinitie van leverancier Partner 04599', links: [['04599', 'bibliotheek 4599', null]] }] },
+    'VRK-EIG': { kind: 'Eigen', name: 'Vrooam Kroon prijslijst', bron: 'VRMKROON', status: 'Actief', herkomst: 'Eigen', active: 1,
+      versions: vAct(1), inv: invCsv, tech: ['85', '214'],
+      users: [{ title: 'Vrooam Kroon prijslijst (eigen importdefinitie)', tag: 'Eigen', note: 'Eigen importdefinitie van aankoopvereniging Vrooam Kroon', links: [['VRMKROON', 'bibliotheek 311', null], ['VRMKROON2', 'bibliotheek 311', null]] }] },
+    'OUD-EIG': { kind: 'Eigen', name: 'Oude leverancier artikelen', bron: 'OUDLEV', status: 'Inactief', herkomst: 'Uit legacy', active: 0,
+      versions: [['Versie 1', 'Inactief', 'neutral', []]], inv: invArt, tech: ['86', '215'],
+      users: [{ title: 'Oude leverancier artikelen (eigen importdefinitie)', tag: 'Eigen', note: 'Eigen importdefinitie van leverancier Oude leverancier (inactief)', links: [['OUDLEV', 'bibliotheek 90', 'Niet klaar: leverancier inactief']] }] }
+  };
+  var ttab = 'overzicht', tMapNum = null, curTpl = 'VRM-SJ';
+  function tcur() { return tplData[curTpl]; }
+  function tIsConcept() { return tcur().status === 'Concept'; }
+  function tIsOwn() { return tcur().kind === 'Eigen'; }
+  function tNum() { return tMapNum || String(tcur().active || 1); }
+  function invTable() {
+    var rows = tcur().inv;
+    return '<div class="wrap"><table class="table"><thead><tr><th>Naam</th><th>Label</th><th>Waar ingevuld</th><th>Verplicht</th></tr></thead><tbody>' +
+      rows.map(function (r) { return '<tr><td data-label="Naam" class="code">' + esc(r[0]) + '</td><td data-label="Label">' + esc(r[1]) + '</td><td data-label="Waar ingevuld">' + esc(r[2]) + '</td><td data-label="Verplicht">' + esc(r[3]) + '</td></tr>'; }).join('') +
+      '</tbody></table></div><p class="rowMeta" style="margin-top:12px">Een invulpunt is een waarde die niet in de importdefinitie zelf vastligt, maar pas bij het gebruik wordt ingevuld.</p>';
+  }
+  function tKoppelingenCount(t) { return t.users.reduce(function (n, u) { return n + u.links.length; }, 0); }
+  function tTabOverzicht() {
+    var t = tcur(), c = tIsConcept(), v = t.active || 1, geen = !t.active;
+    return '<p class="rowMeta">Zo hangt het samen: ' + (tIsOwn() ? 'een eigen importdefinitie hoort bij één leverancier; daaraan hangen koppelingen en taken.' : 'een herbruikbare importdefinitie wordt door meerdere leveranciers gedeeld; zij bouwen daarop hun koppelingen en taken.') + '</p>' + chainBar(1) +
+      '<div class="mini">' + (geen ? small('Actieve versie', 'Geen', c ? 'cardWarning' : 'cardNeutral', 'a') : small('Actieve versie', 'Versie ' + t.active, 'cardSuccess', 'a')) + small('Versies', t.versions.length, 'cardNeutral', 'v') + small('Invulpunten', t.inv.length, 'cardNeutral', 'i') + small(tIsOwn() ? 'Leveranciers die het gebruiken' : 'Importdefinities die het gebruiken', t.users.length, 'cardNeutral', 'b') + small('Koppelingen', tKoppelingenCount(t), 'cardNeutral', 'k') + '</div>' +
+      '<section class="card cardPad fieldGroup" aria-labelledby="gg"><h3 class="overline" id="gg">Gegevens</h3>' +
+      kv([['Code', curTpl], ['Naam', t.name], ['Soort', tIsOwn() ? 'Eigen importdefinitie' : 'Herbruikbare importdefinitie'], [tIsOwn() ? 'Leverancier' : 'Bron', t.bron], ['Herkomst', t.herkomst], ['Opmerking', '']]) + '</section>' +
+      bestandsKaart(curTpl + ':' + v, 'data-tfields') +
+      '<section class="card cardPad fieldGroup" aria-labelledby="gi"><h3 class="overline" id="gi">Invulpunten van versie ' + v + '</h3>' + invTable() + '</section>';
+  }
+  function tTabVelden() {
+    var t = tcur();
+    return mapView({ prefix: curTpl, num: tNum(), name: t.name, who: 'template',
+      versions: t.versions.map(function (v) { return [v[0].replace('Versie ', ''), v[1]]; }) });
+  }
+  function tTabVersies() {
+    var t = tcur(), c = tIsConcept(), vs = t.versions;
+    var h = '<section class="card cardClip" aria-labelledby="tvh"><div class="cardHead"><div><h2 class="subtitle" id="tvh">Versies</h2><p class="rowMeta">' + (c ? 'Nog geen actieve versie' : 'Actieve versie ' + t.active) + ' · historiek van de versies</p></div></div><div style="margin-top:16px">';
+    vs.forEach(function (v, i) {
+      var num = v[0].replace('Versie ', ''), w = vWho[Math.min(i, vWho.length - 1)];
+      var btns = v[3].filter(function (b) { return b !== 'Detail openen'; });
+      h += '<div class="versionRow"><span class="vname">' + v[0] + '</span>' + badge(v[1], v[2]) + '<span class="rowMeta">' + w[0] + ' · ' + w[1] + '</span><span class="btnRow">' +
+        '<button type="button" class="btn btnSm" data-tview="' + num + '" aria-label="Bekijken: ' + v[0] + '">Bekijken</button>' +
+        btns.map(function (b) { return '<button type="button" class="btn btnSm' + (b === 'Activeren' ? ' btnPrimary' : '') + '">' + b + '</button>'; }).join('') + '</span></div>';
+    });
+    return h + '</div></section>';
+  }
+  function tTabGebruikt() {
+    var t = tcur(), h;
+    if (!t.users.length) {
+      return '<section class="card cardPad"><p class="empty" style="padding:0">Nog door geen enkele leverancier gebruikt.</p></section>';
+    }
+    h = '<div class="cardGrid">' + t.users.map(function (u, i) {
+      return '<section class="card cardPad" role="group" aria-labelledby="g-' + i + '"><div class="linkCardTop"><h3 id="g-' + i + '">' + esc(u.title) + '</h3>' + badge(u.tag, 'neutral') + '</div>' +
+        '<p class="rowMeta">' + esc(u.note) + '</p><ul class="taskList">' +
+        u.links.map(function (k) { return '<li><span class="grow"><strong>' + esc(k[0]) + '</strong>' + (k[1] ? ' · ' + esc(k[1]) : '') + '</span>' + (k[2] ? badge(k[2], 'awaiting') : badge('Klaar', 'ready')) + '</li>'; }).join('') +
+        '</ul><div class="btnRow" style="margin-top:16px"><a class="btn btnSm" href="#supplier">Naar leverancier</a></div></section>';
+    }).join('') + '</div>';
+    if (t.warn) { h += '<div class="banner warn" role="note">' + iconInfo + '<p>Delen niet mogelijk voor importdefinities waar het invulpunt Bibliotheek per leverancier verschilt.</p></div>'; }
+    return h;
+  }
+  function template() {
+    var t = tcur(), c = tIsConcept();
+    var tabs = [['overzicht', 'Overzicht'], ['velden', 'Bestand en velden'], ['versies', 'Versies'], ['gebruikt', 'Gebruikt door']];
+    var dis = c ? ' disabled title="Een concept van een herbruikbare importdefinitie is nog niet bruikbaar. Activeer het eerst."' : '';
+    var body = ttab === 'overzicht' ? tTabOverzicht() : ttab === 'velden' ? tTabVelden() : ttab === 'versies' ? tTabVersies() : tTabGebruikt();
+    var h = '<header class="pageHead"><div class="pageHeadText"><h1 class="title">' + esc(t.name) + ' ' + (c ? badge('Concept', 'awaiting') : t.status === 'Actief' ? badge('Actief', 'ready') : badge(t.status, 'neutral')) + ' ' + badge(tIsOwn() ? 'Eigen' : 'Herbruikbaar', tIsOwn() ? 'neutral' : 'planned') + ' ' + badge('Herkomst: ' + t.herkomst.split(' (')[0], 'neutral') + '</h1>' +
+      '<ol class="crumbs"><li><a href="#dashboard">CatalogImport</a></li><li><span>Inrichting</span></li><li><a href="#templates">Importdefinities</a></li><li><span aria-current="page">' + esc(t.name) + '</span></li></ol></div>' +
+      '<div class="btnRow"><button type="button" class="btn">Opvolger maken</button>' + (tIsOwn() ? '' : '<button type="button" class="btn btnPrimary"' + dis + '>Leverancier toevoegen op basis van deze importdefinitie</button>') + '</div></header>' +
+      (c ? '<div class="banner" role="status">' + iconInfo + '<p><strong>Volgende stap:</strong> versie 1 controleren en activeren</p></div><div style="height:24px"></div>' : '') +
+      '<div class="tabs" role="tablist" aria-label="Gegevens van de importdefinitie">' +
+      tabs.map(function (x) { return '<button type="button" role="tab" class="tab" id="ttab-' + x[0] + '" aria-selected="' + (ttab === x[0]) + '" aria-controls="ttabpanel" tabindex="' + (ttab === x[0] ? 0 : -1) + '" data-ttab="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>' +
+      '<div id="ttabpanel" role="region" aria-labelledby="ttab-' + ttab + '">' + body + '</div>' +
+      techBox([['Definitie-id', t.tech[0]], ['Versie-ids', t.tech[1]], ['Gebruikssoort', tIsOwn() ? 'OWN_DEFINITION' : 'REUSABLE_TEMPLATE']], ttab === 'velden' ? curTpl + ':' + tNum() : null);
+    $('#main').innerHTML = h;
+    document.querySelectorAll('[data-ttab]').forEach(function (b, i, all) {
+      b.addEventListener('click', function () { ttab = b.getAttribute('data-ttab'); template(); $('#ttab-' + ttab).focus(); });
+      b.addEventListener('keydown', function (e) {
+        var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0; if (!d) return;
+        ttab = all[(i + d + all.length) % all.length].getAttribute('data-ttab'); template(); $('#ttab-' + ttab).focus();
+      });
+    });
+    function toFields(num) {
+      ttab = 'velden'; tMapNum = num; template();
+      var p = $('#vdh'); if (p) { p.setAttribute('tabindex', '-1'); p.focus(); if (p.scrollIntoView) { p.scrollIntoView({ block: 'start' }); } }
+    }
+    document.querySelectorAll('[data-tview]').forEach(function (b) { b.addEventListener('click', function () { toFields(b.getAttribute('data-tview')); }); });
+    document.querySelectorAll('[data-tfields]').forEach(function (b) { b.addEventListener('click', function () { toFields(b.getAttribute('data-tfields').split(':')[1]); }); });
+    var sel = $('[data-vsel="template"]');
+    if (sel) { sel.addEventListener('change', function () { tMapNum = sel.value; template(); $('#vsel').focus(); }); }
+  }
+
+  /* ---------- Naamgeving (voorstel) ---------- */
+  var navNames = [
+    ['Werkvoorraad', 'Inlezingen', 'Alle ingelezen leveranciersbestanden en wat er nog mee moet gebeuren.'],
+    ['Levering uploaden', 'Bestand uploaden', 'Lees een bestand van een leverancier in en laat het controleren.'],
+    ['Behandelgevallen', 'Afwijkingen', 'Dezelfde vaststelling uit meerdere bestanden, één keer te beoordelen.'],
+    ['Publicatiebundels', 'Publicaties', 'Goedgekeurde wijzigingen samenstellen, bevriezen en naar Prodis publiceren.'],
+    ['Overzicht (Inrichting)', 'Leveranciers', 'Welke leveranciers kunnen bestanden aanleveren en wat moet nog ingericht worden.'],
+    ['Nieuwe leverancier', 'Leverancier toevoegen', 'Richt een nieuwe leverancier of aankoopvereniging in, stap voor stap.'],
+    ['Sjablonen', 'Importdefinities', 'Alle importdefinities, eigen en herbruikbaar.'],
+    ['Overname uit legacy', 'Overname uit legacy (blijft)', '']
+  ];
+  var wordNames = [['Batch', 'Inlezing'], ['Mutatie', 'Wijziging'], ['Bundel', 'Publicatie'], ['Behandelgeval', 'Afwijking'], ['Beschrijving van het bestand', 'Importdefinitie'], ['Sjabloon', 'Herbruikbare importdefinitie']];
+  function namePop() {
+    $('#namePop').innerHTML = '<h2>Naamgeving (voorstel)</h2><p class="rowMeta">Open voorstel; nog niet beslist.</p>' +
+      '<h3>Navigatie</h3><div class="wrap"><table class="table"><thead><tr><th>Nu</th><th>Voorstel</th><th>Ondertitel</th></tr></thead><tbody>' +
+      navNames.map(function (r) { return '<tr><td data-label="Nu">' + esc(r[0]) + '</td><td data-label="Voorstel"><strong>' + esc(r[1]) + '</strong></td><td data-label="Ondertitel">' + (r[2] ? esc(r[2]) : '<span class="rowMeta">—</span>') + '</td></tr>'; }).join('') + '</tbody></table></div>' +
+      '<h3>Woordenlijst</h3><div class="wrap"><table class="table"><thead><tr><th>Nu</th><th>Voorstel</th></tr></thead><tbody>' +
+      wordNames.map(function (r) { return '<tr><td data-label="Nu">' + esc(r[0]) + '</td><td data-label="Voorstel"><strong>' + esc(r[1]) + '</strong></td></tr>'; }).join('') + '</tbody></table></div>';
+  }
+  function setNamePop(open) {
+    $('#namePop').hidden = !open; $('#nameBtn').setAttribute('aria-expanded', open);
+  }
+  namePop();
+  $('#nameBtn').addEventListener('click', function () { setNamePop($('#namePop').hidden); });
+
+  /* ---------- Router + chrome ---------- */
+  var ROUTE_RE = /^#(dashboard|supplier|templates|template(?:\/[^\/]+)?)$/;
+  var currentRoute = location.hash || '#dashboard';
+  function route() {
+    var h = currentRoute, tm = /^#template(?:\/([^\/]+))?$/.exec(h);
+    var r = h === '#supplier' ? 'supplier' : h === '#templates' ? 'templates' : tm ? 'template' : 'dashboard';
+    document.querySelectorAll('.seg button').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-route') === r); });
+    var onTpl = r === 'templates' || r === 'template';
+    if (onTpl) { $('#navTemplates').setAttribute('aria-current', 'page'); $('#navOverview').removeAttribute('aria-current'); }
+    else { $('#navOverview').setAttribute('aria-current', 'page'); $('#navTemplates').removeAttribute('aria-current'); }
+    closeMenu();
+    if (r === 'supplier') { tab = 'overzicht'; mapVer = '3'; supplier(); }
+    else if (r === 'templates') { templates(); }
+    else if (r === 'template') { var tc = tm[1] ? decodeURIComponent(tm[1]) : 'VRM-SJ'; curTpl = tplData[tc] ? tc : 'VRM-SJ'; ttab = 'overzicht'; tMapNum = null; template(); }
+    else { dashboard(); }
+    window.scrollTo(0, 0);
+  }
+  function go(href) {
+    currentRoute = href;
+    try { history.pushState(null, '', href); } catch (err) { /* ignore: fragment navigation not available */ }
+    route();
+    try { window.scrollTo(0, 0); } catch (err) { /* ignore */ }
+  }
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if (!a || a.hasAttribute('data-nolink')) return;
+    var href = a.getAttribute('href');
+    if (!ROUTE_RE.test(href)) return;
+    e.preventDefault();
+    go(href);
+  }, true);
+  document.querySelectorAll('.seg button').forEach(function (b) { b.addEventListener('click', function () { var d = b.getAttribute('data-route'); go('#' + d + (d === 'template' ? '/VRM-SJ' : '')); }); });
+  document.querySelectorAll('[data-nolink]').forEach(function (a) { a.addEventListener('click', function (e) { e.preventDefault(); }); });
+  window.addEventListener('hashchange', function () { currentRoute = location.hash || '#dashboard'; route(); });
+  window.addEventListener('popstate', function () { currentRoute = location.hash || '#dashboard'; route(); });
+
+  function closeMenu() { $('#sidebar').classList.remove('open'); $('#scrim').hidden = true; $('#menuBtn').setAttribute('aria-expanded', 'false'); }
+  $('#menuBtn').addEventListener('click', function () { var o = !$('#sidebar').classList.contains('open'); $('#sidebar').classList.toggle('open', o); $('#scrim').hidden = !o; this.setAttribute('aria-expanded', o); });
+  $('#scrim').addEventListener('click', closeMenu);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeMenu(); if (!$('#namePop').hidden) { setNamePop(false); $('#nameBtn').focus(); } } });
+
+  $('#themeBtn').addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+  });
+
+  route();
+})();
+</script>
+</body>
+</html>
