@@ -3475,3 +3475,14 @@ valideren de configuratie niet. 409 `REVISION_EDIT_CONFLICT` is gegarandeerd bij
 gewijzigde rij en bij een PK-botsing; twee gelijktijdige eerste inserts kunnen allebei slagen (last-writer-wins) omdat de
 entiteit geen `@Version` heeft — een strikte 409 daar vraagt een schema-/domeinkeuze (later, indien gewenst).
 **Bron:** bouwer-gemiddeld (EB2-rapport)
+
+## 2026-10-23 — E5a: controle zonder bestand in stap ②
+**Vraag:** Hoe toont de editor de configuratiecontrole (EB4) zonder testbestand?
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** De conceptbalk vraagt `configuration-check` automatisch op
+bij het openen van een concept en na elke wijziging (geen extra knop). Stap ② toont bovenaan "Instellingen: in orde" of
+"n problemen blokkeren het activeren", met per probleem een zin en een sprong naar de betrokken rij (fieldName/
+revisionField) of sectie. De proefinlezing met testbestand blijft daaronder; stap ② vinkt nog altijd enkel af bij
+NO_BLOCKER_FOUND (E4-keuze blijft). [Activeren] is uitgeschakeld met reden zolang `activatable=false` (activeren zou
+toch falen); bij een mislukte controle-oproep blijft activeren zoals in E4 (met waarschuwing). Codes via de woordenlijst,
+nooit rauw.
+**Bron:** hoofdsessie op basis van denker-zwaar "Editor-API-gaten" (EB4) en de E4-keuzes
