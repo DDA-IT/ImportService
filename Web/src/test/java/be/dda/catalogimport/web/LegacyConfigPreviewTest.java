@@ -44,11 +44,12 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
 
         // S6: de vaste waarde GRP-A op lijn 10 blokkeert niet meer; enkel nog sleutelprofiel, prefix op 11 en bibliotheek.
         assertThat((String) JsonPath.read(body, "$.report.outcome")).isEqualTo("BLOCKED");
-        assertThat(blockingCodes(body)).containsExactly("IDENTITY_PROFILE_UNSUPPORTED", "IDENTITY_PROFILE_UNSUPPORTED",
-                "IDENTITY_PROFILE_UNSUPPORTED", "IDENTITY_TRANSFORM_UNSUPPORTED", "LIBRARY_CODE_NOT_RESOLVED");
+        // 2026-10-23: de afwezige Key_*-labels blokkeren niet meer (Lev/RefLev: geen effect; LevGrp=N: THREE_PART),
+        // maar zonder ArtImp_Art/Bib=B kan LevGrp=N niet gelezen worden (legacy schrijft dan naar ARTICLES).
+        assertThat(blockingCodes(body)).containsExactly("ARTICLE_TARGET_UNSUPPORTED",
+                "IDENTITY_TRANSFORM_UNSUPPORTED", "LIBRARY_CODE_NOT_RESOLVED");
         assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.status == 'BLOCKING')].element"))
-                .containsExactly("INDET:ArtImp_Key_Lev", "INDET:ArtImp_Key_RefLev", "INDET:ArtImp_Key_LevGrp",
-                        "PSIMPDEF#11", "INDET:ArtImp_BibNr");
+                .containsExactly("INDET:ArtImp_Art/Bib", "PSIMPDEF#11", "INDET:ArtImp_BibNr");
         // Lijn 10: vaste groep (zonder Prodis-bron niet geverifieerd), en altijd hoofdletters.
         assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.element == 'PSIMPDEF#10')].code"))
                 .containsExactly("IDENTITY_FIXED_VALUE", "PRODIS_REFERENCE_NOT_VERIFIED");
@@ -73,6 +74,111 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
         String withLibrary = previewBody(id, "libraryCode", "LIB-GOLDEN");
         assertThat(blockingCodes(withLibrary)).doesNotContain("LIBRARY_CODE_NOT_RESOLVED")
                 .contains("IDENTITY_TRANSFORM_UNSUPPORTED");
+    }
+
+    // --- Beslissing 2026-10-23: LevGrp=N, dode sleutelvlaggen, CALC 15 op de identiteit ---------------------------
+
+    @Test
+    void aGroupLessKeyWithLibraryTargetIsMigratedAsThreePartWithAWarning() throws Exception {
+        for (String groupFlag : new String[] {"N", null}) {
+            ObjectNode bundle = applicable();
+            detail(bundle, "ArtImp_Art/Bib", "B");
+            detail(bundle, "ArtImp_Key_Korting", "N");
+            if (groupFlag == null) {
+                removeDetail(bundle, "ArtImp_Key_LevGrp");
+            } else {
+                detail(bundle, "ArtImp_Key_LevGrp", groupFlag);
+            }
+
+            String body = previewBody(receive(bundle), "libraryCode", "LIB-N");
+
+            assertThat(blockingCodes(body)).isEmpty();
+            assertThat((String) JsonPath.read(body, "$.report.outcome")).isEqualTo("APPLICABLE");
+            assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.code == 'IDENTITY_PROFILE')].target"))
+                    .containsExactly("revision.identityProfileKind=THREE_PART");
+            assertThat((List<String>) JsonPath.read(body,
+                    "$.report.items[?(@.code == 'IDENTITY_GROUP_INHERITANCE_NOT_MIGRATED')].element"))
+                    .containsExactly("INDET:ArtImp_Key_LevGrp");
+            assertThat(codes(body, "WARNING")).contains("IDENTITY_GROUP_INHERITANCE_NOT_MIGRATED");
+        }
+        // Met Key_Korting=Y blijft het FOUR_PART.
+        ObjectNode withDiscount = applicable();
+        detail(withDiscount, "ArtImp_Art/Bib", "B");
+        detail(withDiscount, "ArtImp_Key_LevGrp", "N");
+        String body = previewBody(receive(withDiscount), "libraryCode", "LIB-N");
+        assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.code == 'IDENTITY_PROFILE')].target"))
+                .containsExactly("revision.identityProfileKind=FOUR_PART_WITH_DISCOUNT_CODE");
+    }
+
+    @Test
+    void aGroupLessKeyBlocksWithoutLibraryTargetOrWithoutAGroupLine() throws Exception {
+        for (String artBib : new String[] {"A", null}) {
+            ObjectNode bundle = applicable();
+            detail(bundle, "ArtImp_Key_LevGrp", "N");
+            if (artBib != null) {
+                detail(bundle, "ArtImp_Art/Bib", artBib);
+            }
+            String body = previewBody(receive(bundle), "libraryCode", "LIB-N");
+            assertThat(blockingCodes(body)).containsExactly("ARTICLE_TARGET_UNSUPPORTED");
+            assertThat(codes(body, "WARNING")).doesNotContain("IDENTITY_GROUP_INHERITANCE_NOT_MIGRATED");
+        }
+        // Zonder groeplijn (PSIMPDEF 10): het bestaande IDENTITY_FIELD_MISSING.
+        ObjectNode noLine = applicable();
+        detail(noLine, "ArtImp_Art/Bib", "B");
+        detail(noLine, "ArtImp_Key_LevGrp", "N");
+        line(noLine, 10).put("number", 999);
+        assertThat(blockingCodes(previewBody(receive(noLine), "libraryCode", "LIB-N")))
+                .containsExactly("IDENTITY_FIELD_MISSING");
+    }
+
+    @Test
+    void deadKeyFlagsAreReportedButNeverBlock() throws Exception {
+        ObjectNode bundle = applicable();
+        detail(bundle, "ArtImp_Key_Lev", "N");
+        removeDetail(bundle, "ArtImp_Key_RefLev");
+        detail(bundle, "ArtImp_Key_Barcode", "Y");
+
+        String body = previewBody(receive(bundle), "libraryCode", "LIB-DEAD");
+
+        assertThat(blockingCodes(body)).isEmpty();
+        assertThat((String) JsonPath.read(body, "$.report.outcome")).isEqualTo("APPLICABLE");
+        assertThat((List<String>) JsonPath.read(body,
+                "$.report.items[?(@.code == 'IDENTITY_FLAG_WITHOUT_EFFECT' && @.status == 'NOT_MIGRATED')].element"))
+                .containsExactly("INDET:ArtImp_Key_Lev", "INDET:ArtImp_Key_RefLev", "INDET:ArtImp_Key_Barcode");
+        assertThat(body).doesNotContain("IDENTITY_PROFILE_UNSUPPORTED");
+    }
+
+    @Test
+    void calcFifteenOnAnIdentityLineIsNoTransformationButEverythingElseStillBlocks() throws Exception {
+        ObjectNode upper = applicable();
+        line(upper, 9).put("calculation", "15");
+        line(upper, 10).put("calculation", "15");
+        line(upper, 11).put("calculation", "15");
+        String body = previewBody(receive(upper), "libraryCode", "LIB-UP");
+        assertThat(blockingCodes(body)).isEmpty();
+        assertThat((List<String>) JsonPath.read(body, "$.report.items[?(@.code == 'IDENTITY_FIELD')].target"))
+                .contains("revision.identitySupplierField=3", "revision.identitySupplierReferenceField=1");
+
+        ObjectNode withPrefix = applicable();
+        line(withPrefix, 9).put("calculation", "15").put("prefix", "X");
+        assertThat(blockingCodes(previewBody(receive(withPrefix), "libraryCode", "LIB-UP")))
+                .containsExactly("IDENTITY_TRANSFORM_UNSUPPORTED");
+
+        ObjectNode withSubstring = applicable();
+        line(withSubstring, 11).put("calculation", "15").put("position", 2).put("length", 3);
+        assertThat(blockingCodes(previewBody(receive(withSubstring), "libraryCode", "LIB-UP")))
+                .containsExactly("IDENTITY_TRANSFORM_UNSUPPORTED");
+
+        // De leverancierskaart (CALC 7) op regel 9 blijft blokkeren (beslissing 2026-10-23, punt 4 nog open).
+        ObjectNode card = applicable();
+        line(card, 9).put("calculation", "7");
+        assertThat(blockingCodes(previewBody(receive(card), "libraryCode", "LIB-UP")))
+                .containsExactly("IDENTITY_TRANSFORM_UNSUPPORTED");
+
+        ObjectNode other = applicable();
+        line(other, 10).put("calculation", "3").put("calculationValue", "2");
+        assertThat(blockingCodes(previewBody(receive(other), "libraryCode", "LIB-UP")))
+                .containsExactly("IDENTITY_TRANSFORM_UNSUPPORTED");
     }
 
     @Test

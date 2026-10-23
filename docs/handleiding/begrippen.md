@@ -1307,7 +1307,10 @@ Elk punt van het rapport heeft een eigen code; de tabel noemt wat het punt voor 
 | `CHARSET_DEFAULTED_UTF8` | Tekenset niet opgegeven, UTF-8 gebruikt | De interface noemt geen tekenset; legacy gebruikt dan altijd UTF-8, dus dat is hier overgenomen. |
 | `CHARSET_UNSUPPORTED` | Tekenset niet ondersteund | De opgegeven tekenset bestaat niet of wordt niet ondersteund. |
 | `SKIP_HEADER_LINES_INVALID` | Aantal over te slaan regels is ongeldig | Het aantal kopregels van de interface is geen bruikbaar getal. |
-| `IDENTITY_PROFILE_UNSUPPORTED` | Herkenning van artikelen niet ondersteund | De sleutelinstellingen van de interface (bijvoorbeeld zonder groep, of met barcode) kunnen niet overgenomen worden. |
+| `IDENTITY_PROFILE_UNSUPPORTED` | Herkenning van artikelen niet ondersteund | De sleutelinstellingen van de interface kunnen niet overgenomen worden (komt enkel nog voor in oudere rapporten). |
+| `IDENTITY_GROUP_INHERITANCE_NOT_MIGRATED` | Groep van het bestaande artikel wordt niet overgenomen | De interface neemt geen leveranciersgroep in de herkenning op (Key_LevGrp = N). Regels zonder groep worden hier verworpen; legacy nam de groep van het bestaande bibliotheekartikel over. |
+| `ARTICLE_TARGET_UNSUPPORTED` | Doel van de interface niet ondersteund | De interface schrijft in legacy naar de artikelen en niet naar de bibliotheek; dat wordt niet overgenomen. |
+| `IDENTITY_FLAG_WITHOUT_EFFECT` | Sleutelinstelling heeft geen effect | Deze sleutelinstelling (leverancier, leveranciersreferentie of barcode) heeft in legacy geen effect en is niet overgenomen. |
 | `CURRENCY_RATE_NOT_SUPPORTED` | Wisselkoers niet ondersteund | Een wisselkoers zou prijzen omrekenen; een financiële omrekening wordt niet overgenomen. |
 | `LEGACY_FIELD_DUPLICATED` | Veld komt meerdere keren voor | Hetzelfde veldnummer staat meer dan eens in de importsoort; kies er eerst één. |
 | `IDENTITY_FIELD_MISSING` | Kolom voor de herkenning ontbreekt | Een van de velden waarmee een artikel herkend wordt, heeft geen kolom of vaste waarde. |

@@ -43,8 +43,10 @@ import java.util.UUID;
  *       transformatie ({@value #IDENTITY_TRANSFORM_UNSUPPORTED}) of geen kolom ({@value #IDENTITY_FIELD_MISSING})
  *       blokkeert: weglaten zou de identiteit van elke aanbieding veranderen.</li>
  *   <li><b>Sleutelprofiel (INDET {@code ArtImp_Key_*}):</b> een afwezig label telt als {@code N}, zoals
- *       {@code Prg_1232} r.518 ({@code ='Y'}). Zonder leverancier, referentie of groep, of met barcode:
- *       {@value #IDENTITY_PROFILE_UNSUPPORTED} (decisions 2026-09-18). {@code ArtImp_Key_Korting=Y} maakt 23 deel van
+ *       {@code Prg_1232} r.518 ({@code ='Y'}). Key_Lev, Key_RefLev en Key_Barcode hebben in legacy geen effect
+ *       ({@value #IDENTITY_FLAG_WITHOUT_EFFECT}, niet blokkerend); {@code Key_LevGrp<>Y} wordt een driedelige sleutel met
+ *       {@value #IDENTITY_GROUP_INHERITANCE_NOT_MIGRATED}, enkel bij {@code ArtImp_Art/Bib=B}
+ *       ({@value #ARTICLE_TARGET_UNSUPPORTED} anders; decisions 2026-10-23). {@code ArtImp_Key_Korting=Y} maakt 23 deel van
  *       de identiteit ({@code FOUR_PART_WITH_DISCOUNT_CODE}).</li>
  *   <li><b>Basisprijs 26 / omschrijving 4:</b> enkel een bronkolom; een transformatie op 26 blokkeert
  *       ({@value #BASE_PRICE_TRANSFORM_UNSUPPORTED}), op 4 vervalt het veld met een waarschuwing.</li>
@@ -101,6 +103,12 @@ final class LegacyConfigTranslator {
     static final String SKIP_HEADER_LINES_INVALID = "SKIP_HEADER_LINES_INVALID";
     static final String DECIMAL_COMMA_BASE_PRICE = "DECIMAL_COMMA_BASE_PRICE";
     static final String IDENTITY_PROFILE_UNSUPPORTED = "IDENTITY_PROFILE_UNSUPPORTED";
+    /** Decisions 2026-10-23 (1): LevGrp=N wordt THREE_PART; regels zonder groep worden verworpen (legacy erfde de groep). */
+    static final String IDENTITY_GROUP_INHERITANCE_NOT_MIGRATED = "IDENTITY_GROUP_INHERITANCE_NOT_MIGRATED";
+    /** Decisions 2026-10-23 (1): {@code ArtImp_Art/Bib} is niet 'B': legacy schrijft naar ARTICLES, niet naar de bibliotheek. */
+    static final String ARTICLE_TARGET_UNSUPPORTED = "ARTICLE_TARGET_UNSUPPORTED";
+    /** Decisions 2026-10-23 (2): Key_Lev/Key_RefLev/Key_Barcode hebben in legacy geen effect (Prg_1223/Prg_1171). */
+    static final String IDENTITY_FLAG_WITHOUT_EFFECT = "IDENTITY_FLAG_WITHOUT_EFFECT";
     static final String CURRENCY_RATE_NOT_SUPPORTED = "CURRENCY_RATE_NOT_SUPPORTED";
     static final String CONNECTION_NOT_MIGRATED = "CONNECTION_NOT_MIGRATED";
     static final String PUBLICATION_PARAMETER_NOT_MIGRATED = "PUBLICATION_PARAMETER_NOT_MIGRATED";
@@ -182,6 +190,7 @@ final class LegacyConfigTranslator {
     static final String LABEL_KEY_GROUP = "ArtImp_Key_LevGrp";
     static final String LABEL_KEY_DISCOUNT = "ArtImp_Key_Korting";
     static final String LABEL_KEY_BARCODE = "ArtImp_Key_Barcode";
+    static final String LABEL_ART_BIB = "ArtImp_Art/Bib";
     static final String LABEL_RATE = "ArtImp_Para_Koers";
     /** S8f: {@code Prg_1232} r.444/518 ({@code [V_Skip_Excludes]='Y'}), {@code Prg_1170} r.395. */
     static final String LABEL_SKIP_EXCLUDES = "Skip_Excludes";
@@ -563,22 +572,41 @@ final class LegacyConfigTranslator {
         return lines;
     }
 
+    /**
+     * Decisions 2026-10-23: {@code Key_Lev}, {@code Key_RefLev} en {@code Key_Barcode} hebben in legacy geen effect
+     * (Prg_1223/Prg_1171) en blokkeren niet meer; {@code Key_LevGrp<>Y} (ook afwezig, Prg_1232 r.518) wordt een
+     * driedelige sleutel als {@code ArtImp_Art/Bib=B}, met een WARNING dat de groep van het bestaande
+     * bibliotheekartikel (Prg_1171) niet wordt overgenomen. Of PSIMPDEF 10 een kolom of vaste waarde heeft,
+     * controleert {@link #identitySource} (anders IDENTITY_FIELD_MISSING).
+     */
     private IdentityProfileKind identityProfile(Map<String, List<JsonNode>> details) {
         boolean supported = true;
-        for (String label : List.of(LABEL_KEY_SUPPLIER, LABEL_KEY_REFERENCE, LABEL_KEY_GROUP)) {
+        for (String label : List.of(LABEL_KEY_SUPPLIER, LABEL_KEY_REFERENCE)) {
             String value = single(details, label);
             if (!"Y".equals(value)) {
-                add("INDET:" + label, BLOCKING, IDENTITY_PROFILE_UNSUPPORTED, null, label + " is "
-                        + (value == null ? "absent (legacy reads that as N, Prg_1232 r.518)" : "'" + value + "'")
-                        + "; an identity without supplier, supplier group and supplier reference is not supported "
-                        + "(decisions 2026-09-18)");
+                add("INDET:" + label, NOT_MIGRATED, IDENTITY_FLAG_WITHOUT_EFFECT, null, label + " is "
+                        + (value == null ? "absent" : "'" + value + "'")
+                        + "; the flag has no effect in legacy (Prg_1223/Prg_1171), the identity keeps it");
+            }
+        }
+        String group = single(details, LABEL_KEY_GROUP);
+        if (!"Y".equals(group)) {
+            String artBib = single(details, LABEL_ART_BIB);
+            if (!"B".equals(artBib)) {
+                add("INDET:" + LABEL_ART_BIB, BLOCKING, ARTICLE_TARGET_UNSUPPORTED, null, LABEL_ART_BIB + " is "
+                        + (artBib == null ? "absent" : "'" + artBib + "'") + ", not 'B': legacy writes to ARTICLES, "
+                        + "not the library (needed to read " + LABEL_KEY_GROUP + "=N, decisions 2026-10-23)");
                 supported = false;
+            } else {
+                add("INDET:" + LABEL_KEY_GROUP, WARNING, IDENTITY_GROUP_INHERITANCE_NOT_MIGRATED, null,
+                        LABEL_KEY_GROUP + " is " + (group == null ? "absent (legacy reads that as N, Prg_1232 r.518)"
+                                : "'" + group + "'") + ": lines without a supplier group are rejected; legacy "
+                                + "inherited the group of the existing library article (Prg_1171)");
             }
         }
         if ("Y".equals(single(details, LABEL_KEY_BARCODE))) {
-            add("INDET:" + LABEL_KEY_BARCODE, BLOCKING, IDENTITY_PROFILE_UNSUPPORTED, null,
-                    "an identity with the barcode is not supported (decisions 2026-09-18)");
-            supported = false;
+            add("INDET:" + LABEL_KEY_BARCODE, NOT_MIGRATED, IDENTITY_FLAG_WITHOUT_EFFECT, null,
+                    LABEL_KEY_BARCODE + " is 'Y'; the flag has no effect in legacy (Prg_1223/Prg_1171)");
         }
         if (!supported) {
             revisionBlocked = true;
@@ -840,7 +868,7 @@ final class LegacyConfigTranslator {
             return null;
         }
         JsonNode line = rows.get(0);
-        if (line.path("column").asInt() > 0 || hasTransform(line) || hasSubstring(line)) {
+        if (line.path("column").asInt() > 0 || hasIdentityTransform(line) || hasSubstring(line)) {
             add(element, NOT_MIGRATED, LEGACY_IGNORED_WITH_FIXED_VALUE, null, "field " + number + " has a fixed "
                     + "value; legacy ignores its column and transformation then, and so does CatalogImport");
         }
@@ -888,7 +916,7 @@ final class LegacyConfigTranslator {
                     + "supplier and the supplier group (fields 9 and 10)");
             return null;
         }
-        if (hasTransform(line) || hasSubstring(line)) {
+        if (hasIdentityTransform(line) || hasSubstring(line)) {
             add(element, BLOCKING, IDENTITY_TRANSFORM_UNSUPPORTED, null, "field " + number + " is transformed ("
                     + transformDescription(line) + "); an identity field can only be a source column, dropping "
                     + "the transformation would change every identity");
@@ -1559,6 +1587,15 @@ final class LegacyConfigTranslator {
     private static boolean hasTransform(JsonNode line) {
         return !line.path("prefix").asText("").isEmpty() || !line.path("suffix").asText("").isEmpty()
                 || !calculationOf(line).isEmpty();
+    }
+
+    /**
+     * Een bewerking op een identiteitsregel (9-11). CALC 15 (Upper) telt niet: legacy zet die velden toch in
+     * hoofdletters (decisions 2026-10-23 (3)); CALC 7 en elke andere bewerking blijven een bewerking.
+     */
+    private static boolean hasIdentityTransform(JsonNode line) {
+        return !line.path("prefix").asText("").isEmpty() || !line.path("suffix").asText("").isEmpty()
+                || !(calculationOf(line).isEmpty() || "15".equals(calculationOf(line)));
     }
 
     private static boolean hasSubstring(JsonNode line) {

@@ -330,6 +330,27 @@ class LegacyConfigApplyTest extends LegacyConfigS2TestBase {
     }
 
     @Test
+    void aGroupLessInterfaceIsAppliedWithAThreePartIdentity() throws Exception {
+        ObjectNode bundle = applicable();
+        detail(bundle, "ArtImp_Art/Bib", "B");
+        detail(bundle, "ArtImp_Key_LevGrp", "N");
+        detail(bundle, "ArtImp_Key_Korting", "N");
+        long id = receive(bundle);
+
+        String body = previewAndApply(id, "libraryCode", "LIB-N").andExpect(status().isOk())
+                .andExpect(jsonPath("$.receiptStatus").value("APPLIED"))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(codes(body, "WARNING")).contains("IDENTITY_GROUP_INHERITANCE_NOT_MIGRATED");
+        Map<String, Object> revision = revisionRows(definitionId(supplier(bundle), "VROOAM2")).get(0);
+        assertThat(revision.get("identity_profile_kind")).isEqualTo("THREE_PART");
+        assertThat(revision.get("identity_supplier_field")).isEqualTo("3");
+        assertThat(revision.get("identity_supplier_group_field")).isEqualTo("4");
+        assertThat(revision.get("identity_supplier_reference_field")).isEqualTo("1");
+        assertThat(revision.get("identity_discount_code_field")).isNull();
+    }
+
+    @Test
     void theSameMigratedContentAgainIsDefinitionUnchanged() throws Exception {
         ObjectNode bundle = applicable();
         long first = receive(bundle);

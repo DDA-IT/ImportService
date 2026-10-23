@@ -1820,7 +1820,19 @@ export const DICTIONARY: Record<TermDomain, Record<string, TermEntry>> = {
     },
     IDENTITY_PROFILE_UNSUPPORTED: {
       label: 'Herkenning van artikelen niet ondersteund',
-      uitleg: 'De sleutelinstellingen van de interface (bijvoorbeeld zonder groep, of met barcode) kunnen niet overgenomen worden.',
+      uitleg: 'De sleutelinstellingen van de interface kunnen niet overgenomen worden (komt enkel nog voor in oudere rapporten).',
+    },
+    IDENTITY_GROUP_INHERITANCE_NOT_MIGRATED: {
+      label: 'Groep van het bestaande artikel wordt niet overgenomen',
+      uitleg: 'De interface neemt geen leveranciersgroep in de herkenning op (Key_LevGrp = N). Regels zonder groep worden hier verworpen; legacy nam de groep van het bestaande bibliotheekartikel over.',
+    },
+    ARTICLE_TARGET_UNSUPPORTED: {
+      label: 'Doel van de interface niet ondersteund',
+      uitleg: 'De interface schrijft in legacy naar de artikelen en niet naar de bibliotheek; dat wordt niet overgenomen.',
+    },
+    IDENTITY_FLAG_WITHOUT_EFFECT: {
+      label: 'Sleutelinstelling heeft geen effect',
+      uitleg: 'Deze sleutelinstelling (leverancier, leveranciersreferentie of barcode) heeft in legacy geen effect en is niet overgenomen.',
     },
     CURRENCY_RATE_NOT_SUPPORTED: {
       label: 'Wisselkoers niet ondersteund',
