@@ -42,7 +42,8 @@ class ProdisReferenceUnavailableTest extends LegacyConfigS2TestBase {
     @Test
     void theApplicationStartsAndStaysReadyAndTheListsAre503() throws Exception {
         assertThat(prodisReferenceJdbc.isConfigured()).isTrue();
-        for (String path : List.of("/suppliers?q=02", "/suppliers/02079/groups", "/suppliers/02079/catalogs")) {
+        for (String path : List.of("/suppliers?q=02", "/suppliers/02079/groups", "/suppliers/02079/catalogs",
+                "/vat-codes", "/units-of-measure")) {
             mockMvc.perform(get(PRODIS_REFERENCE + path).with(as(USER, Permission.READ)))
                     .andExpect(status().isForbidden());
             mockMvc.perform(get(PRODIS_REFERENCE + path).with(as(USER, Permission.MANAGE)))

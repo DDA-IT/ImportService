@@ -210,6 +210,9 @@ GRANT SELECT (id, catalog_article_price_id, code, percentage, price, record_acti
       ON catalog_article_price_detail TO catalogimport_ro;
 GRANT SELECT (id, catalog_article_id, language_id, description, record_active, deleted_at)
       ON catalog_article_description TO catalogimport_ro;
+-- Nieuw (CD-B1, aanmaakstandaard per koppeling):
+GRANT SELECT (id, code, description, percentage, record_active, deleted_at) ON vat_code TO catalogimport_ro;
+GRANT SELECT (id, code, singular, abbreviation, record_active, deleted_at) ON unit_of_measure TO catalogimport_ro;
 ```
 
 **Wie levert dit:** Jeff/DDA-infra (of de DBA van de Prodis-database).

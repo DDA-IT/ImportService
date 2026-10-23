@@ -14,11 +14,15 @@ import be.dda.catalogimport.dao.ProdisReferenceDao.CatalogArticleRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierCatalogRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierGroupRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierRow;
+import be.dda.catalogimport.dao.ProdisReferenceDao.UnitOfMeasureRow;
+import be.dda.catalogimport.dao.ProdisReferenceDao.VatCodeRow;
 import be.dda.catalogimport.service.BadRequestException;
 import be.dda.catalogimport.service.NotFoundException;
 import be.dda.catalogimport.service.ProdisReferenceNotConfiguredException;
 import be.dda.catalogimport.service.ProdisReferenceService;
 import be.dda.catalogimport.service.ProdisReferenceService.Availability;
+import be.dda.catalogimport.service.ProdisReferenceService.CodeMatch;
+import be.dda.catalogimport.service.ProdisReferenceService.CreationDefaultsCheck;
 import be.dda.catalogimport.service.ProdisReferenceService.LegacyLookup;
 import be.dda.catalogimport.service.ProdisReferenceService.CatalogArticleLookups;
 import be.dda.catalogimport.service.ProdisReferenceService.LegacyMasterMode;
@@ -236,6 +240,64 @@ class ProdisReferenceDaoTest {
             PRODIS.restore();
         }
         assertThat(service.lookup("D0001").availability()).isEqualTo(Availability.VERIFIED);
+    }
+
+    @Test
+    void vatCodesAndUnitsAreActiveOnlyOnePerTrimmedCodeWithTheLowestIdLabelAndADuplicateIsCounted() {
+        PRODIS.clearCreationDefaults();
+        PRODIS.insertVatCode("3", "BTW21%", 21.0, true, false);
+        PRODIS.insertVatCode(" 3 ", "BTW21% dubbel", 22.0, true, false);
+        PRODIS.insertVatCode("3", "BTW21% verwijderd", 23.0, true, true);
+        PRODIS.insertVatCode("3", "BTW21% inactief", 24.0, false, false);
+        PRODIS.insertVatCode("1", "BTW6%", 6.0, true, false);
+        PRODIS.insertVatCode("0", "Vrijgesteld", null, true, false);
+        PRODIS.insertVatCode(null, "Zonder code", 1.0, true, false);
+        PRODIS.insertVatCode("  ", "Lege code", 1.0, true, false);
+        PRODIS.insertVatCode("9", "Enkel inactief", 9.0, false, false);
+        PRODIS.insertUnitOfMeasure("ST", "Stuk", "st", true, false);
+        PRODIS.insertUnitOfMeasure("ST", "Stuk 2", "st2", true, false);
+        PRODIS.insertUnitOfMeasure("DS", "Doos", "ds", true, false);
+        PRODIS.insertUnitOfMeasure("DS", "Doos oud", "dso", false, false);
+        PRODIS.insertUnitOfMeasure("KG", "Kilo", "kg", true, true);
+        PRODIS.insertUnitOfMeasure(null, "Zonder", "x", true, false);
+
+        assertThat(dao.findVatCodes()).containsExactly(
+                new VatCodeRow("0", "Vrijgesteld", null, 1),
+                new VatCodeRow("1", "BTW6%", 6.0, 1),
+                new VatCodeRow("3", "BTW21%", 21.0, 2));
+        assertThat(dao.findUnitsOfMeasure()).containsExactly(
+                new UnitOfMeasureRow("DS", "Doos", "ds", 1),
+                new UnitOfMeasureRow("ST", "Stuk", "st", 2));
+        assertThat(service.vatCodes()).hasSize(3);
+        assertThat(service.unitsOfMeasure()).hasSize(2);
+
+        assertThat(service.verifyCreationDefaults("1", "DS")).isEqualTo(
+                new CreationDefaultsCheck(Availability.VERIFIED, CodeMatch.FOUND, CodeMatch.FOUND));
+        assertThat(service.verifyCreationDefaults("3", "ST")).isEqualTo(
+                new CreationDefaultsCheck(Availability.VERIFIED, CodeMatch.AMBIGUOUS, CodeMatch.AMBIGUOUS));
+        assertThat(service.verifyCreationDefaults("9", "KG")).isEqualTo(
+                new CreationDefaultsCheck(Availability.VERIFIED, CodeMatch.NOT_FOUND, CodeMatch.NOT_FOUND));
+        assertThat(service.verifyCreationDefaults(null, "DS")).isEqualTo(
+                new CreationDefaultsCheck(Availability.VERIFIED, CodeMatch.NOT_REQUESTED, CodeMatch.FOUND));
+    }
+
+    @Test
+    void creationDefaultListsAreOffWithoutConfigurationAndUnavailableOnAFailure() throws Exception {
+        ProdisReferenceService offService = new ProdisReferenceService(new ProdisReferenceDao(provider(null)));
+        assertThatThrownBy(offService::vatCodes).isInstanceOf(ProdisReferenceNotConfiguredException.class);
+        assertThatThrownBy(offService::unitsOfMeasure).isInstanceOf(ProdisReferenceNotConfiguredException.class);
+        assertThat(offService.verifyCreationDefaults("3", null)).isEqualTo(
+                new CreationDefaultsCheck(Availability.NOT_CONFIGURED, CodeMatch.NOT_CONFIGURED,
+                        CodeMatch.NOT_REQUESTED));
+
+        PRODIS.execute("alter table vat_code rename to vat_code_unavailable");
+        try {
+            assertThatThrownBy(service::vatCodes).isInstanceOf(ProdisReferenceUnavailableException.class);
+            assertThatThrownBy(() -> service.verifyCreationDefaults("3", null))
+                    .isInstanceOf(ProdisReferenceUnavailableException.class);
+        } finally {
+            PRODIS.execute("alter table vat_code_unavailable rename to vat_code");
+        }
     }
 
     @Test

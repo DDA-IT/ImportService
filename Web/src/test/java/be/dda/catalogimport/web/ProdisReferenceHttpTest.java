@@ -87,6 +87,40 @@ class ProdisReferenceHttpTest extends LegacyConfigProdisTestBase {
     }
 
     @Test
+    void vatCodesAndUnitsOfMeasureAreListedWithOccurrencesAndNeedManage() throws Exception {
+        for (String path : List.of("/vat-codes", "/units-of-measure")) {
+            mockMvc.perform(get(PRODIS_REFERENCE + path).with(as(USER, Permission.READ)))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+        }
+        String vat = "V" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+        String unit = "U" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+        PRODIS.insertVatCode(vat, "Http btw", 12.5, true, false);
+        PRODIS.insertVatCode(vat, "Http btw dubbel", 13.0, true, false);
+        PRODIS.insertVatCode(vat + "X", "Http verwijderd", 1.0, true, true);
+        PRODIS.insertUnitOfMeasure(unit, "Http eenheid", "he", true, false);
+        PRODIS.insertUnitOfMeasure(unit + "X", "Http inactief", "hi", false, false);
+
+        String vats = list("/vat-codes");
+        assertThat((List<String>) JsonPath.read(vats, "$[?(@.code == '" + vat + "')].description"))
+                .containsExactly("Http btw");
+        assertThat((List<Integer>) JsonPath.read(vats, "$[?(@.code == '" + vat + "')].occurrences"))
+                .containsExactly(2);
+        assertThat((List<Double>) JsonPath.read(vats, "$[?(@.code == '" + vat + "')].percentage"))
+                .containsExactly(12.5);
+        assertThat(vats).doesNotContain(vat + "X").doesNotContain("\"id\"");
+
+        String units = list("/units-of-measure");
+        assertThat((List<String>) JsonPath.read(units, "$[?(@.code == '" + unit + "')].singular"))
+                .containsExactly("Http eenheid");
+        assertThat((List<String>) JsonPath.read(units, "$[?(@.code == '" + unit + "')].abbreviation"))
+                .containsExactly("he");
+        assertThat((List<Integer>) JsonPath.read(units, "$[?(@.code == '" + unit + "')].occurrences"))
+                .containsExactly(1);
+        assertThat(units).doesNotContain(unit + "X").doesNotContain("\"id\"");
+    }
+
+    @Test
     void anUnusableSourceIs503AndTheApplicationStaysReady() throws Exception {
         String number = "U" + UUID.randomUUID().toString().substring(0, 6);
         PRODIS.insertSupplier(number, "Onbereikbaar");

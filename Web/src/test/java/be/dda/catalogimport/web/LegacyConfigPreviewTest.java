@@ -368,7 +368,8 @@ class LegacyConfigPreviewTest extends LegacyConfigS2TestBase {
                 .containsExactly("INDET:Supplier", "INDET:ArtImp_BibNr");
         assertThat((List<?>) JsonPath.read(body, "$.report.planned.link.libraryCandidates")).isEmpty();
 
-        for (String path : List.of("/suppliers?q=x", "/suppliers/1/groups", "/suppliers/1/catalogs")) {
+        for (String path : List.of("/suppliers?q=x", "/suppliers/1/groups", "/suppliers/1/catalogs",
+                "/vat-codes", "/units-of-measure")) {
             mockMvc.perform(get("/api/catalog-import/prodis-reference" + path).with(as(USER, Permission.READ)))
                     .andExpect(status().isForbidden());
             mockMvc.perform(get("/api/catalog-import/prodis-reference" + path).with(as(USER, Permission.MANAGE)))

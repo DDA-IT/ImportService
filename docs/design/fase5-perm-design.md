@@ -42,6 +42,7 @@ leidt het effectieve recht af (één plek: `CurrentActor`/`PermissionService`). 
 | `POST /tasks/{taskId}/fetch-runs` (K-4b; "Nu ophalen", synchroon, niet achter de setup-vlag, in tweede lijn de allowlist — L4b/L7a, zie `leveringsconfiguratie-design.md` §4 en §6) | MANAGE |
 | `GET /tasks/{taskId}/runs`, `GET /task-runs/{runId}` (K-4b; runlijst van de laatste 20 en rundetail met waarnemingen — bestandsnamen, geen host/login/map, L7b) | READ |
 | `POST /task-runs/{runId}/abort` (K-4c; vastgelopen ophaalrun afbreken, body `{reason}`, niet achter de allowlist — herstel moet werken als ophalen uitgezet is; MANAGE zoals "Nu ophalen", geen APPROVE want het is geen bundel-levenscyclusactie) | MANAGE |
+| `GET /prodis-reference/vat-codes`, `GET /prodis-reference/units-of-measure` (CD-B1, beslissingslog 2026-10-23 "Aanmaakstandaard per koppeling": keuzelijsten uit Prodis, MANAGE zoals de andere `prodis-reference`-lijsten, niet achter de setup-vlag) | MANAGE |
 | `GET /api/catalog-import/me` | geen recht (`@NoPermissionRequired`) |
 
 `/me` is uitgezonderd: een rechtenloze gebruiker krijgt 200 met `permissions: []` in plaats van een 403 zonder uitleg.

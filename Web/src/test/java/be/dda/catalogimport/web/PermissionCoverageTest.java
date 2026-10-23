@@ -234,6 +234,9 @@ class PermissionCoverageTest {
         m.put("GET /api/catalog-import/prodis-reference/suppliers", "MANAGE");
         m.put("GET /api/catalog-import/prodis-reference/suppliers/{}/groups", "MANAGE");
         m.put("GET /api/catalog-import/prodis-reference/suppliers/{}/catalogs", "MANAGE");
+        // CD-B1: aanmaakstandaard per koppeling (btw-codes en eenheden uit Prodis), MANAGE zoals de andere keuzelijsten.
+        m.put("GET /api/catalog-import/prodis-reference/vat-codes", "MANAGE");
+        m.put("GET /api/catalog-import/prodis-reference/units-of-measure", "MANAGE");
         // /me
         m.put("GET /api/catalog-import/me", NONE);
         return m;

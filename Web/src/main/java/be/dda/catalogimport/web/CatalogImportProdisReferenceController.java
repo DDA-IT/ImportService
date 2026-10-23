@@ -3,6 +3,8 @@ package be.dda.catalogimport.web;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierCatalogRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierGroupRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierRow;
+import be.dda.catalogimport.dao.ProdisReferenceDao.UnitOfMeasureRow;
+import be.dda.catalogimport.dao.ProdisReferenceDao.VatCodeRow;
 import be.dda.catalogimport.service.ProdisReferenceService;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,8 +22,10 @@ import org.springframework.web.bind.annotation.RestController;
  *   <li>{@code GET /suppliers/{nr}/groups}: {@code legacyCode} ({@code lev|grp|korting}), {@code groupName},
  *       {@code discountCode}.</li>
  *   <li>{@code GET /suppliers/{nr}/catalogs}: één rij per {@code scopeKey} (= mogelijke {@code libraryCode}).</li>
+ *   <li>{@code GET /vat-codes} en {@code GET /units-of-measure} (CD-B1, aanmaakstandaard per koppeling): actieve codes,
+ *       één per code, met {@code occurrences} (&gt; 1 = dubbel in Prodis); geen {@code q}.</li>
  * </ul>
- * Alle drie {@code MANAGE} (zoals de legacy-config-endpoints; wie migreert, kiest). 403 vóór alles; 409
+ * Alle vijf {@code MANAGE} (zoals de legacy-config-endpoints; wie migreert, kiest). 403 vóór alles; 409
  * {@code PRODIS_DB_NOT_CONFIGURED} zonder configuratie; 503 {@code PRODIS_DB_UNAVAILABLE} bij een onbereikbare database;
  * 404 {@code PRODIS_SUPPLIER_NOT_FOUND} voor een onbekende leverancier. Niet achter {@code catalogimport.setup-api.enabled}.
  */
@@ -51,5 +55,17 @@ public class CatalogImportProdisReferenceController {
     @GetMapping("/suppliers/{supplierNumber}/catalogs")
     List<SupplierCatalogRow> catalogs(@PathVariable("supplierNumber") String supplierNumber) {
         return prodis.supplierCatalogs(supplierNumber);
+    }
+
+    @RequiresPermission(Permission.MANAGE)
+    @GetMapping("/vat-codes")
+    List<VatCodeRow> vatCodes() {
+        return prodis.vatCodes();
+    }
+
+    @RequiresPermission(Permission.MANAGE)
+    @GetMapping("/units-of-measure")
+    List<UnitOfMeasureRow> unitsOfMeasure() {
+        return prodis.unitsOfMeasure();
     }
 }

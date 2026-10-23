@@ -39,6 +39,9 @@ import org.springframework.stereotype.Repository;
  *       {@code catalog_article_price_detail(id, catalog_article_price_id, code, percentage, price, record_active,
  *       deleted_at)}, {@code catalog_article_description(id, catalog_article_id, language_id, description,
  *       record_active, deleted_at)} en {@code language(id, code)}.</li>
+ *   <li>Aanmaakstandaard per koppeling (CD-B1, beslissingslog 2026-10-23): {@code vat_code(id, code, description,
+ *       percentage, record_active, deleted_at)} en {@code unit_of_measure(id, code, singular, abbreviation,
+ *       record_active, deleted_at)}.</li>
  * </ul>
  * Precies deze kolommen zijn de GRANT van de rol {@code catalogimport_ro} (design par. 6). Prodis-id's worden enkel in
  * joins gebruikt, nooit teruggegeven of bewaard (geen cross-DB-FK).
@@ -79,6 +82,16 @@ public class ProdisReferenceDao {
                     + "else trim(c.legacy_number) end) = ? "
                     + "order by c.scope_key, c.id desc";
 
+    private static final String ACTIVE_VAT_CODES =
+            "select v.code, v.description, v.percentage from vat_code v "
+                    + "where v.record_active = true and v.deleted_at is null and v.code is not null "
+                    + "and trim(v.code) <> '' order by v.id";
+
+    private static final String ACTIVE_UNITS_OF_MEASURE =
+            "select u.code, u.singular, u.abbreviation from unit_of_measure u "
+                    + "where u.record_active = true and u.deleted_at is null and u.code is not null "
+                    + "and trim(u.code) <> '' order by u.id";
+
     private static final String LEGACY_MASTER = "select m.legacy_master from system_settings m order by m.id limit 1";
 
     /** Taal van de omschrijving die gepubliceerd wordt ({@code language.code}). */
@@ -89,6 +102,17 @@ public class ProdisReferenceDao {
 
     /** {@code supplier.number}, {@code supplier.name}. */
     public record SupplierRow(String number, String name) {
+    }
+
+    /**
+     * Een btw-code: de getrimde {@code vat_code.code} met omschrijving en percentage van de rij met de laagste id;
+     * {@code occurrences} = het aantal actieve rijen met die code (&gt; 1 = dubbel in Prodis, zichtbaar gemaakt).
+     */
+    public record VatCodeRow(String code, String description, Double percentage, int occurrences) {
+    }
+
+    /** Een eenheid: zoals {@link VatCodeRow}, met {@code singular} en {@code abbreviation} van de laagste id. */
+    public record UnitOfMeasureRow(String code, String singular, String abbreviation, int occurrences) {
     }
 
     /** {@code supplier_group.legacy_code} ({@code lev|grp|korting}), {@code group_name}, {@code discount_code}. */
@@ -225,6 +249,37 @@ public class ProdisReferenceDao {
             return digits.isEmpty() ? "0" : digits;
         }
         return stripped;
+    }
+
+    /**
+     * De actieve btw-codes ({@code record_active} en niet verwijderd; geen lege code), één per getrimde code met het
+     * label van de laagste id, gesorteerd op code. Geen tenantfilter (zoals de andere queries).
+     */
+    public List<VatCodeRow> findVatCodes() {
+        Map<String, VatCodeRow> byCode = new java.util.TreeMap<>();
+        jdbc().query(ACTIVE_VAT_CODES, row -> {
+            String code = row.getString(1).trim();
+            VatCodeRow known = byCode.get(code);
+            byCode.put(code, known == null
+                    ? new VatCodeRow(code, row.getString(2), nullableDouble(row, 3), 1)
+                    : new VatCodeRow(code, known.description(), known.percentage(), known.occurrences() + 1));
+            return null;
+        });
+        return new ArrayList<>(byCode.values());
+    }
+
+    /** De actieve eenheden; dezelfde regels als {@link #findVatCodes()}. */
+    public List<UnitOfMeasureRow> findUnitsOfMeasure() {
+        Map<String, UnitOfMeasureRow> byCode = new java.util.TreeMap<>();
+        jdbc().query(ACTIVE_UNITS_OF_MEASURE, row -> {
+            String code = row.getString(1).trim();
+            UnitOfMeasureRow known = byCode.get(code);
+            byCode.put(code, known == null
+                    ? new UnitOfMeasureRow(code, row.getString(2), row.getString(3), 1)
+                    : new UnitOfMeasureRow(code, known.singular(), known.abbreviation(), known.occurrences() + 1));
+            return null;
+        });
+        return new ArrayList<>(byCode.values());
     }
 
     /**

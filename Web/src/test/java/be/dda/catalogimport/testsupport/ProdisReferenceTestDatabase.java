@@ -67,6 +67,25 @@ public final class ProdisReferenceTestDatabase {
         return insert("insert into language (code) values (?)", code);
     }
 
+    public long insertVatCode(String code, String description, Double percentage, boolean active, boolean deleted) {
+        return insert("insert into vat_code (code, description, percentage, record_active, deleted_at) "
+                        + "values (?, ?, ?, ?, ?)", code, description, percentage, active,
+                deleted ? java.sql.Timestamp.valueOf("2026-01-01 00:00:00") : null);
+    }
+
+    public long insertUnitOfMeasure(String code, String singular, String abbreviation, boolean active,
+                                    boolean deleted) {
+        return insert("insert into unit_of_measure (code, singular, abbreviation, record_active, deleted_at) "
+                        + "values (?, ?, ?, ?, ?)", code, singular, abbreviation, active,
+                deleted ? java.sql.Timestamp.valueOf("2026-01-01 00:00:00") : null);
+    }
+
+    /** Verwijdert alle btw-codes en eenheden (voor een test die de volledige lijst controleert). */
+    public void clearCreationDefaults() {
+        execute("delete from vat_code");
+        execute("delete from unit_of_measure");
+    }
+
     /** Vervangt alle {@code system_settings}-rijen door één rij met deze waarde ({@code null} = geen rij). */
     public void setLegacyMaster(String legacyMaster) {
         execute("delete from system_settings");

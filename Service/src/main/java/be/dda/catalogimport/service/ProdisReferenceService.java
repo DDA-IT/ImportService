@@ -6,6 +6,8 @@ import be.dda.catalogimport.dao.ProdisReferenceDao.CatalogArticleLookup;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierCatalogRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierGroupRow;
 import be.dda.catalogimport.dao.ProdisReferenceDao.SupplierRow;
+import be.dda.catalogimport.dao.ProdisReferenceDao.UnitOfMeasureRow;
+import be.dda.catalogimport.dao.ProdisReferenceDao.VatCodeRow;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -160,6 +162,68 @@ public class ProdisReferenceService {
         } catch (DataAccessException failure) {
             throw unavailable(failure);
         }
+    }
+
+    /** De actieve btw-codes, één per code, op code (CD-B1); 409 zonder configuratie, 503 onbereikbaar. */
+    public List<VatCodeRow> vatCodes() {
+        requireConfigured();
+        try {
+            return dao.findVatCodes();
+        } catch (DataAccessException failure) {
+            throw unavailable(failure);
+        }
+    }
+
+    /** De actieve eenheden, één per code, op code (CD-B1); 409 zonder configuratie, 503 onbereikbaar. */
+    public List<UnitOfMeasureRow> unitsOfMeasure() {
+        requireConfigured();
+        try {
+            return dao.findUnitsOfMeasure();
+        } catch (DataAccessException failure) {
+            throw unavailable(failure);
+        }
+    }
+
+    // --- Aanmaakstandaard (CD-B1; beslissingslog 2026-10-23) ------------------------------------------------------
+
+    /** Uitkomst van de controle van één code. {@code NOT_REQUESTED} = er werd geen code gevraagd (null). */
+    public enum CodeMatch {
+        FOUND, NOT_FOUND, AMBIGUOUS, NOT_CONFIGURED, NOT_REQUESTED
+    }
+
+    /**
+     * @param vat  uitkomst voor de btw-code ({@code AMBIGUOUS} = meer dan één actieve rij met die code)
+     * @param unit uitkomst voor de eenheid
+     */
+    public record CreationDefaultsCheck(Availability availability, CodeMatch vat, CodeMatch unit) {
+    }
+
+    /**
+     * Voor de setup-API: controleert een btw-code en/of eenheid (getrimd, exact) tegen de actieve Prodis-rijen. Niet
+     * geconfigureerd = {@code NOT_CONFIGURED} (de aanroeper laat de waarde toe met een waarschuwing); onbereikbaar = 503
+     * zoals {@link #verifyFixedIdentity}.
+     *
+     * @throws ProdisReferenceUnavailableException 503 {@value ProdisReferenceUnavailableException#CODE}
+     */
+    public CreationDefaultsCheck verifyCreationDefaults(String vatCode, String unitCode) {
+        if (!dao.isConfigured()) {
+            return new CreationDefaultsCheck(Availability.NOT_CONFIGURED,
+                    vatCode == null ? CodeMatch.NOT_REQUESTED : CodeMatch.NOT_CONFIGURED,
+                    unitCode == null ? CodeMatch.NOT_REQUESTED : CodeMatch.NOT_CONFIGURED);
+        }
+        try {
+            CodeMatch vat = vatCode == null ? CodeMatch.NOT_REQUESTED : match(dao.findVatCodes().stream()
+                    .filter(row -> row.code().equals(vatCode.trim())).mapToInt(VatCodeRow::occurrences).sum());
+            CodeMatch unit = unitCode == null ? CodeMatch.NOT_REQUESTED : match(dao.findUnitsOfMeasure().stream()
+                    .filter(row -> row.code().equals(unitCode.trim())).mapToInt(UnitOfMeasureRow::occurrences).sum());
+            return new CreationDefaultsCheck(Availability.VERIFIED, vat, unit);
+        } catch (DataAccessException failure) {
+            throw unavailable(failure);
+        }
+    }
+
+    private static CodeMatch match(int occurrences) {
+        return occurrences == 0 ? CodeMatch.NOT_FOUND : occurrences == 1 ? CodeMatch.FOUND : CodeMatch.AMBIGUOUS;
     }
 
     // --- PREVIEW/APPLY (nooit een exceptie voor "uit" of "onbereikbaar") ------------------------------------------
