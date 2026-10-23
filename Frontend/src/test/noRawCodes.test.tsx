@@ -1480,7 +1480,15 @@ describe('NT-11c — afwijkingen, inrichting en importdefinities: geen ruwe code
     s.organisations = [organisation(5, { code: 'ORG-5', name: 'VROOAM' })];
     s.definitions = [
       definition(1, 5, { code: 'TPL-1', name: 'VROOAM-importdefinitie', usageType: 'REUSABLE_TEMPLATE', activeRevisionId: 100 }),
-      definition(2, 5, { code: 'TPL-2-SJ', name: 'Concept-importdefinitie', usageType: 'REUSABLE_TEMPLATE', activeRevisionId: null }),
+      definition(2, 5, {
+        code: 'TPL-2-SJ',
+        name: 'Concept-importdefinitie',
+        usageType: 'REUSABLE_TEMPLATE',
+        activeRevisionId: null,
+        draftRevisionId: 200,
+        draftRevisionNumber: 1,
+        legacyOriginKind: 'MIGRATED_TEMPLATE',
+      }),
       definition(3, 5, { code: 'TPL-2', name: 'Eigen importdefinitie', activeRevisionId: 300 }),
     ];
     s.links = [link(77, 3)];
@@ -1514,8 +1522,10 @@ describe('NT-11c — afwijkingen, inrichting en importdefinities: geen ruwe code
       ['definition-filter-kind', 'REUSABLE'],
       ['definition-filter-kind', ''],
       ['definition-filter-status', 'CONCEPT'],
+      ['definition-filter-status', 'NO_VERSION'],
+      ['definition-filter-status', 'INACTIVE'],
       ['definition-filter-status', ''],
-      ['definition-filter-origin', 'LEGACY_DERIVED'],
+      ['definition-filter-origin', 'LEGACY'],
       ['definition-filter-origin', 'OWN'],
     ] as const) {
       fireEvent.change(screen.getByTestId(testId), { target: { value } });

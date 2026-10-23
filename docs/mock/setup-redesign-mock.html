@@ -275,6 +275,57 @@ select.field option { background: var(--bg-paper); color: var(--text-primary); }
 .namePop .table th:first-child, .namePop .table td:first-child { padding-left: 12px; }
 @media (max-width: 768px) { .namePop .table thead { position: static; width: auto; height: auto; clip: auto; } .namePop .table, .namePop .table tbody, .namePop .table tr, .namePop .table td { display: revert; width: auto; } .namePop .table tr { padding: 0; } .namePop .table td, .namePop .table th:first-child, .namePop .table td:first-child { padding: 8px 12px; } .namePop .table td[data-label]::before { content: none; } .mockbar { flex-wrap: wrap; } }
 
+/* ===== Bewerkervaring "Bestand en velden" ===== */
+.edHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 16px; }
+.edSticky { position: sticky; top: calc(41px + var(--header-h)); z-index: 1050; margin: 16px -24px 0; padding: 8px 24px; background: var(--bg-paper); border-bottom: 1px solid var(--divider); }
+.edBar { display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; }
+.edBarTop, .edReden { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.edBar .chain { margin: 0; }
+.chain li.done { color: var(--soft-success-text); border-color: var(--success-main); }
+.anchorChips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; min-height: 24px; padding: 0 10px; border: 1px solid var(--divider); border-radius: 999px; background: transparent; color: var(--text-primary); font-size: 0.8125rem; font-weight: 500; }
+button.chip { cursor: pointer; min-height: 30px; }
+button.chip:hover { background: var(--action-hover); }
+.chipBtn[aria-pressed="true"], .chipBtn[aria-checked="true"] { background: rgb(var(--primary-ch) / 0.12); border-color: var(--primary-main); font-weight: 700; }
+.chipBtn:disabled { color: var(--text-disabled); cursor: not-allowed; }
+.edTools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0; }
+.seg button:disabled { opacity: .5; cursor: not-allowed; }
+.edTools .seg, .edHead .seg { color: var(--text-primary); border-color: var(--button-outlined); }
+.grpRow th { text-transform: uppercase; font-size: 0.75rem; letter-spacing: .06em; }
+.grpRow .chip { margin-left: 12px; text-transform: none; letter-spacing: 0; }
+.grpBtn, .vpToggle { border: 0; background: transparent; padding: 0; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.vpToggle { color: var(--text-primary); }
+.rowWarn td:first-child { box-shadow: inset 4px 0 0 var(--warning-main); }
+.warnBorder { border: 1px solid var(--warning-main); }
+.subRow td { color: var(--text-secondary); }
+.subRow td:first-child { padding-left: 40px; }
+.actionCell { width: 56px; text-align: right; }
+.trialBox { margin-top: 24px; padding: 16px 20px; border: 1px solid var(--divider); border-radius: var(--radius-card); }
+.trialBox ul { margin: 8px 0; padding-left: 20px; }
+.banner.ok { background: rgb(var(--success-ch) / 0.16); }
+.banner.ok .bi { color: var(--soft-success-text); }
+.inlineForm { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 16px; margin-top: 12px; }
+.inlineForm label { display: flex; flex-direction: column; gap: 4px; }
+.sidePanel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 1450; width: 480px; max-width: 100%; display: flex; flex-direction: column; background: var(--bg-paper); color: var(--text-primary); border-left: 1px solid var(--divider); box-shadow: var(--shadow-dialog); }
+.panelHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 16px 24px; border-bottom: 1px solid var(--divider); }
+.panelHead h2 { font-size: 18px; font-weight: 700; }
+.panelBody { flex: 1 1 auto; overflow: auto; padding: 24px; }
+.panelFoot { padding: 16px 24px; border-top: 1px solid var(--divider); }
+.panelFoot p { min-height: 20px; margin-bottom: 8px; }
+.pf { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.pf .field { width: 100%; }
+.sidePanel .table th, .sidePanel .table td { padding: 6px 8px; height: auto; }
+.sidePanel .table th:first-child, .sidePanel .table td:first-child { padding-left: 8px; }
+.ackRow { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0 16px; font-weight: 600; }
+.addGrp { margin: 16px 0 4px; }
+.dlgWrap { position: fixed; inset: 0; z-index: 1600; display: grid; place-items: center; background: var(--backdrop); padding: 16px; }
+.dlg { width: min(480px, 100%); padding: 24px; border-radius: var(--radius-card); background: var(--bg-paper); color: var(--text-primary); box-shadow: var(--shadow-dialog); }
+.dlg h2 { font-size: 18px; margin-bottom: 8px; }
+.toast { position: fixed; left: 24px; bottom: 24px; z-index: 1700; padding: 10px 16px; border-radius: var(--radius); background: var(--inherit-bg); color: var(--inherit-text); box-shadow: var(--shadow-z8); }
+.vdSection { scroll-margin-top: 200px; }
+@media (max-width: 900px) { .edSticky { margin: 16px -16px 0; padding: 8px 16px; } .edBar .chain { display: none; } }
+@media (max-width: 899px) { .sidePanel { width: 100%; border-left: 0; } }
+
 /* ===== Legenda ===== */
 .legend { position: fixed; right: 16px; bottom: 16px; z-index: 1300; padding: 6px 12px; border-radius: var(--radius); background: var(--inherit-bg); color: var(--inherit-text); font-size: 12px; box-shadow: var(--shadow-z8); }
 
@@ -357,7 +408,11 @@ select.field option { background: var(--bg-paper); color: var(--text-primary); }
   <main class="main" id="main"></main>
 </div>
 
-<div class="legend" role="note">Mock — voorbeelddata; niet aangesloten op de API</div>
+<!-- In de echte app is Bewerken uitgeschakeld wanneer de setup-API uit staat (FlagOffNotice). -->
+<aside class="sidePanel" id="edPanel" role="dialog" aria-labelledby="edPanelTitle" hidden></aside>
+<div class="dlgWrap" id="edDlg" hidden></div>
+<div class="toast" id="edToast" role="status" aria-live="polite" hidden></div>
+<div class="legend" role="note">Mock — voorbeelddata; wijzigingen blijven alleen in deze pagina</div>
 
 <script>
 (function () {
@@ -617,9 +672,12 @@ select.field option { background: var(--bg-paper); color: var(--text-primary); }
   };
   /* Oudere (vervangen) versies zijn in de mock afgeleid van de nieuwste voorbeeldversie met iets minder velden. */
   function verDataFor(key) {
+    /* VRM-SJ versie 3 en 4 komen uit het bewerkbare model (zodat leesweergave en editor nooit uit elkaar lopen). */
+    if (key === 'VRM-SJ:3' || key === 'VRM-SJ:4') { return toLegacy(key.split(':')[1]); }
     if (verData[key]) { return verData[key]; }
     var pre = key.split(':')[0], n = parseInt(key.split(':')[1], 10), base = null;
     Object.keys(verData).forEach(function (k) { if (!base && k.split(':')[0] === pre) { base = verData[k]; } });
+    if (pre === 'VRM-SJ') { base = toLegacy('3'); }
     if (!base) { return null; }
     var c = JSON.parse(JSON.stringify(base));
     c.status = ['Vervangen', 'neutral'];
@@ -657,6 +715,7 @@ select.field option { background: var(--bg-paper); color: var(--text-primary); }
   }
   /* Eén component, twee plekken: tab "Bestand en velden" van importdefinitie en van leverancier. */
   function mapView(ctx) {
+    if (ctx.edit) { return editorView(ctx); }
     var key = ctx.prefix + ':' + ctx.num, d = verDataFor(key); if (!d) { return ''; }
     var f = d.file, i = d.ident, na = '<span class="unset">Niet van toepassing</span>';
     var fileRows = [['Bestandstype', esc(FT[f.type])], ['Scheidingsteken', f.type === 'csv' ? esc('"' + f.sep + '"') : na]];
@@ -685,6 +744,737 @@ select.field option { background: var(--bg-paper); color: var(--text-primary); }
       }).join('') : '<p class="rowMeta">Geen vertalingen in deze versie.</p>') + '</section>' +
       (ctx.actions || '') + '</section>';
   }
+  /* ---------- Bewerkervaring "Bestand en velden" (leverancier VROOAM, versie 4 = concept) ----------
+     Alles hieronder werkt enkel in het geheugen van deze pagina. In de echte app is Bewerken uitgeschakeld
+     wanneer de setup-API uit staat (FlagOffNotice). */
+  var ed = { editOn: false, panel: null, viewBy: 'veld', sampleLoaded: false, showDiff: false, trialOpen: false, identAck: false,
+    q: '', chip: 'alle', open: { vp: false, unm: false }, redenEdit: false, redenDraft: '', fileEdit: false, fileDraft: null, fileErr: '',
+    thrEdit: false, thrDraft: null, thrErr: '', succNote: false, exclNote: false, moreOpen: false, prefCol: null,
+    opener: null, nextFocus: null, dlg: null, dlgBack: null };
+  var PENCIL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16l-1 4z"/></svg>';
+  var OPS = { eq: 'gelijk is aan', ne: 'niet gelijk is aan', contains: 'bevat', starts: 'begint met', empty: 'leeg is' };
+  var NOTE_PRODIS = 'Wordt in Prodis beheerd; een levering overschrijft dit niet';
+  var clone = function (o) { return JSON.parse(JSON.stringify(o)); };
+  var MORE0 = { max: '', dec: '', nul: 'ja', def: '', pos: '' };
+  function mkEx(key, veld, o) {
+    o = o || {};
+    var b = o.bew || {};
+    return { key: key, veld: veld, src: 'kolom', col: o.col === undefined ? null : o.col, vast: '',
+      bew: { upper: !!b.upper, div: b.div || '', pct: !!b.pct, vert: null, pre: '', suf: '', cutFrom: '', cutLen: '' },
+      crit: !!o.crit, req: false, more: clone(MORE0), note: o.note || '' };
+  }
+  /* Veldcatalogus (G1): de velden die een importdefinitie kan vullen. */
+  var CAT = [
+    { key: 'aankoopprijs', veld: 'Aankoopprijs (%)', grp: 'Prijzen', pct: true },
+    { key: 'brutoverkoop', veld: 'Brutoverkoopprijs (%)', grp: 'Prijzen', pct: true },
+    { key: 'basisprijs', veld: 'Basisprijs', grp: 'Prijzen', fixed: true },
+    { key: 'vp', veld: 'Verkoopprijzen 1–5 (%)', grp: 'Prijzen', pct: true, note: 'basis 100 (aanname)' },
+    { key: 'ean', veld: 'EAN-barcode', grp: 'Referenties' },
+    { key: 'cab', veld: 'CAB-nummer', grp: 'Referenties' },
+    { key: 'emerk', veld: 'E-merk met artikelnummer', grp: 'Referenties' },
+    { key: 'lbarcode', veld: 'Leveranciersbarcode', grp: 'Referenties' },
+    { key: 'pim', veld: 'PIM-nummer', grp: 'Referenties' },
+    { key: 'extid', veld: 'Externe leveranciersidentiteit', grp: 'Referenties' },
+    { key: 'omschr', veld: 'Omschrijving', grp: 'Overig', basisOnly: true },
+    { key: 'merk', veld: 'Merk', grp: 'Overig', note: NOTE_PRODIS },
+    { key: 'eenheid', veld: 'Eenheid', grp: 'Overig', note: NOTE_PRODIS }
+  ];
+  function catOf(key) { return CAT.filter(function (c) { return c.key === key; })[0]; }
+  function mk4() {
+    return {
+      file: { type: 'csv', sep: ';', charset: 'UTF-8', header: 'Ja, regel 1', recog: 'kolomnummer', dec: ',', expect: '' },
+      ident: { supplier: { mode: 'vast', val: '06310', col: null }, group: { mode: 'kolom', val: '', col: 43 }, ref: { mode: 'kolom', val: '', col: 42 },
+        disc: { mode: 'geen', val: '', col: null }, ic: true },
+      /* Aanname (niet in screenshot): Basisprijs staat in kolom 10 en is verplicht. */
+      basis: { basisprijs: { col: 10 }, omschrijving: { col: null }, valuta: { col: null } },
+      extra: [mkEx('lbarcode', 'Leveranciersbarcode', { col: 12 }),
+        mkEx('vp', 'Verkoopprijzen 1–5 (%)', { col: 49, bew: { pct: true }, crit: true, note: 'basis 100 (aanname)' }),
+        mkEx('pim', 'PIM-nummer', { col: 4, crit: true }),
+        mkEx('extid', 'Externe leveranciersidentiteit', { col: 18 })],
+      filters: [{ out: 'Overslaan', col: 3, op: 'ne', val: 'BENL' }, { out: 'Verwerpen', col: 40, op: 'ne', val: '0130339' }],
+      thr: { nieuw: 1, beoordeling: 1, verworpen: null, bulk: 1 },
+      reden: 'Nieuwe kolommen voor PIM-nummer en externe leveranciersidentiteit; extra filter op kolom 40'
+    };
+  }
+  function mk3() {
+    var m = mk4();
+    m.extra = m.extra.filter(function (x) { return x.key !== 'extid'; });
+    m.extra.filter(function (x) { return x.key === 'pim'; })[0].crit = false;
+    m.filters.pop(); m.thr.beoordeling = 5; m.reden = 'Overname uit legacy';
+    return m;
+  }
+  var MODELS = { '3': mk3(), '4': mk4() };
+  function vStat(n) { return supVersions.filter(function (v) { return v[0] === String(n); })[0]; }
+  function activeNum() { var a = supVersions.filter(function (v) { return v[1] === 'Actief'; })[0]; return a ? a[0] : '3'; }
+
+  /* --- tekst en vergelijking --- */
+  function sentence(f) {
+    var head = f.out === 'Overslaan' ? 'Sla regels over waar' : f.out === 'Verwerpen' ? 'Verwerp regels waar' : 'Neem enkel regels mee waar';
+    return head + ' kolom ' + (f.col === '' || f.col == null ? '…' : f.col) + ' ' + OPS[f.op] + (f.op === 'empty' ? '' : ' ' + f.val);
+  }
+  function identSrc(o) { return o.mode === 'vast' ? (o.val !== '' ? 'vaste waarde ' + o.val : null) : o.mode === 'kolom' && o.col ? 'kolom ' + o.col : null; }
+  function exSrc(x) { return x.src === 'kolom' ? (x.col ? 'kolom ' + x.col : null) : x.src === 'vast' ? (x.vast !== '' ? 'vaste waarde ' + x.vast : null) : null; }
+  function bewList(x) {
+    var b = x.bew, r = [];
+    if (b.upper) { r.push('Hoofdletters'); }
+    if (b.div !== '') { r.push('Delen door ' + b.div); }
+    if (b.pct) { r.push('Percentage'); }
+    if (b.vert) { r.push('Vertaling (' + b.vert.rows.length + ' waarden)'); }
+    if (b.pre || b.suf) { r.push('Voorvoegsel/achtervoegsel' + (b.pre ? ' "' + b.pre + '"' : '') + (b.suf ? ' "' + b.suf + '"' : '')); }
+    if (b.cutLen !== '') { r.push('Uitknippen ' + b.cutFrom + '+' + b.cutLen); }
+    return r;
+  }
+  function fmtP(v) { return v === null || v === '' || v === undefined ? '—' : String(v).replace('.', ',') + ' %'; }
+  function thrLine(t) { return 'Nieuwe artikelen ' + fmtP(t.nieuw) + ' · ter beoordeling ' + fmtP(t.beoordeling) + ' · verworpen ' + fmtP(t.verworpen) + ' · bulkincident ' + fmtP(t.bulk); }
+  function extraTxt(x) {
+    return [exSrc(x) || 'geen bron'].concat(bewList(x)).concat([x.crit ? 'kritiek' : 'niet kritiek', x.req ? 'verplicht' : 'niet verplicht']).join(' · ');
+  }
+  function extraSig(x) { return JSON.stringify([x.src, x.col, x.vast, x.bew, x.crit, x.req, x.more]); }
+  function flat(M) {
+    var o = [], I = M.ident, ba = M.basis;
+    function a(key, label, txt, sig) { o.push({ key: key, label: label, txt: txt, sig: sig || txt }); }
+    a('id:supplier', 'Leverancier', identSrc(I.supplier) || 'niet gebruikt');
+    a('id:group', 'Groep', identSrc(I.group) || 'niet gebruikt');
+    a('id:ref', 'Referentie', identSrc(I.ref) || 'niet gebruikt');
+    a('id:disc', 'Kortingscode', identSrc(I.disc) || 'niet gebruikt');
+    a('id:ic', 'Hoofdletters negeren', I.ic ? 'Ja' : 'Nee');
+    a('b:basisprijs', 'Basisprijs', ba.basisprijs.col ? 'kolom ' + ba.basisprijs.col : 'niet gebruikt');
+    a('b:omschrijving', 'Omschrijving', ba.omschrijving.col ? 'kolom ' + ba.omschrijving.col : 'niet gebruikt');
+    a('b:valuta', 'Valuta', ba.valuta.col ? 'kolom ' + ba.valuta.col : 'niet gebruikt');
+    M.extra.forEach(function (x) { a('x:' + x.key, x.veld, extraTxt(x), extraSig(x)); });
+    M.filters.forEach(function (f, i) { a('f:' + (i + 1), 'Filter ' + (i + 1), sentence(f)); });
+    a('t:nieuw', 'Drempel nieuwe artikelen', fmtP(M.thr.nieuw));
+    a('t:beoordeling', 'Drempel ter beoordeling', fmtP(M.thr.beoordeling));
+    a('t:verworpen', 'Drempel verworpen', fmtP(M.thr.verworpen));
+    a('t:bulk', 'Drempel bulkincident', fmtP(M.thr.bulk));
+    a('file', 'Bestandsopbouw', JSON.stringify(M.file).replace(/[{}"]/g, ''));
+    return o;
+  }
+  /* Diff van het concept t.o.v. de basisversie: altijd berekend uit de data, nooit hardcoded. */
+  function diffList(M, B) {
+    var f1 = flat(M), f0 = flat(B), b = {}, n = {}, out = [];
+    f0.forEach(function (x) { b[x.key] = x; });
+    f1.forEach(function (x) { n[x.key] = x; });
+    f1.forEach(function (x) {
+      var y = b[x.key];
+      if (!y) { out.push({ key: x.key, label: x.label, type: 'Nieuw', from: '', to: x.txt }); }
+      else if (y.sig !== x.sig) { out.push({ key: x.key, label: x.label, type: 'Gewijzigd', from: y.txt, to: x.txt }); }
+    });
+    f0.forEach(function (y) { if (!n[y.key]) { out.push({ key: y.key, label: y.label, type: 'Verwijderd', from: y.txt, to: '' }); } });
+    return out;
+  }
+  function fieldCount(M) {
+    var I = M.ident, n = [I.supplier, I.group, I.ref, I.disc].filter(function (o) { return identSrc(o); }).length;
+    n += M.basis.basisprijs.col ? 1 : 0; n += M.basis.omschrijving.col ? 1 : 0; n += M.basis.valuta.col ? 1 : 0;
+    M.extra.forEach(function (x) { n += x.key === 'vp' ? 5 : 1; });
+    return n;
+  }
+  function isMapped(M, c) {
+    if (c.fixed) { return true; }
+    if (c.key === 'omschr') { return M.basis.omschrijving.col != null; }
+    return M.extra.some(function (x) { return x.key === c.key; });
+  }
+  function unmapped(M) { return CAT.filter(function (c) { return !isMapped(M, c); }); }
+  /* Voor de leesweergave van importdefinities (zelfde data, legacy-vorm). */
+  function toLegacy(n) {
+    var M = MODELS[n], st = vStat(n), I = M.ident, i = 1;
+    var fields = [];
+    function add(veld, bron, bew, verpl, extra) { fields.push(fld(veld, bron, bew, verpl, 'PSIMPDEF#' + (i++) + ', ' + bron + (extra || ''))); }
+    add('Referentie', 'kolom ' + I.ref.col, '—', 'Ja');
+    if (M.basis.basisprijs.col) { add('Basisprijs', 'kolom ' + M.basis.basisprijs.col, '—', 'Ja'); }
+    ['omschrijving', 'valuta'].forEach(function (k) { if (M.basis[k].col) { add(k === 'omschrijving' ? 'Omschrijving' : 'Valuta', 'kolom ' + M.basis[k].col, '—', 'Nee'); } });
+    var maps = [];
+    M.extra.forEach(function (x) {
+      var bw = bewList(x), ex = (x.bew.div !== '' ? ', CALCULATION 4 waarde ' + x.bew.div : '') + (x.bew.upper ? ', CALCULATION 2 (UPPER)' : '') + (x.bew.pre ? ', Prefix "' + x.bew.pre + '"' : '');
+      add(x.veld, exSrc(x) || 'geen bron', bw.length ? bw.join(', ') : '—', x.req ? 'Ja' : 'Nee', ex);
+      if (x.bew.vert) { maps.push({ name: 'Vertaling ' + x.veld, count: x.bew.vert.rows.length, rows: x.bew.vert.rows }); }
+    });
+    return { status: [st[1], st[2]], file: { type: 'csv', sep: M.file.sep, charset: M.file.charset, header: M.file.header, dec: M.file.dec },
+      ident: { supplier: I.supplier.mode === 'vast' ? 'vast: ' + I.supplier.val : 'kolom ' + I.supplier.col, check: I.ic ? 'Hoofdletters negeren: Ja' : '', group: 'kolom ' + I.group.col, ref: 'kolom ' + I.ref.col, disc: I.disc.col ? 'kolom ' + I.disc.col : '' },
+      fields: fields, filters: M.filters.map(function (f) { return [sentence(f), f.out]; }), maps: maps, rev: n === '4' ? '204' : '203' };
+  }
+
+  /* --- testbestand: kolommen --- */
+  var COLS = {
+    1: ['Interne code', ['100234', '100235', '100240']], 2: ['Versienummer', ['2', '2', '3']], 3: ['Verkooporganisatie', ['BENL', 'BENL', 'BEFR']],
+    4: ['PIM-referentie', ['PIM-100234', 'PIM-100235', 'PIM-100240']], 5: ['Artikelstatus', ['A', 'A', 'U']], 6: ['Taalcode', ['NL', 'NL', 'NL']],
+    7: ['Korte omschrijving', ['Boormachine 18V', 'Slijpschijf 125 mm', 'Schroevendraaierset']], 8: ['Lange omschrijving', ['Boormachine 18V met twee accu’s', 'Slijpschijf 125 mm voor staal', 'Schroevendraaierset 12-delig']],
+    9: ['Merkcode', ['BOS', 'MKT', 'FSK']], 10: ['Nettoprijs', ['12,50', '8,95', '149,00']], 11: ['Eenheidscode', ['ST', 'ST', 'SET']],
+    12: ['Leveranciersbarcode', ['5412345000012', '5412345000029', '5412345000036']], 13: ['Verpakkingseenheid', ['1', '10', '1']], 14: ['Minimale bestelhoeveelheid', ['1', '5', '1']],
+    15: ['Gewicht (kg)', ['2,4', '0,1', '0,8']], 16: ['Lengte (mm)', ['350', '125', '210']], 17: ['Breedte (mm)', ['120', '125', '60']],
+    18: ['Externe leveranciersidentiteit', ['VRM-EXT-0042', 'VRM-EXT-0043', 'VRM-EXT-0050']], 19: ['Garantie (maanden)', ['24', '12', '24']], 20: ['Land van oorsprong', ['DE', 'CN', 'SE']],
+    40: ['Assortimentscode', ['0130339', '0130339', '0130412']], 41: ['Interne opmerking', ['', 'nieuw', '']], 42: ['Artikelnummer leverancier', ['A-1001', 'A-1002', 'A-1003']],
+    43: ['Productgroep', ['TOOLS', 'TOOLS', 'FASTN']], 49: ['Verkoopmarge (%)', ['35', '40', '25']]
+  };
+  function colInfo(c) { return COLS[c] || ['Kolom ' + c, ['waarde ' + c + 'a', 'waarde ' + c + 'b', 'waarde ' + c + 'c']]; }
+  function colTargets(M) {
+    var t = {}, I = M.ident;
+    function add(c, l) { if (c !== null && c !== undefined && c !== '') { c = parseInt(c, 10); (t[c] = t[c] || []).push(l); } }
+    [['supplier', 'Leverancier'], ['group', 'Groep'], ['ref', 'Referentie'], ['disc', 'Kortingscode']].forEach(function (p) { if (I[p[0]].mode === 'kolom') { add(I[p[0]].col, p[1]); } });
+    add(M.basis.basisprijs.col, 'Basisprijs'); add(M.basis.omschrijving.col, 'Omschrijving'); add(M.basis.valuta.col, 'Valuta');
+    M.extra.forEach(function (x) { if (x.src === 'kolom') { add(x.col, x.veld); } });
+    M.filters.forEach(function (f, i) { add(f.col, 'Filter ' + (i + 1)); });
+    return t;
+  }
+  function fmtRanges(a) {
+    var out = [], s = a[0], p = a[0], i;
+    for (i = 1; i <= a.length; i++) {
+      if (a[i] === p + 1) { p = a[i]; continue; }
+      out.push(s === p ? String(s) : s + '–' + p); s = a[i]; p = a[i];
+    }
+    return out.join(', ');
+  }
+  function notUsedCount(M) { var t = colTargets(M); return 50 - Object.keys(t).filter(function (k) { return +k <= 50; }).length; }
+
+  /* --- weergave --- */
+  function stBadge(t) {
+    var tone = { 'Oké': 'ready', 'Nieuw': 'planned', 'Gewijzigd': 'awaiting', 'Ontbreekt': 'awaiting', 'Verwijderd': 'neutral' }[t];
+    return '<span class="badge ' + tone + (t === 'Ontbreekt' ? ' warnBorder' : '') + '">' + esc(t) + '</span>';
+  }
+  function gridData(M, df) {
+    var dm = {}, I = M.ident, ba = M.basis;
+    df.forEach(function (x) { if (x.type !== 'Verwijderd') { dm[x.key] = x.type; } });
+    function R(k, veld, bron, bew, crit, verpl, miss, ex) {
+      var r = { k: k, veld: veld, bron: bron, bew: bew, crit: crit, verpl: verpl, st: miss ? 'Ontbreekt' : (dm[k] || 'Oké'), note: '', vp: false };
+      if (ex) { r.note = ex.note || ''; r.vp = !!ex.vp; }
+      return r;
+    }
+    var g1 = [R('id:supplier', 'Leverancier', identSrc(I.supplier), null, '—', 'Ja', !identSrc(I.supplier)), R('id:group', 'Groep', identSrc(I.group), null, '—', 'Nee', false),
+      R('id:ref', 'Referentie', identSrc(I.ref), null, '—', 'Ja', !identSrc(I.ref)), R('id:disc', 'Kortingscode', identSrc(I.disc), null, '—', 'Nee', false)];
+    var g2 = [R('b:basisprijs', 'Basisprijs', ba.basisprijs.col ? 'kolom ' + ba.basisprijs.col : null, null, '—', 'Ja', !ba.basisprijs.col),
+      R('b:omschrijving', 'Omschrijving', ba.omschrijving.col ? 'kolom ' + ba.omschrijving.col : null, null, '—', 'Nee', false),
+      R('b:valuta', 'Valuta', ba.valuta.col ? 'kolom ' + ba.valuta.col : null, null, '—', 'Nee', false)];
+    var g3 = M.extra.map(function (x) { return R('x:' + x.key, x.veld, exSrc(x), bewList(x), x.crit ? 'Kritiek' : 'Niet kritiek', x.req ? 'Ja' : 'Nee', x.req && !exSrc(x), { note: x.note, vp: x.key === 'vp' }); });
+    var attn = 0;
+    g1.concat(g2, g3).forEach(function (r) { if (r.st !== 'Oké') { attn++; } });
+    return { g1: g1, g2: g2, g3: g3, attn: attn, extraN: M.extra.reduce(function (n, x) { return n + (x.key === 'vp' ? 5 : 1); }, 0) };
+  }
+  function chipsHtml(r) {
+    return r.bew === null ? '<span class="rowMeta">—</span>' : r.bew.length ? r.bew.map(function (c) { return '<span class="chip">' + esc(c) + '</span>'; }).join(' ') : '<span class="rowMeta">Geen bewerking</span>';
+  }
+  function rowHtml(r, editing) {
+    var name = r.vp ? '<button type="button" class="vpToggle" data-act="grp" data-key="vp" aria-expanded="' + ed.open.vp + '"><span aria-hidden="true">' + (ed.open.vp ? '▾' : '▸') + '</span> Verkoopprijzen 1–5 (%)</button>' : '<strong>' + esc(r.veld) + '</strong>';
+    var h = '<tr' + (r.st === 'Ontbreekt' ? ' class="rowWarn"' : '') + '><td data-label="Veld">' + name + (r.note ? '<br><span class="rowMeta">' + esc(r.note) + '</span>' : '') + '</td>' +
+      '<td data-label="Bron">' + (r.bron ? esc(r.bron) : '<span class="rowMeta">Niet gebruikt</span>') + '</td><td data-label="Bewerking">' + chipsHtml(r) + '</td>' +
+      '<td data-label="Kritiek">' + esc(r.crit) + '</td><td data-label="Verplicht">' + esc(r.verpl) + '</td><td data-label="Status">' + stBadge(r.st) + '</td>' +
+      (editing ? '<td class="actionCell"><button type="button" class="iconBtn" data-act="edit" data-key="' + r.k + '" aria-label="Wijzigen: ' + esc(r.veld) + '">' + PENCIL + '</button></td>' : '') + '</tr>';
+    if (r.vp && ed.open.vp) {
+      for (var i = 1; i <= 5; i++) {
+        h += '<tr class="subRow"><td data-label="Veld">Verkoopprijs ' + i + ' (%)</td><td data-label="Bron">' + esc(r.bron || 'Niet gebruikt') + ' · basis 100 (aanname)</td><td data-label="Bewerking"><span class="chip">Percentage</span></td><td></td><td></td><td></td>' + (editing ? '<td></td>' : '') + '</tr>';
+      }
+    }
+    return h;
+  }
+  function gridInner(M, df, editing) {
+    var G = gridData(M, df), unm = editing ? unmapped(M) : [], q = ed.q.toLowerCase();
+    function nameOk(v) { return !q || v.toLowerCase().indexOf(q) > -1; }
+    function pass(r) {
+      if (!nameOk(r.veld)) { return false; }
+      if (ed.chip === 'verplicht') { return r.verpl === 'Ja'; }
+      if (ed.chip === 'kritiek') { return r.crit === 'Kritiek'; }
+      if (ed.chip === 'aandacht') { return r.st !== 'Oké'; }
+      return true;
+    }
+    function trs(rows) { return rows.filter(pass).map(function (r) { return rowHtml(r, editing); }).join(''); }
+    function hdr(title, extra) { return '<tr class="grpRow"><th colspan="7" scope="colgroup"><span>' + title + '</span>' + (extra || '') + '</th></tr>'; }
+    var ic = M.ident.ic, icTxt = 'Hoofdletters negeren: ' + (ic ? 'Ja' : 'Nee');
+    var icEl = editing ? '<button type="button" class="chip chipBtn" role="switch" aria-checked="' + ic + '" data-act="ic" data-key="ic">' + icTxt + '</button>' : '<span class="chip">' + icTxt + '</span>';
+    var body = '', t1 = trs(G.g1), t2 = trs(G.g2), t3 = trs(G.g3);
+    if (t1) { body += hdr('Herkenning van het artikel', icEl) + t1; }
+    if (t2) { body += hdr('Basis') + t2; }
+    if (t3) { body += hdr('Extra velden (' + G.extraN + ')') + t3; }
+    if (editing && ed.chip === 'alle') {
+      var list = unm.filter(function (c) { return nameOk(c.veld); });
+      if (list.length) {
+        body += '<tr class="grpRow"><th colspan="7" scope="colgroup"><button type="button" class="grpBtn" data-act="grp" data-key="unm" aria-expanded="' + ed.open.unm + '"><span aria-hidden="true">' + (ed.open.unm ? '▾' : '▸') + '</span> Nog niet gekoppeld (' + unm.length + ')</button></th></tr>';
+        if (ed.open.unm) {
+          list.forEach(function (c) {
+            body += '<tr><td data-label="Veld"><strong>' + esc(c.veld) + '</strong>' + (c.note ? '<br><span class="rowMeta">' + esc(c.note) + '</span>' : '') + '</td><td data-label="Bron"><span class="rowMeta">Niet gekoppeld</span></td><td></td><td></td><td></td><td data-label="Status">' + badge('Niet gekoppeld', 'neutral') + '</td>' +
+              '<td class="actionCell"><button type="button" class="btn btnSm" data-act="map" data-key="' + c.key + '" aria-label="Koppelen: ' + esc(c.veld) + '">Koppelen</button></td></tr>';
+          });
+        }
+      }
+    }
+    if (!body) { body = '<tr><td colspan="7" class="empty">Geen velden gevonden.</td></tr>'; }
+    return '<div class="wrap"><table class="table" id="edGrid"><thead><tr><th>Veld</th><th>Bron</th><th>Bewerking</th><th>Kritiek</th><th>Verplicht</th><th>Status</th>' + (editing ? '<th><span class="sr-only">Acties</span></th>' : '') + '</tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+  function colViewHtml(M, editing) {
+    var t = colTargets(M), rows = '', gA = [], gB = [], c;
+    function tr(c) {
+      var ci = colInfo(c), tg = t[c], vals = ci[1].map(function (v) { return v === '' ? '(leeg)' : v; }).join(', ');
+      return '<tr><td data-label="Kolom" class="code">' + c + '</td><td data-label="Kolomnaam">' + esc(ci[0]) + '</td><td data-label="Voorbeeldwaarden">' + esc(vals) + '</td><td data-label="Gaat naar">' +
+        (tg ? esc(tg.join(', ')) : '<span class="rowMeta">Niet gebruikt</span>' + (editing ? ' <button type="button" class="btn btnSm" data-act="coladd" data-key="' + c + '" aria-label="Koppelen aan veld: kolom ' + c + '">Koppelen aan veld…</button>' : '')) + '</td></tr>';
+    }
+    function sum(a) { return a.length ? '<tr><td colspan="4">Kolommen ' + fmtRanges(a) + ' (niet gebruikt)</td></tr>' : ''; }
+    for (c = 1; c <= 50; c++) {
+      var inA = c >= 21 && c <= 39, inB = (c >= 44 && c <= 48) || c === 50;
+      if (c === 21) { rows += '@A@'; }
+      if (c === 44) { rows += '@B@'; }
+      if ((inA || inB) && !t[c]) { (inA ? gA : gB).push(c); continue; }
+      rows += tr(c);
+    }
+    rows = rows.replace('@A@', function () { return sum(gA); }).replace('@B@', function () { return sum(gB); });
+    return '<div class="wrap"><table class="table" id="edColGrid"><thead><tr><th>Kolom</th><th>Kolomnaam</th><th>Voorbeeldwaarden (3)</th><th>Gaat naar</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+  function trialHtml(M) {
+    if (!ed.trialOpen && !ed.sampleLoaded) { return ''; }
+    var h = '<div class="trialBox" id="edTrial" role="region" aria-labelledby="edTrialH"><h3 id="edTrialH" tabindex="-1" style="font-size:16px;font-weight:600">Controleren met testbestand</h3>';
+    if (!ed.sampleLoaded) {
+      h += '<p class="rowMeta" style="margin:8px 0 12px">Kies een bestand van de leverancier om te zien hoe deze versie het zou lezen. Er wordt niets ingelezen of bewaard.</p><button type="button" class="btn btnSm" data-act="pickfile">Testbestand kiezen</button>';
+    } else {
+      h += '<p class="rowMeta" style="margin:8px 0">Testbestand: <strong>VROOAM_artikelen_2026-10.csv</strong> (4,2 MB)</p>' +
+        '<div class="banner ok" role="status" style="margin-top:8px">' + iconInfo + '<p><strong>Deze levering zou aanvaard worden</strong></p></div>' +
+        '<ul><li>18 204 regels gelezen</li><li>17 998 geldig</li><li>206 verworpen (1,1 %)</li><li>412 overgeslagen door een filter</li></ul>' +
+        '<p>Kolommen: 50 gevonden; ' + notUsedCount(M) + ' niet gebruikt</p>';
+    }
+    return h + '</div>';
+  }
+  function kopstrook(ctx, st, concept) {
+    var h = '<div class="edHead"><label class="fieldLabel">Versie <select class="field" id="vsel" data-vsel="' + ctx.who + '">' +
+      ctx.versions.map(function (v) { return '<option value="' + esc(v[0]) + '"' + (v[0] === ctx.num ? ' selected' : '') + '>Versie ' + esc(v[0]) + ' (' + esc(v[1].toLowerCase()) + ')</option>'; }).join('') + '</select></label>' + badge(st[1], st[2]);
+    if (concept) {
+      h += '<div class="seg" role="group" aria-label="Weergave"><button type="button" data-act="mode" data-key="view" aria-pressed="' + !ed.editOn + '">Bekijken</button><button type="button" data-act="mode" data-key="edit" aria-pressed="' + ed.editOn + '">Bewerken</button></div>';
+    } else if (st[1] === 'Actief') {
+      h += '<span class="rowMeta">Deze versie is actief en kan niet gewijzigd worden</span><button type="button" class="btn btnSm" data-act="succ">Opvolger maken</button>';
+    } else {
+      h += '<span class="rowMeta">Deze versie is vervangen en kan niet gewijzigd worden</span>';
+    }
+    h += '</div>';
+    if (ed.succNote && st[1] === 'Actief') {
+      var c = supVersions.filter(function (v) { return v[1] === 'Concept'; })[0];
+      h += '<p class="rowMeta" role="status" style="margin-top:8px">' + (c ? 'Er staat al een concept (versie ' + c[0] + ') <button type="button" class="btn btnSm" data-act="openconcept">Open het concept</button>' : 'Een opvolger maken is in deze mock niet uitgewerkt.') + '</p>';
+    }
+    return h;
+  }
+  function conceptBar(M, df, editing) {
+    var cnt = df.length, steps = ['① Aanpassen', '② Controleren', '③ Activeren'], cur = ed.sampleLoaded ? 2 : 0;
+    return '<div class="edBar" role="region" aria-label="Conceptbalk"><div class="edBarTop"><strong>Concept · versie 4 · gebaseerd op versie 3 · <span id="edCount">' + cnt + (cnt === 1 ? ' wijziging' : ' wijzigingen') + '</span></strong>' +
+      '<button type="button" class="btn btnSm" data-act="diff" aria-expanded="' + ed.showDiff + '">Toon wijzigingen</button></div>' +
+      '<div class="edReden"><span class="rowMeta">Reden van deze versie:</span>' +
+      (ed.redenEdit ? '<input class="field" id="edReden" data-s="redenDraft" value="' + esc(ed.redenDraft) + '" aria-label="Reden van deze versie"><button type="button" class="btn btnSm btnPrimary" data-act="redensave">Opslaan</button><button type="button" class="btn btnSm" data-act="redencancel">Annuleren</button>'
+        : '<span>' + (M.reden ? esc(M.reden) : '<span class="rowMeta">Geen reden opgegeven</span>') + '</span>' + (editing ? '<button type="button" class="iconBtn" data-act="reden" aria-label="Reden van deze versie wijzigen">' + PENCIL + '</button>' : '')) + '</div>' +
+      '<ol class="chain" aria-label="Stappen">' + steps.map(function (s, i) { return '<li' + (i === cur ? ' aria-current="step"' : '') + (i < cur || (i === 1 && ed.sampleLoaded) ? ' class="done"' : '') + '>' + (i === 1 && ed.sampleLoaded ? '✓ ' : '') + esc(s) + '</li>'; }).join('') + '</ol>' +
+      '<div class="btnRow"><button type="button" class="btn btnSm" data-act="trial">Controleren met testbestand</button><button type="button" class="btn btnSm btnPrimary" data-act="activate">Activeren</button></div>' +
+      '<p class="rowMeta">Elke wijziging wordt meteen in het concept bewaard. Het concept is nog niet actief.</p></div>';
+  }
+  function anchorChips(M) {
+    var vn = M.extra.filter(function (x) { return x.bew.vert; }).length;
+    var items = [['velden', 'Velden ' + fieldCount(M)], ['filters', 'Filters ' + M.filters.length], ['vertalingen', 'Vertalingen ' + vn], ['bestand', 'Bestandsopbouw'], ['drempels', 'Drempels'], ['invul', 'Invulpunten 0']];
+    return '<nav class="anchorChips" aria-label="Naar sectie">' + items.map(function (a) { return '<button type="button" class="chip" data-act="anchor" data-key="' + a[0] + '">' + esc(a[1]) + '</button>'; }).join('') + '</nav>';
+  }
+  function diffBox(df) {
+    return '<div class="detailPanel" id="edDiff" role="region" aria-label="Wijzigingen t.o.v. versie 3"><h3>Wijzigingen t.o.v. versie 3</h3>' + (df.length ? '<ul class="rowList">' + df.map(function (x) {
+      return '<li><div class="rowMain"><strong>' + esc(x.label) + '</strong>' + (x.type === 'Gewijzigd' ? ' <span class="rowMeta">· was: ' + esc(x.from) + ' → nu: ' + esc(x.to) + '</span>' : x.type === 'Nieuw' ? ' <span class="rowMeta">· ' + esc(x.to) + '</span>' : ' <span class="rowMeta">· was: ' + esc(x.from) + '</span>') + '</div>' + stBadge(x.type) + '</li>';
+    }).join('') + '</ul>' : '<p class="rowMeta">Geen wijzigingen: dit concept is gelijk aan versie 3.</p>') + '</div>';
+  }
+  function editorView(ctx) {
+    var n = ctx.num, M = MODELS[n], st = vStat(n), concept = st[1] === 'Concept', editing = !!ctx.editable && ed.editOn;
+    var B = concept ? MODELS['3'] : null, df = B ? diffList(M, B) : [], G = gridData(M, df);
+    var h = '<section class="card cardPad" aria-labelledby="vdh"><h2 class="subtitle" id="vdh">Zo leest CatalogImport het bestand van ' + esc(ctx.name) + ' — versie ' + esc(n) + ' (' + st[1].toLowerCase() + ')</h2>' + kopstrook(ctx, st, concept) +
+      '<div class="banner" role="note">' + iconInfo + '<p>Deze importdefinitie wordt gedeeld door 3 koppelingen (VROOAM, VROOAM2, VROOAM3). Activeren van een nieuwe versie geldt voor alle drie.</p></div>' +
+      '<div class="edSticky">' + (concept ? conceptBar(M, df, editing) : '') + anchorChips(M) + '</div>' + (concept && ed.showDiff ? diffBox(df) : '');
+    /* 4. Velden */
+    var kol = ed.viewBy === 'kolom' && ed.sampleLoaded;
+    h += '<section class="vdSection" id="ed-velden" aria-labelledby="ed-h-velden"><h4 id="ed-h-velden">Velden</h4><div class="edTools">';
+    if (!kol) {
+      h += '<input class="field search" type="search" id="edQ" data-s="q" placeholder="Zoek een veld" aria-label="Zoek een veld" value="' + esc(ed.q) + '"><div class="btnRow" role="group" aria-label="Filter op eigenschap">' +
+        [['alle', 'Alle'], ['verplicht', 'Verplicht'], ['kritiek', 'Kritiek'], ['aandacht', 'Aandacht (' + G.attn + ')']].map(function (c) { return '<button type="button" class="chip chipBtn" data-act="chip" data-key="' + c[0] + '" aria-pressed="' + (ed.chip === c[0]) + '">' + c[1] + '</button>'; }).join('') + '</div>';
+    }
+    h += '<div class="seg" role="group" aria-label="Weergave van de velden"><button type="button" data-act="viewby" data-key="veld" aria-pressed="' + !kol + '">Per veld</button>' +
+      '<button type="button" data-act="viewby" data-key="kolom" aria-pressed="' + kol + '"' + (ed.sampleLoaded ? '' : ' disabled title="Beschikbaar nadat u een testbestand geladen hebt"') + '>Per kolom van het bestand</button></div>' +
+      (editing ? '<button type="button" class="btn btnSm btnPrimary" data-act="vadd">Veld toevoegen</button>' : '') + '</div>';
+    h += '<div id="edGridWrap">' + (kol ? colViewHtml(M, editing) : gridInner(M, df, editing)) + '</div>' + trialHtml(M) + '</section>';
+    /* 5. Filters */
+    h += '<section class="vdSection" id="ed-filters" aria-labelledby="ed-h-f"><h4 id="ed-h-f">Filters</h4>' +
+      (M.filters.length ? '<ul class="rowList">' + M.filters.map(function (f, i) {
+        return '<li><div class="rowMain">' + esc(sentence(f)) + '</div>' + badge(f.out, f.out === 'Verwerpen' ? 'awaiting' : 'neutral') +
+          (editing ? '<span class="btnRow"><button type="button" class="btn btnSm" data-act="edit" data-key="f:' + (i + 1) + '" aria-label="Wijzigen: filter ' + (i + 1) + '">Wijzigen</button><button type="button" class="btn btnSm" data-act="fdel" data-key="' + (i + 1) + '" aria-label="Verwijderen: filter ' + (i + 1) + '">Verwijderen</button></span>' : '') + '</li>';
+      }).join('') + '</ul>' : '<p class="rowMeta">Geen filters: alle regels worden verwerkt.</p>') +
+      (editing ? '<div class="btnRow" style="margin-top:12px"><button type="button" class="btn btnSm" data-act="fadd">Filter toevoegen</button><button type="button" class="btn btnSm" data-act="exclgrp" aria-expanded="' + ed.exclNote + '">Uitsluitingsgroep toevoegen</button></div>' +
+        (ed.exclNote ? '<p class="rowMeta" role="status" style="margin-top:8px">Opent de bestaande dialoog voor uitsluitingsgroepen (in deze mock niet uitgewerkt).</p>' : '') : '') + '</section>';
+    /* 6. Vertalingen */
+    var vx = M.extra.filter(function (x) { return x.bew.vert; });
+    h += '<section class="vdSection" id="ed-vertalingen" aria-labelledby="ed-h-v"><h4 id="ed-h-v">Vertalingen</h4>' + (vx.length ? '<ul class="rowList">' + vx.map(function (x) {
+      return '<li><div class="rowMain"><strong>Vertaling bij ' + esc(x.veld) + '</strong> · <span class="rowMeta">' + x.bew.vert.rows.length + ' waarden · bij een onbekende waarde: ' + esc(x.bew.vert.unk.toLowerCase()) + '</span></div></li>';
+    }).join('') + '</ul>' : '<p class="rowMeta">Geen vertalingen in deze versie.</p>') + '</section>';
+    /* 7. Bestandsopbouw */
+    var f = M.file;
+    h += '<section class="vdSection" id="ed-bestand" aria-labelledby="ed-h-b"><h4 id="ed-h-b">Bestandsopbouw</h4>';
+    if (ed.fileEdit && editing) {
+      var fd = ed.fileDraft;
+      h += '<div class="inlineForm"><label class="fieldLabel" style="flex-direction:column;align-items:stretch">Scheidingsteken<input class="field" data-s="fileDraft.sep" value="' + esc(fd.sep) + '" maxlength="1"></label>' +
+        '<label class="fieldLabel" style="flex-direction:column;align-items:stretch">Tekenset<select class="field" data-s="fileDraft.charset">' + opts([['UTF-8', 'UTF-8'], ['Windows-1252', 'Windows-1252'], ['ISO-8859-1', 'ISO-8859-1']], fd.charset) + '</select></label>' +
+        '<label class="fieldLabel" style="flex-direction:column;align-items:stretch">Kopregel<select class="field" data-s="fileDraft.header">' + opts([['Ja, regel 1', 'Ja, regel 1'], ['Nee', 'Nee']], fd.header) + '</select></label>' +
+        '<label class="fieldLabel" style="flex-direction:column;align-items:stretch">Kolommen herkennen op<select class="field" data-s="fileDraft.recog">' + opts([['kolomnummer', 'kolomnummer'], ['kolomnaam', 'kolomnaam']], fd.recog) + '</select></label>' +
+        '<label class="fieldLabel" style="flex-direction:column;align-items:stretch">Decimaalteken<input class="field" data-s="fileDraft.dec" value="' + esc(fd.dec) + '" maxlength="1"></label>' +
+        '<label class="fieldLabel" style="flex-direction:column;align-items:stretch">Verwacht aantal kolommen<input class="field" type="number" min="1" data-s="fileDraft.expect" value="' + esc(fd.expect) + '"></label></div>' +
+        (ed.fileErr ? '<p class="rowMeta" role="alert" style="margin-top:8px;color:var(--soft-error-text)">' + esc(ed.fileErr) + '</p>' : '') +
+        '<div class="btnRow" style="margin-top:12px"><button type="button" class="btn btnSm btnPrimary" data-act="filesave">Opslaan</button><button type="button" class="btn btnSm" data-act="filecancel">Annuleren</button></div>';
+    } else {
+      h += kv([['Bestandstype', FT[f.type]], ['Scheidingsteken', '"' + f.sep + '"'], ['Tekenset', f.charset], ['Kopregel', f.header], ['Kolommen herkennen op', f.recog], ['Decimaalteken', '"' + f.dec + '"'], ['Verwacht aantal kolommen', f.expect ? String(f.expect) : '']]) +
+        (editing ? '<div class="btnRow" style="margin-top:12px"><button type="button" class="btn btnSm" data-act="fileedit">Wijzigen</button></div>' : '');
+    }
+    h += '</section>';
+    /* 8. Drempels */
+    h += '<section class="vdSection" id="ed-drempels" aria-labelledby="ed-h-d"><h4 id="ed-h-d">Drempels en prijscontrole</h4>';
+    if (ed.thrEdit && editing) {
+      var td = ed.thrDraft;
+      h += '<div class="inlineForm">' + [['nieuw', 'Nieuwe artikelen (%)'], ['beoordeling', 'Ter beoordeling (%)'], ['verworpen', 'Verworpen (%)'], ['bulk', 'Bulkincident (%)']].map(function (p) {
+        return '<label class="fieldLabel" style="flex-direction:column;align-items:stretch">' + p[1] + '<input class="field" type="number" min="0" step="any" data-s="thrDraft.' + p[0] + '" value="' + esc(td[p[0]]) + '"' + (p[0] === 'verworpen' ? ' aria-describedby="thrHint"' : '') + '>' +
+          (p[0] === 'verworpen' ? '<span class="rowMeta" id="thrHint">Kan hier niet leeg gemaakt worden</span>' : '') + '</label>';
+      }).join('') + '</div>' + (ed.thrErr ? '<p class="rowMeta" role="alert" style="margin-top:8px;color:var(--soft-error-text)">' + esc(ed.thrErr) + '</p>' : '') +
+        '<div class="btnRow" style="margin-top:12px"><button type="button" class="btn btnSm btnPrimary" data-act="thrsave">Opslaan</button><button type="button" class="btn btnSm" data-act="thrcancel">Annuleren</button></div>';
+    } else {
+      h += '<p>' + esc(thrLine(M.thr)) + '</p>' + (editing ? '<div class="btnRow" style="margin-top:12px"><button type="button" class="btn btnSm" data-act="thredit">Wijzigen</button></div>' : '');
+    }
+    h += '</section>';
+    /* 9. Invulpunten + 10. Herkomst */
+    h += '<section class="vdSection" id="ed-invul" aria-labelledby="ed-h-i"><h4 id="ed-h-i">Invulpunten</h4><p class="rowMeta">Deze versie declareert geen invulpunten. Invulpunten beheert u bij de importdefinities; hier kunt u ze niet toevoegen of wijzigen.</p></section>' +
+      '<details class="tech techBox"><summary>Herkomst en goedkeuring</summary>' + kv([['Gebaseerd op', concept ? 'Versie 3 (actief)' : 'Overname uit legacy'], ['Opgesteld door', concept ? 'Ewout Seldeslachts · 22 okt 2026' : 'Overname uit legacy · 2 mrt 2026'], ['Goedkeuring', concept ? 'Nog niet goedgekeurd: wordt vastgelegd bij het activeren' : 'Goedgekeurd bij het activeren']]) + '</details>';
+    return h + '</section>';
+  }
+  function opts(list, cur) { return list.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(cur) ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join(''); }
+
+  /* --- zijpaneel --- */
+  function lab(text, control) { return '<label class="pf"><span class="fieldLabel">' + esc(text) + '</span>' + control + '</label>'; }
+  function inp(id, path, val, type, ex) { return '<input class="field" id="' + id + '" type="' + (type || 'text') + '" data-d="' + path + '" value="' + esc(val) + '"' + (ex || '') + '>'; }
+  function tgBtn(name, label, on) { return '<button type="button" class="chip chipBtn" id="p-tog-' + name + '" data-act="ptog" data-key="' + name + '" aria-pressed="' + on + '">' + esc(label) + '</button>'; }
+  function segPair(label, name, on, yes, no) {
+    return '<div class="pf" role="group" aria-label="' + label + '"><span class="fieldLabel">' + label + '</span><div class="seg"><button type="button" id="p-' + name + '-1" data-act="pset" data-key="' + name + ':1" aria-pressed="' + on + '">' + yes + '</button><button type="button" id="p-' + name + '-0" data-act="pset" data-key="' + name + ':0" aria-pressed="' + !on + '">' + no + '</button></div></div>';
+  }
+  function colField(d) {
+    if (ed.sampleLoaded) {
+      var o = '<option value="">— kies een kolom —</option>', c, ci;
+      for (c = 1; c <= 50; c++) { ci = colInfo(c); o += '<option value="' + c + '"' + (String(d.col) === String(c) ? ' selected' : '') + '>Kolom ' + c + ' — ' + esc(ci[0]) + (ci[1][0] !== '' ? ' (bv. ' + esc(ci[1][0]) + ')' : '') + '</option>'; }
+      return lab('Kolom uit het bestand', '<select class="field" id="p-col" data-d="col">' + o + '</select>');
+    }
+    return lab('Kolomnummer', inp('p-col', 'col', d.col, 'number', ' min="1"')) + '<p class="rowMeta pf" style="margin-top:-8px">Laad een testbestand om kolommen met voorbeeldwaarden te kiezen.</p>';
+  }
+  function extraBody(d) {
+    var h = '', t = d.tg;
+    if (d.note) { h += '<p class="rowMeta pf">' + esc(d.note) + '</p>'; }
+    if (ed.prefCol && d.isNew) { h += '<p class="rowMeta pf">Kolom ' + esc(ed.prefCol) + ' is vooraf ingevuld.</p>'; }
+    h += lab('Bron', '<select class="field" id="p-src" data-d="src" data-re="1">' + opts([['kolom', 'Kolom uit het bestand'], ['vast', 'Vaste waarde'], ['geen', 'Niet gebruiken']], d.src) + '</select>');
+    if (d.src === 'kolom') { h += colField(d); }
+    if (d.src === 'vast') { h += lab('Vaste waarde', inp('p-vast', 'vast', d.vast)); }
+    if (d.basisOnly) { return h; }
+    if (d.src !== 'geen') {
+      h += '<div class="pf" role="group" aria-label="Bewerking"><span class="fieldLabel">Bewerking</span><div class="btnRow">' + tgBtn('upper', 'Hoofdletters', t.upper) + tgBtn('div', 'Delen door…', t.div) + tgBtn('pct', 'Percentage', t.pct) + tgBtn('vert', 'Vertaling', t.vert) + tgBtn('fix', 'Voorvoegsel/achtervoegsel', t.fix) + tgBtn('cut', 'Uitknippen', t.cut) + '</div></div>';
+      if (t.div) { h += lab('Delen door', inp('p-div', 'div', d.div, 'number', ' min="0" step="any"')); }
+      if (t.fix) { h += lab('Voorvoegsel', inp('p-pre', 'pre', d.pre)) + lab('Achtervoegsel', inp('p-suf', 'suf', d.suf)); }
+      if (t.cut) { h += lab('Uitknippen vanaf positie', inp('p-cutFrom', 'cutFrom', d.cutFrom, 'number', ' min="1"')) + lab('Aantal tekens', inp('p-cutLen', 'cutLen', d.cutLen, 'number', ' min="1"')); }
+      if (t.vert) {
+        h += '<div class="pf" role="group" aria-label="Vertaling"><span class="fieldLabel">Vertaling: waarde in bestand → waarde in Prodis</span><table class="table"><thead><tr><th>Waarde in bestand</th><th>Wordt</th><th><span class="sr-only">Actie</span></th></tr></thead><tbody>' +
+          d.vert.rows.map(function (r, i) {
+            return '<tr><td data-label="Waarde in bestand"><input class="field" id="p-vk-' + i + '" data-d="vert.rows.' + i + '.0" value="' + esc(r[0]) + '" aria-label="Waarde in bestand, rij ' + (i + 1) + '"></td><td data-label="Wordt"><input class="field" id="p-vv-' + i + '" data-d="vert.rows.' + i + '.1" value="' + esc(r[1]) + '" aria-label="Wordt, rij ' + (i + 1) + '"></td>' +
+              '<td><button type="button" class="btn btnSm" data-act="pvdel" data-key="' + i + '" aria-label="Rij ' + (i + 1) + ' verwijderen">Verwijderen</button></td></tr>';
+          }).join('') + '</tbody></table><div class="btnRow"><button type="button" class="btn btnSm" id="p-vadd" data-act="pvadd">Rij toevoegen</button></div></div>' +
+          lab('Bij een onbekende waarde', '<select class="field" id="p-vunk" data-d="vert.unk">' + opts([['Verwerpen', 'Verwerpen'], ['Onveranderd laten', 'Onveranderd laten']], d.vert.unk) + '</select>');
+      }
+    }
+    h += segPair('Kritiek', 'crit', d.crit, 'Kritiek', 'Niet kritiek') + segPair('Verplicht', 'req', d.req, 'Ja', 'Nee');
+    h += '<button type="button" class="btn btnSm" id="p-more" data-act="pmore" aria-expanded="' + ed.moreOpen + '" aria-controls="p-moreBox">Meer</button><div id="p-moreBox" style="margin-top:12px"' + (ed.moreOpen ? '' : ' hidden') + '>' +
+      lab('Maximale lengte', inp('p-max', 'more.max', d.more.max, 'number', ' min="0"')) + lab('Aantal decimalen', inp('p-dec', 'more.dec', d.more.dec, 'number', ' min="0"')) +
+      lab('Nul of negatief toegestaan', '<select class="field" id="p-nul" data-d="more.nul">' + opts([['ja', 'Ja'], ['nee', 'Nee']], d.more.nul) + '</select>') +
+      lab('Standaardwaarde', inp('p-def', 'more.def', d.more.def)) + lab('Verwachte positie in het bestand', inp('p-pos', 'more.pos', d.more.pos, 'number', ' min="1"')) + '</div>';
+    return h;
+  }
+  function identBody(d) {
+    var modes = { supplier: [['vast', 'Vaste waarde'], ['kolom', 'Kolom uit het bestand']], group: [['kolom', 'Kolom uit het bestand']], ref: [['kolom', 'Kolom uit het bestand']], disc: [['kolom', 'Kolom uit het bestand'], ['geen', 'Niet gebruiken']] }[d.which];
+    var h = lab('Bron', '<select class="field" id="p-mode" data-d="mode" data-re="1">' + opts(modes, d.mode) + '</select>');
+    if (d.mode === 'vast') { h += lab('Vaste waarde', inp('p-val', 'val', d.val)); }
+    if (d.mode === 'kolom') { h += colField(d); }
+    if (d.which === 'ref') {
+      h += '<div id="edWarn"' + (warnShown(ed.panel) ? '' : ' hidden') + '><div class="banner warn" role="alert">' + iconInfo + '<p><strong>Let op:</strong> de referentie bepaalt welk artikel welk artikel is. Verandert u de kolom, dan herkent CatalogImport geen enkel bestaand artikel meer.</p></div>' +
+        '<label class="ackRow"><input type="checkbox" id="p-ack" data-act="pack"' + (ed.identAck ? ' checked' : '') + '> Ja, ik weet dat elk bestaand artikel hierna als nieuw artikel terugkomt</label></div>';
+    }
+    return h;
+  }
+  function basisBody(d) {
+    var h = d.which === 'basisprijs' ? '<p class="rowMeta pf">De basisprijs is verplicht: u kunt enkel de kolom wijzigen.</p>' : '<p class="rowMeta pf">Dit veld is optioneel: kies een kolom, of laat het leeg.</p>';
+    h += colField(d);
+    if (d.which !== 'basisprijs') { h += '<button type="button" class="btn btnSm" id="p-clear" data-act="pclear">Leegmaken</button>'; }
+    return h;
+  }
+  function filterBody(d) {
+    return '<p class="pf" id="edPrev" role="status" style="font-weight:600">' + esc(sentence(d)) + '</p>' +
+      lab('Uitkomst', '<select class="field" id="p-out" data-d="out">' + opts([['Overslaan', 'Overslaan'], ['Verwerpen', 'Verwerpen'], ['Meenemen', 'Meenemen']], d.out) + '</select>') +
+      colField(d) + lab('Vergelijking', '<select class="field" id="p-op" data-d="op">' + opts([['eq', 'is gelijk aan'], ['ne', 'is niet gelijk aan'], ['contains', 'bevat'], ['starts', 'begint met'], ['empty', 'is leeg']], d.op) + '</select>') +
+      '<div id="p-valwrap"' + (d.op === 'empty' ? ' hidden' : '') + '>' + lab('Waarde', inp('p-fval', 'val', d.val)) + '</div>';
+  }
+  function addBody() {
+    var M = MODELS[mapVer], h = (ed.prefCol ? '<p class="rowMeta pf">Kolom ' + esc(ed.prefCol) + ' wordt vooraf ingevuld.</p>' : '') + '<label class="pf"><span class="fieldLabel">Zoek een veld</span><input class="field" type="search" id="p-addq" data-addq="1" placeholder="Bijvoorbeeld EAN"></label>';
+    ['Prijzen', 'Referenties', 'Overig'].forEach(function (g) {
+      h += '<h3 class="overline addGrp">' + g + '</h3><ul class="rowList">';
+      CAT.filter(function (c) { return c.grp === g; }).forEach(function (c) {
+        var m = isMapped(M, c);
+        h += '<li class="addItem" data-t="' + esc(c.veld.toLowerCase()) + '"><div class="rowMain"' + (m ? ' style="color:var(--text-disabled)"' : '') + '><strong>' + esc(c.veld) + '</strong>' + (c.note && !m ? '<br><span class="rowMeta">' + esc(c.note) + '</span>' : '') + '</div>' +
+          (m ? badge('al gekoppeld', 'neutral') : '<button type="button" class="btn btnSm" id="p-pick-' + c.key + '" data-act="pick" data-key="' + c.key + '" aria-label="Kiezen: ' + esc(c.veld) + '">Kiezen</button>') + '</li>';
+      });
+      h += '</ul>';
+    });
+    return h;
+  }
+  function panelTitle(p) {
+    var d = p.draft;
+    if (p.kind === 'add') { return d.step === 1 ? 'Veld toevoegen' : 'Veld toevoegen: ' + d.veld; }
+    if (p.kind === 'extra') { return 'Wijzigen: ' + d.veld; }
+    if (p.kind === 'ident') { return 'Wijzigen: ' + { supplier: 'Leverancier', group: 'Groep', ref: 'Referentie', disc: 'Kortingscode' }[d.which]; }
+    if (p.kind === 'basis') { return 'Wijzigen: ' + { basisprijs: 'Basisprijs', omschrijving: 'Omschrijving', valuta: 'Valuta' }[d.which]; }
+    return d.i < 0 ? 'Filter toevoegen' : 'Wijzigen: filter ' + (d.i + 1);
+  }
+  function isExtraP(p) { return p.kind === 'extra' || (p.kind === 'add' && p.draft.step === 2); }
+  function panelHtml(p) {
+    var d = p.draft, body, foot = '';
+    if (p.kind === 'add' && d.step === 1) { body = addBody(); }
+    else if (isExtraP(p)) { body = extraBody(d); }
+    else if (p.kind === 'ident') { body = identBody(d); }
+    else if (p.kind === 'basis') { body = basisBody(d); }
+    else { body = filterBody(d); }
+    if (!(p.kind === 'add' && d.step === 1)) { foot += '<button type="button" class="btn btnPrimary" id="edApply" data-act="papply">Toepassen</button>'; }
+    if (p.kind === 'add' && d.step === 2) { foot += '<button type="button" class="btn" data-act="pback">Terug naar de lijst</button>'; }
+    foot += '<button type="button" class="btn" data-act="pcancel">Annuleren</button>';
+    if (p.kind === 'extra') { foot += '<button type="button" class="btn" data-act="punused">Niet meer gebruiken</button>'; }
+    return '<div class="panelHead"><h2 id="edPanelTitle">' + esc(panelTitle(p)) + '</h2><button type="button" class="iconBtn pclose" data-act="pcancel" aria-label="Paneel sluiten"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
+      '<div class="panelBody">' + body + '</div><div class="panelFoot"><p class="rowMeta" id="edMsg" role="status"></p><div class="btnRow">' + foot + '</div></div>';
+  }
+  function warnShown(p) { return !!p && p.kind === 'ident' && p.draft.which === 'ref' && String(p.draft.col) !== String(p.draft.orig.col); }
+  function isCol(c) { return /^\d+$/.test(String(c)) && parseInt(c, 10) >= 1; }
+  function panelValid(p) {
+    var d = p.draft, bad = function (m) { return { ok: false, msg: m }; };
+    if (isExtraP(p)) {
+      if (d.src === 'kolom' && !isCol(d.col)) { return bad('Vul een kolomnummer in.'); }
+      if (d.src === 'vast' && d.vast === '') { return bad('Vul een vaste waarde in.'); }
+      if (!d.basisOnly && d.src !== 'geen') {
+        if (d.tg.div && !(parseFloat(d.div) > 0)) { return bad('Vul een deler groter dan 0 in.'); }
+        if (d.tg.cut && (!isCol(d.cutFrom) || !isCol(d.cutLen))) { return bad('Vul de startpositie en het aantal tekens in.'); }
+      }
+    } else if (p.kind === 'ident') {
+      if (d.mode === 'vast' && d.val === '') { return bad('Vul een vaste waarde in.'); }
+      if (d.mode === 'kolom' && !isCol(d.col)) { return bad('Vul een kolomnummer in.'); }
+      if (warnShown(p) && !ed.identAck) { return bad('Bevestig eerst dat u de gevolgen kent.'); }
+    } else if (p.kind === 'basis') {
+      if (d.which === 'basisprijs' && !isCol(d.col)) { return bad('Vul een kolomnummer in.'); }
+      if (d.col !== '' && !isCol(d.col)) { return bad('Vul een geldig kolomnummer in.'); }
+    } else if (p.kind === 'filter') {
+      if (!isCol(d.col)) { return bad('Vul een kolomnummer in.'); }
+      if (d.op !== 'empty' && d.val === '') { return bad('Vul een waarde in.'); }
+    }
+    return { ok: true, msg: '' };
+  }
+  function refreshPanelState() {
+    var p = ed.panel; if (!p) { return; }
+    var v = panelValid(p), b = $('#edApply'), m = $('#edMsg'), w = $('#edWarn'), pv = $('#edPrev'), vw = $('#p-valwrap');
+    if (b) { b.disabled = !v.ok; }
+    if (m) { m.textContent = v.ok ? '' : v.msg; }
+    if (w) { w.hidden = !warnShown(p); }
+    if (pv && p.kind === 'filter') { pv.textContent = sentence(p.draft); }
+    if (vw && p.kind === 'filter') { vw.hidden = p.draft.op === 'empty'; }
+  }
+  function showPanel(focusId) {
+    var el = $('#edPanel'), p = ed.panel;
+    if (!p) { el.hidden = true; el.innerHTML = ''; return; }
+    el.innerHTML = panelHtml(p); el.hidden = false;
+    var f = focusId ? document.getElementById(focusId) : null;
+    if (!f) { f = el.querySelector('.panelBody input, .panelBody select, .panelBody button:not([disabled])') || el.querySelector('.pclose'); }
+    if (f) { f.focus(); }
+    refreshPanelState();
+  }
+  function openPanel(kind, key, draft) {
+    ed.panel = { kind: kind, key: key, draft: draft, orig: JSON.stringify(draft) };
+    ed.identAck = false; ed.moreOpen = false;
+    showPanel();
+  }
+  function draftFromExtra(x) {
+    var b = x.bew;
+    return { key: x.key, veld: x.veld, note: x.note, isNew: false, src: x.src, col: x.col == null ? '' : String(x.col), vast: x.vast,
+      tg: { upper: b.upper, div: b.div !== '', pct: b.pct, vert: !!b.vert, fix: !!(b.pre || b.suf), cut: b.cutLen !== '' },
+      div: b.div, pre: b.pre, suf: b.suf, cutFrom: b.cutFrom, cutLen: b.cutLen, vert: b.vert ? clone(b.vert) : { rows: [['', '']], unk: 'Verwerpen' },
+      crit: x.crit, req: x.req, more: clone(x.more) };
+  }
+  function draftNew(c, col) {
+    return { step: 2, key: c.key, veld: c.veld, note: c.note || '', isNew: true, basisOnly: !!c.basisOnly, src: 'kolom', col: col ? String(col) : '', vast: '',
+      tg: { upper: false, div: false, pct: !!c.pct, vert: false, fix: false, cut: false }, div: '', pre: '', suf: '', cutFrom: '', cutLen: '',
+      vert: { rows: [['', '']], unk: 'Verwerpen' }, crit: false, req: false, more: clone(MORE0) };
+  }
+  function buildExtra(d) {
+    var t = d.tg, on = d.src !== 'geen';
+    return { key: d.key, veld: d.veld, src: d.src, col: d.src === 'kolom' ? parseInt(d.col, 10) : null, vast: d.src === 'vast' ? d.vast : '',
+      bew: { upper: on && t.upper, div: on && t.div ? String(d.div) : '', pct: on && t.pct,
+        vert: on && t.vert ? { rows: clone(d.vert.rows).filter(function (r) { return r[0] !== ''; }), unk: d.vert.unk } : null,
+        pre: on && t.fix ? d.pre : '', suf: on && t.fix ? d.suf : '', cutFrom: on && t.cut ? String(d.cutFrom) : '', cutLen: on && t.cut ? String(d.cutLen) : '' },
+      crit: d.crit, req: d.req, more: clone(d.more), note: d.note };
+  }
+  function openEdit(key) {
+    var M = MODELS[mapVer], a = key.split(':'), k = a[1];
+    if (a[0] === 'x') { openPanel('extra', k, draftFromExtra(M.extra.filter(function (x) { return x.key === k; })[0])); }
+    else if (a[0] === 'id') {
+      var o = M.ident[k], c = o.col == null ? '' : String(o.col);
+      openPanel('ident', k, { which: k, mode: o.mode, val: o.val || '', col: c, orig: { col: c } });
+    } else if (a[0] === 'b') { var bc = M.basis[k].col; openPanel('basis', k, { which: k, col: bc == null ? '' : String(bc) }); }
+    else { var i = parseInt(k, 10) - 1, f = M.filters[i]; openPanel('filter', k, { i: i, out: f.out, col: String(f.col), op: f.op, val: f.val }); }
+  }
+  function setPath(obj, path, val) {
+    var p = path.split('.'), o = obj, i;
+    for (i = 0; i < p.length - 1; i++) { o = o[p[i]]; }
+    o[p[p.length - 1]] = val;
+  }
+  function applyPanel() {
+    var p = ed.panel; if (!p || !panelValid(p).ok) { return; }
+    var M = MODELS[mapVer], d = p.draft, I;
+    if (p.kind === 'extra') { M.extra = M.extra.map(function (x) { return x.key === p.key ? buildExtra(d) : x; }); }
+    else if (p.kind === 'add') {
+      if (d.key === 'omschr') { M.basis.omschrijving.col = parseInt(d.col, 10); } else { M.extra.push(buildExtra(d)); }
+    } else if (p.kind === 'ident') {
+      M.ident[d.which] = { mode: d.mode, val: d.mode === 'vast' ? d.val : '', col: d.mode === 'kolom' ? parseInt(d.col, 10) : null };
+    } else if (p.kind === 'basis') { M.basis[d.which].col = d.col === '' ? null : parseInt(d.col, 10); }
+    else {
+      I = { out: d.out, col: parseInt(d.col, 10), op: d.op, val: d.op === 'empty' ? '' : d.val };
+      if (d.i < 0) { M.filters.push(I); } else { M.filters[d.i] = I; }
+    }
+    toast('Bewaard in het concept');
+    closePanel();
+  }
+  function closePanel() { var o = ed.opener; ed.panel = null; ed.prefCol = null; showPanel(); rerender(o && o.act, o && o.key); }
+  function requestClose() {
+    var p = ed.panel; if (!p) { return; }
+    if (JSON.stringify(p.draft) !== p.orig) { confirmDlg({ title: 'Wijzigingen weggooien?', text: 'De wijzigingen in dit paneel zijn nog niet toegepast.', ok: 'Weggooien', onOk: closePanel }); }
+    else { closePanel(); }
+  }
+
+  /* --- dialoog, toast, herrenderen --- */
+  var toastT = null;
+  function toast(t) {
+    var el = $('#edToast'); el.textContent = t; el.hidden = false;
+    clearTimeout(toastT); toastT = setTimeout(function () { el.hidden = true; }, 3500);
+  }
+  function confirmDlg(o) {
+    var w = $('#edDlg'); ed.dlg = o; ed.dlgBack = document.activeElement;
+    w.innerHTML = '<div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="edDlgT" aria-describedby="edDlgD"><h2 id="edDlgT">' + esc(o.title) + '</h2><p id="edDlgD">' + esc(o.text) + '</p>' +
+      (o.warn ? '<div class="banner warn" role="note">' + iconInfo + '<p>' + esc(o.warn) + '</p></div>' : '') +
+      '<div class="btnRow" style="margin-top:16px"><button type="button" class="btn btnPrimary" id="edDlgOk" data-act="dlgok">' + esc(o.ok) + '</button><button type="button" class="btn" id="edDlgNo" data-act="dlgno">Annuleren</button></div></div>';
+    w.hidden = false; $('#edDlgNo').focus();
+  }
+  function closeDlg() { var o = ed.dlg; $('#edDlg').hidden = true; $('#edDlg').innerHTML = ''; ed.dlg = null; return o; }
+  function focusAct(act, key) {
+    var el = act ? (key == null ? $('[data-act="' + act + '"]') : $('[data-act="' + act + '"][data-key="' + key + '"]')) : null;
+    if (!el) { el = $('#vdh'); if (el) { el.setAttribute('tabindex', '-1'); } }
+    if (el) { el.focus(); }
+  }
+  function rerender(act, key) {
+    var y = window.pageYOffset; supplier(); try { window.scrollTo(0, y); } catch (e) { /* ignore */ }
+    var nf = ed.nextFocus, el = nf ? $(nf) : null; ed.nextFocus = null;
+    if (el) { el.focus(); return; }
+    focusAct(act, key);
+  }
+  function activateV4() {
+    supVersions[0] = ['4', 'Actief', 'ready']; supVersions[1] = ['3', 'Vervangen', 'neutral'];
+    var t = tplData['VRM-SJ']; t.active = 4; t.status = 'Actief';
+    t.versions[0] = ['Versie 4', 'Actief', 'ready', ['Opvolger maken', 'Detail openen']]; t.versions[1] = ['Versie 3', 'Vervangen', 'neutral', []];
+    ed.editOn = false; ed.panel = null; ed.showDiff = false; ed.redenEdit = false; ed.fileEdit = false; ed.thrEdit = false; showPanel();
+    toast('Versie 4 is nu actief voor alle drie de koppelingen');
+    rerender('succ', null);
+  }
+  function filterAdd(q) {
+    q = q.trim().toLowerCase();
+    document.querySelectorAll('#edPanel .addItem').forEach(function (li) { li.hidden = !!q && li.getAttribute('data-t').indexOf(q) < 0; });
+  }
+  function doAct(act, key, el) {
+    var M = MODELS[mapVer], p = ed.panel, d = p && p.draft;
+    switch (act) {
+      case 'mode': ed.editOn = key === 'edit'; rerender(act, key); return;
+      case 'succ': ed.succNote = !ed.succNote; rerender(act, key); return;
+      case 'openconcept': ed.succNote = false; mapVer = '4'; supplier(); focusAct(null); return;
+      case 'reden': ed.redenEdit = true; ed.redenDraft = M.reden; ed.nextFocus = '#edReden'; rerender(act, key); return;
+      case 'redensave': M.reden = ed.redenDraft.trim(); ed.redenEdit = false; toast('Bewaard in het concept'); rerender('reden', null); return;
+      case 'redencancel': ed.redenEdit = false; rerender('reden', null); return;
+      case 'diff': ed.showDiff = !ed.showDiff; rerender(act, key); return;
+      case 'anchor': var t = $('#ed-' + key); if (t && t.scrollIntoView) { t.scrollIntoView({ block: 'start' }); } return;
+      case 'chip': ed.chip = key; rerender(act, key); return;
+      case 'viewby': ed.viewBy = key; rerender(act, key); return;
+      case 'grp': ed.open[key] = !ed.open[key]; rerender(act, key); return;
+      case 'ic': M.ident.ic = !M.ident.ic; toast('Bewaard in het concept'); rerender(act, key); return;
+      case 'edit': ed.opener = { act: act, key: key }; openEdit(key); return;
+      case 'map': ed.opener = { act: act, key: key }; ed.prefCol = null; openPanel('add', 'new', draftNew(catOf(key), null)); return;
+      case 'vadd': ed.opener = { act: act, key: key }; ed.prefCol = null; openPanel('add', 'new', { step: 1 }); return;
+      case 'coladd': ed.opener = { act: act, key: key }; ed.prefCol = key; openPanel('add', 'new', { step: 1 }); return;
+      case 'fadd': ed.opener = { act: act, key: key }; openPanel('filter', 'new', { i: -1, out: 'Overslaan', col: '', op: 'eq', val: '' }); return;
+      case 'fdel':
+        ed.opener = { act: 'fadd', key: null };
+        confirmDlg({ title: 'Filter verwijderen?', text: sentence(M.filters[parseInt(key, 10) - 1]), ok: 'Verwijderen', onOk: function () { M.filters.splice(parseInt(key, 10) - 1, 1); toast('Bewaard in het concept'); rerender('fadd', null); } });
+        return;
+      case 'exclgrp': ed.exclNote = !ed.exclNote; rerender(act, key); return;
+      case 'fileedit': ed.fileEdit = true; ed.fileErr = ''; ed.fileDraft = clone(M.file); rerender(act, key); return;
+      case 'filecancel': ed.fileEdit = false; rerender('fileedit', null); return;
+      case 'filesave':
+        if (ed.fileDraft.sep.length !== 1 || ed.fileDraft.dec.length !== 1) { ed.fileErr = 'Scheidingsteken en decimaalteken bestaan uit precies één teken.'; rerender(act, key); return; }
+        M.file = clone(ed.fileDraft); M.file.expect = M.file.expect === '' ? '' : parseInt(M.file.expect, 10); ed.fileEdit = false; toast('Bewaard in het concept'); rerender('fileedit', null); return;
+      case 'thredit': ed.thrEdit = true; ed.thrErr = ''; ed.thrDraft = { nieuw: M.thr.nieuw, beoordeling: M.thr.beoordeling, verworpen: M.thr.verworpen === null ? '' : M.thr.verworpen, bulk: M.thr.bulk }; rerender(act, key); return;
+      case 'thrcancel': ed.thrEdit = false; rerender('thredit', null); return;
+      case 'thrsave':
+        var nv = {}, okv = true;
+        ['nieuw', 'beoordeling', 'verworpen', 'bulk'].forEach(function (k) {
+          var s = String(ed.thrDraft[k]).replace(',', '.').trim();
+          if (s === '') { if (k === 'verworpen' && M.thr.verworpen === null) { nv[k] = null; } else { okv = false; } }
+          else if (isNaN(parseFloat(s)) || parseFloat(s) < 0) { okv = false; } else { nv[k] = parseFloat(s); }
+        });
+        if (!okv) { ed.thrErr = 'Vul overal een getal van 0 of meer in. Een ingestelde drempel kan hier niet leeg gemaakt worden.'; rerender(act, key); return; }
+        M.thr = nv; ed.thrEdit = false; toast('Bewaard in het concept'); rerender('thredit', null); return;
+      case 'trial': ed.trialOpen = true; ed.nextFocus = ed.sampleLoaded ? '#edTrialH' : '[data-act="pickfile"]'; rerender(act, key); if ($('#edTrial') && $('#edTrial').scrollIntoView) { $('#edTrial').scrollIntoView({ block: 'center' }); } return;
+      case 'pickfile': ed.sampleLoaded = true; ed.nextFocus = '#edTrialH'; rerender(act, key); return;
+      case 'activate':
+        ed.opener = { act: act, key: key };
+        confirmDlg({ title: 'Versie 4 activeren?', text: 'Versie 4 wordt de actieve versie van Vrooam artikelbestand en versie 3 wordt vervangen. Dit geldt voor alle 3 koppelingen (VROOAM, VROOAM2, VROOAM3).',
+          warn: 'Afgewezen afwijkingen die door deze versie anders beoordeeld worden, worden heropend.', ok: 'Activeren', onOk: activateV4 });
+        return;
+      case 'dlgok': var o = closeDlg(); if (o && o.onOk) { o.onOk(); } return;
+      case 'dlgno': closeDlg(); if (ed.dlgBack && document.contains(ed.dlgBack)) { ed.dlgBack.focus(); } return;
+      /* zijpaneel */
+      case 'papply': applyPanel(); return;
+      case 'pcancel': requestClose(); return;
+      case 'pback': p.draft = { step: 1 }; p.orig = JSON.stringify(p.draft); showPanel(); return;
+      case 'pick': p.draft = draftNew(catOf(key), ed.prefCol); p.orig = JSON.stringify(p.draft); showPanel(); return;
+      case 'ptog': d.tg[key] = !d.tg[key]; showPanel('p-tog-' + key); return;
+      case 'pset': var a = key.split(':'); d[a[0]] = a[1] === '1'; showPanel('p-' + a[0] + '-' + a[1]); return;
+      case 'pmore': ed.moreOpen = !ed.moreOpen; showPanel('p-more'); return;
+      case 'pvadd': d.vert.rows.push(['', '']); showPanel('p-vk-' + (d.vert.rows.length - 1)); return;
+      case 'pvdel': d.vert.rows.splice(parseInt(key, 10), 1); if (!d.vert.rows.length) { d.vert.rows.push(['', '']); } showPanel('p-vadd'); return;
+      case 'pclear': d.col = ''; showPanel('p-col'); return;
+      case 'pack': ed.identAck = el.checked; refreshPanelState(); return;
+      case 'punused':
+        confirmDlg({ title: 'Dit veld niet meer gebruiken?', text: d.veld + ' verhuist naar "Nog niet gekoppeld". U kunt het later opnieuw koppelen.', ok: 'Niet meer gebruiken',
+          onOk: function () { M.extra = M.extra.filter(function (x) { return x.key !== p.key; }); toast('Bewaard in het concept'); closePanel(); } });
+        return;
+      default: return;
+    }
+  }
+  document.addEventListener('click', function (e) {
+    var el = e.target && e.target.closest ? e.target.closest('[data-act]') : null;
+    if (!el || el.disabled || !el.closest('#main, #edPanel, #edDlg')) { return; }
+    doAct(el.getAttribute('data-act'), el.getAttribute('data-key'), el);
+  });
+  function onField(e) {
+    var el = e.target; if (!el || !el.getAttribute) { return; }
+    if (el.hasAttribute('data-addq')) { filterAdd(el.value); return; }
+    var s = el.getAttribute('data-s'), dd = el.getAttribute('data-d'), val = el.type === 'checkbox' ? el.checked : el.value;
+    if (s) {
+      if (s === 'q') { ed.q = val; var gw = $('#edGridWrap'); if (gw && ed.viewBy !== 'kolom') { var B = vStat(mapVer)[1] === 'Concept' ? MODELS['3'] : null; gw.innerHTML = gridInner(MODELS[mapVer], B ? diffList(MODELS[mapVer], B) : [], ed.editOn && mapVer === '4' && vStat('4')[1] === 'Concept'); } }
+      else { setPath(ed, s, val); }
+      return;
+    }
+    if (dd && ed.panel) {
+      setPath(ed.panel.draft, dd, val);
+      if (!warnShown(ed.panel)) { ed.identAck = false; var cb = $('#p-ack'); if (cb) { cb.checked = false; } }
+      if (el.hasAttribute('data-re') && e.type === 'change') { showPanel(el.id); } else { refreshPanelState(); }
+    }
+  }
+  document.addEventListener('input', onField);
+  document.addEventListener('change', onField);
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') { return; }
+    if (ed.dlg) { doAct('dlgno', null, null); } else if (ed.panel) { requestClose(); }
+  });
+
   var vWho = [['22 okt 2026', 'Ewout Seldeslachts'], ['3 sep 2026', 'An Peeters'], ['14 jun 2026', 'An Peeters'], ['2 mrt 2026', 'Overname uit legacy']];
 
   /* ---------- Leveranciersdetail ---------- */
@@ -698,24 +1488,25 @@ select.field option { background: var(--bg-paper); color: var(--text-primary); }
   }
   function tabOverzicht() {
     return '<p class="rowMeta">Zo hangt het samen: een leverancier heeft een importdefinitie, daaraan hangen koppelingen en taken, en daaruit volgen inlezingen en publicaties.</p>' + chainBar(1) +
-      '<div class="mini">' + small('Importdefinities', 1, 'cardNeutral', 'b') + small('Actieve versie', 'Versie 3', 'cardSuccess', 'a') + small('Koppelingen', 3, 'cardNeutral', 'k') + small('Taken', 3, 'cardNeutral', 't') + small('Nog niet klaar', 1, 'cardWarning', 'n') + '</div>' +
-      '<div class="banner" role="status">' + iconInfo + '<p><strong>Volgende stap:</strong> versie 4 (concept) controleren en activeren</p><button type="button" class="btn btnSm" data-vview="4">Versie 4 bekijken</button></div>' +
+      '<div class="mini">' + small('Importdefinities', 1, 'cardNeutral', 'b') + small('Actieve versie', 'Versie ' + activeNum(), 'cardSuccess', 'a') + small('Koppelingen', 3, 'cardNeutral', 'k') + small('Taken', 3, 'cardNeutral', 't') + small('Nog niet klaar', vStat('4')[1] === 'Concept' ? 1 : 0, vStat('4')[1] === 'Concept' ? 'cardWarning' : 'cardNeutral', 'n') + '</div>' +
+      (vStat('4')[1] === 'Concept' ? '<div class="banner" role="status">' + iconInfo + '<p><strong>Volgende stap:</strong> versie 4 (concept) controleren en activeren</p><button type="button" class="btn btnSm" data-vview="4">Versie 4 bekijken</button></div>' : '') +
       '<section class="card cardPad fieldGroup" aria-labelledby="gg"><h3 class="overline" id="gg">Gegevens</h3>' +
       kv([['Code', 'VROOAM'], ['Soort', 'Leverancier'], ['Bibliotheek', '181 – DELICOLOR'], ['Tekenset', 'UTF-8'], ['Wachtwoord', 'Veilig bewaard'], ['Opmerking', '']]) + '</section>' +
-      bestandsKaart('VRM-SJ:3', 'data-vfields');
+      bestandsKaart('VRM-SJ:' + activeNum(), 'data-vfields');
   }
   function tabVelden() {
+    var concept = vStat(mapVer)[1] === 'Concept';
     return mapView({ prefix: 'VRM-SJ', num: mapVer, name: 'Vrooam artikelbestand', who: 'supplier', shared: ['VRM-SJ', 'Vrooam artikelbestand (gedeeld)'],
       versions: supVersions.map(function (v) { return [v[0], v[1]]; }),
-      actions: mapVer === '4' ? '<div class="btnRow" style="margin-top:24px"><button type="button" class="btn btnSm">Controleren</button><button type="button" class="btn btnSm btnPrimary">Activeren</button></div>' : '' });
+      edit: (mapVer === '3' || mapVer === '4') ? ed : null, editable: mapVer === '4' && concept, actions: '' });
   }
   function tabVersies() {
-    var acts = { '4': ['Controleren', 'Activeren'], '3': ['Opvolger maken'], '2': [] };
-    var h = '<section class="card cardClip" aria-labelledby="bh"><div class="cardHead"><div><h2 class="subtitle" id="bh">Vrooam artikelbestand</h2><p class="rowMeta">Eigen importdefinitie · actieve versie 3 · historiek van de versies</p><p class="linkRow">Gebaseerd op herbruikbare importdefinitie <a href="#template/VRM-SJ">Vrooam artikelbestand (gedeeld)</a></p></div>' + badge('Eigen importdefinitie', 'neutral') + '</div><div style="margin-top:16px">';
+    var acts = { 'Concept': ['Controleren', 'Activeren'], 'Actief': ['Opvolger maken'], 'Vervangen': [] };
+    var h = '<section class="card cardClip" aria-labelledby="bh"><div class="cardHead"><div><h2 class="subtitle" id="bh">Vrooam artikelbestand</h2><p class="rowMeta">Eigen importdefinitie · actieve versie ' + activeNum() + ' · historiek van de versies</p><p class="linkRow">Gebaseerd op herbruikbare importdefinitie <a href="#template/VRM-SJ">Vrooam artikelbestand (gedeeld)</a></p></div>' + badge('Eigen importdefinitie', 'neutral') + '</div><div style="margin-top:16px">';
     supVersions.forEach(function (v, i) {
       h += '<div class="versionRow"><span class="vname">Versie ' + v[0] + '</span>' + badge(v[1], v[2]) + '<span class="rowMeta">' + vWho[i][0] + ' · ' + vWho[i][1] + '</span><span class="btnRow">' +
         '<button type="button" class="btn btnSm" data-vview="' + v[0] + '" aria-label="Bekijken: versie ' + v[0] + '">Bekijken</button>' +
-        acts[v[0]].map(function (b) { return '<button type="button" class="btn btnSm' + (b === 'Activeren' ? ' btnPrimary' : '') + '">' + b + '</button>'; }).join('') + '</span></div>';
+        acts[v[1]].map(function (b) { return '<button type="button" class="btn btnSm' + (b === 'Activeren' ? ' btnPrimary' : '') + '">' + b + '</button>'; }).join('') + '</span></div>';
     });
     return h + '</div></section>';
   }
@@ -753,7 +1544,7 @@ select.field option { background: var(--bg-paper); color: var(--text-primary); }
       var p = $('#vdh'); if (p) { p.setAttribute('tabindex', '-1'); p.focus(); if (p.scrollIntoView) { p.scrollIntoView({ block: 'start' }); } }
     }
     document.querySelectorAll('[data-vview]').forEach(function (b) { b.addEventListener('click', function () { toFields(b.getAttribute('data-vview')); }); });
-    document.querySelectorAll('[data-vfields]').forEach(function (b) { b.addEventListener('click', function () { toFields('3'); }); });
+    document.querySelectorAll('[data-vfields]').forEach(function (b) { b.addEventListener('click', function () { toFields(activeNum()); }); });
     var sel = $('[data-vsel="supplier"]');
     if (sel) { sel.addEventListener('change', function () { mapVer = sel.value; supplier(); $('#vsel').focus(); }); }
   }
@@ -997,7 +1788,9 @@ select.field option { background: var(--bg-paper); color: var(--text-primary); }
     if (onTpl) { $('#navTemplates').setAttribute('aria-current', 'page'); $('#navOverview').removeAttribute('aria-current'); }
     else { $('#navOverview').setAttribute('aria-current', 'page'); $('#navTemplates').removeAttribute('aria-current'); }
     closeMenu();
-    if (r === 'supplier') { tab = 'overzicht'; mapVer = '3'; supplier(); }
+    if (ed.panel) { ed.panel = null; showPanel(); }
+    if (ed.dlg) { closeDlg(); }
+    if (r === 'supplier') { tab = 'overzicht'; mapVer = activeNum(); ed.succNote = false; supplier(); }
     else if (r === 'templates') { templates(); }
     else if (r === 'template') { var tc = tm[1] ? decodeURIComponent(tm[1]) : 'VRM-SJ'; curTpl = tplData[tc] ? tc : 'VRM-SJ'; ttab = 'overzicht'; tMapNum = null; template(); }
     else { dashboard(); }

@@ -5,33 +5,47 @@
  * Codes en ruwe ids staan hier nooit als zichtbare tekst; die blijven onder "Technische details (voor support)".
  */
 
+import type { LegacyOriginKind } from '../api/types.ts';
 import type { StatusFamily } from '../components/StatusBadge.tsx';
 import type { DefinitionOrigin, DefinitionStatus } from '../features/templates/definitionsModel.ts';
 
 export const STATUS_LABEL: Record<DefinitionStatus, string> = {
   ACTIVE: 'Actief',
   CONCEPT: 'Concept',
+  NO_VERSION: 'Geen bruikbare versie',
 };
 
 export const STATUS_TONE: Record<DefinitionStatus, StatusFamily> = {
   ACTIVE: 'ready',
   CONCEPT: 'awaiting',
+  NO_VERSION: 'blocked',
 };
 
 export const STATUS_HINT: Record<DefinitionStatus, string> = {
   ACTIVE: 'Er is een actieve versie: de importdefinitie is bruikbaar.',
-  CONCEPT: 'Er is nog geen actieve versie: de importdefinitie is nog niet bruikbaar. Activeer eerst een versie.',
+  CONCEPT: 'Er is nog geen actieve versie, enkel een concept: de importdefinitie is nog niet bruikbaar. Activeer eerst de conceptversie.',
+  NO_VERSION: 'Er is geen actieve versie en ook geen concept: de importdefinitie is niet bruikbaar. Maak eerst een versie.',
 };
 
+/** Aparte badge naast de status: de leverancier of vereniging van de importdefinitie is niet meer actief. */
+export const INACTIVE_LABEL = 'Inactief';
+export const INACTIVE_HINT = 'De leverancier of vereniging van deze importdefinitie is inactief.';
+
 export const ORIGIN_LABEL: Record<DefinitionOrigin, string> = {
-  LEGACY_DERIVED: 'Uit legacy (afgeleid)',
+  LEGACY: 'Uit legacy',
   OWN: 'Eigen',
 };
 
 export const ORIGIN_HINT: Record<DefinitionOrigin, string> = {
-  LEGACY_DERIVED:
-    'Afgeleid uit de code: een herbruikbare importdefinitie die op -SJ eindigt, of een eigen importdefinitie waarvan de code met -SJ een herbruikbare importdefinitie heeft (of die met LEGACY- begint), komt uit de overname van legacy.',
-  OWN: 'Niet als overname uit legacy herkend.',
+  LEGACY: 'Deze importdefinitie is gemaakt bij de overname van de configuratie uit legacy.',
+  OWN: 'Niet uit de overname van legacy: zelf aangemaakt.',
+};
+
+/** Toelichting per soort legacy-overname; de ruwe waarde (`legacyOriginKind`) staat enkel onder "Technische details". */
+export const LEGACY_KIND_DETAIL: Record<LegacyOriginKind, string> = {
+  MIGRATED_TEMPLATE: 'Herbruikbare importdefinitie, gemaakt bij de overname uit legacy.',
+  MIGRATED_SHARED: 'Gedeelde importdefinitie, overgenomen uit legacy en gebaseerd op een herbruikbare importdefinitie.',
+  MIGRATED_DETACHED: 'Overgenomen uit legacy en losgekoppeld van de gedeelde importdefinitie.',
 };
 
 export const DEFINITIONS_TEXT = {
@@ -41,7 +55,7 @@ export const DEFINITIONS_TEXT = {
     'Een importdefinitie beschrijft hoe een leveranciersbestand gelezen wordt: in legacy de importsoort (PSIMDHFD/PSIMPDEF). ' +
     'Een herbruikbare importdefinitie wordt door meerdere leveranciers of interfaces gedeeld. U maakt uit een herbruikbare ' +
     'importdefinitie een eigen importdefinitie, een conceptversie en een koppeling. Dat heet hier materialiseren. ' +
-    'Gedeelde importdefinities uit legacy hangen aan één herbruikbare importdefinitie (-SJ).',
+    'Gedeelde importdefinities uit legacy hangen aan één herbruikbare importdefinitie.',
   loading: 'Bezig met laden…',
   gridLabel: 'Samenvatting van de importdefinities',
   show: 'Tonen',
@@ -52,13 +66,16 @@ export const DEFINITIONS_TEXT = {
     concept: 'Concept: nog te activeren',
     reusable: 'Herbruikbaar (gedeeld)',
   },
-  allSub: (active: number, concept: number) => `${active} actief, ${concept} concept`,
+  allSub: (active: number, concept: number, noVersion: number) =>
+    `${active} actief, ${concept} concept${noVersion > 0 ? `, ${noVersion} zonder bruikbare versie` : ''}`,
   activeSub: (reusable: number, own: number) => `${reusable} herbruikbaar, ${own} eigen`,
   conceptSub: 'nog niet bruikbaar — activeer eerst',
   conceptNone: 'Geen enkele importdefinitie wacht nog op activatie',
   showConcepts: 'Toon concepten',
   reusableSub: 'gedeeld door meer dan één leverancier of interface',
   conceptRowMeta: 'Nog geen actieve versie',
+  conceptVersion: (n: number) => `Versie ${n} (Concept)`,
+  draftOpen: (n: number) => `concept v${n} open`,
   moreList: (shown: number, total: number) => `Toont ${shown} van ${total}.`,
   listTitle: 'Alle importdefinities',
   searchLabel: 'Zoek op code of naam',
@@ -67,6 +84,7 @@ export const DEFINITIONS_TEXT = {
   filterStatus: 'Status',
   filterOrigin: 'Herkomst',
   filterAll: 'Alle',
+  filterInactive: 'Inactief',
   kindReusable: 'Herbruikbaar',
   kindOwn: 'Eigen',
   kindReusableFull: 'Herbruikbare importdefinitie',
@@ -180,5 +198,7 @@ export const DEFINITIONS_TEXT = {
     versions: 'Versie-ids',
     usageType: 'Gebruikssoort',
     materialised: 'Gebruikt door (definitie-ids)',
+    legacyOrigin: 'Herkomst uit legacy',
+    legacyCodes: 'Legacy-definities',
   },
 } as const;

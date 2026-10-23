@@ -25,6 +25,9 @@ import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useQuery, type UseQueryResult } from '../../hooks/useQuery.ts';
 import {
   DEFINITIONS_TEXT,
+  INACTIVE_HINT,
+  INACTIVE_LABEL,
+  LEGACY_KIND_DETAIL,
   ORIGIN_HINT,
   ORIGIN_LABEL,
   STATUS_HINT,
@@ -43,7 +46,15 @@ import {
   type DefinitionBundle,
   type ReusableExtras,
 } from './definitionsData.ts';
-import { definitionOriginOf, definitionStatusOf, type DefinitionOrigin, type DefinitionStatus } from './definitionsModel.ts';
+import {
+  definitionOriginOf,
+  definitionStatusOf,
+  isInactiveOrganisation,
+  legacyKindOf,
+  openDraftNumberOf,
+  type DefinitionOrigin,
+  type DefinitionStatus,
+} from './definitionsModel.ts';
 import styles from '../setup/SetupScreens.module.css';
 
 const TEXT = DEFINITIONS_TEXT;
@@ -75,9 +86,9 @@ function successorBase(revisions: readonly RevisionRow[]): RevisionRow | null {
 
 function AddSupplierAction({ definition, status }: { definition: DefinitionRow; status: DefinitionStatus }) {
   const manageGate = usePermissionGate(PERMISSION_MANAGE);
-  const concept = status === 'CONCEPT';
-  if (concept || !manageGate.allowed) {
-    const reason = concept ? TEXT.addSupplierConcept : gateTitle(manageGate);
+  const unusable = status !== 'ACTIVE';
+  if (unusable || !manageGate.allowed) {
+    const reason = unusable ? TEXT.addSupplierConcept : gateTitle(manageGate);
     return (
       <button type="button" className={button.primary} disabled title={reason} data-testid="add-supplier-button">
         {TEXT.addSupplier}
@@ -164,7 +175,11 @@ function Detail({
   const id = definition.id;
   const reusable = !isOwnDefinition(definition);
   const status = definitionStatusOf(definition);
-  const origin = definitionOriginOf(definition, bundle.allDefinitions);
+  const origin = definitionOriginOf(definition);
+  const inactive = isInactiveOrganisation(definition);
+  const draftOpen = openDraftNumberOf(definition);
+  const legacyKind = legacyKindOf(definition);
+  const legacyCodes = definition.legacyDefinitionCodes ?? [];
   const base = successorBase(revisions);
   const newestDraft = [...revisions]
     .filter((revision) => revision.status === 'DRAFT')
@@ -192,6 +207,12 @@ function Detail({
               <span title={STATUS_HINT[status]}>
                 <ToneBadge label={STATUS_LABEL[status]} tone={STATUS_TONE[status]} />
               </span>
+              {draftOpen !== null && <ToneBadge label={TEXT.draftOpen(draftOpen)} tone="awaiting" />}
+              {inactive && (
+                <span title={INACTIVE_HINT}>
+                  <ToneBadge label={INACTIVE_LABEL} tone="neutral" />
+                </span>
+              )}
               <span title={ORIGIN_HINT[origin]}>
                 <ToneBadge label={TEXT.originPrefix(ORIGIN_LABEL[origin])} tone="neutral" />
               </span>
@@ -231,7 +252,7 @@ function Detail({
         </div>
       </header>
 
-      {status === 'CONCEPT' && (
+      {status !== 'ACTIVE' && (
         <div className={styles.banner} role="status" data-testid="concept-banner">
           <p>
             <strong>{TEXT.nextStepLabel}</strong>{' '}
@@ -276,6 +297,8 @@ function Detail({
             { name: TEXT.technicalIds.definition, value: String(id) },
             { name: TEXT.technicalIds.usageType, value: definition.usageType },
             { name: TEXT.technicalIds.versions, value: revisionIds === '' ? '—' : revisionIds },
+            ...(legacyKind === null ? [] : [{ name: TEXT.technicalIds.legacyOrigin, value: `${legacyKind}: ${LEGACY_KIND_DETAIL[legacyKind]}` }]),
+            ...(legacyCodes.length === 0 ? [] : [{ name: TEXT.technicalIds.legacyCodes, value: legacyCodes.join(', ') }]),
             ...(reusable ? [{ name: TEXT.technicalIds.materialised, value: materialisedIds === '' ? '—' : materialisedIds }] : []),
           ]}
         />

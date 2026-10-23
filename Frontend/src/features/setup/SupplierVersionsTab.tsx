@@ -35,7 +35,15 @@ export function SupplierVersionsTab() {
           key={definition.id}
           definition={definition}
           revisions={bundle.revisions[definition.id] ?? []}
-          note={isOwnDefinition(definition) ? <BasedOnReusable definitionId={definition.id} reusables={reusables} /> : undefined}
+          note={
+            isOwnDefinition(definition) ? (
+              <BasedOnReusable
+                definitionId={definition.id}
+                basedOnDefinitionId={definition.basedOnDefinitionId}
+                reusables={reusables}
+              />
+            ) : undefined
+          }
           viewHref={(revision) =>
             supplierHref(organisationId, 'fields', { definitionId: definition.id, revisionId: revision.id })
           }

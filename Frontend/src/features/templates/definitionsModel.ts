@@ -3,29 +3,28 @@
  * (organisaties, definities, koppelingen) tot één lijst van ALLE importdefinities (eigen `OWN_DEFINITION` en herbruikbaar
  * `REUSABLE_TEMPLATE`) en leidt per definitie de soort, de status en de herkomst af. Geen backend, geen React, geen tekst.
  *
- * - Status: `ACTIVE` als er een actieve versie is, anders `CONCEPT` (nog niet bruikbaar). "Inactief" uit de mock is niet af
- *   te leiden: een importdefinitie heeft geen eigen actief-vlag en de lijst geeft geen versiestatussen.
- * - Herkomst "Uit legacy (afgeleid)": de overname uit legacy maakt per interfacegroep een herbruikbare importdefinitie
- *   `<legacy-code>-SJ` en een gedeelde eigen importdefinitie `<legacy-code>` (en bij loskoppelen `LEGACY-<interface>`);
- *   zie `LegacyConfigApplyService`. Er is geen veld dat dit rechtstreeks zegt, dus het wordt uit de code afgeleid en zo gemarkeerd.
+ * Bron: beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen", punt 5 (backend B1).
+ * - Status: `ACTIVE` als er een actieve versie is (met `draftRevisionNumber` als er daarnaast een concept openstaat),
+ *   `CONCEPT` als er enkel een concept is, anders `NO_VERSION` (geen bruikbare versie). Ontbreekt `draftRevisionId` (oudere
+ *   server), dan telt het als "geen concept".
+ * - "Inactief" is geen status maar een aparte vlag: de organisatie van de importdefinitie is inactief
+ *   (`sourceOrganisationActive === false`).
+ * - Herkomst "Uit legacy": `legacyOriginKind` is niet `null`. De vroegere afleiding uit de code (`-SJ`, `LEGACY-`) is vervallen.
  */
 
-import type { DefinitionRow, ImportLinkRow, SourceOrganisationRow } from '../../api/types.ts';
+import type { DefinitionRow, ImportLinkRow, LegacyOriginKind, SourceOrganisationRow } from '../../api/types.ts';
 import { isOwnDefinition } from '../setup/setupDashboardModel.ts';
 
-export type DefinitionStatus = 'ACTIVE' | 'CONCEPT';
-export type DefinitionOrigin = 'LEGACY_DERIVED' | 'OWN';
-
-/** Achtervoegsel van de herbruikbare importdefinitie die de overname uit legacy maakt. */
-export const LEGACY_TEMPLATE_SUFFIX = '-SJ';
-/** Voorvoegsel van een eigen importdefinitie die uit een gedeelde legacy-definitie is losgekoppeld. */
-export const LEGACY_DETACHED_PREFIX = 'LEGACY-';
+export type DefinitionStatus = 'ACTIVE' | 'CONCEPT' | 'NO_VERSION';
+export type DefinitionOrigin = 'LEGACY' | 'OWN';
 
 export type DefinitionEntry = {
   definition: DefinitionRow;
   organisation: SourceOrganisationRow | null;
   reusable: boolean;
   status: DefinitionStatus;
+  /** De organisatie van de importdefinitie is inactief. */
+  inactive: boolean;
   origin: DefinitionOrigin;
   /** Enkel de koppelingen van deze definitie (een herbruikbare krijgt er nooit zelf). */
   links: ImportLinkRow[];
@@ -37,6 +36,7 @@ export type DefinitionOverview = {
     all: number;
     active: number;
     concept: number;
+    noVersion: number;
     reusable: number;
     own: number;
     activeReusable: number;
@@ -45,26 +45,28 @@ export type DefinitionOverview = {
 };
 
 export function definitionStatusOf(definition: DefinitionRow): DefinitionStatus {
-  return definition.activeRevisionId !== null ? 'ACTIVE' : 'CONCEPT';
+  if (definition.activeRevisionId !== null) {
+    return 'ACTIVE';
+  }
+  return definition.draftRevisionId !== undefined && definition.draftRevisionId !== null ? 'CONCEPT' : 'NO_VERSION';
 }
 
-/** Is deze importdefinitie (afgeleid uit de code) uit de overname van legacy gekomen? */
-export function isLegacyDerived(definition: DefinitionRow, all: readonly DefinitionRow[]): boolean {
-  if (!isOwnDefinition(definition)) {
-    return definition.code.endsWith(LEGACY_TEMPLATE_SUFFIX);
-  }
-  if (definition.code.startsWith(LEGACY_DETACHED_PREFIX)) {
-    return true;
-  }
-  const templateCode = `${definition.code}${LEGACY_TEMPLATE_SUFFIX}`;
-  return all.some(
-    (other) =>
-      !isOwnDefinition(other) && other.code === templateCode && other.sourceOrganisationId === definition.sourceOrganisationId,
-  );
+/** Het versienummer van het openstaande concept naast een actieve versie ("concept v4 open"), anders `null`. */
+export function openDraftNumberOf(definition: DefinitionRow): number | null {
+  return definitionStatusOf(definition) === 'ACTIVE' ? (definition.draftRevisionNumber ?? null) : null;
 }
 
-export function definitionOriginOf(definition: DefinitionRow, all: readonly DefinitionRow[]): DefinitionOrigin {
-  return isLegacyDerived(definition, all) ? 'LEGACY_DERIVED' : 'OWN';
+export function isInactiveOrganisation(definition: DefinitionRow): boolean {
+  return definition.sourceOrganisationActive === false;
+}
+
+/** De soort legacy-overname, of `null` als de importdefinitie niet uit legacy komt. */
+export function legacyKindOf(definition: DefinitionRow): LegacyOriginKind | null {
+  return definition.legacyOriginKind ?? null;
+}
+
+export function definitionOriginOf(definition: DefinitionRow): DefinitionOrigin {
+  return legacyKindOf(definition) !== null ? 'LEGACY' : 'OWN';
 }
 
 export function buildDefinitionOverview(input: {
@@ -87,7 +89,8 @@ export function buildDefinitionOverview(input: {
     organisation: organisations.get(definition.sourceOrganisationId) ?? null,
     reusable: !isOwnDefinition(definition),
     status: definitionStatusOf(definition),
-    origin: definitionOriginOf(definition, input.definitions),
+    inactive: isInactiveOrganisation(definition),
+    origin: definitionOriginOf(definition),
     links: linksByDefinition.get(definition.id) ?? [],
   }));
   const count = (predicate: (entry: DefinitionEntry) => boolean) => entries.filter(predicate).length;
@@ -97,6 +100,7 @@ export function buildDefinitionOverview(input: {
       all: entries.length,
       active: count((entry) => entry.status === 'ACTIVE'),
       concept: count((entry) => entry.status === 'CONCEPT'),
+      noVersion: count((entry) => entry.status === 'NO_VERSION'),
       reusable: count((entry) => entry.reusable),
       own: count((entry) => !entry.reusable),
       activeReusable: count((entry) => entry.reusable && entry.status === 'ACTIVE'),
@@ -109,9 +113,9 @@ export type DefinitionFilters = {
   query: string;
   /** '' = alle, 'REUSABLE' of 'OWN'. */
   kind: string;
-  /** '' = alle, 'ACTIVE' of 'CONCEPT'. */
+  /** '' = alle, 'ACTIVE', 'CONCEPT', 'NO_VERSION' of 'INACTIVE' (organisatie inactief; los van de versiestatus). */
   status: string;
-  /** '' = alle, 'LEGACY_DERIVED' of 'OWN'. */
+  /** '' = alle, 'LEGACY' of 'OWN'. */
   origin: string;
 };
 
@@ -127,7 +131,11 @@ export function filterDefinitions(entries: readonly DefinitionEntry[], filters: 
     if (filters.kind !== '' && (filters.kind === 'REUSABLE') !== entry.reusable) {
       return false;
     }
-    if (filters.status !== '' && entry.status !== filters.status) {
+    if (filters.status === 'INACTIVE') {
+      if (!entry.inactive) {
+        return false;
+      }
+    } else if (filters.status !== '' && entry.status !== filters.status) {
       return false;
     }
     if (filters.origin !== '' && entry.origin !== filters.origin) {

@@ -13,12 +13,22 @@ import { ToneBadge } from '../../components/StatusBadge.tsx';
 import { MiniCard } from '../../components/SummaryCards.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useQuery } from '../../hooks/useQuery.ts';
-import { DEFINITIONS_TEXT, ORIGIN_HINT, ORIGIN_LABEL, STATUS_HINT, STATUS_LABEL, STATUS_TONE } from '../../terms/importDefinitions.ts';
+import {
+  DEFINITIONS_TEXT,
+  INACTIVE_HINT,
+  INACTIVE_LABEL,
+  ORIGIN_HINT,
+  ORIGIN_LABEL,
+  STATUS_HINT,
+  STATUS_LABEL,
+  STATUS_TONE,
+} from '../../terms/importDefinitions.ts';
 import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { FileSection } from '../setup/RevisionReadView.tsx';
 import { activeRevisionOf, defaultRevisionOf, STEP_DEFINITION } from '../setup/setupDashboardModel.ts';
 import { KeyValue, StepBar } from '../setup/SupplierOverviewTab.tsx';
 import { definitionHref } from './definitionRoutes.ts';
+import { isInactiveOrganisation, openDraftNumberOf } from './definitionsModel.ts';
 import { useDefinitionDetailContext } from './TemplateDetailPage.tsx';
 import styles from '../setup/SetupScreens.module.css';
 
@@ -106,6 +116,20 @@ export function DefinitionOverviewTab() {
             <span title={STATUS_HINT[status]}>
               <ToneBadge label={STATUS_LABEL[status]} tone={STATUS_TONE[status]} />
             </span>
+            {openDraftNumberOf(definition) !== null && (
+              <>
+                {' '}
+                <ToneBadge label={TEXT.draftOpen(openDraftNumberOf(definition)!)} tone="awaiting" />
+              </>
+            )}
+            {isInactiveOrganisation(definition) && (
+              <>
+                {' '}
+                <span title={INACTIVE_HINT}>
+                  <ToneBadge label={INACTIVE_LABEL} tone="neutral" />
+                </span>
+              </>
+            )}
           </KeyValue>
           <KeyValue label={TEXT.keyValue.origin}>
             <span title={ORIGIN_HINT[origin]}>{ORIGIN_LABEL[origin]}</span>

@@ -177,7 +177,11 @@ export function DefinitionUsedByTab() {
               <ToneBadge label={TEXT.tagOwn} tone="neutral" />
             </div>
             <p className={styles.rowMeta}>{TEXT.ownNote}</p>
-            <BasedOnReusable definitionId={definition.id} reusables={reusablesOfOrganisation} />
+            <BasedOnReusable
+              definitionId={definition.id}
+              basedOnDefinitionId={definition.basedOnDefinitionId}
+              reusables={reusablesOfOrganisation}
+            />
             <LinkList links={links} selectedLinkId={null} />
             <div className={styles.linkActions}>
               <Link

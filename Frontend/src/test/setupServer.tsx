@@ -132,6 +132,14 @@ export function definition(id: number, organisationId: number, over: Record<stri
     sourceOrganisationId: organisationId,
     sourceOrganisationCode: `ORG-${organisationId}`,
     activeRevisionId: null,
+    // Uitgebreide velden (B1): standaard een eigen importdefinitie van een actieve organisatie zonder versienummers.
+    activeRevisionNumber: null,
+    draftRevisionId: null,
+    draftRevisionNumber: null,
+    sourceOrganisationActive: true,
+    basedOnDefinitionId: null,
+    legacyOriginKind: null,
+    legacyDefinitionCodes: [],
     ...over,
   };
 }

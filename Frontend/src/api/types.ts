@@ -689,14 +689,41 @@ export type DefinitionRow = {
   sourceOrganisationId: number;
   sourceOrganisationCode: string;
   activeRevisionId: number | null;
+  // Additief (beslissingslog 2026-10-23 "API-uitbreiding voor de inrichtingsschermen", punt 5; backend B1). Optioneel in de
+  // types zodat een oudere server of fixture zonder deze velden blijft werken; `null`/afwezig = onbekend of niet van toepassing.
+  activeRevisionNumber?: number | null;
+  draftRevisionId?: number | null;
+  draftRevisionNumber?: number | null;
+  /** `false` = de organisatie van deze importdefinitie is inactief. */
+  sourceOrganisationActive?: boolean;
+  /** De herbruikbare importdefinitie waar deze eigen importdefinitie op gebaseerd is. */
+  basedOnDefinitionId?: number | null;
+  /** `null` = niet uit de overname van legacy. */
+  legacyOriginKind?: LegacyOriginKind | null;
+  legacyDefinitionCodes?: string[];
 };
 
-// be.dda.catalogimport.service.SetupQueryService.RevisionRow (S1-B1, scherm 1a)
+/** be.dda.catalogimport.service.SetupQueryService.DefinitionRow.legacyOriginKind. */
+export const LEGACY_ORIGIN_KINDS = ['MIGRATED_TEMPLATE', 'MIGRATED_SHARED', 'MIGRATED_DETACHED'] as const;
+export type LegacyOriginKind = (typeof LEGACY_ORIGIN_KINDS)[number];
+
+/**
+ * be.dda.catalogimport.service.SetupQueryService.RevisionRow (S1-B1, scherm 1a). De velden vanaf `createdAt` zijn additief
+ * (beslissingslog 2026-10-23, punt 2): `approvedAt`/`approvedBy`/`changeReason`/`basedOnRevisionId` zijn `null` als ze niet
+ * ingevuld zijn (een concept is nooit goedgekeurd); `fromLegacy` = de versie is door een legacy-overname geschreven.
+ */
 export type RevisionRow = {
   id: number;
   definitionId: number;
   revisionNumber: number;
   status: RevisionStatus;
+  createdAt?: string | null;
+  createdBy?: string | null;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  changeReason?: string | null;
+  basedOnRevisionId?: number | null;
+  fromLegacy?: boolean;
 };
 
 // --- S1-F4: het schrijfdeel van scherm 1a (opvolgrevisie maken → DRAFT bewerken → activeren) --------

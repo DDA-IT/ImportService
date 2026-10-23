@@ -375,6 +375,11 @@
   font-weight: 600;
 }
 
+.versionMeta {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
 .versionRow .btnRow {
   margin-left: auto;
 }

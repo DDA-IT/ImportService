@@ -23,7 +23,13 @@ export function DefinitionVersionsTab() {
       <VersionHistoryCard
         definition={definition}
         revisions={revisions}
-        note={reusable ? undefined : <BasedOnReusable definitionId={definition.id} reusables={reusablesOfOrganisation} />}
+        note={reusable ? undefined : (
+            <BasedOnReusable
+              definitionId={definition.id}
+              basedOnDefinitionId={definition.basedOnDefinitionId}
+              reusables={reusablesOfOrganisation}
+            />
+          )}
         viewHref={(revision) => definitionHref(definition.id, 'fields', { revisionId: revision.id })}
         editHref={(revision) => definitionHref(definition.id, 'fields', { revisionId: revision.id, edit: true })}
         onSuccessorCreated={(created) => {

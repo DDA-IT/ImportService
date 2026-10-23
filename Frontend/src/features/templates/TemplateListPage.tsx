@@ -9,7 +9,7 @@
  * wordt enkel geladen voor de herbruikbare importdefinities op de getoonde pagina, zodat er geen verzoek per rij van
  * de hele lijst ontstaat; een fout daarvan toont "—" en een melding, nooit een kapot scherm.
  *
- * Herkomst "Uit legacy (afgeleid)" komt uit de code (`definitionsModel.ts`): de API heeft er geen veld voor.
+ * Herkomst "Uit legacy" komt uit `DefinitionRow.legacyOriginKind`; status, versienummers en Inactief uit de uitgebreide `DefinitionRow` (B1).
  */
 
 import { useMemo, useState } from 'react';
@@ -25,6 +25,8 @@ import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useQuery } from '../../hooks/useQuery.ts';
 import {
   DEFINITIONS_TEXT,
+  INACTIVE_HINT,
+  INACTIVE_LABEL,
   ORIGIN_HINT,
   ORIGIN_LABEL,
   STATUS_HINT,
@@ -37,7 +39,7 @@ import { FlagOffNotice } from '../setup/FlagOffNotice.tsx';
 import { supplierHref } from '../setup/supplierRoutes.ts';
 import { definitionHref } from './definitionRoutes.ts';
 import { loadDefinitionOverview, loadMaterialisations, type MaterialisationsById } from './definitionsData.ts';
-import { filterDefinitions, NO_FILTERS, type DefinitionEntry, type DefinitionFilters } from './definitionsModel.ts';
+import { filterDefinitions, NO_FILTERS, openDraftNumberOf, type DefinitionEntry, type DefinitionFilters } from './definitionsModel.ts';
 import { isSetupApiDisabledError } from './setupApiFlag.ts';
 import styles from '../setup/SetupScreens.module.css';
 
@@ -72,6 +74,7 @@ function ConceptPanel({ concepts }: { concepts: readonly DefinitionEntry[] }) {
               <span className={styles.code}>{entry.definition.code}</span> · <strong>{entry.definition.name}</strong> ·{' '}
               <span className={styles.rowMeta}>
                 {entry.reusable ? TEXT.kindReusable : TEXT.kindOwn}, {TEXT.conceptRowMeta}
+                {entry.definition.draftRevisionNumber != null && ` · ${TEXT.conceptVersion(entry.definition.draftRevisionNumber)}`}
               </span>
             </div>
             <div className={styles.btnRow}>
@@ -160,6 +163,8 @@ function DefinitionList({ entries }: { entries: readonly DefinitionEntry[] }) {
               <option value="">{TEXT.filterAll}</option>
               <option value="ACTIVE">{STATUS_LABEL.ACTIVE}</option>
               <option value="CONCEPT">{STATUS_LABEL.CONCEPT}</option>
+              <option value="NO_VERSION">{STATUS_LABEL.NO_VERSION}</option>
+              <option value="INACTIVE">{TEXT.filterInactive}</option>
             </select>
           </label>
           <label className={styles.toolbarField}>
@@ -167,7 +172,7 @@ function DefinitionList({ entries }: { entries: readonly DefinitionEntry[] }) {
             <select value={filters.origin} onChange={(event) => update({ origin: event.target.value })} data-testid="definition-filter-origin">
               <option value="">{TEXT.filterAll}</option>
               <option value="OWN">{ORIGIN_LABEL.OWN}</option>
-              <option value="LEGACY_DERIVED">{ORIGIN_LABEL.LEGACY_DERIVED}</option>
+              <option value="LEGACY">{ORIGIN_LABEL.LEGACY}</option>
             </select>
           </label>
         </div>
@@ -221,6 +226,20 @@ function DefinitionList({ entries }: { entries: readonly DefinitionEntry[] }) {
                         <span title={STATUS_HINT[entry.status]}>
                           <ToneBadge label={STATUS_LABEL[entry.status]} tone={STATUS_TONE[entry.status]} />
                         </span>
+                        {definition.activeRevisionNumber != null && (
+                          <span className={styles.rowMeta}> {TEXT.versionNumber(definition.activeRevisionNumber)}</span>
+                        )}
+                        {openDraftNumberOf(definition) !== null && (
+                          <span className={styles.rowMeta}> · {TEXT.draftOpen(openDraftNumberOf(definition)!)}</span>
+                        )}
+                        {entry.inactive && (
+                          <>
+                            {' '}
+                            <span title={INACTIVE_HINT}>
+                              <ToneBadge label={INACTIVE_LABEL} tone="neutral" />
+                            </span>
+                          </>
+                        )}
                       </td>
                       <td data-label={columns.usedBy} title={'title' in cells ? cells.title : undefined}>
                         {cells.usedBy}
@@ -297,7 +316,7 @@ export function TemplateListPage() {
         id: 'all',
         title: TEXT.cards.all,
         count: totals.all,
-        subLine: TEXT.allSub(totals.active, totals.concept),
+        subLine: TEXT.allSub(totals.active, totals.concept, totals.noVersion),
         tone: 'neutral',
         empty: totals.all === 0,
         noButton: true,

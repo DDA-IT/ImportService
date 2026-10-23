@@ -6,6 +6,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { formatDateTime } from '../format';
 import { expectNoOldWording } from './oldWording';
 import { testIdentityWith } from './testIdentity';
 import {
@@ -88,9 +89,45 @@ function supplierState(): SetupState {
   state.links = [link(501, 10, { code: 'VROOAM', name: 'Vrooam koppeling' }), link(502, 10, { code: 'VROOAM2', name: 'Tweede koppeling' })];
   state.tasks = [task(7, 501, 10, { name: 'Handmatige levering', activeRevisionId: 99, lastRunFinishedAt: '2026-10-20T10:00:00Z' })];
   state.revisions[10] = [
-    { id: 100, definitionId: 10, revisionNumber: 4, status: 'DRAFT' },
-    { id: 99, definitionId: 10, revisionNumber: 3, status: 'ACTIVE' },
-    { id: 98, definitionId: 10, revisionNumber: 2, status: 'SUPERSEDED' },
+    {
+      id: 100,
+      definitionId: 10,
+      revisionNumber: 4,
+      status: 'DRAFT',
+      createdAt: '2026-10-23T09:15:00Z',
+      createdBy: 'an.peeters',
+      approvedAt: null,
+      approvedBy: null,
+      changeReason: null,
+      basedOnRevisionId: 99,
+      fromLegacy: false,
+    },
+    {
+      id: 99,
+      definitionId: 10,
+      revisionNumber: 3,
+      status: 'ACTIVE',
+      createdAt: '2026-10-20T08:00:00Z',
+      createdBy: 'jan.janssens',
+      approvedAt: '2026-10-21T10:31:00Z',
+      approvedBy: 'an.peeters',
+      changeReason: 'Prijskolom aangepast',
+      basedOnRevisionId: 98,
+      fromLegacy: false,
+    },
+    {
+      id: 98,
+      definitionId: 10,
+      revisionNumber: 2,
+      status: 'SUPERSEDED',
+      createdAt: '2026-09-01T07:00:00Z',
+      createdBy: 'overname',
+      approvedAt: '2026-09-01T07:05:00Z',
+      approvedBy: 'overname',
+      changeReason: null,
+      basedOnRevisionId: null,
+      fromLegacy: true,
+    },
   ];
   state.details[99] = revisionDetail(99, 10, {
     revisionNumber: 3,
@@ -383,6 +420,32 @@ describe('tab Versies', () => {
     expect(router.state.location.search).toContain('versie=98');
     expect(screen.getByTestId('version-select')).toHaveValue('98');
     await waitFor(() => expect(screen.getByTestId('read-fields')).toHaveTextContent('OUDE_PRIJS'));
+  });
+
+  it('elke versie toont datum en auteur; actief en vervangen ook goedgekeurd, reden, overname uit legacy en basisversie', async () => {
+    await open('/setup/suppliers/1/versions');
+    const draft = screen.getByTestId('version-row-100');
+    expect(draft).toHaveTextContent(formatDateTime('2026-10-23T09:15:00Z') + ' · an.peeters');
+    expect(draft).toHaveTextContent('gebaseerd op versie 3');
+    expect(draft).not.toHaveTextContent('goedgekeurd');
+    expect(draft).not.toHaveTextContent('Overname uit legacy');
+    const active = screen.getByTestId('version-row-99');
+    expect(active).toHaveTextContent(formatDateTime('2026-10-20T08:00:00Z') + ' · jan.janssens');
+    expect(active).toHaveTextContent('goedgekeurd op ' + formatDateTime('2026-10-21T10:31:00Z') + ' door an.peeters');
+    expect(within(active).getByTestId('version-reason-99')).toHaveTextContent('Prijskolom aangepast');
+    expect(active).toHaveTextContent('gebaseerd op versie 2');
+    const legacy = screen.getByTestId('version-row-98');
+    expect(legacy).toHaveTextContent('Overname uit legacy');
+    expect(legacy).not.toHaveTextContent('gebaseerd op');
+  });
+
+  it('een versie zonder de nieuwe velden (oudere server) toont enkel nummer en status', async () => {
+    const state = supplierState();
+    state.revisions[10] = [{ id: 99, definitionId: 10, revisionNumber: 3, status: 'ACTIVE' }];
+    await open('/setup/suppliers/1/versions', state);
+    const row = screen.getByTestId('version-row-99');
+    expect(row).toHaveTextContent('Versie 3');
+    expect(screen.queryByTestId('version-meta-99')).not.toBeInTheDocument();
   });
 
   it('zonder versies staat er een lege tekst', async () => {

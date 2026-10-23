@@ -11,7 +11,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { PERMISSION_READ } from '../api/types';
 import { wizardHref } from '../features/setup/wizard/wizardTypes';
-import { buildDefinitionOverview, filterDefinitions, isLegacyDerived, NO_FILTERS } from '../features/templates/definitionsModel';
+import {
+  buildDefinitionOverview,
+  definitionOriginOf,
+  definitionStatusOf,
+  filterDefinitions,
+  NO_FILTERS,
+  openDraftNumberOf,
+} from '../features/templates/definitionsModel';
+import { formatDateTime } from '../format';
 import { expectNoOldWording } from './oldWording';
 import { testIdentityWith } from './testIdentity';
 import {
@@ -75,20 +83,20 @@ function bookmark(over: Record<string, unknown>) {
 }
 
 /**
- * Org 1 (Vrooam) en org 2 (Kramp); vijf importdefinities:
- *  10 herbruikbaar VRM-SJ (actief, uit legacy) met gebruiker 11; 11 eigen VRM (actief, uit legacy want VRM-SJ bestaat);
- *  12 herbruikbaar INTC-SJ (concept); 13 eigen KRAMP-EIG (actief, eigen); 14 herbruikbaar STD-CSV (actief, niet uit legacy)
- *  met niet-deelbare gebruiker 13.
+ * Org 1 (Vrooam) en org 2 (Kramp); vijf importdefinities (herkomst en status uit de uitgebreide `DefinitionRow`, B1):
+ *  10 herbruikbaar VRM-SJ (actief v3 met openstaand concept v4, MIGRATED_TEMPLATE) met gebruiker 11; 11 eigen VRM (actief,
+ *  MIGRATED_SHARED, gebaseerd op 10); 12 herbruikbaar INTC-SJ (enkel concept v1, MIGRATED_TEMPLATE); 13 eigen KRAMP-EIG (actief,
+ *  eigen, organisatie inactief); 14 herbruikbaar STD-CSV (actief, niet uit legacy) met niet-deelbare gebruiker 13.
  */
 function state(): SetupState {
   const s = emptySetupState();
   s.organisations = [organisation(1, { code: 'VROOAM', name: 'Vrooam BV' }), organisation(2, { code: 'KRAMP', name: 'Kramp' })];
   s.definitions = [
-    definition(10, 1, { code: 'VRM-SJ', name: 'Vrooam artikelbestand (gedeeld)', usageType: REUSABLE, activeRevisionId: 201 }),
-    definition(11, 1, { code: 'VRM', name: 'Vrooam artikelbestand', activeRevisionId: 301 }),
-    definition(12, 2, { code: 'INTC-SJ', name: 'Inter Cars artikelbestand', usageType: REUSABLE, activeRevisionId: null }),
-    definition(13, 2, { code: 'KRAMP-EIG', name: 'Kramp prijslijst', activeRevisionId: 601 }),
-    definition(14, 1, { code: 'STD-CSV', name: 'Standaard CSV prijslijst', usageType: REUSABLE, activeRevisionId: 701 }),
+    definition(10, 1, { code: 'VRM-SJ', name: 'Vrooam artikelbestand (gedeeld)', usageType: REUSABLE, activeRevisionId: 201, activeRevisionNumber: 3, draftRevisionId: 202, draftRevisionNumber: 4, legacyOriginKind: 'MIGRATED_TEMPLATE', legacyDefinitionCodes: ['VRM'] }),
+    definition(11, 1, { code: 'VRM', name: 'Vrooam artikelbestand', activeRevisionId: 301, activeRevisionNumber: 1, basedOnDefinitionId: 10, legacyOriginKind: 'MIGRATED_SHARED' }),
+    definition(12, 2, { code: 'INTC-SJ', name: 'Inter Cars artikelbestand', usageType: REUSABLE, activeRevisionId: null, draftRevisionId: 401, draftRevisionNumber: 1, legacyOriginKind: 'MIGRATED_TEMPLATE' }),
+    definition(13, 2, { code: 'KRAMP-EIG', name: 'Kramp prijslijst', activeRevisionId: 601, activeRevisionNumber: 1, sourceOrganisationActive: false }),
+    definition(14, 1, { code: 'STD-CSV', name: 'Standaard CSV prijslijst', usageType: REUSABLE, activeRevisionId: 701, activeRevisionNumber: 1 }),
   ];
   s.links = [
     link(501, 11, { code: 'VROOAM', name: 'Vrooam koppeling', libraryCode: '181' }),
@@ -96,9 +104,45 @@ function state(): SetupState {
     link(503, 13, { code: 'KRAMP', name: 'Kramp koppeling', libraryCode: '4' }),
   ];
   s.revisions[10] = [
-    { id: 202, definitionId: 10, revisionNumber: 4, status: 'DRAFT' },
-    { id: 201, definitionId: 10, revisionNumber: 3, status: 'ACTIVE' },
-    { id: 200, definitionId: 10, revisionNumber: 2, status: 'SUPERSEDED' },
+    {
+      id: 202,
+      definitionId: 10,
+      revisionNumber: 4,
+      status: 'DRAFT',
+      createdAt: '2026-10-23T09:15:00Z',
+      createdBy: 'an.peeters',
+      approvedAt: null,
+      approvedBy: null,
+      changeReason: null,
+      basedOnRevisionId: 201,
+      fromLegacy: false,
+    },
+    {
+      id: 201,
+      definitionId: 10,
+      revisionNumber: 3,
+      status: 'ACTIVE',
+      createdAt: '2026-10-20T08:00:00Z',
+      createdBy: 'jan.janssens',
+      approvedAt: '2026-10-21T10:31:00Z',
+      approvedBy: 'an.peeters',
+      changeReason: 'Prijskolom gewijzigd na nieuwe leveranciersindeling',
+      basedOnRevisionId: 200,
+      fromLegacy: false,
+    },
+    {
+      id: 200,
+      definitionId: 10,
+      revisionNumber: 2,
+      status: 'SUPERSEDED',
+      createdAt: '2026-09-01T07:00:00Z',
+      createdBy: 'overname',
+      approvedAt: '2026-09-01T07:05:00Z',
+      approvedBy: 'overname',
+      changeReason: null,
+      basedOnRevisionId: null,
+      fromLegacy: true,
+    },
   ];
   s.revisions[11] = [{ id: 301, definitionId: 11, revisionNumber: 1, status: 'ACTIVE' }];
   s.revisions[12] = [{ id: 401, definitionId: 12, revisionNumber: 1, status: 'DRAFT' }];
@@ -168,20 +212,36 @@ async function openDetail(path: string, s: SetupState = state(), extra?: Paramet
 }
 
 describe('model: soort, status en herkomst', () => {
-  it('de herkomst "uit legacy" volgt uit -SJ (herbruikbaar), het bestaan van <code>-SJ (eigen) of LEGACY- (losgekoppeld)', () => {
+  it('de herkomst volgt uit legacyOriginKind: een code op -SJ zonder legacyOriginKind is "Eigen", elke MIGRATED_* is "Uit legacy"', () => {
     const s = state();
-    const all = s.definitions as Parameters<typeof isLegacyDerived>[1];
+    const all = s.definitions as unknown as Parameters<typeof definitionOriginOf>[0][];
     const by = (id: number) => all.find((row) => row.id === id)!;
-    expect(isLegacyDerived(by(10), all)).toBe(true);
-    expect(isLegacyDerived(by(11), all)).toBe(true);
-    expect(isLegacyDerived(by(12), all)).toBe(true);
-    expect(isLegacyDerived(by(13), all)).toBe(false);
-    expect(isLegacyDerived(by(14), all)).toBe(false);
-    const detached = { ...by(13), code: 'LEGACY-KRAMP' };
-    expect(isLegacyDerived(detached, all)).toBe(true);
-    // Een -SJ van een andere organisatie telt niet voor een eigen importdefinitie.
-    const foreign = { ...by(11), sourceOrganisationId: 2 };
-    expect(isLegacyDerived(foreign, all)).toBe(false);
+    expect(definitionOriginOf(by(10))).toBe('LEGACY');
+    expect(definitionOriginOf(by(11))).toBe('LEGACY');
+    expect(definitionOriginOf(by(12))).toBe('LEGACY');
+    expect(definitionOriginOf(by(13))).toBe('OWN');
+    expect(definitionOriginOf(by(14))).toBe('OWN');
+    expect(definitionOriginOf({ ...by(14), code: 'ABC-SJ', legacyOriginKind: null })).toBe('OWN');
+    expect(definitionOriginOf({ ...by(14), code: 'LEGACY-ABC', legacyOriginKind: null })).toBe('OWN');
+    for (const kind of ['MIGRATED_TEMPLATE', 'MIGRATED_SHARED', 'MIGRATED_DETACHED'] as const) {
+      expect(definitionOriginOf({ ...by(14), code: 'ZONDER-SUFFIX', legacyOriginKind: kind })).toBe('LEGACY');
+    }
+    // Een oudere server zonder het veld: niet uit legacy.
+    const withoutField = { ...by(10) };
+    delete withoutField.legacyOriginKind;
+    expect(definitionOriginOf(withoutField)).toBe('OWN');
+  });
+
+  it('de status: actief (met of zonder openstaand concept), enkel concept, of geen bruikbare versie', () => {
+    const all = state().definitions as unknown as Parameters<typeof definitionStatusOf>[0][];
+    const by = (id: number) => all.find((row) => row.id === id)!;
+    expect(definitionStatusOf(by(10))).toBe('ACTIVE');
+    expect(openDraftNumberOf(by(10))).toBe(4);
+    expect(definitionStatusOf(by(11))).toBe('ACTIVE');
+    expect(openDraftNumberOf(by(11))).toBeNull();
+    expect(definitionStatusOf(by(12))).toBe('CONCEPT');
+    expect(openDraftNumberOf(by(12))).toBeNull();
+    expect(definitionStatusOf({ ...by(12), draftRevisionId: null, draftRevisionNumber: null })).toBe('NO_VERSION');
   });
 
   it('de filters Soort, Status en Herkomst en de zoekopdracht combineren', () => {
@@ -197,10 +257,12 @@ describe('model: soort, status en herkomst', () => {
     expect(ids({ kind: 'OWN' })).toEqual([11, 13]);
     expect(ids({ kind: 'REUSABLE' })).toEqual([10, 12, 14]);
     expect(ids({ status: 'CONCEPT' })).toEqual([12]);
-    expect(ids({ origin: 'LEGACY_DERIVED' })).toEqual([10, 11, 12]);
+    expect(ids({ status: 'NO_VERSION' })).toEqual([]);
+    expect(ids({ status: 'INACTIVE' })).toEqual([13]);
+    expect(ids({ origin: 'LEGACY' })).toEqual([10, 11, 12]);
     expect(ids({ kind: 'REUSABLE', origin: 'OWN' })).toEqual([14]);
     expect(ids({ query: ' kramp ' })).toEqual([13]);
-    expect(overview.totals).toMatchObject({ all: 5, active: 4, concept: 1, reusable: 3, own: 2, activeReusable: 2, activeOwn: 2 });
+    expect(overview.totals).toMatchObject({ all: 5, active: 4, concept: 1, noVersion: 0, reusable: 3, own: 2, activeReusable: 2, activeOwn: 2 });
   });
 
   it('wizardHref neemt templateId (additief) en laat organisationId weg als die er niet is', () => {
@@ -230,6 +292,7 @@ describe('overzicht Importdefinities', () => {
     const panel = await screen.findByTestId('definition-card-panel');
     const row = within(panel).getByTestId('concept-row-12');
     expect(row).toHaveTextContent('Inter Cars artikelbestand');
+    expect(row).toHaveTextContent('Versie 1 (Concept)');
     expect(within(row).getByRole('link', { name: 'Openen: Inter Cars artikelbestand' })).toHaveAttribute('href', '/templates/12');
     // De andere kaarten hebben geen knop; alleen de conceptkaart toont/verbergt.
     expect(screen.getAllByRole('button', { name: /Verbergen|Toon concepten/ })).toHaveLength(1);
@@ -248,15 +311,23 @@ describe('overzicht Importdefinities', () => {
     expect(reusable).toHaveTextContent('Herbruikbaar');
     expect(reusable).toHaveTextContent('Vrooam BV');
     expect(reusable).toHaveTextContent('Actief');
-    expect(reusable).toHaveTextContent('Uit legacy (afgeleid)');
+    expect(reusable).toHaveTextContent('Uit legacy');
+    expect(reusable).not.toHaveTextContent('afgeleid');
+    expect(reusable).toHaveTextContent('Versie 3');
+    expect(reusable).toHaveTextContent('concept v4 open');
+    expect(reusable).not.toHaveTextContent('Inactief');
     // Koppelingen van een herbruikbare: som van de gematerialiseerde importdefinities.
     expect(within(reusable).getAllByRole('cell').map((cell) => cell.textContent)).toContain('2');
     const own = screen.getByTestId('definition-row-13');
     expect(own).toHaveTextContent('Eigen');
     expect(own).toHaveTextContent('Kramp');
     expect(own).toHaveTextContent('1');
+    // De organisatie van deze importdefinitie is inactief: aparte badge naast de status.
+    expect(own).toHaveTextContent('Actief');
+    expect(own).toHaveTextContent('Inactief');
     expect(within(own).getAllByText('Eigen').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByTestId('definition-row-12')).toHaveTextContent('Concept');
+    expect(screen.getByTestId('definition-row-12')).not.toHaveTextContent('Inactief');
     expect(screen.getByTestId('definition-row-12')).toHaveTextContent('Nog niet gebruikt');
     expect(screen.getByTestId('open-definition-13')).toHaveAttribute('href', '/templates/13');
     expectNoOldWording(document.body, 'overzicht Importdefinities');
@@ -288,8 +359,12 @@ describe('overzicht Importdefinities', () => {
     await openOverview();
     fireEvent.change(screen.getByTestId('definition-filter-status'), { target: { value: 'CONCEPT' } });
     expect(rowIds()).toEqual(['12']);
+    fireEvent.change(screen.getByTestId('definition-filter-status'), { target: { value: 'INACTIVE' } });
+    expect(rowIds()).toEqual(['13']);
+    fireEvent.change(screen.getByTestId('definition-filter-status'), { target: { value: 'NO_VERSION' } });
+    expect(screen.getByText(/Geen importdefinities die bij de zoekopdracht en filters passen/)).toBeInTheDocument();
     fireEvent.change(screen.getByTestId('definition-filter-status'), { target: { value: '' } });
-    fireEvent.change(screen.getByTestId('definition-filter-origin'), { target: { value: 'LEGACY_DERIVED' } });
+    fireEvent.change(screen.getByTestId('definition-filter-origin'), { target: { value: 'LEGACY' } });
     expect(rowIds()).toEqual(['10', '11', '12']);
     fireEvent.change(screen.getByTestId('definition-filter-origin'), { target: { value: 'OWN' } });
     expect(rowIds()).toEqual(['13', '14']);
@@ -335,7 +410,9 @@ describe('importdefinitiedetail: kop en tabs', () => {
     expect(title).toHaveTextContent('Vrooam artikelbestand (gedeeld)');
     expect(title).toHaveTextContent('Herbruikbaar');
     expect(title).toHaveTextContent('Actief');
-    expect(title).toHaveTextContent('Herkomst: Uit legacy (afgeleid)');
+    expect(title).toHaveTextContent('Herkomst: Uit legacy');
+    expect(title).toHaveTextContent('concept v4 open');
+    expect(title).not.toHaveTextContent('Inactief');
     const nav = screen.getByRole('navigation', { name: 'Onderdelen van de importdefinitie' });
     const links = within(nav).getAllByRole('link');
     expect(links.map((l) => l.textContent)).toEqual(['Overzicht', 'Bestand en velden', 'Versies', 'Gebruikt door']);
@@ -414,7 +491,7 @@ describe('importdefinitiedetail: Overzicht', () => {
     expect(data).toHaveTextContent('Herbruikbare importdefinitie');
     expect(data).toHaveTextContent('Bron');
     expect(data).toHaveTextContent('Vrooam BV');
-    expect(data).toHaveTextContent('Uit legacy (afgeleid)');
+    expect(data).toHaveTextContent('Uit legacy');
     await screen.findByTestId('read-file');
     expect(screen.getByRole('link', { name: 'Velden bekijken' })).toHaveAttribute('href', '/templates/10/fields?versie=201');
   });
@@ -516,6 +593,21 @@ describe('importdefinitiedetail: Versies', () => {
     expect(within(root).getByTestId('edit-revision-202')).toHaveAttribute('href', '/templates/10/fields?versie=202&bewerken=1');
     expect(within(root).queryByTestId('edit-revision-201')).not.toBeInTheDocument();
     expect(within(root).getByTestId('create-successor-201')).toBeEnabled();
+    // Wanneer en door wie, reden, overname uit legacy en basisversie.
+    const active = within(root).getByTestId('version-row-201');
+    expect(active).toHaveTextContent(formatDateTime('2026-10-20T08:00:00Z'));
+    expect(active).toHaveTextContent('jan.janssens');
+    expect(active).toHaveTextContent('goedgekeurd op ' + formatDateTime('2026-10-21T10:31:00Z') + ' door an.peeters');
+    expect(active).toHaveTextContent('gebaseerd op versie 2');
+    expect(within(active).getByTestId('version-reason-201')).toHaveTextContent('Prijskolom gewijzigd na nieuwe leveranciersindeling');
+    expect(active).not.toHaveTextContent('Overname uit legacy');
+    const draft = within(root).getByTestId('version-row-202');
+    expect(draft).toHaveTextContent('an.peeters');
+    expect(draft).toHaveTextContent('gebaseerd op versie 3');
+    expect(draft).not.toHaveTextContent('goedgekeurd');
+    const legacy = within(root).getByTestId('version-row-200');
+    expect(legacy).toHaveTextContent('Overname uit legacy');
+    expect(legacy).not.toHaveTextContent('gebaseerd op');
     // Een concept kan zelf geen opvolger krijgen (bestaande poort).
     expect(within(root).getByTestId('create-successor-202')).toBeDisabled();
   });
@@ -609,6 +701,57 @@ describe('importdefinitiedetail: Gebruikt door', () => {
   });
 });
 
+describe('geen bruikbare versie en legacy-herkomst', () => {
+  function stateWithNoVersion(): SetupState {
+    const s = state();
+    s.definitions.push(definition(15, 1, { code: 'ABC-SJ', name: 'Zonder versie', activeRevisionId: null }));
+    s.revisions[15] = [];
+    return s;
+  }
+
+  it('geen actieve versie en geen concept: "Geen bruikbare versie", "Eigen" ondanks -SJ, en een eigen filter', async () => {
+    await openOverview(stateWithNoVersion());
+    const row = screen.getByTestId('definition-row-15');
+    expect(row).toHaveTextContent('Geen bruikbare versie');
+    expect(row).toHaveTextContent('Eigen');
+    expect(row).not.toHaveTextContent('Uit legacy');
+    expect(screen.getByTestId('definition-card-all')).toHaveTextContent('4 actief, 1 concept, 1 zonder bruikbare versie');
+    fireEvent.change(screen.getByTestId('definition-filter-status'), { target: { value: 'NO_VERSION' } });
+    expect(rowIds()).toEqual(['15']);
+  });
+
+  it('het detail van een definitie zonder bruikbare versie toont de status, de banner en een uitgeschakelde knop', async () => {
+    const s = stateWithNoVersion();
+    s.definitions[5] = definition(15, 1, { code: 'ABC-SJ', name: 'Zonder versie', usageType: REUSABLE, activeRevisionId: null });
+    await openDetail('/templates/15', s);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Geen bruikbare versie');
+    expect(screen.getByTestId('concept-banner')).toHaveTextContent('een versie maken en activeren');
+    expect(screen.getByTestId('add-supplier-button')).toBeDisabled();
+  });
+
+  it('de soort legacy-overname staat enkel onder Technische details, met de toelichting per soort', async () => {
+    const s = state();
+    s.definitions[1] = definition(11, 1, {
+      code: 'VRM',
+      name: 'Vrooam artikelbestand',
+      activeRevisionId: 301,
+      activeRevisionNumber: 1,
+      legacyOriginKind: 'MIGRATED_DETACHED',
+      legacyDefinitionCodes: ['PSIMPDEF-A', 'PSIMPDEF-B'],
+    });
+    await openDetail('/templates/11', s);
+    const details = screen.getByText('Technische details (voor support)').closest('details')!;
+    expect(details).toHaveTextContent('MIGRATED_DETACHED');
+    expect(details).toHaveTextContent('losgekoppeld van de gedeelde importdefinitie');
+    expect(details).toHaveTextContent('PSIMPDEF-A, PSIMPDEF-B');
+    const visible = document.body.cloneNode(true) as HTMLElement;
+    visible.querySelectorAll('details').forEach((element) => element.remove());
+    expect(visible.textContent).not.toContain('MIGRATED_');
+    expect(visible.textContent).not.toContain('PSIMPDEF-A');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Herkomst: Uit legacy');
+  });
+});
+
 describe('importdefinitiedetail: Technische details', () => {
   it('toont de ruwe ids en de gebruikssoort enkel onder Technische details', async () => {
     await openDetail('/templates/10');
@@ -630,8 +773,39 @@ describe('leveranciersdetail: Gebaseerd op herbruikbare importdefinitie', () => 
     expect(within(basedOn).getByRole('link', { name: 'Vrooam artikelbestand (gedeeld)' })).toHaveAttribute('href', '/templates/10');
   });
 
-  it('zonder de inrichtings-API-vlag verdwijnt de link stilletjes, zonder foutmelding', async () => {
-    installSetupServer(state(), (url) => (url.includes('/materialisations') ? new Response(null, { status: 404 }) : null));
+  it('de link komt uit basedOnDefinitionId: er is geen enkel verzoek naar de materialisaties nodig, ook niet zonder inrichtings-API-vlag', async () => {
+    const calls = installSetupServer(state(), (url) => (url.includes('/materialisations') ? new Response(null, { status: 404 }) : null));
+    renderRoutes('/setup/suppliers/1/versions');
+    const basedOn = await screen.findByTestId('based-on-11');
+    expect(within(basedOn).getByRole('link', { name: 'Vrooam artikelbestand (gedeeld)' })).toHaveAttribute('href', '/templates/10');
+    expect(calls.urls.some((url) => url.includes('/materialisations'))).toBe(false);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('een eigen importdefinitie met basedOnDefinitionId null toont geen "Gebaseerd op"', async () => {
+    const s = state();
+    s.definitions = s.definitions.map((row) => ((row as { id: number }).id === 11 ? { ...(row as object), basedOnDefinitionId: null } : row));
+    const calls = installSetupServer(s);
+    renderRoutes('/setup/suppliers/1/versions');
+    await screen.findByTestId('supplier-versions');
+    expect(screen.queryByTestId('based-on-11')).not.toBeInTheDocument();
+    expect(calls.urls.some((url) => url.includes('/materialisations'))).toBe(false);
+  });
+
+  it('terugval als de server het veld niet levert: opzoeken via de materialisaties; zonder vlag verdwijnt de link stilletjes', async () => {
+    const withoutField = state();
+    withoutField.definitions = withoutField.definitions.map((row) => {
+      const copy = { ...(row as Record<string, unknown>) };
+      delete copy.basedOnDefinitionId;
+      return copy as never;
+    });
+    installSetupServer(withoutField);
+    const first = renderRoutes('/setup/suppliers/1/versions');
+    const basedOn = await screen.findByTestId('based-on-11');
+    expect(within(basedOn).getByRole('link', { name: 'Vrooam artikelbestand (gedeeld)' })).toHaveAttribute('href', '/templates/10');
+    first.unmount();
+    cleanup();
+    installSetupServer(withoutField, (url) => (url.includes('/materialisations') ? new Response(null, { status: 404 }) : null));
     renderRoutes('/setup/suppliers/1/versions');
     await screen.findByTestId('supplier-versions');
     await waitFor(() => expect(screen.queryByTestId('based-on-11')).not.toBeInTheDocument());
