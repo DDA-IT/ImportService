@@ -170,6 +170,7 @@ class PermissionCoverageTest {
         m.put("DELETE " + s + "/revisions/{}/mappings/{}", "MANAGE");
         m.put("PUT " + s + "/revisions/{}/mappings/{}", "MANAGE");
         m.put("DELETE " + s + "/revisions/{}/filters/{}", "MANAGE");
+        m.put("PUT " + s + "/revisions/{}/filters/{}", "MANAGE");
         // EB2 (beslissingslog 2026-10-23 "Editor-API-gaten"): kritiek-overrule van een revisieveld zetten of wissen.
         m.put("PUT " + s + "/revisions/{}/field-criticality/{}", "MANAGE");
         m.put("DELETE " + s + "/revisions/{}/field-criticality/{}", "MANAGE");

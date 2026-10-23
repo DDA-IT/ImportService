@@ -172,6 +172,7 @@ class PermissionWriteEndpointsHttpTest {
         denied(patch(API + "/setup/revisions/{id}", 1L), "{\"maxCriticalSharePercent\":50}");
         denied(delete(API + "/setup/revisions/{id}/mappings/{m}", 1L, 1L), "");
         denied(delete(API + "/setup/revisions/{id}/filters/{f}", 1L, 1L), "");
+        denied(put(API + "/setup/revisions/{id}/filters/{f}", 1L, 1L), "{}");
         denied(post(API + "/setup/links"), "{}");
         denied(post(API + "/setup/tasks"), "{}");
         // CD-B2: aanmaakstandaard en vlag "standaarden overschrijven" - zonder MANAGE niets gelezen of geschreven.

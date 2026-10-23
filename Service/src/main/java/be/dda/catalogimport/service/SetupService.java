@@ -1579,6 +1579,54 @@ public class SetupService {
     }
 
     /**
+     * Vervangt één recordfilter van een {@link RevisionStatus#DRAFT}-revisie door het filter uit {@code command}
+     * (EB3, beslissingslog 2026-10-23 "Editor-API-gaten", G2): verwijderen, flushen en opnieuw toevoegen in dezelfde
+     * transactie. Het nieuwe filter krijgt een nieuw id maar behoudt het volgnummer van het oude (een
+     * {@code sequenceNumber} in het verzoek wordt genegeerd); de bookmarkhercontrole gebeurt na het toevoegen, zodat
+     * een {@code RECORD_FILTER_COMPARE_VALUE}-usage op dit volgnummer geldig blijft. Een gelijktijdige wijziging van
+     * dezelfde rij geeft {@code REVISION_EDIT_CONFLICT} (zoals EB2).
+     *
+     * @throws NotFoundException   {@code REVISION_NOT_FOUND}, {@code FILTER_NOT_FOUND} (ook een filter van een andere
+     *                             revisie)
+     * @throws ConflictException   {@code REVISION_NOT_EDITABLE}, {@code CONFIG_BOOKMARK_*}, {@code REVISION_EDIT_CONFLICT};
+     *                             er is dan niets gewijzigd
+     * @throws BadRequestException veldcodes, {@code MATCH_GROUP_INVALID}, {@code CONFIG_FILTER_INVALID}; niets gewijzigd
+     */
+    public FilterView replaceFilter(long revisionId, long filterId, CreateFilterCommand command,
+                                    ActorIdentity actor) {
+        ImportDefinitionRevision revision = editableRevision(revisionId);
+        ImportRecordFilter filter = recordFilters.findById(filterId)
+                .filter(row -> row.getDefinitionRevision().getId().equals(revision.getId()))
+                .orElseThrow(() -> new NotFoundException("FILTER_NOT_FOUND", "Record filter " + filterId
+                        + " does not exist in revision " + revisionId));
+        int sequenceNumber = filter.getSequenceNumber();
+        CreateFilterCommand replacement = new CreateFilterCommand(sequenceNumber, command.sourceReference(),
+                command.operator(), command.compareValue(), command.outcome(), command.caseSensitive(),
+                command.trimBeforeCompare(), command.nullBehaviour(), command.missingColumnBehaviour(),
+                command.createdBy(), command.matchGroup());
+        try {
+            recordFilters.delete(filter);
+            recordFilters.flush();
+            FilterView view = addFilter(revisionId, replacement, actor);
+            requireBookmarkDeclarationsStillResolve(revisionId);
+            return view;
+        } catch (OptimisticLockingFailureException stale) {
+            throw filterEditConflict(sequenceNumber);
+        } catch (DataIntegrityViolationException violation) {
+            throw violates(violation, "uk_import_record_filter_sequence")
+                    ? filterEditConflict(sequenceNumber) : violation;
+        } catch (ConflictException inUse) {
+            // Het volgnummer was vrij na onze delete: is het nu bezet, dan zette een gelijktijdige PUT het opnieuw.
+            throw "FILTER_SEQUENCE_IN_USE".equals(inUse.getCode()) ? filterEditConflict(sequenceNumber) : inUse;
+        }
+    }
+
+    private static ConflictException filterEditConflict(int sequenceNumber) {
+        return new ConflictException("REVISION_EDIT_CONFLICT", "Record filter " + sequenceNumber
+                + " was changed by someone else at the same time; reload and try again");
+    }
+
+    /**
      * Toetst de bookmarkdeclaratie van deze revisie opnieuw met dezelfde
      * {@link BookmarkDeclarations#findProblems} als {@code TemplateBookmarkService} (bij declareren) en
      * {@code TemplateMaterialisationService} (defensief bij materialiseren) — één implementatie, nu drie

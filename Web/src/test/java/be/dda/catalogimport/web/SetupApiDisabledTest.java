@@ -139,6 +139,7 @@ class SetupApiDisabledTest {
                 post(SETUP + "/definitions/{id}/revisions", 1L), patch(SETUP + "/revisions/{id}", 1L),
                 post(SETUP + "/revisions/{id}/mappings", 1L), delete(SETUP + "/revisions/{id}/mappings/{m}", 1L, 1L),
                 put(SETUP + "/revisions/{id}/mappings/{m}", 1L, 1L),
+                put(SETUP + "/revisions/{id}/filters/{f}", 1L, 1L),
                 post(SETUP + "/revisions/{id}/filters", 1L), delete(SETUP + "/revisions/{id}/filters/{f}", 1L, 1L),
                 post(SETUP + "/revisions/{id}/field-criticality", 1L), post(SETUP + "/revisions/{id}/activate", 1L),
                 put(SETUP + "/revisions/{id}/field-criticality/{k}", 1L, "DESCRIPTION"),

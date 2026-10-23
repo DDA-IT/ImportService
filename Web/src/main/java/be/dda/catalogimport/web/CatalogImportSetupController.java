@@ -264,6 +264,22 @@ public class CatalogImportSetupController {
         return setup.addFilter(revisionId, request, actor);
     }
 
+    /**
+     * Vervangt één recordfilter van een {@code DRAFT}-revisie (EB3, beslissingslog 2026-10-23 "Editor-API-gaten", G2):
+     * zelfde body als {@code addFilter} (een {@code sequenceNumber} wordt genegeerd), zelfde volgnummer, nieuw id. 200
+     * met de nieuwe weergave; 404 {@code REVISION_NOT_FOUND}/{@code FILTER_NOT_FOUND}; 409
+     * {@code REVISION_NOT_EDITABLE}, {@code CONFIG_BOOKMARK_*}, {@code REVISION_EDIT_CONFLICT}; 400 bij een ongeldig
+     * filter. Bij een fout is er niets gewijzigd.
+     */
+    @RequiresPermission(Permission.MANAGE)
+    @PutMapping("/revisions/{revisionId}/filters/{filterId}")
+    FilterView replaceFilter(@PathVariable("revisionId") long revisionId,
+                             @PathVariable("filterId") long filterId,
+                             @RequestBody CreateFilterCommand request) {
+        ActorIdentity actor = currentActor.signer(request == null ? null : request.createdBy(), "createdBy");
+        return setup.replaceFilter(revisionId, filterId, request, actor);
+    }
+
     @RequiresPermission(Permission.MANAGE)
     @PostMapping("/revisions/{revisionId}/field-criticality")
     @ResponseStatus(HttpStatus.CREATED)
