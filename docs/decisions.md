@@ -3262,3 +3262,20 @@ lijst is Actief/Concept (geen "Inactief": niet afleidbaar). Herkomst "uit legacy
 aan API-gegevens: versienummer van de actieve versie in de lijst, opmerking, gereedheid per koppeling in "Gebruikt door",
 datum/auteur per versie.
 **Bron:** bouwer-gemiddeld (R2-rapport)
+
+## 2026-10-23 — API-uitbreiding voor de inrichtingsschermen (ontbrekende gegevens)
+**Vraag:** De mens vroeg de API uit te breiden voor de gegevens die R1/R2 niet konden tonen.
+**Beslissing (mens: uitbreiden; uitwerking denker-zwaar, aanbevelingen gevolgd — door de mens te herzien):** geen schema-
+wijziging, enkel additief. (2) `RevisionRow` + createdAt/By, approvedAt/By, changeReason, basedOnRevisionId, fromLegacy.
+(5) `DefinitionRow` + activeRevisionNumber, draftRevisionId/Number, sourceOrganisationActive, basedOnDefinitionId,
+legacyOriginKind (MIGRATED_SHARED|MIGRATED_TEMPLATE|MIGRATED_DETACHED), legacyDefinitionCodes; bulkqueries (lost de N+1 in
+`SetupQueryService.definitionRow` op); de `-SJ`/`LEGACY-`-heuristiek en "geen Inactief" uit R2 vervallen (Inactief = badge
+bij inactieve organisatie). (1) Nieuw READ-endpoint `GET /definitions/{id}/revisions/{rid}/legacy-origin`
+(RevisionLegacyOriginView met PSIMPDEF-regels uit `bundle_json.definition.lines`, nooit bestemming/login/secret;
+MIGRATED/INHERITED/TEMPLATE_SOURCE; changedSinceMigration via LegacyRevisionContent-hash). B1: READ volstaat (zelfde soort
+gegevens als mappings; doorklik naar de ontvangst blijft MANAGE). (3) `ImportLinkRow.credentialState`
+STORED|REVOKED|NONE (B2: valt onder L7b-statusinformatie voor READ); bibliotheek = libraryCode (geen Prodis-naam),
+tekenset uit de revisie. (4) Nieuw READ-endpoint `GET /import-links/readiness?linkIds=` (max. 100, enkel problemen,
+gememoïseerd per concept; pariteit met het enkelvoudige endpoint); dashboard krijgt reden `LINK_CHECK_FAILED`.
+(6) "Opmerking" vervalt (geen veld, geen businessreden). Volgorde: B1 → F1 → B2 → F2 → B3 → F3 → B4 → F4.
+**Bron:** mens / denker-zwaar (API-uitbreiding)
