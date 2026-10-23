@@ -209,8 +209,8 @@ describe('schakelaar Bekijken | Bewerken', () => {
     for (const field of ['Leverancier', 'Groep', 'Referentie', 'Kortingscode', 'Basisprijs', 'Omschrijving', 'Valuta']) {
       expect(screen.getByRole('button', { name: `Wijzigen: ${field}` })).toBeInTheDocument();
     }
-    // Extra velden zijn in E1 alleen-lezen.
-    expect(screen.queryByRole('button', { name: 'Wijzigen: EAN-barcode' })).not.toBeInTheDocument();
+    // Extra velden hebben sinds E2 ook een potlood (zie FieldsEditorMappings.test.tsx).
+    expect(screen.getByRole('button', { name: 'Wijzigen: EAN-barcode' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('mode-view'));
     expect(screen.queryByRole('button', { name: 'Wijzigen: Basisprijs' })).not.toBeInTheDocument();

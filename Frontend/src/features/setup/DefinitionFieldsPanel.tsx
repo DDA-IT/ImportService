@@ -25,6 +25,7 @@ import { SUPPLIER_TEXT } from '../../terms/setupDashboard.ts';
 import { EDITOR_TEXT } from '../../terms/setupEditor.ts';
 import { CreateSuccessorAction } from './CreateSuccessorAction.tsx';
 import { FieldPanel, type PanelTarget } from './FieldPanel.tsx';
+import { MappingPanel, type MappingPanelMode } from './MappingPanel.tsx';
 import { RevisionDetailSection } from './RevisionDetailSection.tsx';
 import { RevisionReadView } from './RevisionReadView.tsx';
 import { defaultRevisionOf } from './setupDashboardModel.ts';
@@ -149,6 +150,8 @@ function RevisionFields({
   const editingNow = editing && isDraft && manageGate.allowed;
   const [moreOpen, setMoreOpen] = useState(false);
   const [panel, setPanel] = useState<{ target: PanelTarget; opener: HTMLElement } | null>(null);
+  // E2: het paneel voor een extra veld (wijzigen, toevoegen, koppelen); sleutel = het doelveld, nooit het id.
+  const [mappingPanel, setMappingPanel] = useState<{ mode: MappingPanelMode; opener: HTMLElement } | null>(null);
   const [saved, setSaved] = useState<string[] | null>(null);
 
   const detail = useQuery(`supplier-revision-read:${definition.id}:${revision.id}`, (signal) =>
@@ -176,6 +179,7 @@ function RevisionFields({
   function setMode(next: boolean) {
     setSaved(null);
     setPanel(null);
+    setMappingPanel(null);
     onEditingChange(next);
   }
 
@@ -249,11 +253,28 @@ function RevisionFields({
           editing={editingNow}
           onEditRow={(key, opener) => {
             setSaved(null);
+            setMappingPanel(null);
             setPanel({ target: { kind: 'row', key }, opener });
           }}
           onEditUppercase={(opener) => {
             setSaved(null);
+            setMappingPanel(null);
             setPanel({ target: { kind: 'uppercase' }, opener });
+          }}
+          onEditMapping={(code, opener) => {
+            setSaved(null);
+            setPanel(null);
+            setMappingPanel({ mode: { kind: 'edit', code }, opener });
+          }}
+          onAddField={(opener) => {
+            setSaved(null);
+            setPanel(null);
+            setMappingPanel({ mode: { kind: 'add', code: null }, opener });
+          }}
+          onMapField={(code, opener) => {
+            setSaved(null);
+            setPanel(null);
+            setMappingPanel({ mode: { kind: 'add', code }, opener });
           }}
         />
       )}
@@ -270,6 +291,21 @@ function RevisionFields({
           onSaved={(result) => {
             setPanel(null);
             setSaved((result.warnings ?? []).map((warning) => warning.message));
+            afterChange();
+          }}
+        />
+      )}
+
+      {mappingPanel !== null && detailData !== null && editingNow && (
+        <MappingPanel
+          key={`${mappingPanel.mode.kind}:${mappingPanel.mode.code ?? ''}`}
+          revision={detailData}
+          mode={mappingPanel.mode}
+          opener={mappingPanel.opener}
+          onClose={() => setMappingPanel(null)}
+          onSaved={() => {
+            setMappingPanel(null);
+            setSaved([]);
             afterChange();
           }}
         />

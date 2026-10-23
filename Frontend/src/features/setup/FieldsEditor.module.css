@@ -286,3 +286,96 @@
     width: 100%;
   }
 }
+
+/* --- E2: paneel voor een extra veld, Veld toevoegen, Nog niet gekoppeld en de groep Verkoopprijzen --- */
+.opBlock {
+  margin: 0 0 var(--spacing-4);
+  padding: var(--spacing-3);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: 0 0 var(--spacing-3);
+  font-size: 0.875rem;
+}
+
+.moreBox {
+  margin-top: var(--spacing-3);
+}
+
+.addGroupTitle {
+  margin: var(--spacing-4) 0 var(--spacing-2);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.addList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.addItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.addItemDone {
+  color: var(--text-disabled);
+}
+
+.addItem .pfHint {
+  display: block;
+}
+
+.gridToolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: var(--spacing-2) 0;
+}
+
+.groupToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.groupToggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.rowToggle {
+  margin-right: var(--spacing-2);
+  padding: 0 var(--spacing-1);
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.subRow td:first-child {
+  padding-left: var(--spacing-8, 32px);
+}

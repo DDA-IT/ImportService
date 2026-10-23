@@ -6,24 +6,21 @@
  * aangevinkt vinkje en [Toepassen] blijft uit tot het aangevinkt is. R-REV-X2 (`REVISION_CANONICALISATION_CHANGE_BLOCKED`)
  * is onvoorwaardelijk: dan wordt geen bevestiging aangeboden.
  *
- * Toegankelijkheid: `role="dialog"` met `aria-labelledby`, de focus gaat bij het openen het paneel in en blijft er
- * (Tab loopt rond), Escape sluit (met "Wijzigingen weggooien?" als er iets gewijzigd is) en de focus keert terug naar de
- * knop die het paneel opende.
+ * De schil (dialoog, focus, Escape, "Wijzigingen weggooien?") staat in `PanelShell`.
  */
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { useActor } from '../../actor/ActorContext.tsx';
 import * as setupRevisionsApi from '../../api/setupRevisions.ts';
 import type { RevisionDetail, RevisionView } from '../../api/types.ts';
 import button from '../../components/Button.module.css';
-import { CloseIcon } from '../../components/icons.tsx';
-import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { ErrorBanner } from '../../errors/ErrorBanner.tsx';
 import { useAction } from '../../hooks/useAction.ts';
 import { term } from '../../terms/index.ts';
 import { EDITOR_TEXT as TEXT } from '../../terms/setupEditor.ts';
 import type { CoreRowKey } from './fieldsGridModel.ts';
 import { FlagOffNotice } from './FlagOffNotice.tsx';
+import { PanelShell } from './PanelShell.tsx';
 import { ProdisCombobox } from './ProdisCombobox.tsx';
 import {
   SOURCE_COLUMN,
@@ -72,17 +69,12 @@ function sameForm(a: FormState, b: FormState): boolean {
   return (Object.keys(a) as (keyof FormState)[]).every((name) => a[name] === b[name]);
 }
 
-const FOCUSABLE = 'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [href]';
-
 export function FieldPanel({ revision, target, sourceOrganisationCode, opener, onClose, onSaved }: FieldPanelProps) {
   const { actor } = useActor();
-  const titleId = useId();
-  const rootRef = useRef<HTMLDivElement>(null);
   const baseline = useRef<FormState>(initialForm(revision));
   const [form, setForm] = useState<FormState>(baseline.current);
   const [acknowledge, setAcknowledge] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
   // Kortingscode: "Niet gebruikt" of een kolom; de keuze is formulierstaat, de server kent enkel het veld.
   const [discountUsed, setDiscountUsed] = useState(baseline.current.discountCodeField.trim() !== '');
   const runner = useAction((body: Parameters<typeof setupRevisionsApi.updateRevision>[1]) =>
@@ -90,37 +82,8 @@ export function FieldPanel({ revision, target, sourceOrganisationCode, opener, o
   );
 
   const label = target.kind === 'row' ? ROW_LABEL[target.key] : '';
-  const openerTestId = useRef(opener?.getAttribute('data-testid') ?? null);
-
-  // Focus het paneel in bij het openen; bij het sluiten terug naar de opener.
-  useEffect(() => {
-    const root = rootRef.current;
-    const first = root?.querySelector('[data-panel-body]')?.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? root?.querySelector<HTMLElement>('h2'))?.focus();
-    return () => {
-      const back =
-        opener !== null && opener.isConnected
-          ? opener
-          : openerTestId.current === null
-            ? null
-            : document.querySelector<HTMLElement>(`[data-testid="${openerTestId.current}"]`);
-      back?.focus();
-    };
-    // Enkel bij het openen en sluiten.
-  }, []);
 
   const dirty = !sameForm(form, baseline.current);
-
-  function requestClose() {
-    if (runner.pending) {
-      return;
-    }
-    if (dirty) {
-      setConfirmDiscard(true);
-    } else {
-      onClose();
-    }
-  }
 
   function touched() {
     setProblem(null);
@@ -162,34 +125,6 @@ export function FieldPanel({ revision, target, sourceOrganisationCode, opener, o
       return;
     }
     onSaved(result);
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (confirmDiscard) {
-      return;
-    }
-    if (event.key === 'Escape' && !event.defaultPrevented) {
-      event.stopPropagation();
-      requestClose();
-      return;
-    }
-    if (event.key === 'Tab') {
-      const items = Array.from(rootRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []).filter(
-        (element) => element.getAttribute('aria-hidden') !== 'true' && element.closest('[hidden]') === null,
-      );
-      const firstItem = items[0];
-      const lastItem = items[items.length - 1];
-      if (firstItem === undefined || lastItem === undefined) {
-        return;
-      }
-      if (event.shiftKey && (document.activeElement === firstItem || document.activeElement === rootRef.current)) {
-        event.preventDefault();
-        lastItem.focus();
-      } else if (!event.shiftKey && document.activeElement === lastItem) {
-        event.preventDefault();
-        firstItem.focus();
-      }
-    }
   }
 
   // --- de velden van het paneel ---
@@ -360,84 +295,61 @@ export function FieldPanel({ revision, target, sourceOrganisationCode, opener, o
   const applyBlocked = runner.pending || (needsAcknowledge && !acknowledge);
 
   return (
-    <div
-      ref={rootRef}
-      className={styles.panel}
-      role="dialog"
-      aria-labelledby={titleId}
-      data-testid="field-panel"
-      onKeyDown={handleKeyDown}
-    >
-      <div className={styles.panelHead}>
-        <h2 id={titleId} tabIndex={-1}>
-          {title}
-        </h2>
-        <button type="button" className={styles.iconButton} aria-label={TEXT.panelClose} onClick={requestClose}>
-          <CloseIcon size={20} />
-        </button>
-      </div>
-      <div className={styles.panelBody} data-panel-body>
-        {body()}
-        {needsAcknowledge && (
-          <div data-testid="identity-change-acknowledge">
-            <p className={styles.warning} role="note">
-              {TEXT.identityWarning}
+    <PanelShell
+      title={title}
+      opener={opener}
+      dirty={dirty}
+      pending={runner.pending}
+      onClose={onClose}
+      foot={(requestClose) => (
+        <>
+          {problem !== null && (
+            <p className={styles.panelMessage} role="alert" data-testid="panel-problem">
+              {problem}
             </p>
-            <label>
-              <input
-                type="checkbox"
-                checked={acknowledge}
-                onChange={(event) => {
-                  setAcknowledge(event.target.checked);
-                  setProblem(null);
-                }}
-              />{' '}
-              {TEXT.identityAcknowledge}
-            </label>
+          )}
+          {runner.error !== null &&
+            (isSetupApiDisabledError(runner.error) ? (
+              <FlagOffNotice message={SETUP_WRITE_API_DISABLED_MESSAGE} />
+            ) : (
+              <ErrorBanner error={runner.error} />
+            ))}
+          <div className={styles.panelActions}>
+            <button
+              type="button"
+              className={button.primary}
+              disabled={applyBlocked}
+              data-testid="panel-apply"
+              onClick={() => void apply()}
+            >
+              {runner.pending ? TEXT.applying : TEXT.apply}
+            </button>
+            <button type="button" className={button.secondary} onClick={requestClose}>
+              {TEXT.cancel}
+            </button>
           </div>
-        )}
-      </div>
-      <div className={styles.panelFoot}>
-        {problem !== null && (
-          <p className={styles.panelMessage} role="alert" data-testid="panel-problem">
-            {problem}
+        </>
+      )}
+    >
+      {body()}
+      {needsAcknowledge && (
+        <div data-testid="identity-change-acknowledge">
+          <p className={styles.warning} role="note">
+            {TEXT.identityWarning}
           </p>
-        )}
-        {runner.error !== null &&
-          (isSetupApiDisabledError(runner.error) ? (
-            <FlagOffNotice message={SETUP_WRITE_API_DISABLED_MESSAGE} />
-          ) : (
-            <ErrorBanner error={runner.error} />
-          ))}
-        <div className={styles.panelActions}>
-          <button
-            type="button"
-            className={button.primary}
-            disabled={applyBlocked}
-            data-testid="panel-apply"
-            onClick={() => void apply()}
-          >
-            {runner.pending ? TEXT.applying : TEXT.apply}
-          </button>
-          <button type="button" className={button.secondary} onClick={requestClose}>
-            {TEXT.cancel}
-          </button>
+          <label>
+            <input
+              type="checkbox"
+              checked={acknowledge}
+              onChange={(event) => {
+                setAcknowledge(event.target.checked);
+                setProblem(null);
+              }}
+            />{' '}
+            {TEXT.identityAcknowledge}
+          </label>
         </div>
-      </div>
-      <ConfirmDialog
-        open={confirmDiscard}
-        title={TEXT.discardTitle}
-        body={<p>{TEXT.discardBody}</p>}
-        reasonRequirement="none"
-        confirmLabel={TEXT.discardConfirm}
-        cancelLabel={TEXT.discardKeep}
-        variant="danger"
-        onConfirm={() => {
-          setConfirmDiscard(false);
-          onClose();
-        }}
-        onCancel={() => setConfirmDiscard(false)}
-      />
-    </div>
+      )}
+    </PanelShell>
   );
 }

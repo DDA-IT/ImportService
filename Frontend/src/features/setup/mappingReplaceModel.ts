@@ -83,6 +83,10 @@ export type Stage = {
 export type TableRow = { source: string; target: string };
 
 export type MappingForm = {
+  /** De herkomst van de waarde (`SOURCE_FIELD`, `FIXED_VALUE`, ...); E2: het paneel laat kiezen tussen kolom en vaste waarde. */
+  valueKind: string;
+  /** E2: de kritiek is te wijzigen (`CRITICAL` of `NON_CRITICAL`). */
+  criticality: string;
   sourceReference: string;
   expectedPosition: string;
   fixedValue: string;
@@ -194,6 +198,8 @@ export function initialMappingForm(mapping: MappingView): LoadedForm {
   }
 
   const form: MappingForm = {
+    valueKind: mapping.valueKind,
+    criticality: mapping.criticality,
     sourceReference: mapping.sourceReference ?? '',
     expectedPosition: mapping.expectedPosition == null ? '' : String(mapping.expectedPosition),
     fixedValue: mapping.fixedValue ?? '',
@@ -405,8 +411,9 @@ export function validateRows(rows: TableRow[], kind: 'MAP' | 'MAP_CONTAINS', pro
 export type BuiltMapping = { body: CreateMappingRequest } | { problems: string[] };
 
 /**
- * Bouwt de PUT-body uit het formulier. Het doelveld, de soort herkomst, de kritiek en het volgnummer komen ongewijzigd
- * uit de huidige mapping (het volgnummer bepaalt de server: dezelfde plaats).
+ * Bouwt de PUT- of POST-body uit het formulier. Het doelveld komt ongewijzigd uit de mapping, de soort herkomst en de
+ * kritiek uit het formulier (zonder wijziging dezelfde als in de mapping); het volgnummer bepaalt de server (bij een PUT
+ * dezelfde plaats, bij een POST het volgende).
  */
 export function buildMappingRequest(
   form: MappingForm,
@@ -416,10 +423,10 @@ export function buildMappingRequest(
 ): BuiltMapping {
   const problems: string[] = [];
 
-  if (mapping.valueKind === 'SOURCE_FIELD' && form.sourceReference.trim() === '') {
+  if (form.valueKind === 'SOURCE_FIELD' && form.sourceReference.trim() === '') {
     problems.push('Vul de kolom in het bronbestand in.');
   }
-  if (mapping.valueKind === 'FIXED_VALUE' && form.fixedValue.trim() === '') {
+  if (form.valueKind === 'FIXED_VALUE' && form.fixedValue.trim() === '') {
     problems.push('Vul de vaste waarde in.');
   }
   const numbers: [string, string, string][] = [
@@ -480,7 +487,7 @@ export function buildMappingRequest(
       targetFieldCode: mapping.targetFieldCode,
       sourceReference: form.sourceReference.trim() === '' ? null : form.sourceReference.trim(),
       sequenceNumber: null,
-      valueKind: mapping.valueKind,
+      valueKind: form.valueKind,
       expectedPosition: parsed.expectedPosition ?? null,
       fixedValue: form.fixedValue.trim() === '' ? null : form.fixedValue,
       defaultValue: form.defaultValue.trim() === '' ? null : form.defaultValue,
@@ -491,7 +498,7 @@ export function buildMappingRequest(
       negativeAllowed: form.negativeAllowed,
       transformKind,
       transformConfig,
-      criticality: mapping.criticality,
+      criticality: form.criticality,
       createdBy: actor,
       valueMap,
       steps,

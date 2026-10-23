@@ -485,7 +485,7 @@ function StageFields({
 }
 
 /** De vertaaltabel (bron → nieuwe waarde) met een plakvak: tab of `;` per regel, eerst een voorbeeld. */
-function TableEditor({
+export function TableEditor({
   kind,
   rows,
   onChange,

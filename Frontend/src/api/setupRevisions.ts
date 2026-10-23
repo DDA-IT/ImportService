@@ -120,6 +120,24 @@ export function replaceMapping(
 }
 
 /**
+ * POST /setup/revisions/{revisionId}/mappings — CatalogImportSetupController.addMapping (201, E2).
+ *
+ * Voegt één extra veld toe aan een `DRAFT`; met `sequenceNumber: null` kiest de server het volgende volgnummer. Een doelveld
+ * heeft precies één bron: staat het al in deze revisie, dan is er niets toegevoegd.
+ *
+ * @throws {import('./http.ts').ApiError} 400 bij een ongeldige configuratie (`CONFIG_TRANSFORM_INVALID`, `VALUE_MAP_*`);
+ *   404 `REVISION_NOT_FOUND`, `FIELD_NOT_FOUND`; 409 `REVISION_NOT_EDITABLE`, `MAPPING_TARGET_IN_USE`,
+ *   `MAPPING_SEQUENCE_IN_USE` of een `CONFIG_BOOKMARK_*`-code
+ */
+export function addMapping(revisionId: number, body: CreateMappingRequest, signal?: AbortSignal): Promise<MappingView> {
+  return request<MappingView>(`/setup/revisions/${revisionId}/mappings`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
+/**
  * DELETE /setup/revisions/{revisionId}/filters/{filterId} — CatalogImportSetupController.deleteFilter
  * (204). Zelfde regels en dezelfde hercontrole als {@link deleteMapping}.
  *

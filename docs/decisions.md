@@ -3381,3 +3381,10 @@ APPLY-matrix bekende koppeling, per veld: leeg → invullen (LEGACY); gelijk →
 `CREATION_DEFAULT_OVERWRITTEN`. (mens) Ook een MANUELE waarde wordt bij vlag aan overschreven, met eigen, duidelijke
 melding `CREATION_DEFAULT_MANUAL_OVERWRITTEN` (oude en nieuwe waarde, oud was manueel).
 **Bron:** mens / denker-gemiddeld (vlag overschrijven)
+
+## 2026-10-23 — E2: keuzes extra velden in de editor
+**Beslissing (aanbeveling gevolgd — door de mens te herzien):** Nieuw veld standaard "Niet kritiek" (geen catalogus-
+leesendpoint, G1). "Veld toevoegen" gebruikt de woordenlijst als catalogus (15 velden, groepen Prijzen/Referenties/Overig).
+Eén waardebewerking per veld (Vertaling, Hoofdletters, Delen/Vermenigvuldigen, Percentage sluiten elkaar uit, ketenblok 3);
+onbekende bewerkingen blijven ongewijzigd behouden met melding. Chiplabel "Uitknippen" (woordenlijst: "Deel van de tekst").
+**Bron:** bouwer-gemiddeld (E2-rapport)

@@ -3,7 +3,7 @@
  * leveranciersdetail (R1, mock `vdSection`): Bestandsopbouw, het Velden-grid (Herkenning van het artikel, Basis, Extra
  * velden; `FieldsGrid`, E1: dezelfde lay-out om te lezen en te bewerken), Filters, Vertalingen. Toont enkel wat
  * `RevisionDetail` levert; de woorden komen uit hetzelfde woordenboek en dezelfde bouwstenen als `RevisionDetailSection`
- * (`revisionDetailParts.tsx`). Bewerken van extra velden en filters blijft tot E2/E3 in `RevisionDetailSection`.
+ * (`revisionDetailParts.tsx`). Extra velden bewerken kan sinds E2 in het grid (`MappingPanel`); filters blijven tot E3 in `RevisionDetailSection`.
  */
 
 import type { ReactNode } from 'react';
@@ -154,6 +154,10 @@ export type RevisionReadViewProps = {
   editing?: boolean;
   onEditRow?: (key: CoreRowKey, opener: HTMLElement) => void;
   onEditUppercase?: (opener: HTMLElement) => void;
+  /** E2: extra velden in het grid. */
+  onEditMapping?: (code: string, opener: HTMLElement) => void;
+  onAddField?: (opener: HTMLElement) => void;
+  onMapField?: (code: string, opener: HTMLElement) => void;
 };
 
 export function RevisionReadView({
@@ -164,6 +168,9 @@ export function RevisionReadView({
   editing = false,
   onEditRow,
   onEditUppercase,
+  onEditMapping,
+  onAddField,
+  onMapField,
 }: RevisionReadViewProps) {
   const legacy = usableLegacyOrigin(legacyOrigin);
   return (
@@ -176,6 +183,9 @@ export function RevisionReadView({
         editing={editing}
         onEditRow={onEditRow}
         onEditUppercase={onEditUppercase}
+        onEditMapping={onEditMapping}
+        onAddField={onAddField}
+        onMapField={onMapField}
       />
       <FiltersSection revision={revision} />
       <TranslationsSection revision={revision} />
