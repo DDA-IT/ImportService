@@ -3148,3 +3148,17 @@ worden zichtbaar verworpen, waar legacy de groep van het bestaande bibliotheekar
 nooit stil de bronwaarde; mapwijziging = identiteitswijziging; controle tegen Prodis); de mens beslist daarna. Tot dan
 blijft het blokkeren.
 **Bron:** mens / denker-zwaar (analyse identiteitsblokkades)
+
+## 2026-10-23 — Leverancierskaart (CALC 7 op regel 9): één leverancier per bestand
+**Vraag:** Ontwerp denker-zwaar stelde een koppeling met meerdere leveranciers voor (kaart op de revisie, leverancier van
+de koppeling = afzender). Telling lokale PRODISWEB (read-only): 48 interfaces gebruiken 12 importsoorten met CALC 7 op
+regel 9 (kolom 40, zonder positie/lengte/prefix/suffix), elke interface heeft een eigen INDET `Supplier`; alle maprijen
+NUMMER 0; 29 verschillende doelwaarden, alle bestaand als Prodis-`supplier.number` behalve `0500`; PSIMPEXCL leeg;
+RunWebserver: 11x I, 7x N, rest leeg/afwezig.
+**Beslissing:** (1) Een Vrooam-bestand bevat lijnen van één leverancier (mens). Geen koppeling met meerdere leveranciers;
+2026-09-18 "ImportLink draagt de concrete leverancier" blijft ongewijzigd. De leverancier van de identiteit is de vaste
+leverancier van de koppeling (INDET `Supplier`, S6-patroon); de kaart dient enkel als controle per lijn: de code uit
+kolom 9 wordt via de kaart vertaald en moet gelijk zijn aan die leverancier. (2) Een lijn waarvan de code niet in de kaart
+staat of naar een andere leverancier wijst, wordt zichtbaar verworpen met een expliciete code (nooit de ruwe code, nooit
+stil overgeslagen). Uitwerking (waar de kaart leeft, hash/identiteitswijziging, drempels) via denker-zwaar.
+**Bron:** mens / denker-zwaar (ontwerp leverancierskaart) / telling PRODISWEB en Prodis
